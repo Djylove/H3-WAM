@@ -1,5 +1,9 @@
 # export HF_ENDPOINT="https://hf-mirror.com"
 
+export PATH=/usr/local/cuda-12.8/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-12.8/lib64:$LD_LIBRARY_PATH
+export CUDA_HOME=/usr/local/cuda-12.8
+
 bash scripts/train_zero1.sh 8 task=robotwin_uncond_3cam_384_1e-4
 
 export WANDB_API_KEY=b8182b57eaa10a6c93943291158ee2f086aae4eb
