@@ -14,7 +14,7 @@ class FastWAMIDM(FastWAMJoint):
     """IDM variant with teacher-forcing video conditioning for action denoising."""
 
     # Hardcoded probability: during training, cond-video is noised with this chance.
-    video_cond_noise_prob = 0.5
+    video_cond_noise_prob = 1.0
 
     @torch.no_grad()
     def _build_teacher_forcing_attention_mask(

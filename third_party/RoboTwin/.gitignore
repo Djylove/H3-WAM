@@ -13,7 +13,7 @@ task_config/
 
 # eval result
 eval_result/
-
+pytorch3d/
 # Code Generation
 assets/*
 !assets/_download.py
