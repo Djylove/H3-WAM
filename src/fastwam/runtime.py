@@ -2,6 +2,7 @@ import logging
 import os
 import inspect
 from pathlib import Path
+import inspect
 
 import torch
 from hydra.utils import instantiate
@@ -155,6 +156,102 @@ def create_fastwam(
         action_num_train_timesteps=int(action_scheduler["num_train_timesteps"]),
         loss_lambda_video=float(loss.get("lambda_video", 1.0)),
         loss_lambda_action=float(loss.get("lambda_action", 1.0)),
+    )
+
+def create_fastwam_hierarchical(
+    model_id: str,
+    tokenizer_model_id: str,
+    video_dit_config,
+    tokenizer_max_len: int = 512,
+    load_text_encoder: bool = True,
+    proprio_dim: int | None = None,
+    action_dit_config=None,
+    action_dit_pretrained_path: str | None = None,
+    skip_dit_load_from_pretrain: bool = False,
+    video_scheduler=None,
+    action_scheduler=None,
+    loss=None,
+    mot_checkpoint_mixed_attn: bool = True,
+    hierarchical_num_chunks: int = 4,
+    hierarchical_chunk_action_horizon: int = 32,
+    hierarchical_high_stride: int = 8,
+    hierarchical_low_stride: int = 4,
+    hierarchical_mask_high_predict: bool = False,
+    hierarchical_mask_low_predict: bool = False,
+    redirect_common_files: bool = True,
+    model_dtype: torch.dtype = torch.bfloat16,
+    device: str = "cuda",
+):
+    from .models.wan22.fastwam_hierarchical import FastWAM_Hierarchical
+
+    if isinstance(video_dit_config, DictConfig):
+        video_dit_config = OmegaConf.to_container(video_dit_config, resolve=True)
+    if not isinstance(video_dit_config, dict):
+        raise ValueError(f"`video_dit_config` must resolve to a dict, got {type(video_dit_config)}")
+
+    if isinstance(action_dit_config, DictConfig):
+        action_dit_config = OmegaConf.to_container(action_dit_config, resolve=True)
+    if action_dit_config is None:
+        action_dit_config = {}
+    if not isinstance(action_dit_config, dict):
+        raise ValueError(f"`action_dit_config` must resolve to a dict, got {type(action_dit_config)}")
+
+    if isinstance(video_scheduler, DictConfig):
+        video_scheduler = OmegaConf.to_container(video_scheduler, resolve=True)
+    if video_scheduler is None:
+        video_scheduler = {}
+    if not isinstance(video_scheduler, dict):
+        raise ValueError(f"`video_scheduler` must be dict-like, got {type(video_scheduler)}")
+
+    if isinstance(action_scheduler, DictConfig):
+        action_scheduler = OmegaConf.to_container(action_scheduler, resolve=True)
+    if action_scheduler is None:
+        raise ValueError("`action_scheduler` is required for FastWAM.")
+    if not isinstance(action_scheduler, dict):
+        raise ValueError(f"`action_scheduler` must be dict-like, got {type(action_scheduler)}")
+    required_action_scheduler_keys = {"train_shift", "infer_shift", "num_train_timesteps"}
+    missing_keys = required_action_scheduler_keys - set(action_scheduler.keys())
+    if missing_keys:
+        raise ValueError(
+            f"`action_scheduler` missing required keys: {sorted(missing_keys)}. "
+            "Expected keys: train_shift, infer_shift, num_train_timesteps."
+        )
+
+    if isinstance(loss, DictConfig):
+        loss = OmegaConf.to_container(loss, resolve=True)
+    if loss is None:
+        loss = {}
+    if not isinstance(loss, dict):
+        raise ValueError(f"`loss` must be dict-like, got {type(loss)}")
+
+    return FastWAM_Hierarchical.from_wan22_pretrained(
+        device=device,
+        torch_dtype=model_dtype,
+        model_id=model_id,
+        tokenizer_model_id=tokenizer_model_id,
+        tokenizer_max_len=int(tokenizer_max_len),
+        load_text_encoder=bool(load_text_encoder),
+        proprio_dim=(None if proprio_dim is None else int(proprio_dim)),
+        redirect_common_files=bool(redirect_common_files),
+        video_dit_config=video_dit_config,
+        action_dit_config=action_dit_config,
+        action_dit_pretrained_path=action_dit_pretrained_path,
+        skip_dit_load_from_pretrain=bool(skip_dit_load_from_pretrain),
+        mot_checkpoint_mixed_attn=bool(mot_checkpoint_mixed_attn),
+        video_train_shift=float(video_scheduler.get("train_shift", 5.0)),
+        video_infer_shift=float(video_scheduler.get("infer_shift", 5.0)),
+        video_num_train_timesteps=int(video_scheduler.get("num_train_timesteps", 1000)),
+        action_train_shift=float(action_scheduler["train_shift"]),
+        action_infer_shift=float(action_scheduler["infer_shift"]),
+        action_num_train_timesteps=int(action_scheduler["num_train_timesteps"]),
+        loss_lambda_video=float(loss.get("lambda_video", 1.0)),
+        loss_lambda_action=float(loss.get("lambda_action", 1.0)),
+        hierarchical_num_chunks=int(hierarchical_num_chunks),
+        hierarchical_chunk_action_horizon=int(hierarchical_chunk_action_horizon),
+        hierarchical_high_stride=int(hierarchical_high_stride),
+        hierarchical_low_stride=int(hierarchical_low_stride),
+        hierarchical_mask_high_predict=bool(hierarchical_mask_high_predict),
+        hierarchical_mask_low_predict=bool(hierarchical_mask_low_predict),
     )
 
 
@@ -423,14 +520,36 @@ def run_inference(cfg: DictConfig):
         "input_image": x,
         "num_frames": int(inference_cfg.num_frames),
         "num_inference_steps": int(inference_cfg.num_inference_steps),
+        "high_video_inference_steps": (
+            None
+            if inference_cfg.get("high_video_inference_steps") is None
+            else int(inference_cfg.high_video_inference_steps)
+        ),
+        "low_video_inference_steps": (
+            None
+            if inference_cfg.get("low_video_inference_steps") is None
+            else int(inference_cfg.low_video_inference_steps)
+        ),
+        "action_inference_steps": (
+            None
+            if inference_cfg.get("action_inference_steps") is None
+            else int(inference_cfg.action_inference_steps)
+        ),
         "sigma_shift": None if inference_cfg.get("sigma_shift") is None else float(inference_cfg.sigma_shift),
         "seed": int(inference_cfg.seed),
         "rand_device": str(inference_cfg.rand_device),
         "tiled": bool(inference_cfg.tiled),
     }
+    infer_sig = inspect.signature(model.infer).parameters
+    if "return_high_level_video" in infer_sig:
+        infer_kwargs["return_high_level_video"] = True
 
     infer_out = model.infer(**infer_kwargs)
     video = infer_out["video"]
     save_mp4(video, output_mp4, fps=15)
     logger.info("Saved inference video to %s", output_mp4)
+    if "video_high" in infer_out and infer_out["video_high"] is not None:
+        output_high_mp4 = str(Path(output_mp4).with_name(Path(output_mp4).stem + "_high.mp4"))
+        save_mp4(infer_out["video_high"], output_high_mp4, fps=15)
+        logger.info("Saved hierarchical high-level inference video to %s", output_high_mp4)
     return output_mp4

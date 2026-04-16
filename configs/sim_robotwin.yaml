@@ -23,9 +23,12 @@ EVALUATION:
   output_dir: ./evaluate_results/robotwin/${hydra:runtime.choices.task}/${now:%Y%m%d_%H%M%S}
 
   # Action inference
-  action_horizon: null
-  replan_steps: 24
-  num_inference_steps: ${eval_num_inference_steps}
+  action_horizon: ${oc.select:action_horizon,32}
+  replan_steps: ${oc.select:replan_steps,32}
+  num_inference_steps: ${oc.select:num_inference_steps,${eval_num_inference_steps}}
+  high_video_inference_steps: ${oc.select:high_video_inference_steps,null}
+  low_video_inference_steps: ${oc.select:low_video_inference_steps,null}
+  action_inference_steps: ${oc.select:action_inference_steps,null}
   sigma_shift: null
   text_cfg_scale: 1.0
   negative_prompt: ""

@@ -13,10 +13,18 @@ logger = get_logger(__name__)
     
 def flash_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, num_heads: int, ctx_mask: Optional[torch.Tensor] = None, compatibility_mode=True):
     if compatibility_mode:
+        batch_size = int(q.shape[0])
         q = rearrange(q, "b s (n d) -> b n s d", n=num_heads)
         k = rearrange(k, "b s (n d) -> b n s d", n=num_heads)
         v = rearrange(v, "b s (n d) -> b n s d", n=num_heads)
-        x = F.scaled_dot_product_attention(q, k, v, attn_mask=ctx_mask)
+        attn_mask = ctx_mask
+        if attn_mask is not None:
+            attn_mask = attn_mask.to(device=q.device)
+            # SDPA expects mask broadcastable to [B, H, L, S].
+            # Convert common per-sample masks [B, L, S] to [B, 1, L, S].
+            if attn_mask.ndim == 3 and int(attn_mask.shape[0]) == batch_size:
+                attn_mask = attn_mask.unsqueeze(1)
+        x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
         x = rearrange(x, "b n s d -> b s (n d)", n=num_heads)
         return x
     else:
@@ -427,8 +435,10 @@ class WanVideoDiT(torch.nn.Module):
         num_latent_frames = x.shape[2]
         if context.ndim != 3:
             raise ValueError(f"`context` must be 3D [B, L, D], got shape {tuple(context.shape)}")
-        if timestep.ndim != 1:
-            raise ValueError(f"`timestep` must be 1D [B] or [1], got shape {tuple(timestep.shape)}")
+        if timestep.ndim not in (1, 2):
+            raise ValueError(
+                f"`timestep` must be 1D [B] / [1] or 2D [B,T] / [1,T], got shape {tuple(timestep.shape)}"
+            )
         if self.action_conditioned:
             allow_text_only_single_frame = (num_latent_frames == 1 and action is None)
             if not allow_text_only_single_frame:
@@ -465,9 +475,13 @@ class WanVideoDiT(torch.nn.Module):
             raise ValueError(
                 f"`timestep` length must be 1 or batch_size({batch_size}), got {timestep.shape[0]}"
             )
+        if timestep.ndim == 2 and timestep.shape[1] != num_latent_frames:
+            raise ValueError(
+                f"2D `timestep` must have one value per latent frame ({num_latent_frames}), got {tuple(timestep.shape)}"
+            )
         if timestep.shape[0] == 1 and batch_size > 1:
             assert not self.training, "During training, timestep length must match batch_size."
-            timestep = timestep.expand(batch_size)
+            timestep = timestep.expand(batch_size, *timestep.shape[1:])
         return x, timestep, context_mask
 
     def build_video_to_video_mask(
@@ -538,11 +552,15 @@ class WanVideoDiT(torch.nn.Module):
             if not hasattr(self, "patch_size") or len(self.patch_size) < 3:
                 raise ValueError(f"Invalid dit.patch_size: {getattr(self, 'patch_size', None)}")
             
-            token_timesteps = torch.ones(
-                (batch_size, x.shape[2], tokens_per_frame),
-                dtype=timestep.dtype,
-                device=timestep.device,
-            ) * timestep.view(batch_size, 1, 1)
+            if timestep.ndim == 1:
+                frame_timesteps = timestep.view(batch_size, 1).expand(batch_size, x.shape[2])
+            else:
+                frame_timesteps = timestep
+            token_timesteps = frame_timesteps.unsqueeze(-1).expand(
+                batch_size,
+                x.shape[2],
+                tokens_per_frame,
+            ).clone()
             token_timesteps[:, 0, :] = 0
             token_timesteps = token_timesteps.reshape(batch_size, -1)
             token_t_emb = sinusoidal_embedding_1d(self.freq_dim, token_timesteps.reshape(-1))

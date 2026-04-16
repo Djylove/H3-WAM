@@ -444,6 +444,95 @@ class MoT(nn.Module):
             )
         return x
 
+    def forward_video_with_video_cache(
+        self,
+        video_tokens: torch.Tensor,
+        video_freqs: torch.Tensor,
+        video_t_mod: torch.Tensor,
+        video_context_payload: Optional[dict],
+        prefix_kv_cache: list[dict[str, torch.Tensor]],
+        attention_mask: torch.Tensor,
+        prefix_seq_len: int,
+    ) -> torch.Tensor:
+        """Run video branch with cached video prefix K/V.
+
+        The queries come from `video_tokens` (usually low-level chunk tokens), and
+        keys/values are concatenated from cached prefix K/V + current chunk K/V.
+        """
+        if "video" not in self.mixtures:
+            raise ValueError("MoT requires `video` expert for `forward_video_with_video_cache`.")
+        if len(prefix_kv_cache) != self.num_layers:
+            raise ValueError(
+                f"`prefix_kv_cache` must contain {self.num_layers} layers, got {len(prefix_kv_cache)}."
+            )
+        if attention_mask.ndim != 2:
+            raise ValueError(f"`attention_mask` must be 2D [S,S], got shape {tuple(attention_mask.shape)}")
+        if attention_mask.shape[0] != attention_mask.shape[1]:
+            raise ValueError(f"`attention_mask` must be square, got shape {tuple(attention_mask.shape)}")
+
+        video_seq_len = int(video_tokens.shape[1])
+        total_seq_len = int(prefix_seq_len) + video_seq_len
+        if attention_mask.shape[0] != total_seq_len:
+            raise ValueError(
+                "`attention_mask` seq length mismatch: "
+                f"mask={attention_mask.shape[0]} vs expected_total={total_seq_len}"
+            )
+        video_attention_mask = attention_mask[prefix_seq_len:total_seq_len, :total_seq_len]
+
+        expert = self.mixtures["video"]
+        x = video_tokens
+        for layer_idx in range(self.num_layers):
+            block = expert.blocks[layer_idx]
+            (
+                q_video,
+                k_video,
+                v_video,
+                residual_x,
+                gate_msa,
+                shift_mlp,
+                scale_mlp,
+                gate_mlp,
+                use_gradient_checkpointing,
+            ) = self._build_expert_attention_io(
+                expert=expert,
+                block=block,
+                x=x,
+                freqs=video_freqs,
+                t_mod=video_t_mod,
+            )
+
+            layer_cache = prefix_kv_cache[layer_idx]
+            if "k" not in layer_cache or "v" not in layer_cache:
+                raise ValueError(f"`prefix_kv_cache[{layer_idx}]` must contain `k` and `v`.")
+
+            k_prefix = layer_cache["k"]
+            v_prefix = layer_cache["v"]
+            if k_prefix.shape[1] != prefix_seq_len or v_prefix.shape[1] != prefix_seq_len:
+                raise ValueError(
+                    f"`prefix_kv_cache[{layer_idx}]` seq len mismatch, expected {prefix_seq_len}."
+                )
+
+            k_cat = torch.cat([k_prefix, k_video], dim=1)
+            v_cat = torch.cat([v_prefix, v_video], dim=1)
+            mixed = self._mixed_attention(
+                q_cat=q_video,
+                k_cat=k_cat,
+                v_cat=v_cat,
+                attention_mask=video_attention_mask,
+            )
+            x = self._apply_post_with_optional_checkpoint(
+                block=block,
+                residual_x=residual_x,
+                gate_msa=gate_msa,
+                shift_mlp=shift_mlp,
+                scale_mlp=scale_mlp,
+                gate_mlp=gate_mlp,
+                use_gradient_checkpointing=use_gradient_checkpointing,
+                mixed_slice=mixed,
+                context_payload=video_context_payload,
+            )
+        return x
+
     def forward(
         self,
         embeds_all: Dict[str, torch.Tensor],
@@ -462,10 +551,16 @@ class MoT(nn.Module):
         if missing:
             raise ValueError(f"Missing expert t_mod for {missing}")
 
-        if attention_mask.ndim != 2:
-            raise ValueError(f"`attention_mask` must be 2D [S, S], got shape {tuple(attention_mask.shape)}")
-        if attention_mask.shape[0] != attention_mask.shape[1]:
-            raise ValueError(f"`attention_mask` must be square, got shape {tuple(attention_mask.shape)}")
+        if attention_mask.ndim == 2:
+            if attention_mask.shape[0] != attention_mask.shape[1]:
+                raise ValueError(f"`attention_mask` must be square, got shape {tuple(attention_mask.shape)}")
+        elif attention_mask.ndim == 3:
+            if attention_mask.shape[1] != attention_mask.shape[2]:
+                raise ValueError(f"`attention_mask` must be square on last dims, got shape {tuple(attention_mask.shape)}")
+        else:
+            raise ValueError(
+                f"`attention_mask` must be 2D [S,S] or 3D [B,S,S], got shape {tuple(attention_mask.shape)}"
+            )
 
         tokens_all = {k: v for k, v in embeds_all.items()}
 
@@ -521,11 +616,23 @@ class MoT(nn.Module):
             v_cat = torch.cat(v_chunks, dim=1)
 
             total_seq = q_cat.shape[1]
-            if attention_mask.shape[0] != total_seq:
-                raise ValueError(
-                    "Attention mask seq length mismatch: "
-                    f"mask={attention_mask.shape[0]} vs tokens={total_seq}"
-                )
+            if attention_mask.ndim == 2:
+                if attention_mask.shape[0] != total_seq:
+                    raise ValueError(
+                        "Attention mask seq length mismatch: "
+                        f"mask={attention_mask.shape[0]} vs tokens={total_seq}"
+                    )
+            else:
+                if attention_mask.shape[1] != total_seq:
+                    raise ValueError(
+                        "Attention mask seq length mismatch: "
+                        f"mask={attention_mask.shape[1]} vs tokens={total_seq}"
+                    )
+                if attention_mask.shape[0] != q_cat.shape[0]:
+                    raise ValueError(
+                        "3D attention mask batch mismatch: "
+                        f"mask_batch={attention_mask.shape[0]} vs tokens_batch={q_cat.shape[0]}"
+                    )
 
             mixed = self._mixed_attention(q_cat=q_cat, k_cat=k_cat, v_cat=v_cat, attention_mask=attention_mask)
 
