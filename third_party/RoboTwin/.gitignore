@@ -20,6 +20,7 @@ assets/*
 !assets/files
 
 policy/weights/*
+policy/fastwam_policy
 
 envs/curobo/*
 
