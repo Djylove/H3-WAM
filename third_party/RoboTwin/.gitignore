@@ -23,7 +23,7 @@ policy/weights/*
 policy/fastwam_policy
 
 envs/curobo/*
-
+curobo/
 .vscode
 /config.json
 
