@@ -12,6 +12,7 @@ evaluate_results/
 
 
 # ai coding
+.codex
 .codex/
 .claude/
 

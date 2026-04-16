@@ -147,6 +147,9 @@ class WorldActionRobotWinPolicy:
         action_horizon: int,
         replan_steps: int,
         num_inference_steps: int,
+        high_video_inference_steps: Optional[int],
+        low_video_inference_steps: Optional[int],
+        action_inference_steps: Optional[int],
         sigma_shift: Optional[float],
         seed: Optional[int],
         text_cfg_scale: float,
@@ -167,9 +170,53 @@ class WorldActionRobotWinPolicy:
         dataset_stats = load_dataset_stats_from_json(str(dataset_stats_path))
         self.processor.set_normalizer_from_stats(dataset_stats)
 
+        self._num_video_frames = int(num_video_frames)
+        self._is_hierarchical_model = callable(getattr(self.model, "infer_hierarchical", None))
+        # Post-action observations for the current chunk (one frame per executed action).
+        self._observed_exec_frames: list[torch.Tensor] = []
+        self._observed_chunk_videos: list[torch.Tensor] = []
+        # Block seed frame (current observation at block start).
+        self._chunk_start_frame: Optional[torch.Tensor] = None
+        self._obs_downsample_stride = 8
+        self._max_observed_chunks: int = int(getattr(self.model, "hierarchical_num_chunks", 4))
+        self._chunk_idx_in_block: int = 0
+        self._chunk_video_frames: int = self._num_video_frames
+        self._last_action_executed: bool = False
+        self._chunk_executed_actions: int = 0
+
         self.action_horizon = int(action_horizon)
-        self.replan_steps = int(max(1, min(replan_steps, action_horizon)))
+        if self._is_hierarchical_model:
+            chunk_horizon = int(getattr(self.model, "hierarchical_chunk_action_horizon", self.action_horizon))
+            if self.action_horizon != chunk_horizon:
+                logger.warning(
+                    "Hierarchical policy requires single-chunk action_horizon=%d, but got %d. Overriding.",
+                    chunk_horizon,
+                    self.action_horizon,
+                )
+                self.action_horizon = chunk_horizon
+            block_chunks = max(1, self._max_observed_chunks)
+            full_transitions = max(1, self._num_video_frames - 1)
+            if full_transitions % block_chunks == 0:
+                self._chunk_video_frames = full_transitions // block_chunks + 1
+            else:
+                logger.warning(
+                    "Cannot evenly split full transitions=%d by block_chunks=%d; use full num_video_frames=%d.",
+                    full_transitions,
+                    block_chunks,
+                    self._num_video_frames,
+                )
+        self.replan_steps = int(max(1, min(replan_steps, self.action_horizon)))
+        if self._is_hierarchical_model and self.replan_steps != self.action_horizon:
+            logger.warning(
+                "Hierarchical policy expects full chunk execution with replan_steps=action_horizon=%d, but got %d. Overriding.",
+                self.action_horizon,
+                self.replan_steps,
+            )
+            self.replan_steps = self.action_horizon
         self.num_inference_steps = int(num_inference_steps)
+        self.high_video_inference_steps = high_video_inference_steps
+        self.low_video_inference_steps = low_video_inference_steps
+        self.action_inference_steps = action_inference_steps
         self.sigma_shift = sigma_shift
         self.seed = seed
         self.text_cfg_scale = float(text_cfg_scale)
@@ -177,7 +224,6 @@ class WorldActionRobotWinPolicy:
         self.rand_device = str(rand_device)
         self.tiled = bool(tiled)
         self.timing_enabled = bool(timing_enabled)
-        self._num_video_frames = int(num_video_frames)
 
         self.pending_actions: deque[np.ndarray] = deque()
         self.episode_count = 0
@@ -239,7 +285,7 @@ class WorldActionRobotWinPolicy:
         proprio = self._normalize_state(state_vector)
 
         prompt = DEFAULT_PROMPT.format(task=instruction)
-        infer_kwargs = {
+        infer_action_kwargs = {
             "prompt": prompt,
             "input_image": image_tensor,
             "action_horizon": self.action_horizon,
@@ -252,13 +298,33 @@ class WorldActionRobotWinPolicy:
             "rand_device": self.rand_device,
             "tiled": self.tiled,
         }
-        if "num_video_frames" in inspect.signature(self.model.infer_action).parameters:
-            infer_kwargs["num_video_frames"] = int(self._num_video_frames)
+
+        infer_action_fn = getattr(self.model, "infer_action", None)
+        if not callable(infer_action_fn):
+            raise AttributeError("Model must provide `infer_action` for policy inference.")
+        infer_action_sig = inspect.signature(infer_action_fn).parameters
+        if "num_video_frames" in infer_action_sig:
+            infer_action_kwargs["num_video_frames"] = int(
+                self._chunk_video_frames if self._is_hierarchical_model else self._num_video_frames
+            )
+        if "high_video_inference_steps" in infer_action_sig:
+            infer_action_kwargs["high_video_inference_steps"] = self.high_video_inference_steps
+        if "low_video_inference_steps" in infer_action_sig:
+            infer_action_kwargs["low_video_inference_steps"] = self.low_video_inference_steps
+        if "action_inference_steps" in infer_action_sig:
+            infer_action_kwargs["action_inference_steps"] = self.action_inference_steps
+        if self._is_hierarchical_model and "observed_chunk_videos" in infer_action_sig and len(self._observed_chunk_videos) > 0:
+            infer_action_kwargs["observed_chunk_videos"] = list(self._observed_chunk_videos)
+
         infer_t0 = time.perf_counter() if self.timing_enabled else 0.0
         with torch.no_grad():
-            pred = self.model.infer_action(**infer_kwargs)
+            pred = infer_action_fn(**infer_action_kwargs)
         if self.timing_enabled:
             self._timing_rollout["infer_s"] += time.perf_counter() - infer_t0
+
+        # Start a new chunk rollout window for post-action observations.
+        self._observed_exec_frames.clear()
+        self._chunk_executed_actions = 0
 
         action_tensor = pred["action"]  # [T, D]
         action_chunk = self._denormalize_action(action_tensor)[0]  # [T, D]
@@ -267,19 +333,83 @@ class WorldActionRobotWinPolicy:
     def _fill_action_queue(self, observation: Dict[str, Any], instruction: str) -> None:
         action_chunk = self._infer_action_chunk(observation=observation, instruction=instruction)
         n_exec = min(self.replan_steps, action_chunk.shape[0])
+        if self._is_hierarchical_model:
+            logger.info(
+                "Hierarchical block rollout | chunk=%d/%d | exec_steps=%d",
+                self._chunk_idx_in_block + 1,
+                self._max_observed_chunks,
+                n_exec,
+            )
         for i in range(n_exec):
             self.pending_actions.append(np.asarray(action_chunk[i], dtype=np.float32))
 
+    def _finalize_observed_chunk_video(self, current_frame: torch.Tensor) -> None:
+        if not self._is_hierarchical_model:
+            self._observed_exec_frames.clear()
+            return
+        if self._chunk_start_frame is None or len(self._observed_exec_frames) == 0:
+            self._observed_exec_frames.clear()
+            self._chunk_executed_actions = 0
+            return
+
+        if self._chunk_executed_actions != self.action_horizon:
+            logger.warning(
+                "Expected %d executed actions per chunk, got %d.",
+                self.action_horizon,
+                self._chunk_executed_actions,
+            )
+
+        # Strict stride downsample over post-action observations.
+        sampled = self._observed_exec_frames[:: self._obs_downsample_stride]
+
+        if len(self._observed_chunk_videos) == 0:
+            self._observed_chunk_videos.append(self._chunk_start_frame)
+        for frame in sampled:
+            if not torch.equal(self._observed_chunk_videos[-1], frame):
+                self._observed_chunk_videos.append(frame)
+
+        self._observed_exec_frames.clear()
+        self._chunk_executed_actions = 0
+        self._chunk_idx_in_block += 1
+
+        if self._chunk_idx_in_block >= self._max_observed_chunks:
+            # Start next block from current observation frame.
+            self._chunk_start_frame = current_frame
+            self._observed_chunk_videos = [self._chunk_start_frame]
+            self._chunk_idx_in_block = 0
+
     def should_request_observation(self) -> bool:
+        if self._is_hierarchical_model:
+            return True
         return not self.pending_actions
 
     def step(self, task_env, observation: Optional[Dict[str, Any]]) -> None:
+        frame: Optional[torch.Tensor] = None
+        if self._is_hierarchical_model and observation is not None:
+            frame = self._build_robotwin_image_tensor(observation)[0].detach()
+
+            # Observation at this step is the post-action frame of previous step.
+            if self._last_action_executed:
+                self._observed_exec_frames.append(frame)
+                self._last_action_executed = False
+
         if not self.pending_actions:
             if observation is None:
                 raise ValueError(
                     "Observation is required when action queue is empty "
                     "(replan step for fastwam)."
                 )
+            if self._is_hierarchical_model and self.step_count > 0:
+                if frame is None:
+                    raise ValueError("Hierarchical policy requires current frame when finalizing chunk.")
+                self._finalize_observed_chunk_video(current_frame=frame)
+            if self._is_hierarchical_model:
+                if frame is None:
+                    raise ValueError("Hierarchical policy requires current frame for planning.")
+                if self._chunk_start_frame is None:
+                    self._chunk_start_frame = frame
+                if len(self._observed_chunk_videos) == 0:
+                    self._observed_chunk_videos.append(self._chunk_start_frame)
             instruction = task_env.get_instruction()
             self._fill_action_queue(observation=observation, instruction=instruction)
 
@@ -290,6 +420,9 @@ class WorldActionRobotWinPolicy:
         action = self.pending_actions.popleft()
         sim_t0 = time.perf_counter() if self.timing_enabled else 0.0
         task_env.take_action(action, action_type="qpos")
+        if self._is_hierarchical_model:
+            self._last_action_executed = True
+            self._chunk_executed_actions += 1
         if self.timing_enabled:
             self._timing_rollout["sim_s"] += time.perf_counter() - sim_t0
         self.step_count += 1
@@ -306,6 +439,12 @@ class WorldActionRobotWinPolicy:
 
     def reset(self) -> None:
         self.pending_actions.clear()
+        self._observed_exec_frames.clear()
+        self._observed_chunk_videos.clear()
+        self._chunk_start_frame = None
+        self._chunk_idx_in_block = 0
+        self._last_action_executed = False
+        self._chunk_executed_actions = 0
         self.episode_count += 1
         self.step_count = 0
         self.reset_timing_rollout()
@@ -356,6 +495,16 @@ def get_model(usr_args: Dict[str, Any]):
     if num_inference_steps is None:
         num_inference_steps = int(cfg.EVALUATION.get("num_inference_steps", cfg.eval_num_inference_steps))
 
+    high_video_inference_steps = _parse_optional_int(usr_args.get("high_video_inference_steps"))
+    if high_video_inference_steps is None:
+        high_video_inference_steps = _parse_optional_int(cfg.EVALUATION.get("high_video_inference_steps"))
+    low_video_inference_steps = _parse_optional_int(usr_args.get("low_video_inference_steps"))
+    if low_video_inference_steps is None:
+        low_video_inference_steps = _parse_optional_int(cfg.EVALUATION.get("low_video_inference_steps"))
+    action_inference_steps = _parse_optional_int(usr_args.get("action_inference_steps"))
+    if action_inference_steps is None:
+        action_inference_steps = _parse_optional_int(cfg.EVALUATION.get("action_inference_steps"))
+
     sigma_shift = _parse_optional_float(usr_args.get("sigma_shift"))
     if sigma_shift is None:
         sigma_shift = _parse_optional_float(cfg.EVALUATION.get("sigma_shift"))
@@ -379,6 +528,9 @@ def get_model(usr_args: Dict[str, Any]):
         action_horizon=action_horizon,
         replan_steps=replan_steps,
         num_inference_steps=num_inference_steps,
+        high_video_inference_steps=high_video_inference_steps,
+        low_video_inference_steps=low_video_inference_steps,
+        action_inference_steps=action_inference_steps,
         sigma_shift=sigma_shift,
         seed=seed,
         text_cfg_scale=text_cfg_scale,

@@ -9,6 +9,7 @@ import time
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from accelerate import Accelerator
 from omegaconf import DictConfig
 from PIL import Image
@@ -395,7 +396,13 @@ class Wan22Trainer:
         prompt = sample["prompt"][0]
         video0 = sample["video"][0] # Tensor [3, T, H, W] in (-1, 1)
         action = sample["action"][0] if "action" in sample and sample["action"] is not None else None
-        proprio = sample["proprio"][0, 0] if "proprio" in sample and sample["proprio"] is not None else None # from [1, T, d] to [d]
+        if "proprio" in sample and sample["proprio"] is not None:
+            if hasattr(model, "hierarchical_num_chunks"):
+                proprio = sample["proprio"][0]
+            else:
+                proprio = sample["proprio"][0, 0]  # from [1, T, d] to [d]
+        else:
+            proprio = None
         input_image = video0[:, 0].unsqueeze(0)
         _, num_frames, _, _ = video0.shape
 
@@ -418,12 +425,17 @@ class Wan22Trainer:
             infer_kwargs["context_mask"] = sample["context_mask"][0]
         else:
             infer_kwargs["prompt"] = prompt
+        if hasattr(model, "hierarchical_num_chunks"):
+            infer_kwargs["gt_video"] = video0
+        if "return_high_level_video" in inspect.signature(model.infer).parameters:
+            infer_kwargs["return_high_level_video"] = True
 
         pred = model.infer(
             **infer_kwargs,
         )
         
         pred_video = pred["video"]
+        pred_video_high_chunk0 = pred.get("video_high_chunk0", None)
         pred_action = pred.get("action", None)
 
         # 3. inference metrics against GT video
@@ -525,6 +537,37 @@ class Wan22Trainer:
         )
         save_mp4(stitched_frames, video_path, fps=8)
 
+        video_high_chunk0_path = None
+        if pred_video_high_chunk0 is not None:
+            pred_video_high_chunk0_tensor = pil_frames_to_video_tensor(pred_video_high_chunk0)
+            chunk0_high_h = pred_video_high_chunk0_tensor.shape[2]
+            chunk0_high_w = pred_video_high_chunk0_tensor.shape[3]
+            gt_for_chunk0_high = F.interpolate(
+                gt_video_tensor.unsqueeze(0),
+                size=(pred_video_high_chunk0_tensor.shape[1], chunk0_high_h, chunk0_high_w),
+                mode="trilinear",
+                align_corners=False,
+            ).squeeze(0)
+            chunk0_high_stitched = torch.cat(
+                [pred_video_high_chunk0_tensor, gt_for_chunk0_high],
+                dim=2,
+            ).contiguous()
+            chunk0_high_frames = []
+            for t in range(chunk0_high_stitched.shape[1]):
+                frame = (
+                    chunk0_high_stitched[:, t]
+                    .permute(1, 2, 0)
+                    .clamp(0.0, 1.0)
+                    .numpy()
+                    * 255.0
+                ).astype(np.uint8)
+                chunk0_high_frames.append(Image.fromarray(frame))
+            video_high_chunk0_path = os.path.join(
+                self.eval_dir,
+                f"step_{self.global_step:06d}_rank_{self.accelerator.process_index:03d}_high_chunk0.mp4",
+            )
+            save_mp4(chunk0_high_frames, video_high_chunk0_path, fps=8)
+
         local_metrics = torch.tensor(
             [
                 float(val_loss),
@@ -558,6 +601,8 @@ class Wan22Trainer:
             "ssim_dg": float(mean_metrics[6].item()),
             "video_path": video_path,
         }
+        if video_high_chunk0_path is not None:
+            result["video_high_chunk0_path"] = video_high_chunk0_path
         if action_l2_mean is not None:
             result["action_l2"] = float(action_l2_mean)
         if action_l1_mean is not None:
