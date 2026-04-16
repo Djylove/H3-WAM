@@ -28,7 +28,7 @@ train:
   camera_key: null
   val_set_proportion: 0.01
   is_training_set: true
-  pretrained_norm_stats: ./runs/robotwin_idm_3cam_384_1e-4/2026-04-02_11-34-08/dataset_stats.json
+  pretrained_norm_stats: ./data/robotwin2.0/dataset_stats.json
   skip_padding_as_possible: false
   concat_multi_camera: "robotwin"
   processor:
@@ -91,7 +91,7 @@ val:
   camera_key: null
   val_set_proportion: 0.01
   is_training_set: false
-  pretrained_norm_stats: ./runs/robotwin_idm_3cam_384_1e-4/2026-04-02_11-34-08/dataset_stats.json
+  pretrained_norm_stats: ./data/robotwin2.0/dataset_stats.json
   skip_padding_as_possible: false
   concat_multi_camera: "robotwin"
   processor:
