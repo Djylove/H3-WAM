@@ -254,7 +254,10 @@ bash scripts/train_zero1.sh 8 task=libero_uncond_2cam224_1e-4
 
 # RoboTwin
 bash scripts/train_zero1.sh 8 task=robotwin_uncond_3cam_384_1e-4
+
+bash scripts/train_zero1.sh 8 task=robotwin_hierarchical_3cam_384_1e-4
 ```
+## We are currently testing based on the hierarchical model and the Robotwin environment.
 
 For LIBERO, we train on a single node with 8 GPUs. For RoboTwin, we use 64 GPUs to accelerate training. You can try reducing the GPU count or training epochs.
 
@@ -287,6 +290,7 @@ Common `task_name` examples:
 ```text
 libero_uncond_2cam224_1e-4
 robotwin_uncond_3cam_384_1e-4
+robotwin_hierarchical_3cam_384_1e-4
 ```
 
 ## Acknowledgements
