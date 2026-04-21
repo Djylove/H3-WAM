@@ -44,6 +44,15 @@ class Wan22Trainer:
         self.save_every = int(cfg.save_every)
         self.eval_every = int(cfg.eval_every)
         self.eval_num_inference_steps = int(cfg.eval_num_inference_steps)
+        self.eval_high_video_inference_steps = self._parse_optional_int(
+            cfg.get("high_video_inference_steps", None)
+        )
+        self.eval_low_video_inference_steps = self._parse_optional_int(
+            cfg.get("low_video_inference_steps", None)
+        )
+        self.eval_action_inference_steps = self._parse_optional_int(
+            cfg.get("action_inference_steps", None)
+        )
         self.gradient_accumulation_steps = int(cfg.gradient_accumulation_steps)
         self.max_grad_norm = float(cfg.max_grad_norm)
         self.seed = int(cfg.seed)
@@ -296,6 +305,15 @@ class Wan22Trainer:
             proprio_encoder.requires_grad_(True)
 
     @staticmethod
+    def _parse_optional_int(value):
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        if text in {"", "none", "null"}:
+            return None
+        return int(value)
+
+    @staticmethod
     def _to_batched_eval_sample(sample):
         video = sample["video"]
         prompt = sample["prompt"]
@@ -427,6 +445,9 @@ class Wan22Trainer:
             infer_kwargs["prompt"] = prompt
         if hasattr(model, "hierarchical_num_chunks"):
             infer_kwargs["gt_video"] = video0
+            infer_kwargs["high_video_inference_steps"] = self.eval_high_video_inference_steps
+            infer_kwargs["low_video_inference_steps"] = self.eval_low_video_inference_steps
+            infer_kwargs["action_inference_steps"] = self.eval_action_inference_steps
         if "return_high_level_video" in inspect.signature(model.infer).parameters:
             infer_kwargs["return_high_level_video"] = True
 

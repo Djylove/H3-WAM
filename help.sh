@@ -8,11 +8,29 @@ bash scripts/train_zero1.sh 8 task=robotwin_uncond_3cam_384_1e-4
 
 export WANDB_API_KEY=b8182b57eaa10a6c93943291158ee2f086aae4eb
 
+export CUDA_VISIBLE_DEVICES=1,2
 
 cd /mnt/cpfs/wxy/FastWAM && \
 bash scripts/train_zero1_dlc_multinode.sh \
   --wandb-key b8182b57eaa10a6c93943291158ee2f086aae4eb \
   task=robotwin_hierarchical_3cam_384_1e-4
+
+python experiments/robotwin/run_robotwin_manager.py \
+  task=robotwin_uncond_3cam_384_1e-4 \
+  ckpt=./checkpoints/fastwam_release/robotwin_uncond_3cam_384.pt \
+  EVALUATION.dataset_stats_path=./checkpoints/fastwam_release/robotwin_uncond_3cam_384_dataset_stats.json \
+  MULTIRUN.num_gpus=1
+
+python experiments/robotwin/run_robotwin_manager.py \
+  task=robotwin_hierarchical_3cam_384_1e-4 \
+  ckpt=runs/robotwin_hierarchical_3cam_384_1e-4/2026-04-16_16-49-09/checkpoints/weights/step_187862.pt \
+  EVALUATION.dataset_stats_path=runs/robotwin_hierarchical_3cam_384_1e-4/2026-04-16_16-49-09/dataset_stats.json \
+  MULTIRUN.num_gpus=4
+
+python experiments/robotwin/run_robotwin_manager.py \
+  task=robotwin_hierarchical_3cam_384_1e-4 \
+  ckpt=runs/robotwin_hierarchical_3cam_384_1e-4/2026-04-16_16-49-09/checkpoints/weights/step_187862.pt \
+  MULTIRUN.num_gpus=4
 
 # cd /mnt/cpfs/wxy/FastWAM && python scripts/train_ray_multinode.py \
 #   --address auto \
@@ -24,3 +42,4 @@ bash scripts/train_zero1_dlc_multinode.sh \
 #   --conda-sh /mnt/cpfs/wxy/miniconda3/etc/profile.d/conda.sh \
 #   --conda-env fastwam \
 #   -- task=robotwin_hierarchical_3cam_384_1e-4
+

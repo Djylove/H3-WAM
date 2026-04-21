@@ -12,6 +12,8 @@ num_workers: 8
 model:
   mot_checkpoint_mixed_attn: false
 
+replan_steps: 24
+
 # scheduler
 lr_scheduler_type: "cosine"
 learning_rate: 1e-4

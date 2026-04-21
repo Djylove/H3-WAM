@@ -47,6 +47,37 @@ def _resolve_ckpt_tag(ckpt_path: Path) -> str:
     return ckpt_path.stem
 
 
+def _resolve_gpu_ids(num_gpus: int) -> list[int]:
+    """Resolve worker GPU IDs from parent CUDA_VISIBLE_DEVICES when possible.
+
+    If CUDA_VISIBLE_DEVICES is set to a CSV list (e.g. "2,3,4"), logical worker
+    slots 0..N-1 will map to those physical IDs. If it is unset or "all", this
+    falls back to 0..N-1.
+    """
+    raw_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
+    if raw_visible == "" or raw_visible.lower() == "all":
+        return list(range(num_gpus))
+
+    visible_tokens = [token.strip() for token in raw_visible.split(",") if token.strip() != ""]
+    if len(visible_tokens) == 0:
+        return list(range(num_gpus))
+
+    try:
+        visible_ids = [int(token) for token in visible_tokens]
+    except ValueError as exc:
+        raise ValueError(
+            "CUDA_VISIBLE_DEVICES must be a comma-separated list of integer GPU IDs "
+            f"for this manager, got: {raw_visible}"
+        ) from exc
+
+    if num_gpus > len(visible_ids):
+        raise ValueError(
+            f"MULTIRUN.num_gpus={num_gpus} exceeds visible GPUs ({len(visible_ids)}) "
+            f"from CUDA_VISIBLE_DEVICES={raw_visible}."
+        )
+    return visible_ids[:num_gpus]
+
+
 def _is_blocked_override(raw_override: str) -> bool:
     key = raw_override.split("=", 1)[0].lstrip("+~")
     if key in {
@@ -152,7 +183,7 @@ def main(cfg: DictConfig):
     max_tasks_per_gpu = int(cfg.MULTIRUN.max_tasks_per_gpu)
     if max_tasks_per_gpu <= 0:
         raise ValueError("`MULTIRUN.max_tasks_per_gpu` must be > 0.")
-    gpu_ids = list(range(num_gpus))
+    gpu_ids = _resolve_gpu_ids(num_gpus)
 
     output_dir = _resolve_path(str(cfg.EVALUATION.output_dir), base=PROJECT_ROOT)
     run_ts = output_dir.name

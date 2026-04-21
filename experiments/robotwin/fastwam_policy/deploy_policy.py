@@ -149,6 +149,8 @@ class WorldActionRobotWinPolicy:
         num_inference_steps: int,
         high_video_inference_steps: Optional[int],
         low_video_inference_steps: Optional[int],
+        high_denoise_step: Optional[int],
+        low_denoise_step: Optional[int],
         action_inference_steps: Optional[int],
         sigma_shift: Optional[float],
         seed: Optional[int],
@@ -216,6 +218,8 @@ class WorldActionRobotWinPolicy:
         self.num_inference_steps = int(num_inference_steps)
         self.high_video_inference_steps = high_video_inference_steps
         self.low_video_inference_steps = low_video_inference_steps
+        self.high_denoise_step = high_denoise_step
+        self.low_denoise_step = low_denoise_step
         self.action_inference_steps = action_inference_steps
         self.sigma_shift = sigma_shift
         self.seed = seed
@@ -311,6 +315,10 @@ class WorldActionRobotWinPolicy:
             infer_action_kwargs["high_video_inference_steps"] = self.high_video_inference_steps
         if "low_video_inference_steps" in infer_action_sig:
             infer_action_kwargs["low_video_inference_steps"] = self.low_video_inference_steps
+        if "high_denoise_step" in infer_action_sig:
+            infer_action_kwargs["high_denoise_step"] = self.high_denoise_step
+        if "low_denoise_step" in infer_action_sig:
+            infer_action_kwargs["low_denoise_step"] = self.low_denoise_step
         if "action_inference_steps" in infer_action_sig:
             infer_action_kwargs["action_inference_steps"] = self.action_inference_steps
         if self._is_hierarchical_model and "observed_chunk_videos" in infer_action_sig and len(self._observed_chunk_videos) > 0:
@@ -501,6 +509,12 @@ def get_model(usr_args: Dict[str, Any]):
     low_video_inference_steps = _parse_optional_int(usr_args.get("low_video_inference_steps"))
     if low_video_inference_steps is None:
         low_video_inference_steps = _parse_optional_int(cfg.EVALUATION.get("low_video_inference_steps"))
+    high_denoise_step = _parse_optional_int(usr_args.get("high_denoise_step"))
+    if high_denoise_step is None:
+        high_denoise_step = _parse_optional_int(cfg.EVALUATION.get("high_denoise_step"))
+    low_denoise_step = _parse_optional_int(usr_args.get("low_denoise_step"))
+    if low_denoise_step is None:
+        low_denoise_step = _parse_optional_int(cfg.EVALUATION.get("low_denoise_step"))
     action_inference_steps = _parse_optional_int(usr_args.get("action_inference_steps"))
     if action_inference_steps is None:
         action_inference_steps = _parse_optional_int(cfg.EVALUATION.get("action_inference_steps"))
@@ -530,6 +544,8 @@ def get_model(usr_args: Dict[str, Any]):
         num_inference_steps=num_inference_steps,
         high_video_inference_steps=high_video_inference_steps,
         low_video_inference_steps=low_video_inference_steps,
+        high_denoise_step=high_denoise_step,
+        low_denoise_step=low_denoise_step,
         action_inference_steps=action_inference_steps,
         sigma_shift=sigma_shift,
         seed=seed,

@@ -533,6 +533,97 @@ class MoT(nn.Module):
             )
         return x
 
+    def prefill_video_cache_with_prefix(
+        self,
+        video_tokens: torch.Tensor,
+        video_freqs: torch.Tensor,
+        video_t_mod: torch.Tensor,
+        video_context_payload: Optional[dict],
+        prefix_kv_cache: list[dict[str, torch.Tensor]],
+        attention_mask: torch.Tensor,
+        prefix_seq_len: int,
+    ) -> list[dict[str, torch.Tensor]]:
+        """Prefill current video-token cache while attending to cached video prefix.
+
+        This is used when low-level video tokens must first attend corresponding
+        high-level cached tokens, then expose low-only per-layer K/V for action decoding.
+        """
+        if "video" not in self.mixtures:
+            raise ValueError("MoT requires `video` expert for `prefill_video_cache_with_prefix`.")
+        if len(prefix_kv_cache) != self.num_layers:
+            raise ValueError(
+                f"`prefix_kv_cache` must contain {self.num_layers} layers, got {len(prefix_kv_cache)}."
+            )
+        if attention_mask.ndim != 2:
+            raise ValueError(f"`attention_mask` must be 2D [S,S], got shape {tuple(attention_mask.shape)}")
+        if attention_mask.shape[0] != attention_mask.shape[1]:
+            raise ValueError(f"`attention_mask` must be square, got shape {tuple(attention_mask.shape)}")
+
+        video_seq_len = int(video_tokens.shape[1])
+        total_seq_len = int(prefix_seq_len) + video_seq_len
+        if attention_mask.shape[0] != total_seq_len:
+            raise ValueError(
+                "`attention_mask` seq length mismatch: "
+                f"mask={attention_mask.shape[0]} vs expected_total={total_seq_len}"
+            )
+        video_attention_mask = attention_mask[prefix_seq_len:total_seq_len, :total_seq_len]
+
+        expert = self.mixtures["video"]
+        x = video_tokens
+        low_kv_cache: list[dict[str, torch.Tensor]] = []
+        for layer_idx in range(self.num_layers):
+            block = expert.blocks[layer_idx]
+            (
+                q_video,
+                k_video,
+                v_video,
+                residual_x,
+                gate_msa,
+                shift_mlp,
+                scale_mlp,
+                gate_mlp,
+                use_gradient_checkpointing,
+            ) = self._build_expert_attention_io(
+                expert=expert,
+                block=block,
+                x=x,
+                freqs=video_freqs,
+                t_mod=video_t_mod,
+            )
+
+            layer_cache = prefix_kv_cache[layer_idx]
+            if "k" not in layer_cache or "v" not in layer_cache:
+                raise ValueError(f"`prefix_kv_cache[{layer_idx}]` must contain `k` and `v`.")
+
+            k_prefix = layer_cache["k"]
+            v_prefix = layer_cache["v"]
+            if k_prefix.shape[1] != prefix_seq_len or v_prefix.shape[1] != prefix_seq_len:
+                raise ValueError(
+                    f"`prefix_kv_cache[{layer_idx}]` seq len mismatch, expected {prefix_seq_len}."
+                )
+
+            k_cat = torch.cat([k_prefix, k_video], dim=1)
+            v_cat = torch.cat([v_prefix, v_video], dim=1)
+            mixed = self._mixed_attention(
+                q_cat=q_video,
+                k_cat=k_cat,
+                v_cat=v_cat,
+                attention_mask=video_attention_mask,
+            )
+            x = self._apply_post_with_optional_checkpoint(
+                block=block,
+                residual_x=residual_x,
+                gate_msa=gate_msa,
+                shift_mlp=shift_mlp,
+                scale_mlp=scale_mlp,
+                gate_mlp=gate_mlp,
+                use_gradient_checkpointing=use_gradient_checkpointing,
+                mixed_slice=mixed,
+                context_payload=video_context_payload,
+            )
+            low_kv_cache.append({"k": k_video, "v": v_video})
+        return low_kv_cache
+
     def forward(
         self,
         embeds_all: Dict[str, torch.Tensor],

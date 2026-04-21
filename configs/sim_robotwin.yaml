@@ -28,6 +28,8 @@ EVALUATION:
   num_inference_steps: ${oc.select:num_inference_steps,${eval_num_inference_steps}}
   high_video_inference_steps: ${oc.select:high_video_inference_steps,null}
   low_video_inference_steps: ${oc.select:low_video_inference_steps,null}
+  high_denoise_step: ${oc.select:high_denoise_step,null}
+  low_denoise_step: ${oc.select:low_denoise_step,null}
   action_inference_steps: ${oc.select:action_inference_steps,null}
   sigma_shift: null
   text_cfg_scale: 1.0
