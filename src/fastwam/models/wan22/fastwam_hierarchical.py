@@ -46,6 +46,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         hierarchical_low_stride: int = 4,
         hierarchical_mask_high_predict: bool = False,
         hierarchical_mask_low_predict: bool = False,
+        hierarchical_high_select: str = "boundary",
     ):
         super().__init__()
         self.video_expert = video_expert
@@ -110,12 +111,17 @@ class FastWAM_Hierarchical(torch.nn.Module):
         self.hierarchical_low_stride = int(hierarchical_low_stride)
         self.hierarchical_mask_high_predict = bool(hierarchical_mask_high_predict)
         self.hierarchical_mask_low_predict = bool(hierarchical_mask_low_predict)
+        self.hierarchical_high_select = self._normalize_high_select(hierarchical_high_select)
         if self.hierarchical_num_chunks <= 0:
             raise ValueError("`hierarchical_num_chunks` must be positive.")
         if self.hierarchical_chunk_action_horizon <= 0:
             raise ValueError("`hierarchical_chunk_action_horizon` must be positive.")
         if self.hierarchical_high_stride <= 0 or self.hierarchical_low_stride <= 0:
             raise ValueError("`hierarchical_high_stride` and `hierarchical_low_stride` must be positive.")
+
+        hidden_dim = int(getattr(self.video_expert, "hidden_dim"))
+        self.hierarchical_level_embedding = nn.Embedding(2, hidden_dim).to(dtype=torch_dtype)
+        nn.init.normal_(self.hierarchical_level_embedding.weight, mean=0.0, std=hidden_dim ** -0.5)
 
         self.to(self.device)
 
@@ -149,6 +155,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         hierarchical_low_stride: int = 4,
         hierarchical_mask_high_predict: bool = False,
         hierarchical_mask_low_predict: bool = False,
+        hierarchical_high_select: str = "boundary",
     ):
         if video_dit_config is None:
             raise ValueError("`video_dit_config` is required for FastWAM.from_wan22_pretrained().")
@@ -212,6 +219,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
             hierarchical_low_stride=hierarchical_low_stride,
             hierarchical_mask_high_predict=hierarchical_mask_high_predict,
             hierarchical_mask_low_predict=hierarchical_mask_low_predict,
+            hierarchical_high_select=hierarchical_high_select,
         )
         model.model_paths = {
             "video_dit": components.dit_path,
@@ -338,6 +346,190 @@ class FastWAM_Hierarchical(torch.nn.Module):
             idx = torch.cat([idx, torch.tensor([total_t - 1], device=mask.device)])
         return torch.index_select(mask, dim=1, index=idx)
 
+    @staticmethod
+    def _global_high_frame_positions(
+        *,
+        high_frames: int,
+        block_chunks: int,
+        low_frames_per_chunk: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        if high_frames <= 0:
+            raise ValueError(f"`high_frames` must be positive, got {high_frames}.")
+        if high_frames == 1:
+            return torch.zeros((1,), device=device, dtype=torch.long)
+        low_stride = max(1, int(low_frames_per_chunk) - 1)
+        block_end = max(int(high_frames) - 1, max(1, int(block_chunks)) * low_stride)
+        return torch.linspace(0, block_end, steps=int(high_frames), device=device).round().long()
+
+    @staticmethod
+    def _normalize_high_select(value: str) -> str:
+        normalized = str(value).strip().lower().replace("-", "_")
+        aliases = {
+            "boundary": "boundary",
+            "boundaries": "boundary",
+            "start_end": "boundary",
+            "first_last": "boundary",
+            "both": "boundary",
+            "end": "end",
+            "last": "end",
+            "target": "end",
+            "tail": "end",
+        }
+        if normalized not in aliases:
+            raise ValueError(
+                "`hierarchical_high_select` must be one of "
+                "{'boundary', 'end'} (aliases: start_end/first_last/both, last/target), "
+                f"got {value!r}."
+            )
+        return aliases[normalized]
+
+    def _high_cache_boundary_index(self, boundary_idx: int, high_frames: int) -> int:
+        if high_frames <= 0:
+            raise ValueError(f"`high_frames` must be positive, got {high_frames}.")
+        # 根据当前设计：high level帧即为1个首帧 + 每个chunk的末尾帧
+        # 故 chunk_idx 的边界直接一一对应 high level 的帧索引
+        return max(0, min(int(boundary_idx), int(high_frames) - 1))
+
+    def _select_high_cache_frame_indices(
+        self,
+        *,
+        chunk_idx: int,
+        high_frames: int,
+        mask_high_predict: Optional[bool] = None,
+    ) -> tuple[int, ...]:
+        if high_frames <= 0:
+            raise ValueError(f"`high_frames` must be positive, got {high_frames}.")
+        chunk_idx = max(0, int(chunk_idx))
+        start_frame = self._high_cache_boundary_index(chunk_idx, high_frames)
+        end_frame = self._high_cache_boundary_index(chunk_idx + 1, high_frames)
+        mask_high_predict = self.hierarchical_mask_high_predict if mask_high_predict is None else bool(mask_high_predict)
+        if mask_high_predict:
+            return (min(chunk_idx, int(high_frames) - 1),)
+
+        if self.hierarchical_high_select == "boundary":
+            if start_frame == end_frame:
+                return (start_frame,)
+            return (start_frame, end_frame)
+
+        if self.hierarchical_high_select == "end":
+            return (end_frame,)
+
+        raise ValueError(f"Unsupported hierarchical_high_select={self.hierarchical_high_select!r}.")
+
+    def _slice_high_cache_for_chunk(
+        self,
+        high_kv_cache: list[dict[str, torch.Tensor]],
+        *,
+        chunk_idx: int,
+        high_frames: int,
+        tokens_per_frame: int,
+        mask_high_predict: Optional[bool] = None,
+    ) -> tuple[list[dict[str, torch.Tensor]], int, tuple[int, ...]]:
+        frame_indices = self._select_high_cache_frame_indices(
+            chunk_idx=chunk_idx,
+            high_frames=high_frames,
+            mask_high_predict=mask_high_predict,
+        )
+        frame_caches = [
+            self._slice_video_kv_cache(
+                high_kv_cache,
+                token_start=int(frame_idx) * tokens_per_frame,
+                token_end=(int(frame_idx) + 1) * tokens_per_frame,
+            )
+            for frame_idx in frame_indices
+        ]
+        if len(frame_caches) == 1:
+            selected_cache = frame_caches[0]
+        else:
+            selected_cache = frame_caches[0]
+            for next_cache in frame_caches[1:]:
+                selected_cache = self._concat_video_kv_caches(selected_cache, next_cache)
+        return selected_cache, len(frame_indices), frame_indices
+
+    @staticmethod
+    def _global_low_frame_positions(
+        *,
+        chunk_indices: int | torch.Tensor,
+        low_frames: int,
+        low_frames_per_chunk: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        if low_frames <= 0:
+            raise ValueError(f"`low_frames` must be positive, got {low_frames}.")
+        low_stride = max(1, int(low_frames_per_chunk) - 1)
+        local = torch.arange(int(low_frames), device=device, dtype=torch.long)
+        if isinstance(chunk_indices, torch.Tensor):
+            chunk_indices = chunk_indices.to(device=device, dtype=torch.long)
+            if chunk_indices.ndim != 1:
+                raise ValueError(f"`chunk_indices` must be 1D, got shape {tuple(chunk_indices.shape)}.")
+            return chunk_indices.unsqueeze(1) * low_stride + local.unsqueeze(0)
+        return int(chunk_indices) * low_stride + local
+
+    def _video_freqs_for_frame_positions(
+        self,
+        pre_state: dict[str, Any],
+        frame_positions: torch.Tensor,
+    ) -> torch.Tensor:
+        f, h, w = pre_state["meta"]["grid_size"]
+        frame_positions = frame_positions.to(dtype=torch.long)
+        if frame_positions.ndim == 1:
+            if int(frame_positions.shape[0]) != int(f):
+                raise ValueError(
+                    f"Expected {f} frame positions, got shape {tuple(frame_positions.shape)}."
+                )
+        elif frame_positions.ndim == 2:
+            batch_size = int(pre_state["tokens"].shape[0])
+            if int(frame_positions.shape[0]) != batch_size or int(frame_positions.shape[1]) != int(f):
+                raise ValueError(
+                    "Batch frame-position shape mismatch: "
+                    f"positions={tuple(frame_positions.shape)}, expected=({batch_size}, {f})."
+                )
+        else:
+            raise ValueError(f"`frame_positions` must be 1D or 2D, got shape {tuple(frame_positions.shape)}.")
+
+        device = pre_state["tokens"].device
+        f_freqs, h_freqs, w_freqs = self.video_expert.freqs
+        max_frame_pos = int(frame_positions.max().item())
+        if max_frame_pos >= int(f_freqs.shape[0]):
+            raise ValueError(
+                f"Global video RoPE frame position {max_frame_pos} exceeds cache {int(f_freqs.shape[0])}."
+            )
+        if int(h) > int(h_freqs.shape[0]) or int(w) > int(w_freqs.shape[0]):
+            raise ValueError(
+                "Video RoPE spatial size exceeds cache: "
+                f"grid=({h},{w}), cache=({int(h_freqs.shape[0])},{int(w_freqs.shape[0])})."
+            )
+
+        if frame_positions.ndim == 1:
+            f_part = f_freqs.index_select(0, frame_positions.to(device=f_freqs.device))
+            freqs = torch.cat([
+                f_part.view(f, 1, 1, -1).expand(f, h, w, -1),
+                h_freqs[:h].view(1, h, 1, -1).expand(f, h, w, -1),
+                w_freqs[:w].view(1, 1, w, -1).expand(f, h, w, -1),
+            ], dim=-1).reshape(f * h * w, 1, -1)
+            return freqs.to(device)
+
+        batch_size = int(frame_positions.shape[0])
+        f_part = f_freqs.index_select(0, frame_positions.reshape(-1).to(device=f_freqs.device))
+        f_part = f_part.view(batch_size, f, -1)
+        freqs = torch.cat([
+            f_part.view(batch_size, f, 1, 1, -1).expand(batch_size, f, h, w, -1),
+            h_freqs[:h].view(1, 1, h, 1, -1).expand(batch_size, f, h, w, -1),
+            w_freqs[:w].view(1, 1, 1, w, -1).expand(batch_size, f, h, w, -1),
+        ], dim=-1).reshape(batch_size, f * h * w, 1, -1)
+        return freqs.to(device)
+
+    def _add_hierarchical_level_embedding(self, tokens: torch.Tensor, level: str) -> torch.Tensor:
+        if level == "high":
+            level_idx = 0
+        elif level == "low":
+            level_idx = 1
+        else:
+            raise ValueError(f"Unsupported hierarchical level `{level}`.")
+        emb = self.hierarchical_level_embedding.weight[level_idx].to(device=tokens.device, dtype=tokens.dtype)
+        return tokens + emb.view(1, 1, -1)
+
     def _predict_video_only_noise(
         self,
         latents_video: torch.Tensor,
@@ -346,6 +538,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
         context_mask: torch.Tensor,
         *,
         fuse_vae_embedding_in_latents: bool,
+        video_level: Optional[str] = None,
+        frame_positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         video_pre = self.video_expert.pre_dit(
             x=latents_video,
@@ -356,7 +550,13 @@ class FastWAM_Hierarchical(torch.nn.Module):
             fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
         )
         x_tokens = video_pre["tokens"]
-        freqs = video_pre["freqs"]
+        if video_level is not None:
+            x_tokens = self._add_hierarchical_level_embedding(x_tokens, video_level)
+        freqs = (
+            self._video_freqs_for_frame_positions(video_pre, frame_positions)
+            if frame_positions is not None
+            else video_pre["freqs"]
+        )
         t_mod = video_pre["t_mod"]
         ctx = video_pre["context"]
         ctx_mask = video_pre["context_mask"]
@@ -387,6 +587,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         context_mask: torch.Tensor,
         history_frames: int,
         fuse_vae_embedding_in_latents: bool,
+        frame_positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         video_pre = self.video_expert.pre_dit(
             x=latents_video,
@@ -396,8 +597,12 @@ class FastWAM_Hierarchical(torch.nn.Module):
             action=None,
             fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
         )
-        x_tokens = video_pre["tokens"]
-        freqs = video_pre["freqs"]
+        x_tokens = self._add_hierarchical_level_embedding(video_pre["tokens"], "high")
+        freqs = (
+            self._video_freqs_for_frame_positions(video_pre, frame_positions)
+            if frame_positions is not None
+            else video_pre["freqs"]
+        )
         t_mod = video_pre["t_mod"]
         ctx = video_pre["context"]
         ctx_mask = video_pre["context_mask"]
@@ -468,10 +673,14 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 mask[proprio_idx, proprio_idx] = True
                 if action_seq_len > 1:
                     action_begin = proprio_idx + 1
+                    if high_frames > 0:
+                        mask[action_begin:, col_start:col_end] = True
                     mask[action_begin:, low_base:low_end] = True
                     mask[action_begin:, proprio_idx : proprio_idx + 1] = True
                     mask[action_begin:, action_begin:] = True
             else:
+                if high_frames > 0:
+                    mask[video_seq_len:, col_start:col_end] = True
                 mask[video_seq_len:, low_base:low_end] = True
                 mask[video_seq_len:, video_seq_len:] = True
         return mask
@@ -518,8 +727,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         action_seq_len: int,
         has_proprio_token: bool,
         history_high_frames: int,
-        low_visible_high_start: int,
-        low_visible_high_end: int,
+        low_visible_high_indices: Sequence[int],
         device: torch.device,
     ) -> torch.Tensor:
         high_seq_len = high_frames * tokens_per_frame
@@ -551,11 +759,15 @@ class FastWAM_Hierarchical(torch.nn.Module):
             low_mask = torch.ones((low_seq_len, low_seq_len), dtype=torch.bool, device=device)
         mask[low_base:video_seq_len, low_base:video_seq_len] = low_mask
 
-        visible_high_start = max(0, min(int(low_visible_high_start), high_frames - 1))
-        visible_high_end = max(visible_high_start, min(int(low_visible_high_end), high_frames - 1))
-        col_start = visible_high_start * tokens_per_frame
-        col_end = (visible_high_end + 1) * tokens_per_frame
-        mask[low_base:video_seq_len, col_start:col_end] = True
+        visible_high_indices = tuple(
+            dict.fromkeys(max(0, min(int(frame_idx), high_frames - 1)) for frame_idx in low_visible_high_indices)
+        )
+        if len(visible_high_indices) == 0:
+            raise ValueError("At least one visible high-level frame is required for hierarchical training.")
+        for frame_idx in visible_high_indices:
+            col_start = frame_idx * tokens_per_frame
+            col_end = (frame_idx + 1) * tokens_per_frame
+            mask[low_base:video_seq_len, col_start:col_end] = True
 
         if action_seq_len > 0:
             if has_proprio_token:
@@ -570,12 +782,76 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 if has_proprio_token:
                     mask[action_token_start:, proprio_idx : proprio_idx + 1] = True
 
+                for frame_idx in visible_high_indices:
+                    col_start = frame_idx * tokens_per_frame
+                    col_end = (frame_idx + 1) * tokens_per_frame
+                    mask[action_token_start:, col_start:col_end] = True
                 if self.hierarchical_mask_low_predict:
                     low_visible_seq_len = min(tokens_per_frame, low_seq_len)
                     mask[action_token_start:, low_base : low_base + low_visible_seq_len] = True
                 else:
                     mask[action_token_start:, low_base:video_seq_len] = True
         return mask
+
+    def _perturb_history_latents_for_training(
+        self,
+        latents: torch.Tensor,
+        timesteps: torch.Tensor,
+        *,
+        clean_latents: torch.Tensor,
+        history_frames: int,
+        preserve_initial_frame: bool,
+        probability: float = 0.5,
+        max_noise_scale: float = 0.5,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if history_frames <= 0:
+            return latents, timesteps
+        if clean_latents.shape != latents.shape:
+            raise ValueError(
+                "History perturbation requires matching latent shapes: "
+                f"latents={tuple(latents.shape)}, clean={tuple(clean_latents.shape)}."
+            )
+        if timesteps.ndim != 2 or timesteps.shape[0] != latents.shape[0] or timesteps.shape[1] != latents.shape[2]:
+            raise ValueError(
+                "History perturbation requires timestep shape [B,T]: "
+                f"timesteps={tuple(timesteps.shape)}, latents={tuple(latents.shape)}."
+            )
+        history_frames = min(int(history_frames), int(latents.shape[2]))
+        history_start = 1 if preserve_initial_frame else 0
+        if history_start >= history_frames:
+            return latents, timesteps
+
+        batch_size = int(latents.shape[0])
+        cond_noise_mask = torch.rand((batch_size,), device=latents.device) < float(probability)
+        if not bool(cond_noise_mask.any()):
+            latents[:, :, history_start:history_frames] = clean_latents[:, :, history_start:history_frames]
+            timesteps[:, history_start:history_frames] = 0
+            return latents, timesteps
+
+        sampled_timestep = self.train_video_scheduler.sample_training_t(
+            batch_size=batch_size,
+            device=latents.device,
+            dtype=latents.dtype,
+        ) * float(max_noise_scale)
+        history_timestep = torch.where(
+            cond_noise_mask,
+            sampled_timestep,
+            torch.zeros_like(sampled_timestep),
+        ) 
+        noise_history = torch.randn_like(clean_latents[:, :, history_start:history_frames])
+        noised_history = self.train_video_scheduler.add_noise(
+            clean_latents[:, :, history_start:history_frames],
+            noise_history,
+            history_timestep,
+        )
+        history_selector = cond_noise_mask.view(batch_size, 1, 1, 1, 1)
+        latents[:, :, history_start:history_frames] = torch.where(
+            history_selector,
+            noised_history,
+            clean_latents[:, :, history_start:history_frames],
+        )
+        timesteps[:, history_start:history_frames] = history_timestep.unsqueeze(1).expand(-1, history_frames - history_start)
+        return latents, timesteps
 
     @staticmethod
     def _build_history_predict_timestep(
@@ -702,38 +978,74 @@ class FastWAM_Hierarchical(torch.nn.Module):
     @staticmethod
     def _build_action_from_low_attention_mask(
         *,
+        high_frames: int = 0,
         low_frames: int,
         tokens_per_frame: int,
         action_seq_len: int,
         has_proprio_token: bool,
         only_first_low_frame: bool,
         device: torch.device,
+        visible_high_start: Optional[int] = None,
+        visible_high_end: Optional[int] = None,
     ) -> torch.Tensor:
+        high_seq_len = high_frames * tokens_per_frame
         low_seq_len = low_frames * tokens_per_frame
-        total_seq_len = low_seq_len + action_seq_len
+        video_seq_len = high_seq_len + low_seq_len
+        total_seq_len = video_seq_len + action_seq_len
         mask = torch.zeros((total_seq_len, total_seq_len), dtype=torch.bool, device=device)
+        if high_seq_len > 0:
+            mask[:high_seq_len, :high_seq_len] = True
         if low_seq_len > 0:
-            mask[:low_seq_len, :low_seq_len] = True
+            mask[high_seq_len:video_seq_len, high_seq_len:video_seq_len] = True
+            if high_frames > 0:
+                if visible_high_start is None or visible_high_end is None:
+                    high_start = 0
+                    high_end = high_frames - 1
+                else:
+                    high_start = max(0, min(int(visible_high_start), high_frames - 1))
+                    high_end = max(high_start, min(int(visible_high_end), high_frames - 1))
+                high_col_start = high_start * tokens_per_frame
+                high_col_end = (high_end + 1) * tokens_per_frame
+                mask[high_seq_len:video_seq_len, high_col_start:high_col_end] = True
+            else:
+                high_col_start = 0
+                high_col_end = 0
+        elif high_frames > 0:
+            if visible_high_start is None or visible_high_end is None:
+                high_start = 0
+                high_end = high_frames - 1
+            else:
+                high_start = max(0, min(int(visible_high_start), high_frames - 1))
+                high_end = max(high_start, min(int(visible_high_end), high_frames - 1))
+            high_col_start = high_start * tokens_per_frame
+            high_col_end = (high_end + 1) * tokens_per_frame
+        else:
+            high_col_start = 0
+            high_col_end = 0
         if action_seq_len <= 0:
             return mask
 
         if has_proprio_token:
-            proprio_idx = low_seq_len
+            proprio_idx = video_seq_len
             mask[proprio_idx, proprio_idx] = True
             action_begin = proprio_idx + 1
             if action_begin < total_seq_len:
                 mask[action_begin:, action_begin:] = True
                 mask[action_begin:, proprio_idx : proprio_idx + 1] = True
+                if high_frames > 0:
+                    mask[action_begin:, high_col_start:high_col_end] = True
                 if only_first_low_frame:
-                    mask[action_begin:, :tokens_per_frame] = True
+                    mask[action_begin:, high_seq_len : high_seq_len + tokens_per_frame] = True
                 else:
-                    mask[action_begin:, :low_seq_len] = True
+                    mask[action_begin:, high_seq_len:video_seq_len] = True
         else:
-            mask[low_seq_len:, low_seq_len:] = True
+            mask[video_seq_len:, video_seq_len:] = True
+            if high_frames > 0:
+                mask[video_seq_len:, high_col_start:high_col_end] = True
             if only_first_low_frame:
-                mask[low_seq_len:, :tokens_per_frame] = True
+                mask[video_seq_len:, high_seq_len : high_seq_len + tokens_per_frame] = True
             else:
-                mask[low_seq_len:, :low_seq_len] = True
+                mask[video_seq_len:, high_seq_len:video_seq_len] = True
         return mask
 
     @staticmethod
@@ -904,6 +1216,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         chunk_high_noisy = []
         chunk_high_target = []
         chunk_high_timestep = []
+        chunk_high_loss_timestep = []
         chunk_high_predict_mask = []
         chunk_high_image_pad = []
 
@@ -962,7 +1275,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
             chunk_low_target.append(target_low_chunk)
             chunk_low_timestep.append(timestep_video_chunk)
 
-            # High-level branch: history/predict split per chunk index.
+            # High-level branch: chunk i conditions on keyframes [0..i] as history,
+            # and the corresponding target keyframe is i+1.
             history_frames = min(chunk_idx + 1, high_frame_count - 1)
             timestep_high_scalar = self.train_video_scheduler.sample_training_t(
                 batch_size=batch_size,
@@ -989,6 +1303,15 @@ class FastWAM_Hierarchical(torch.nn.Module):
             )
             if fuse_flag:
                 noisy_high_chunk[:, :, :history_frames] = high_latents[:, :, :history_frames]
+            # Keep high-level history mostly clean, but occasionally condition on
+            # scheduler-noised history with matching per-frame timesteps.
+            noisy_high_chunk, timestep_high_chunk = self._perturb_history_latents_for_training(
+                noisy_high_chunk,
+                timestep_high_chunk,
+                clean_latents=high_latents,
+                history_frames=history_frames,
+                preserve_initial_frame=fuse_flag,
+            )
 
             predict_mask = torch.zeros((batch_size, high_frame_count), dtype=high_latents.dtype, device=self.device)
             predict_mask[:, history_frames:] = 1.0
@@ -996,6 +1319,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
             chunk_high_noisy.append(noisy_high_chunk)
             chunk_high_target.append(target_high_chunk)
             chunk_high_timestep.append(timestep_high_chunk)
+            chunk_high_loss_timestep.append(timestep_high_scalar)
             chunk_high_predict_mask.append(predict_mask)
             if high_image_is_pad_full is not None:
                 chunk_high_image_pad.append(high_image_is_pad_full)
@@ -1034,11 +1358,10 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     )
                 )
 
-            low_visible_high_start = min(chunk_idx, max(0, high_frame_count - 2))
-            if self.hierarchical_mask_high_predict:
-                low_visible_high_end = low_visible_high_start
-            else:
-                low_visible_high_end = min(low_visible_high_start + 1, high_frame_count - 1)
+            low_visible_high_indices = self._select_high_cache_frame_indices(
+                chunk_idx=chunk_idx,
+                high_frames=high_frame_count,
+            )
             action_seq_len = chunk_action_horizon + (1 if has_proprio else 0)
             chunk_mask = self._build_hierarchical_training_attention_mask(
                 high_frames=high_frame_count,
@@ -1047,8 +1370,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 action_seq_len=action_seq_len,
                 has_proprio_token=has_proprio,
                 history_high_frames=history_frames,
-                low_visible_high_start=low_visible_high_start,
-                low_visible_high_end=low_visible_high_end,
+                low_visible_high_indices=low_visible_high_indices,
                 device=self.device,
             )
             attention_masks.extend([chunk_mask] * batch_size)
@@ -1060,7 +1382,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         high_image_is_pad_batch = (
             torch.cat(chunk_high_image_pad, dim=0) if high_image_is_pad_full is not None else None
         )
-        high_timestep_scalar_batch = high_timestep_batch.max(dim=1).values
+        high_timestep_scalar_batch = torch.cat(chunk_high_loss_timestep, dim=0)
 
         noisy_low_batch = torch.cat(chunk_low_noisy, dim=0)
         target_low_batch = torch.cat(chunk_low_target, dim=0)
@@ -1079,12 +1401,6 @@ class FastWAM_Hierarchical(torch.nn.Module):
 
         low_latent_t = int(noisy_low_batch.shape[2])
         high_timestep_pre = high_timestep_batch.clone()
-        high_history_mask_batch = high_predict_mask_batch <= 0
-        high_timestep_pre = torch.where(
-            high_history_mask_batch,
-            torch.zeros_like(high_timestep_pre),
-            high_timestep_pre,
-        )
         low_timestep_matrix = timestep_video_batch.unsqueeze(1).expand(-1, low_latent_t).clone()
         low_timestep_matrix[:, 0] = 0
         action_joint_batch = chunk_action_noisy_batch
@@ -1117,8 +1433,29 @@ class FastWAM_Hierarchical(torch.nn.Module):
         )
 
         tokens_per_frame = int(high_pre["meta"]["tokens_per_frame"])
-        merged_video_tokens = torch.cat([high_pre["tokens"], low_pre["tokens"]], dim=1)
-        merged_video_freqs = torch.cat([high_pre["freqs"], low_pre["freqs"]], dim=0)
+        high_tokens = self._add_hierarchical_level_embedding(high_pre["tokens"], "high")
+        low_tokens = self._add_hierarchical_level_embedding(low_pre["tokens"], "low")
+        merged_video_tokens = torch.cat([high_tokens, low_tokens], dim=1)
+        # 生成每个chunk对应的索引，范围是 [0, num_chunks-1]
+        # 使用 repeat_interleave(batch_size) 是因为 batch 里的每个样本都被拆成了 num_chunks 份
+        # 这保证了按序排列，即 [0,0..,0, 1,1..,1, ...]
+        chunk_indices_batch = torch.arange(num_chunks, device=self.device, dtype=torch.long).repeat_interleave(batch_size)
+        high_frame_positions = self._global_high_frame_positions(
+            high_frames=int(high_pre["meta"]["grid_size"][0]),
+            block_chunks=num_chunks,
+            low_frames_per_chunk=low_latent_t,
+            device=high_pre["tokens"].device,
+        )
+        low_frame_positions = self._global_low_frame_positions(
+            chunk_indices=chunk_indices_batch,
+            low_frames=int(low_pre["meta"]["grid_size"][0]),
+            low_frames_per_chunk=low_latent_t,
+            device=low_pre["tokens"].device,
+        )
+        high_freqs = self._video_freqs_for_frame_positions(high_pre, high_frame_positions)
+        low_freqs = self._video_freqs_for_frame_positions(low_pre, low_frame_positions)
+        high_freqs = high_freqs.unsqueeze(0).expand(low_freqs.shape[0], -1, -1, -1)
+        merged_video_freqs = torch.cat([high_freqs, low_freqs], dim=1)
         merged_video_t_mod = torch.cat([high_pre["t_mod"], low_pre["t_mod"]], dim=1)
         merged_video_context_mask = torch.cat([high_pre["context_mask"], low_pre["context_mask"]], dim=1)
 
@@ -1351,11 +1688,15 @@ class FastWAM_Hierarchical(torch.nn.Module):
         high_kv_cache_for_low: Optional[list[dict[str, torch.Tensor]]] = None,
         high_frames_for_low: Optional[int] = None,
         high_tokens_per_frame_for_low: Optional[int] = None,
+        low_frame_positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if only_first_low_frame:
             latents_video_cond = latents_video_cond[:, :, :1]
+            if low_frame_positions is not None:
+                low_frame_positions = low_frame_positions[:1] if low_frame_positions.ndim == 1 else low_frame_positions[:, :1]
 
         cache_timestep = None
+        action_high_frames = 0
         if low_cache_predict_timestep is not None:
             cache_timestep = self._build_history_predict_timestep(
                 step_timestep=low_cache_predict_timestep,
@@ -1371,6 +1712,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 context_mask=context_mask,
                 fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
                 timestep_video=cache_timestep,
+                video_level="low",
+                frame_positions=low_frame_positions,
             )
         else:
             if high_frames_for_low is None or high_tokens_per_frame_for_low is None:
@@ -1396,6 +1739,12 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
             )
             low_tokens_per_frame = int(low_pre["meta"]["tokens_per_frame"])
+            low_tokens = self._add_hierarchical_level_embedding(low_pre["tokens"], "low")
+            low_freqs = (
+                self._video_freqs_for_frame_positions(low_pre, low_frame_positions)
+                if low_frame_positions is not None
+                else low_pre["freqs"]
+            )
             if int(high_tokens_per_frame_for_low) != low_tokens_per_frame:
                 raise ValueError(
                     "Token-per-frame mismatch between high cache and low chunk: "
@@ -1413,9 +1762,9 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 visible_high_end=max(0, int(high_frames_for_low) - 1),
             )
             high_seq_len_for_low = int(high_frames_for_low) * low_tokens_per_frame
-            video_kv_cache = self.mot.prefill_video_cache_with_prefix(
-                video_tokens=low_pre["tokens"],
-                video_freqs=low_pre["freqs"],
+            low_kv_cache = self.mot.prefill_video_cache_with_prefix(
+                video_tokens=low_tokens,
+                video_freqs=low_freqs,
                 video_t_mod=low_pre["t_mod"],
                 video_context_payload={
                     "context": low_pre["context"],
@@ -1425,7 +1774,14 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 attention_mask=low_cache_attention_mask,
                 prefix_seq_len=high_seq_len_for_low,
             )
-            video_seq_len = int(low_pre["tokens"].shape[1])
+            # Action decoding should condition on the same high-history prefix
+            # that the low-level video chunk used, plus the low chunk itself.
+            video_kv_cache = self._concat_video_kv_caches(
+                high_kv_cache_for_low,
+                low_kv_cache,
+            )
+            video_seq_len = high_seq_len_for_low + int(low_pre["tokens"].shape[1])
+            action_high_frames = int(high_frames_for_low)
         proprio_action_token = None
         if self.proprio_encoder is not None:
             if proprio is None:
@@ -1443,12 +1799,15 @@ class FastWAM_Hierarchical(torch.nn.Module):
 
         action_seq_len = chunk_horizon + (1 if proprio_action_token is not None else 0)
         full_attention_mask = self._build_action_from_low_attention_mask(
+            high_frames=action_high_frames,
             low_frames=int(latents_video_cond.shape[2]),
             tokens_per_frame=low_tokens_per_frame,
             action_seq_len=action_seq_len,
             has_proprio_token=proprio_action_token is not None,
             only_first_low_frame=only_first_low_frame,
             device=self.device,
+            visible_high_start=0,
+            visible_high_end=max(0, action_high_frames - 1),
         )
 
         latents_action = torch.randn(
@@ -1481,6 +1840,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
         context_mask: torch.Tensor,
         fuse_vae_embedding_in_latents: bool,
         timestep_video: Optional[torch.Tensor] = None,
+        video_level: Optional[str] = None,
+        frame_positions: Optional[torch.Tensor] = None,
     ) -> tuple[list[dict[str, torch.Tensor]], int, int]:
         if timestep_video is None:
             timestep_input = torch.zeros(
@@ -1498,6 +1859,14 @@ class FastWAM_Hierarchical(torch.nn.Module):
             action=None,
             fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
         )
+        video_tokens = video_pre["tokens"]
+        if video_level is not None:
+            video_tokens = self._add_hierarchical_level_embedding(video_tokens, video_level)
+        video_freqs = (
+            self._video_freqs_for_frame_positions(video_pre, frame_positions)
+            if frame_positions is not None
+            else video_pre["freqs"]
+        )
         video_seq_len = int(video_pre["tokens"].shape[1])
         tokens_per_frame = int(video_pre["meta"]["tokens_per_frame"])
         video_attention_mask = self.video_expert.build_video_to_video_mask(
@@ -1506,8 +1875,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
             device=video_pre["tokens"].device,
         )
         video_kv_cache = self.mot.prefill_video_cache(
-            video_tokens=video_pre["tokens"],
-            video_freqs=video_pre["freqs"],
+            video_tokens=video_tokens,
+            video_freqs=video_freqs,
             video_t_mod=video_pre["t_mod"],
             video_context_payload={
                 "context": video_pre["context"],
@@ -1604,6 +1973,26 @@ class FastWAM_Hierarchical(torch.nn.Module):
         return sliced
 
     @staticmethod
+    def _concat_video_kv_caches(
+        first_cache: list[dict[str, torch.Tensor]],
+        second_cache: list[dict[str, torch.Tensor]],
+    ) -> list[dict[str, torch.Tensor]]:
+        if len(first_cache) != len(second_cache):
+            raise ValueError(
+                "Cannot concatenate KV caches with different layer counts: "
+                f"{len(first_cache)} vs {len(second_cache)}."
+            )
+        merged = []
+        for layer_idx, (first_layer, second_layer) in enumerate(zip(first_cache, second_cache)):
+            if "k" not in first_layer or "v" not in first_layer or "k" not in second_layer or "v" not in second_layer:
+                raise ValueError(f"Both KV caches must contain `k` and `v` at layer {layer_idx}.")
+            merged.append({
+                "k": torch.cat([first_layer["k"], second_layer["k"]], dim=1),
+                "v": torch.cat([first_layer["v"], second_layer["v"]], dim=1),
+            })
+        return merged
+
+    @staticmethod
     def _truncate_inference_schedule(
         timesteps: torch.Tensor,
         deltas: torch.Tensor,
@@ -1656,6 +2045,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         visible_high_start: Optional[int] = None,
         visible_high_end: Optional[int] = None,
         mask_low_predict: bool = False,
+        low_frame_positions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         low_pre = self.video_expert.pre_dit(
             x=low_chunk_latents,
@@ -1665,7 +2055,12 @@ class FastWAM_Hierarchical(torch.nn.Module):
             action=None,
             fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
         )
-        low_tokens = low_pre["tokens"]
+        low_tokens = self._add_hierarchical_level_embedding(low_pre["tokens"], "low")
+        low_freqs = (
+            self._video_freqs_for_frame_positions(low_pre, low_frame_positions)
+            if low_frame_positions is not None
+            else low_pre["freqs"]
+        )
         low_frames = int(low_chunk_latents.shape[2])
         low_tokens_per_frame = int(low_pre["meta"]["tokens_per_frame"])
         if low_tokens_per_frame != tokens_per_frame:
@@ -1696,7 +2091,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         attention_mask[high_seq:, high_seq:] = low_mask
         low_tokens_out = self.mot.forward_video_with_video_cache(
             video_tokens=low_tokens,
-            video_freqs=low_pre["freqs"],
+            video_freqs=low_freqs,
             video_t_mod=low_pre["t_mod"],
             video_context_payload={
                 "context": low_pre["context"],
@@ -1852,8 +2247,21 @@ class FastWAM_Hierarchical(torch.nn.Module):
         global_video_steps = chunk_video_steps * int(self.hierarchical_num_chunks)
         global_high_frames = global_video_steps // self.hierarchical_high_stride + 1
         high_latent_t = (global_high_frames - 1) // self.vae.temporal_downsample_factor + 1
+        full_high_frame_positions = self._global_high_frame_positions(
+            high_frames=high_latent_t,
+            block_chunks=int(self.hierarchical_num_chunks),
+            low_frames_per_chunk=low_latent_t,
+            device=self.device,
+        )
         history_high_frames = int(high_prefix_latents.shape[2]) if high_prefix_latents is not None else 1
         history_high_frames = max(1, min(history_high_frames, high_latent_t))
+        current_chunk_idx = min(max(0, history_high_frames - 1), int(self.hierarchical_num_chunks) - 1)
+        low_frame_positions = self._global_low_frame_positions(
+            chunk_indices=current_chunk_idx,
+            low_frames=low_latent_t,
+            low_frames_per_chunk=low_latent_t,
+            device=self.device,
+        )
 
         if self.hierarchical_mask_high_predict:
             high_history_latents = (
@@ -1866,11 +2274,11 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 context=context,
                 context_mask=context_mask,
                 fuse_vae_embedding_in_latents=fuse_flag,
+                video_level="high",
+                frame_positions=full_high_frame_positions[: int(high_history_latents.shape[2])],
             )
             del high_seq_len
             total_high_frames = int(high_history_latents.shape[2])
-            pair_left = max(0, total_high_frames - 1)
-            pair_right = pair_left
         else:
             high_latents = torch.randn(
                 (1, z_dim, high_latent_t, latent_h, latent_w),
@@ -1920,6 +2328,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     context=context,
                     context_mask=context_mask,
                     fuse_vae_embedding_in_latents=fuse_flag,
+                    video_level="high",
+                    frame_positions=full_high_frame_positions,
                 )
                 high_latents = self.infer_video_scheduler.step(pred_high, step_delta, high_latents)
                 high_latents[:, :, :fixed_high_len] = fixed_high_latents
@@ -1938,20 +2348,18 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 context_mask=context_mask,
                 fuse_vae_embedding_in_latents=fuse_flag,
                 timestep_video=high_cache_timestep,
+                video_level="high",
+                frame_positions=full_high_frame_positions,
             )
             del high_seq_len
             total_high_frames = int(high_latents.shape[2])
-            pair_left = min(max(0, history_high_frames - 1), max(0, total_high_frames - 2))
-            pair_right = min(pair_left + 1, total_high_frames - 1)
 
-        pair_token_start = pair_left * high_tokens_per_frame
-        pair_token_end = (pair_right + 1) * high_tokens_per_frame
-        pair_high_kv_cache = self._slice_video_kv_cache(
+        pair_high_kv_cache, high_frames_for_low, _ = self._slice_high_cache_for_chunk(
             high_kv_cache,
-            token_start=pair_token_start,
-            token_end=pair_token_end,
+            chunk_idx=current_chunk_idx,
+            high_frames=total_high_frames,
+            tokens_per_frame=high_tokens_per_frame,
         )
-        high_frames_for_low = pair_right - pair_left + 1
 
         if self.hierarchical_mask_low_predict:
             low_cond_latents = first_frame_latents.clone()
@@ -1995,6 +2403,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     tokens_per_frame=high_tokens_per_frame,
                     fuse_vae_embedding_in_latents=fuse_flag,
                     mask_low_predict=False,
+                    low_frame_positions=low_frame_positions,
                 )
                 latents_low = self.infer_video_scheduler.step(pred_low, step_d_low, latents_low)
                 latents_low[:, :, 0:1] = first_frame_latents
@@ -2016,6 +2425,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
             high_kv_cache_for_low=pair_high_kv_cache,
             high_frames_for_low=high_frames_for_low,
             high_tokens_per_frame_for_low=high_tokens_per_frame,
+            low_frame_positions=low_frame_positions,
         )
         return {"action": action_out}
 
@@ -2171,6 +2581,12 @@ class FastWAM_Hierarchical(torch.nn.Module):
         chunk_video_steps = chunk_h // action_per_video_step
         low_frames = chunk_video_steps // self.hierarchical_low_stride + 1
         low_latent_t = (low_frames - 1) // self.vae.temporal_downsample_factor + 1
+        full_high_frame_positions = self._global_high_frame_positions(
+            high_frames=high_latent_t,
+            block_chunks=num_chunks,
+            low_frames_per_chunk=low_latent_t,
+            device=self.device,
+        )
         gt_high_video = self._temporal_downsample(gt_video_batch, stride=self.hierarchical_high_stride)
         gt_high_latents = self._encode_video_latents(gt_high_video, tiled=tiled)
         if int(gt_high_latents.shape[2]) != int(high_latent_t):
@@ -2261,6 +2677,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
                             context_mask=context_mask,
                             history_frames=current_fixed_high,
                             fuse_vae_embedding_in_latents=fuse_flag,
+                            frame_positions=full_high_frame_positions,
                         )
                     else:
                         pred_high = self._predict_video_only_noise(
@@ -2269,6 +2686,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
                             context=context,
                             context_mask=context_mask,
                             fuse_vae_embedding_in_latents=fuse_flag,
+                            video_level="high",
+                            frame_positions=full_high_frame_positions,
                         )
                     high_latents = self.infer_video_scheduler.step(pred_high, step_delta, high_latents)
                     high_latents[:, :, :current_fixed_high] = fixed_high_latents[:, :, :current_fixed_high]
@@ -2277,13 +2696,6 @@ class FastWAM_Hierarchical(torch.nn.Module):
 
             if chunk_idx == 0 and return_high_level_video:
                 first_chunk_high_video = self._decode_latents_to_tensor(high_latents, tiled=tiled)
-
-            if self.hierarchical_mask_high_predict:
-                visible_high_start = min(chunk_idx, max(0, current_fixed_high - 1), max(0, total_high_frames - 1))
-                visible_high_end = visible_high_start
-            else:
-                visible_high_start = min(chunk_idx, max(0, total_high_frames - 2))
-                visible_high_end = min(visible_high_start + 1, total_high_frames - 1)
 
             if self.hierarchical_mask_high_predict:
                 # Align with mask semantics: forward all available history, then slice the visible part.
@@ -2301,6 +2713,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     context_mask=context_mask,
                     fuse_vae_embedding_in_latents=fuse_flag,
                     timestep_video=cache_timestep_high,
+                    video_level="high",
+                    frame_positions=full_high_frame_positions[: int(high_cache_source.shape[2])],
                 )
             else:
                 # No high-mask: forward full high sequence, then slice the visible part.
@@ -2317,16 +2731,17 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     context_mask=context_mask,
                     fuse_vae_embedding_in_latents=fuse_flag,
                     timestep_video=cache_timestep_high,
+                    video_level="high",
+                    frame_positions=full_high_frame_positions,
                 )
 
-            visible_token_start = visible_high_start * high_tokens_per_frame
-            visible_token_end = (visible_high_end + 1) * high_tokens_per_frame
-            high_kv_cache = self._slice_video_kv_cache(
+            high_source_frames = current_fixed_high if self.hierarchical_mask_high_predict else total_high_frames
+            high_kv_cache, high_frames_for_low, _ = self._slice_high_cache_for_chunk(
                 source_kv_cache,
-                token_start=visible_token_start,
-                token_end=visible_token_end,
+                chunk_idx=chunk_idx,
+                high_frames=high_source_frames,
+                tokens_per_frame=high_tokens_per_frame,
             )
-            high_frames_for_low = visible_high_end - visible_high_start + 1
             high_seq_len = high_frames_for_low * high_tokens_per_frame
 
             latents_low = torch.randn(
@@ -2341,6 +2756,12 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 tiled=tiled,
             )
             latents_low[:, :, 0:1] = chunk_first_frame_latents.clone()
+            low_frame_positions = self._global_low_frame_positions(
+                chunk_indices=chunk_idx,
+                low_frames=low_latent_t,
+                low_frames_per_chunk=low_latent_t,
+                device=self.device,
+            )
 
             for step_t_low, step_d_low in zip(low_timesteps, low_deltas):
                 t_low = step_t_low.unsqueeze(0).to(device=self.device, dtype=latents_low.dtype)
@@ -2357,6 +2778,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     visible_high_start=0,
                     visible_high_end=high_frames_for_low - 1,
                     mask_low_predict=self.hierarchical_mask_low_predict,
+                    low_frame_positions=low_frame_positions,
                 )
                 latents_low = self.infer_video_scheduler.step(pred_low, step_d_low, latents_low)
                 latents_low[:, :, 0:1] = chunk_first_frame_latents
@@ -2384,6 +2806,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 high_kv_cache_for_low=high_kv_cache,
                 high_frames_for_low=high_frames_for_low,
                 high_tokens_per_frame_for_low=high_tokens_per_frame,
+                low_frame_positions=low_frame_positions,
             )
 
             low_video_chunk = self._decode_latents_to_tensor(latents_low, tiled=tiled)
@@ -2407,6 +2830,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
     def save_checkpoint(self, path, optimizer=None, step=None):
         payload = {
             "mot": self.mot.state_dict(),
+            "hierarchical_level_embedding": self.hierarchical_level_embedding.state_dict(),
             "step": step,
             "torch_dtype": str(self.torch_dtype),
         }
@@ -2432,6 +2856,13 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 logger.warning("Checkpoint has no `proprio_encoder` weights; keeping current `proprio_encoder` params.")
         elif "proprio_encoder" in payload:
             logger.warning("Checkpoint contains `proprio_encoder` weights but current model has `proprio_dim=None`; ignoring.")
+
+        if "hierarchical_level_embedding" in payload:
+            self.hierarchical_level_embedding.load_state_dict(payload["hierarchical_level_embedding"], strict=True)
+        else:
+            logger.warning(
+                "Checkpoint has no `hierarchical_level_embedding`; keeping current random level embeddings."
+            )
 
         if optimizer is not None and "optimizer" in payload:
             optimizer.load_state_dict(payload["optimizer"])

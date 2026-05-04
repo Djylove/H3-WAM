@@ -17,16 +17,17 @@ model:
   hierarchical_low_stride: 1
   hierarchical_mask_high_predict: false
   hierarchical_mask_low_predict: false
+  hierarchical_high_select: boundary
 
 # robotwin eval/deploy controls (consumed by sim_robotwin via EVALUATION)
 action_horizon: ${model.hierarchical_chunk_action_horizon}
 replan_steps: ${action_horizon}
 num_inference_steps: ${eval_num_inference_steps}
-high_video_inference_steps: 5
-low_video_inference_steps: 5
-high_denoise_step: 0
-low_denoise_step: 0
-action_inference_steps: 20
+high_video_inference_steps: 10
+low_video_inference_steps: 10
+high_denoise_step: null
+low_denoise_step: null
+action_inference_steps: 10
 
 data:
   train:
@@ -39,11 +40,11 @@ data:
 # scheduler
 lr_scheduler_type: "cosine"
 learning_rate: 1e-4
-num_epochs: 1
+num_epochs: 3
 max_steps: null
 log_every: 10
-save_every: 2500
-eval_every: 500
+save_every: 10000
+eval_every: 1000
 eval_num_inference_steps: 20
 
 # training

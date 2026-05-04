@@ -30,7 +30,11 @@ python experiments/robotwin/run_robotwin_manager.py \
 python experiments/robotwin/run_robotwin_manager.py \
   task=robotwin_hierarchical_3cam_384_1e-4 \
   ckpt=runs/robotwin_hierarchical_3cam_384_1e-4/2026-04-16_16-49-09/checkpoints/weights/step_187862.pt \
-  MULTIRUN.num_gpus=4
+  EVALUATION.dataset_stats_path=runs/robotwin_hierarchical_3cam_384_1e-4/2026-04-16_16-49-09/dataset_stats.json \
+  MULTIRUN.num_gpus=8\
+  EVALUATION.high_denoise_step=8\
+  EVALUATION.low_denoise_step=6
+
 
 # cd /mnt/cpfs/wxy/FastWAM && python scripts/train_ray_multinode.py \
 #   --address auto \

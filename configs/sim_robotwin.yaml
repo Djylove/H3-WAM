@@ -19,7 +19,7 @@ EVALUATION:
   task_name: null
   task_config: demo_randomized
   instruction_type: unseen
-  eval_num_episodes: 100
+  eval_num_episodes: 10
   output_dir: ./evaluate_results/robotwin/${hydra:runtime.choices.task}/${now:%Y%m%d_%H%M%S}
 
   # Action inference
@@ -46,7 +46,7 @@ EVALUATION:
 MULTIRUN:
   enabled: false
   num_gpus: 8
-  max_tasks_per_gpu: 2
+  max_tasks_per_gpu: 1
 
 hydra:
   job:

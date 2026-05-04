@@ -178,6 +178,7 @@ def create_fastwam_hierarchical(
     hierarchical_low_stride: int = 1,
     hierarchical_mask_high_predict: bool = False,
     hierarchical_mask_low_predict: bool = False,
+    hierarchical_high_select: str = "boundary",
     redirect_common_files: bool = True,
     model_dtype: torch.dtype = torch.bfloat16,
     device: str = "cuda",
@@ -252,6 +253,7 @@ def create_fastwam_hierarchical(
         hierarchical_low_stride=int(hierarchical_low_stride),
         hierarchical_mask_high_predict=bool(hierarchical_mask_high_predict),
         hierarchical_mask_low_predict=bool(hierarchical_mask_low_predict),
+        hierarchical_high_select=str(hierarchical_high_select),
     )
 
 
