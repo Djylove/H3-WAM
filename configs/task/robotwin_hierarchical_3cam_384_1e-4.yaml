@@ -17,7 +17,6 @@ model:
   hierarchical_low_stride: 1
   hierarchical_mask_high_predict: false
   hierarchical_mask_low_predict: false
-  hierarchical_high_select: boundary
 
 # robotwin eval/deploy controls (consumed by sim_robotwin via EVALUATION)
 action_horizon: ${model.hierarchical_chunk_action_horizon}

@@ -14,7 +14,6 @@ hierarchical_high_stride: 2
 hierarchical_low_stride: 1
 hierarchical_mask_high_predict: false
 hierarchical_mask_low_predict: false
-hierarchical_high_select: boundary
 
 video_dit_config:
   has_image_input: false

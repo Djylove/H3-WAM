@@ -96,9 +96,6 @@ class Wan22Trainer:
         proprio_encoder = getattr(self.model, "proprio_encoder", None)
         if proprio_encoder is not None:
             trainable_params.extend(list(proprio_encoder.parameters()))
-        level_embedding = getattr(self.model, "hierarchical_level_embedding", None)
-        if level_embedding is not None:
-            trainable_params.extend(list(level_embedding.parameters()))
         self.optimizer = torch.optim.AdamW(
             trainable_params,
             lr=self.learning_rate,
@@ -306,10 +303,6 @@ class Wan22Trainer:
         if proprio_encoder is not None:
             proprio_encoder.train()
             proprio_encoder.requires_grad_(True)
-        level_embedding = getattr(model, "hierarchical_level_embedding", None)
-        if level_embedding is not None:
-            level_embedding.train()
-            level_embedding.requires_grad_(True)
 
     @staticmethod
     def _parse_optional_int(value):
