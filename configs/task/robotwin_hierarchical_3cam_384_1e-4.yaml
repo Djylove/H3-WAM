@@ -22,10 +22,10 @@ model:
 action_horizon: ${model.hierarchical_chunk_action_horizon}
 replan_steps: ${action_horizon}
 num_inference_steps: ${eval_num_inference_steps}
-high_video_inference_steps: 10
-low_video_inference_steps: 10
-high_denoise_step: null
-low_denoise_step: null
+high_video_inference_steps: 5
+low_video_inference_steps: 5
+high_denoise_step: 2
+low_denoise_step: 2
 action_inference_steps: 10
 
 data:
