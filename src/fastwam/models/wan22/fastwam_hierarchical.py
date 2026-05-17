@@ -1828,6 +1828,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 raise ValueError("`proprio` must be provided when `proprio_dim` is enabled.")
             if proprio.ndim == 1:
                 proprio = proprio.unsqueeze(0)
+            elif proprio.ndim == 2 and int(proprio.shape[0]) != 1:
+                proprio = proprio[:1]
             elif proprio.ndim == 3:
                 proprio = proprio[:, 0, :]
             if proprio.ndim != 2 or int(proprio.shape[1]) != int(self.proprio_dim):
