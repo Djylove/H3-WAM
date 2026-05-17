@@ -33,11 +33,16 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
 
         # sampling
         global_sample_stride: int = 1,
+        image_delta_indices: Optional[List[int]] = None,
+        state_delta_indices: Optional[List[int]] = None,
     ):
         assert len(dataset_dirs) > 0, "At least one dataset directory is required"
-        assert past_action_size == 0
-        assert past_obs_size == 0
-        assert action_size == obs_size - 1, "In this dataset, action_size should be obs_size - 1"
+        if past_action_size != 0:
+            raise ValueError("Past actions are not supported by this dataset wrapper yet.")
+        if past_obs_size < 0:
+            raise ValueError(f"`past_obs_size` must be non-negative, got {past_obs_size}.")
+        if obs_size <= 0 or action_size <= 0:
+            raise ValueError(f"`obs_size` and `action_size` must be positive, got {obs_size} and {action_size}.")
         
         self.dataset_dirs = dataset_dirs
         self.shape_meta = shape_meta
@@ -57,6 +62,16 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
         fps = fps_list[0]
         
         self.global_sample_stride = global_sample_stride
+        image_delta_indices = (
+            list(image_delta_indices)
+            if image_delta_indices is not None
+            else list(range(-past_obs_size, -past_obs_size + obs_size))
+        )
+        state_delta_indices = (
+            list(state_delta_indices)
+            if state_delta_indices is not None
+            else list(range(-past_obs_size, -past_obs_size + obs_size))
+        )
 
         self.val_set_proportion = val_set_proportion
         self.is_training_set = is_training_set
@@ -70,14 +85,14 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
             key = meta["key"]
             meta["lerobot_key"] = f"observation.images.{key}" if key != "default" else "observation.images"
             delta_timestamps[meta["lerobot_key"]] = [
-                (t * global_sample_stride) / fps for t in range(-past_obs_size, -past_obs_size + obs_size)
+                (t * global_sample_stride) / fps for t in image_delta_indices
             ]
         
         for meta in self.state_meta:
             key = meta["key"]
             meta["lerobot_key"] = f"observation.state.{key}" if key != "default" else "observation.state"
             delta_timestamps[meta["lerobot_key"]] = [
-                (t * global_sample_stride) / fps for t in range(-past_obs_size, -past_obs_size + obs_size)
+                (t * global_sample_stride) / fps for t in state_delta_indices
             ]
         
         for meta in self.action_meta:

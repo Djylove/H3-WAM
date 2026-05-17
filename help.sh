@@ -10,6 +10,13 @@ export WANDB_API_KEY=b8182b57eaa10a6c93943291158ee2f086aae4eb
 
 export CUDA_VISIBLE_DEVICES=1,2
 
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+Host xingyu
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519
+
 cd /mnt/cpfs/wxy/FastWAM && \
 bash scripts/train_zero1_dlc_multinode.sh \
   --wandb-key b8182b57eaa10a6c93943291158ee2f086aae4eb \

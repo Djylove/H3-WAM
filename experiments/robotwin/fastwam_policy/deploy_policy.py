@@ -174,43 +174,30 @@ class WorldActionRobotWinPolicy:
 
         self._num_video_frames = int(num_video_frames)
         self._is_hierarchical_model = callable(getattr(self.model, "infer_hierarchical", None))
-        # Post-action observations for the current chunk (one frame per executed action).
-        self._observed_exec_frames: list[torch.Tensor] = []
-        self._observed_chunk_videos: list[torch.Tensor] = []
-        # Block seed frame (current observation at block start).
-        self._chunk_start_frame: Optional[torch.Tensor] = None
-        self._obs_downsample_stride = 8
-        self._max_observed_chunks: int = int(getattr(self.model, "hierarchical_num_chunks", 4))
-        self._chunk_idx_in_block: int = 0
-        self._chunk_video_frames: int = self._num_video_frames
+        # Sparse post-action keyframes sampled from the current action horizon.
+        self._pending_keyframes: list[torch.Tensor] = []
+        self._keyframe_history: list[torch.Tensor] = []
+        # Observation frame at the start of the current action horizon.
+        self._horizon_start_frame: Optional[torch.Tensor] = None
+        self._keyframe_stride = 16
+        self._max_keyframe_history: int = 9
         self._last_action_executed: bool = False
-        self._chunk_executed_actions: int = 0
+        self._horizon_executed_actions: int = 0
 
         self.action_horizon = int(action_horizon)
         if self._is_hierarchical_model:
-            chunk_horizon = int(getattr(self.model, "hierarchical_chunk_action_horizon", self.action_horizon))
-            if self.action_horizon != chunk_horizon:
+            model_horizon = int(getattr(self.model, "hierarchical_action_horizon", self.action_horizon))
+            if self.action_horizon != model_horizon:
                 logger.warning(
-                    "Hierarchical policy requires single-chunk action_horizon=%d, but got %d. Overriding.",
-                    chunk_horizon,
+                    "Hierarchical policy requires action_horizon=%d, but got %d. Overriding.",
+                    model_horizon,
                     self.action_horizon,
                 )
-                self.action_horizon = chunk_horizon
-            block_chunks = max(1, self._max_observed_chunks)
-            full_transitions = max(1, self._num_video_frames - 1)
-            if full_transitions % block_chunks == 0:
-                self._chunk_video_frames = full_transitions // block_chunks + 1
-            else:
-                logger.warning(
-                    "Cannot evenly split full transitions=%d by block_chunks=%d; use full num_video_frames=%d.",
-                    full_transitions,
-                    block_chunks,
-                    self._num_video_frames,
-                )
+                self.action_horizon = model_horizon
         self.replan_steps = int(max(1, min(replan_steps, self.action_horizon)))
         if self._is_hierarchical_model and self.replan_steps != self.action_horizon:
             logger.warning(
-                "Hierarchical policy expects full chunk execution with replan_steps=action_horizon=%d, but got %d. Overriding.",
+                "Hierarchical policy expects full action-horizon execution with replan_steps=action_horizon=%d, but got %d. Overriding.",
                 self.action_horizon,
                 self.replan_steps,
             )
@@ -283,7 +270,17 @@ class WorldActionRobotWinPolicy:
         image_tensor = image_tensor * (2.0 / 255.0) - 1.0
         return image_tensor
 
-    def _infer_action_chunk(self, observation: Dict[str, Any], instruction: str) -> np.ndarray:
+    def _get_padded_keyframe_history(self) -> list[torch.Tensor]:
+        frames = list(self._keyframe_history[-self._max_keyframe_history:])
+        if len(frames) == 0:
+            if self._horizon_start_frame is None:
+                return []
+            frames = [self._horizon_start_frame]
+        if len(frames) < self._max_keyframe_history:
+            frames = [frames[0]] * (self._max_keyframe_history - len(frames)) + frames
+        return frames
+
+    def _infer_action_horizon(self, observation: Dict[str, Any], instruction: str) -> np.ndarray:
         image_tensor = self._build_robotwin_image_tensor(observation)
         state_vector = np.asarray(observation["joint_action"]["vector"], dtype=np.float32)
         proprio = self._normalize_state(state_vector)
@@ -308,9 +305,7 @@ class WorldActionRobotWinPolicy:
             raise AttributeError("Model must provide `infer_action` for policy inference.")
         infer_action_sig = inspect.signature(infer_action_fn).parameters
         if "num_video_frames" in infer_action_sig:
-            infer_action_kwargs["num_video_frames"] = int(
-                self._chunk_video_frames if self._is_hierarchical_model else self._num_video_frames
-            )
+            infer_action_kwargs["num_video_frames"] = int(self._num_video_frames)
         if "high_video_inference_steps" in infer_action_sig:
             infer_action_kwargs["high_video_inference_steps"] = self.high_video_inference_steps
         if "low_video_inference_steps" in infer_action_sig:
@@ -321,8 +316,10 @@ class WorldActionRobotWinPolicy:
             infer_action_kwargs["low_denoise_step"] = self.low_denoise_step
         if "action_inference_steps" in infer_action_sig:
             infer_action_kwargs["action_inference_steps"] = self.action_inference_steps
-        if self._is_hierarchical_model and "observed_chunk_videos" in infer_action_sig and len(self._observed_chunk_videos) > 0:
-            infer_action_kwargs["observed_chunk_videos"] = list(self._observed_chunk_videos)
+        if self._is_hierarchical_model and "observed_chunk_videos" in infer_action_sig:
+            keyframe_history = self._get_padded_keyframe_history()
+            if len(keyframe_history) > 0:
+                infer_action_kwargs["observed_chunk_videos"] = keyframe_history
 
         infer_t0 = time.perf_counter() if self.timing_enabled else 0.0
         with torch.no_grad():
@@ -330,65 +327,62 @@ class WorldActionRobotWinPolicy:
         if self.timing_enabled:
             self._timing_rollout["infer_s"] += time.perf_counter() - infer_t0
 
-        # Start a new chunk rollout window for post-action observations.
-        self._observed_exec_frames.clear()
-        self._chunk_executed_actions = 0
+        # Start a new action-horizon rollout window for sparse post-action keyframes.
+        self._pending_keyframes.clear()
+        self._horizon_executed_actions = 0
 
         action_tensor = pred["action"]  # [T, D]
-        action_chunk = self._denormalize_action(action_tensor)[0]  # [T, D]
-        return action_chunk
+        action_horizon_pred = self._denormalize_action(action_tensor)[0]  # [T, D]
+        return action_horizon_pred
 
     def _fill_action_queue(self, observation: Dict[str, Any], instruction: str) -> None:
-        action_chunk = self._infer_action_chunk(observation=observation, instruction=instruction)
-        n_exec = min(self.replan_steps, action_chunk.shape[0])
+        action_horizon_pred = self._infer_action_horizon(observation=observation, instruction=instruction)
+        n_exec = min(self.replan_steps, action_horizon_pred.shape[0])
         if self._is_hierarchical_model:
             logger.info(
-                "Hierarchical block rollout | chunk=%d/%d | exec_steps=%d",
-                self._chunk_idx_in_block + 1,
-                self._max_observed_chunks,
+                "Hierarchical rollout | memory_frames=%d | exec_steps=%d",
+                len(self._keyframe_history),
                 n_exec,
             )
         for i in range(n_exec):
-            self.pending_actions.append(np.asarray(action_chunk[i], dtype=np.float32))
+            self.pending_actions.append(np.asarray(action_horizon_pred[i], dtype=np.float32))
 
-    def _finalize_observed_chunk_video(self, current_frame: torch.Tensor) -> None:
+    def _finalize_keyframe_history(self, current_frame: torch.Tensor) -> None:
         if not self._is_hierarchical_model:
-            self._observed_exec_frames.clear()
+            self._pending_keyframes.clear()
             return
-        if self._chunk_start_frame is None or len(self._observed_exec_frames) == 0:
-            self._observed_exec_frames.clear()
-            self._chunk_executed_actions = 0
+        if self._horizon_start_frame is None or len(self._pending_keyframes) == 0:
+            self._pending_keyframes.clear()
+            self._horizon_executed_actions = 0
             return
 
-        if self._chunk_executed_actions != self.action_horizon:
+        if self._horizon_executed_actions != self.action_horizon:
             logger.warning(
-                "Expected %d executed actions per chunk, got %d.",
+                "Expected %d executed actions per horizon, got %d.",
                 self.action_horizon,
-                self._chunk_executed_actions,
+                self._horizon_executed_actions,
             )
 
-        # Strict stride downsample over post-action observations.
-        sampled = self._observed_exec_frames[:: self._obs_downsample_stride]
+        if len(self._keyframe_history) == 0:
+            self._keyframe_history.append(self._horizon_start_frame)
+        for frame in self._pending_keyframes:
+            if not torch.equal(self._keyframe_history[-1], frame):
+                self._keyframe_history.append(frame)
+        self._keyframe_history = self._keyframe_history[-self._max_keyframe_history:]
 
-        if len(self._observed_chunk_videos) == 0:
-            self._observed_chunk_videos.append(self._chunk_start_frame)
-        for frame in sampled:
-            if not torch.equal(self._observed_chunk_videos[-1], frame):
-                self._observed_chunk_videos.append(frame)
-
-        self._observed_exec_frames.clear()
-        self._chunk_executed_actions = 0
-        self._chunk_idx_in_block += 1
-
-        if self._chunk_idx_in_block >= self._max_observed_chunks:
-            # Start next block from current observation frame.
-            self._chunk_start_frame = current_frame
-            self._observed_chunk_videos = [self._chunk_start_frame]
-            self._chunk_idx_in_block = 0
+        self._pending_keyframes.clear()
+        self._horizon_executed_actions = 0
+        self._horizon_start_frame = current_frame
 
     def should_request_observation(self) -> bool:
         if self._is_hierarchical_model:
-            return True
+            if not self.pending_actions:
+                return True
+            return bool(
+                self._last_action_executed
+                and self._horizon_executed_actions > 0
+                and self._horizon_executed_actions % self._keyframe_stride == 0
+            )
         return not self.pending_actions
 
     def step(self, task_env, observation: Optional[Dict[str, Any]]) -> None:
@@ -398,7 +392,11 @@ class WorldActionRobotWinPolicy:
 
             # Observation at this step is the post-action frame of previous step.
             if self._last_action_executed:
-                self._observed_exec_frames.append(frame)
+                if (
+                    self._horizon_executed_actions > 0
+                    and self._horizon_executed_actions % self._keyframe_stride == 0
+                ):
+                    self._pending_keyframes.append(frame)
                 self._last_action_executed = False
 
         if not self.pending_actions:
@@ -409,15 +407,15 @@ class WorldActionRobotWinPolicy:
                 )
             if self._is_hierarchical_model and self.step_count > 0:
                 if frame is None:
-                    raise ValueError("Hierarchical policy requires current frame when finalizing chunk.")
-                self._finalize_observed_chunk_video(current_frame=frame)
+                    raise ValueError("Hierarchical policy requires current frame when finalizing keyframe history.")
+                self._finalize_keyframe_history(current_frame=frame)
             if self._is_hierarchical_model:
                 if frame is None:
                     raise ValueError("Hierarchical policy requires current frame for planning.")
-                if self._chunk_start_frame is None:
-                    self._chunk_start_frame = frame
-                if len(self._observed_chunk_videos) == 0:
-                    self._observed_chunk_videos.append(self._chunk_start_frame)
+                if self._horizon_start_frame is None:
+                    self._horizon_start_frame = frame
+                if len(self._keyframe_history) == 0:
+                    self._keyframe_history.append(self._horizon_start_frame)
             instruction = task_env.get_instruction()
             self._fill_action_queue(observation=observation, instruction=instruction)
 
@@ -430,7 +428,7 @@ class WorldActionRobotWinPolicy:
         task_env.take_action(action, action_type="qpos")
         if self._is_hierarchical_model:
             self._last_action_executed = True
-            self._chunk_executed_actions += 1
+            self._horizon_executed_actions += 1
         if self.timing_enabled:
             self._timing_rollout["sim_s"] += time.perf_counter() - sim_t0
         self.step_count += 1
@@ -447,12 +445,11 @@ class WorldActionRobotWinPolicy:
 
     def reset(self) -> None:
         self.pending_actions.clear()
-        self._observed_exec_frames.clear()
-        self._observed_chunk_videos.clear()
-        self._chunk_start_frame = None
-        self._chunk_idx_in_block = 0
+        self._pending_keyframes.clear()
+        self._keyframe_history.clear()
+        self._horizon_start_frame = None
         self._last_action_executed = False
-        self._chunk_executed_actions = 0
+        self._horizon_executed_actions = 0
         self.episode_count += 1
         self.step_count = 0
         self.reset_timing_rollout()

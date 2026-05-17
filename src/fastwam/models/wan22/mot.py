@@ -533,6 +533,129 @@ class MoT(nn.Module):
             )
         return x
 
+    def forward_video_action_with_video_cache(
+        self,
+        video_tokens: torch.Tensor,
+        video_freqs: torch.Tensor,
+        video_t_mod: torch.Tensor,
+        video_context_payload: Optional[dict],
+        action_tokens: torch.Tensor,
+        action_freqs: torch.Tensor,
+        action_t_mod: torch.Tensor,
+        action_context_payload: Optional[dict],
+        prefix_kv_cache: list[dict[str, torch.Tensor]],
+        attention_mask: torch.Tensor,
+        prefix_seq_len: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run video and action branches jointly with cached video prefix K/V."""
+        if "video" not in self.mixtures or "action" not in self.mixtures:
+            raise ValueError("MoT requires both `video` and `action` experts.")
+        if len(prefix_kv_cache) != self.num_layers:
+            raise ValueError(
+                f"`prefix_kv_cache` must contain {self.num_layers} layers, got {len(prefix_kv_cache)}."
+            )
+        if attention_mask.ndim != 2:
+            raise ValueError(f"`attention_mask` must be 2D [S,S], got shape {tuple(attention_mask.shape)}")
+        if attention_mask.shape[0] != attention_mask.shape[1]:
+            raise ValueError(f"`attention_mask` must be square, got shape {tuple(attention_mask.shape)}")
+
+        video_seq_len = int(video_tokens.shape[1])
+        action_seq_len = int(action_tokens.shape[1])
+        total_seq_len = int(prefix_seq_len) + video_seq_len + action_seq_len
+        if attention_mask.shape[0] != total_seq_len:
+            raise ValueError(
+                "`attention_mask` seq length mismatch: "
+                f"mask={attention_mask.shape[0]} vs expected_total={total_seq_len}"
+            )
+        query_attention_mask = attention_mask[prefix_seq_len:total_seq_len, :total_seq_len]
+
+        video_expert = self.mixtures["video"]
+        action_expert = self.mixtures["action"]
+        x_video = video_tokens
+        x_action = action_tokens
+        for layer_idx in range(self.num_layers):
+            video_block = video_expert.blocks[layer_idx]
+            action_block = action_expert.blocks[layer_idx]
+
+            (
+                q_video,
+                k_video,
+                v_video,
+                residual_video,
+                gate_msa_video,
+                shift_mlp_video,
+                scale_mlp_video,
+                gate_mlp_video,
+                use_checkpoint_video,
+            ) = self._build_expert_attention_io(
+                expert=video_expert,
+                block=video_block,
+                x=x_video,
+                freqs=video_freqs,
+                t_mod=video_t_mod,
+            )
+            (
+                q_action,
+                k_action,
+                v_action,
+                residual_action,
+                gate_msa_action,
+                shift_mlp_action,
+                scale_mlp_action,
+                gate_mlp_action,
+                use_checkpoint_action,
+            ) = self._build_expert_attention_io(
+                expert=action_expert,
+                block=action_block,
+                x=x_action,
+                freqs=action_freqs,
+                t_mod=action_t_mod,
+            )
+
+            layer_cache = prefix_kv_cache[layer_idx]
+            if "k" not in layer_cache or "v" not in layer_cache:
+                raise ValueError(f"`prefix_kv_cache[{layer_idx}]` must contain `k` and `v`.")
+            k_prefix = layer_cache["k"]
+            v_prefix = layer_cache["v"]
+            if k_prefix.shape[1] != prefix_seq_len or v_prefix.shape[1] != prefix_seq_len:
+                raise ValueError(
+                    f"`prefix_kv_cache[{layer_idx}]` seq len mismatch, expected {prefix_seq_len}."
+                )
+
+            q_cat = torch.cat([q_video, q_action], dim=1)
+            k_cat = torch.cat([k_prefix, k_video, k_action], dim=1)
+            v_cat = torch.cat([v_prefix, v_video, v_action], dim=1)
+            mixed = self._mixed_attention(
+                q_cat=q_cat,
+                k_cat=k_cat,
+                v_cat=v_cat,
+                attention_mask=query_attention_mask,
+            )
+            mixed_video, mixed_action = mixed.split([video_seq_len, action_seq_len], dim=1)
+            x_video = self._apply_post_with_optional_checkpoint(
+                block=video_block,
+                residual_x=residual_video,
+                gate_msa=gate_msa_video,
+                shift_mlp=shift_mlp_video,
+                scale_mlp=scale_mlp_video,
+                gate_mlp=gate_mlp_video,
+                use_gradient_checkpointing=use_checkpoint_video,
+                mixed_slice=mixed_video,
+                context_payload=video_context_payload,
+            )
+            x_action = self._apply_post_with_optional_checkpoint(
+                block=action_block,
+                residual_x=residual_action,
+                gate_msa=gate_msa_action,
+                shift_mlp=shift_mlp_action,
+                scale_mlp=scale_mlp_action,
+                gate_mlp=gate_mlp_action,
+                use_gradient_checkpointing=use_checkpoint_action,
+                mixed_slice=mixed_action,
+                context_payload=action_context_payload,
+            )
+        return x_video, x_action
+
     def prefill_video_cache_with_prefix(
         self,
         video_tokens: torch.Tensor,
@@ -542,7 +665,8 @@ class MoT(nn.Module):
         prefix_kv_cache: list[dict[str, torch.Tensor]],
         attention_mask: torch.Tensor,
         prefix_seq_len: int,
-    ) -> list[dict[str, torch.Tensor]]:
+        return_tokens: bool = False,
+    ) -> list[dict[str, torch.Tensor]] | tuple[list[dict[str, torch.Tensor]], torch.Tensor]:
         """Prefill current video-token cache while attending to cached video prefix.
 
         This is used when low-level video tokens must first attend corresponding
@@ -622,6 +746,8 @@ class MoT(nn.Module):
                 context_payload=video_context_payload,
             )
             low_kv_cache.append({"k": k_video, "v": v_video})
+        if return_tokens:
+            return low_kv_cache, x
         return low_kv_cache
 
     def forward(

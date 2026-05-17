@@ -40,12 +40,11 @@ class FastWAM_Hierarchical(torch.nn.Module):
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
         loss_lambda_action: float = 1.0,
-        hierarchical_num_chunks: int = 4,
-        hierarchical_chunk_action_horizon: int = 32,
-        hierarchical_high_stride: int = 8,
-        hierarchical_low_stride: int = 4,
+        hierarchical_action_horizon: int = 32,
         hierarchical_mask_high_predict: bool = False,
         hierarchical_mask_low_predict: bool = False,
+        hierarchical_high_condition_mode: str = "boundary",
+        hierarchical_dynamic_skip: bool = False,
     ):
         super().__init__()
         self.video_expert = video_expert
@@ -104,18 +103,20 @@ class FastWAM_Hierarchical(torch.nn.Module):
         self.loss_lambda_video = float(loss_lambda_video)
         self.loss_lambda_action = float(loss_lambda_action)
 
-        self.hierarchical_num_chunks = int(hierarchical_num_chunks)
-        self.hierarchical_chunk_action_horizon = int(hierarchical_chunk_action_horizon)
-        self.hierarchical_high_stride = int(hierarchical_high_stride)
-        self.hierarchical_low_stride = int(hierarchical_low_stride)
+        self.hierarchical_action_horizon = int(hierarchical_action_horizon)
         self.hierarchical_mask_high_predict = bool(hierarchical_mask_high_predict)
         self.hierarchical_mask_low_predict = bool(hierarchical_mask_low_predict)
-        if self.hierarchical_num_chunks <= 0:
-            raise ValueError("`hierarchical_num_chunks` must be positive.")
-        if self.hierarchical_chunk_action_horizon <= 0:
-            raise ValueError("`hierarchical_chunk_action_horizon` must be positive.")
-        if self.hierarchical_high_stride <= 0 or self.hierarchical_low_stride <= 0:
-            raise ValueError("`hierarchical_high_stride` and `hierarchical_low_stride` must be positive.")
+        self.hierarchical_high_condition_mode = str(hierarchical_high_condition_mode).lower()
+        self.hierarchical_dynamic_skip = bool(hierarchical_dynamic_skip)
+        if self.hierarchical_action_horizon <= 0:
+            raise ValueError("`hierarchical_action_horizon` must be positive.")
+        if self.hierarchical_high_condition_mode not in {"history", "boundary", "future"}:
+            raise ValueError(
+                "`hierarchical_high_condition_mode` must be one of "
+                "['history', 'boundary', 'future'], got "
+                f"{hierarchical_high_condition_mode!r}."
+            )
+        self._hierarchical_attention_mask_cache: dict[tuple[Any, ...], torch.Tensor] = {}
 
         self.to(self.device)
 
@@ -143,12 +144,11 @@ class FastWAM_Hierarchical(torch.nn.Module):
         action_num_train_timesteps: int = 1000,
         loss_lambda_video: float = 1.0,
         loss_lambda_action: float = 1.0,
-        hierarchical_num_chunks: int = 4,
-        hierarchical_chunk_action_horizon: int = 32,
-        hierarchical_high_stride: int = 8,
-        hierarchical_low_stride: int = 4,
+        hierarchical_action_horizon: int = 32,
         hierarchical_mask_high_predict: bool = False,
         hierarchical_mask_low_predict: bool = False,
+        hierarchical_high_condition_mode: str = "boundary",
+        hierarchical_dynamic_skip: bool = False,
     ):
         if video_dit_config is None:
             raise ValueError("`video_dit_config` is required for FastWAM.from_wan22_pretrained().")
@@ -206,12 +206,11 @@ class FastWAM_Hierarchical(torch.nn.Module):
             action_num_train_timesteps=action_num_train_timesteps,
             loss_lambda_video=loss_lambda_video,
             loss_lambda_action=loss_lambda_action,
-            hierarchical_num_chunks=hierarchical_num_chunks,
-            hierarchical_chunk_action_horizon=hierarchical_chunk_action_horizon,
-            hierarchical_high_stride=hierarchical_high_stride,
-            hierarchical_low_stride=hierarchical_low_stride,
+            hierarchical_action_horizon=hierarchical_action_horizon,
             hierarchical_mask_high_predict=hierarchical_mask_high_predict,
             hierarchical_mask_low_predict=hierarchical_mask_low_predict,
+            hierarchical_high_condition_mode=hierarchical_high_condition_mode,
+            hierarchical_dynamic_skip=hierarchical_dynamic_skip,
         )
         model.model_paths = {
             "video_dit": components.dit_path,
@@ -422,66 +421,6 @@ class FastWAM_Hierarchical(torch.nn.Module):
         return self.video_expert.post_dit(x_tokens, video_pre)
 
     @staticmethod
-    def _build_chunk_attention_mask(
-        *,
-        high_frames: int,
-        low_frames: int,
-        tokens_per_frame: int,
-        action_seq_len: int,
-        has_proprio_token: bool,
-        device: torch.device,
-        bidirectional_video_attention: bool = False,
-        visible_high_start: Optional[int] = None,
-        visible_high_end: Optional[int] = None,
-    ) -> torch.Tensor:
-        video_seq_len = (high_frames + low_frames) * tokens_per_frame
-        total_seq_len = video_seq_len + action_seq_len
-        mask = torch.zeros((total_seq_len, total_seq_len), dtype=torch.bool, device=device)
-        low_base = high_frames * tokens_per_frame
-        low_end = low_base + low_frames * tokens_per_frame
-        mask[:low_base, :low_base] = True
-        if high_frames > 0:
-            if visible_high_start is None or visible_high_end is None:
-                high_start = 0
-                high_end = high_frames - 1
-            else:
-                high_start = max(0, min(int(visible_high_start), high_frames - 1))
-                high_end = max(high_start, min(int(visible_high_end), high_frames - 1))
-            col_start = high_start * tokens_per_frame
-            col_end = (high_end + 1) * tokens_per_frame
-            mask[low_base:low_end, col_start:col_end] = True
-        mask[low_base:low_end, low_base:low_end] = True
-        if bidirectional_video_attention and high_frames > 0 and low_frames > 0:
-            if visible_high_start is None or visible_high_end is None:
-                row_start = 0
-                row_end = high_frames - 1
-            else:
-                row_start = max(0, min(int(visible_high_start), high_frames - 1))
-                row_end = max(row_start, min(int(visible_high_end), high_frames - 1))
-            row_lo = row_start * tokens_per_frame
-            row_hi = (row_end + 1) * tokens_per_frame
-            mask[row_lo:row_hi, low_base:low_end] = True
-
-        if action_seq_len > 0:
-            if has_proprio_token:
-                proprio_idx = video_seq_len
-                mask[proprio_idx, proprio_idx] = True
-                if action_seq_len > 1:
-                    action_begin = proprio_idx + 1
-                    if high_frames > 0:
-                        mask[action_begin:, col_start:col_end] = True
-                    mask[action_begin:, low_base:low_end] = True
-                    mask[action_begin:, proprio_idx : proprio_idx + 1] = True
-                    mask[action_begin:, action_begin:] = True
-            else:
-                if high_frames > 0:
-                    mask[video_seq_len:, col_start:col_end] = True
-                mask[video_seq_len:, low_base:low_end] = True
-                mask[video_seq_len:, video_seq_len:] = True
-        return mask
-
-
-    @staticmethod
     def _build_first_frame_causal_mask(
         *,
         num_frames: int,
@@ -532,6 +471,25 @@ class FastWAM_Hierarchical(torch.nn.Module):
         total_seq_len = video_seq_len + action_seq_len
         low_base = high_seq_len
         action_base = video_seq_len
+        visible_high_start = max(0, min(int(low_visible_high_start), high_frames - 1))
+        visible_high_end = max(visible_high_start, min(int(low_visible_high_end), high_frames - 1))
+        cache_key = (
+            int(high_frames),
+            int(low_frames),
+            int(tokens_per_frame),
+            int(action_seq_len),
+            bool(has_proprio_token),
+            int(history_high_frames),
+            int(visible_high_start),
+            int(visible_high_end),
+            bool(self.hierarchical_mask_high_predict),
+            bool(self.hierarchical_mask_low_predict),
+            str(device),
+        )
+        cached_mask = self._hierarchical_attention_mask_cache.get(cache_key)
+        if cached_mask is not None:
+            return cached_mask
+
         mask = torch.zeros((total_seq_len, total_seq_len), dtype=torch.bool, device=device)
 
         if self.hierarchical_mask_high_predict:
@@ -555,8 +513,6 @@ class FastWAM_Hierarchical(torch.nn.Module):
             low_mask = torch.ones((low_seq_len, low_seq_len), dtype=torch.bool, device=device)
         mask[low_base:video_seq_len, low_base:video_seq_len] = low_mask
 
-        visible_high_start = max(0, min(int(low_visible_high_start), high_frames - 1))
-        visible_high_end = max(visible_high_start, min(int(low_visible_high_end), high_frames - 1))
         col_start = visible_high_start * tokens_per_frame
         col_end = (visible_high_end + 1) * tokens_per_frame
         mask[low_base:video_seq_len, col_start:col_end] = True
@@ -580,6 +536,9 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     mask[action_token_start:, low_base : low_base + low_visible_seq_len] = True
                 else:
                     mask[action_token_start:, low_base:video_seq_len] = True
+        if len(self._hierarchical_attention_mask_cache) >= 16:
+            self._hierarchical_attention_mask_cache.clear()
+        self._hierarchical_attention_mask_cache[cache_key] = mask
         return mask
 
     def _perturb_history_latents_for_training(
@@ -706,152 +665,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
             context_mask.to(device=self.device, dtype=torch.bool),
         )
 
-    def _extract_observed_history_latents(
-        self,
-        observed_chunk_videos: Optional[list[torch.Tensor]],
-        *,
-        tiled: bool,
-    ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
-        if observed_chunk_videos is None or len(observed_chunk_videos) == 0:
-            return None, None
 
-        frames: list[torch.Tensor] = []
-        for idx, observed in enumerate(observed_chunk_videos):
-            if observed is None:
-                continue
-            if observed.ndim == 3:
-                if observed.shape[0] != 3:
-                    raise ValueError(
-                        f"Observed frame must be [3,H,W], got {tuple(observed.shape)} at index {idx}."
-                    )
-                frame = observed.to(device=self.device, dtype=self.torch_dtype)
-                if len(frames) == 0 or not torch.equal(frames[-1], frame):
-                    frames.append(frame)
-                continue
 
-            if observed.ndim == 4:
-                if observed.shape[0] == 3:
-                    video = observed.unsqueeze(0)  # [1,3,T,H,W]
-                elif observed.shape[1] == 3:
-                    video = observed.permute(1, 0, 2, 3).unsqueeze(0)  # [1,3,T,H,W]
-                else:
-                    raise ValueError(
-                        f"Observed 4D tensor must be [3,T,H,W] or [T,3,H,W], got {tuple(observed.shape)} at index {idx}."
-                    )
-            elif observed.ndim == 5:
-                video = observed
-            else:
-                raise ValueError(
-                    f"Observed item must be [3,H,W], [3,T,H,W], [T,3,H,W], or [1,3,T,H,W], got {tuple(observed.shape)} at index {idx}."
-                )
-
-            if video.shape[0] != 1 or video.shape[1] != 3:
-                raise ValueError(
-                    f"Observed video must be [1,3,T,H,W], got {tuple(video.shape)} at index {idx}."
-                )
-            video = video.to(device=self.device, dtype=self.torch_dtype)
-            for t in range(int(video.shape[2])):
-                frame = video[0, :, t]
-                if len(frames) == 0 or not torch.equal(frames[-1], frame):
-                    frames.append(frame)
-
-        if len(frames) == 0:
-            return None, None
-
-        observed_video = torch.stack(frames, dim=1).unsqueeze(0)  # [1,3,T,H,W]
-        high_prefix_latents = self._encode_video_latents(observed_video, tiled=tiled)
-        last_frame = observed_video[:, :, -1]
-        low_init_latent = self._encode_input_image_latents_tensor(last_frame, tiled=tiled)
-        return high_prefix_latents, low_init_latent
-
-    @staticmethod
-    def _build_action_from_low_attention_mask(
-        *,
-        high_frames: int = 0,
-        low_frames: int,
-        tokens_per_frame: int,
-        action_seq_len: int,
-        has_proprio_token: bool,
-        only_first_low_frame: bool,
-        device: torch.device,
-        visible_high_start: Optional[int] = None,
-        visible_high_end: Optional[int] = None,
-    ) -> torch.Tensor:
-        high_seq_len = high_frames * tokens_per_frame
-        low_seq_len = low_frames * tokens_per_frame
-        video_seq_len = high_seq_len + low_seq_len
-        total_seq_len = video_seq_len + action_seq_len
-        mask = torch.zeros((total_seq_len, total_seq_len), dtype=torch.bool, device=device)
-        if high_seq_len > 0:
-            mask[:high_seq_len, :high_seq_len] = True
-        if low_seq_len > 0:
-            mask[high_seq_len:video_seq_len, high_seq_len:video_seq_len] = True
-            if high_frames > 0:
-                if visible_high_start is None or visible_high_end is None:
-                    high_start = 0
-                    high_end = high_frames - 1
-                else:
-                    high_start = max(0, min(int(visible_high_start), high_frames - 1))
-                    high_end = max(high_start, min(int(visible_high_end), high_frames - 1))
-                high_col_start = high_start * tokens_per_frame
-                high_col_end = (high_end + 1) * tokens_per_frame
-                mask[high_seq_len:video_seq_len, high_col_start:high_col_end] = True
-            else:
-                high_col_start = 0
-                high_col_end = 0
-        elif high_frames > 0:
-            if visible_high_start is None or visible_high_end is None:
-                high_start = 0
-                high_end = high_frames - 1
-            else:
-                high_start = max(0, min(int(visible_high_start), high_frames - 1))
-                high_end = max(high_start, min(int(visible_high_end), high_frames - 1))
-            high_col_start = high_start * tokens_per_frame
-            high_col_end = (high_end + 1) * tokens_per_frame
-        else:
-            high_col_start = 0
-            high_col_end = 0
-        if action_seq_len <= 0:
-            return mask
-
-        if has_proprio_token:
-            proprio_idx = video_seq_len
-            mask[proprio_idx, proprio_idx] = True
-            action_begin = proprio_idx + 1
-            if action_begin < total_seq_len:
-                mask[action_begin:, action_begin:] = True
-                mask[action_begin:, proprio_idx : proprio_idx + 1] = True
-                if high_frames > 0:
-                    mask[action_begin:, high_col_start:high_col_end] = True
-                if only_first_low_frame:
-                    mask[action_begin:, high_seq_len : high_seq_len + tokens_per_frame] = True
-                else:
-                    mask[action_begin:, high_seq_len:video_seq_len] = True
-        else:
-            mask[video_seq_len:, video_seq_len:] = True
-            if high_frames > 0:
-                mask[video_seq_len:, high_col_start:high_col_end] = True
-            if only_first_low_frame:
-                mask[video_seq_len:, high_seq_len : high_seq_len + tokens_per_frame] = True
-            else:
-                mask[video_seq_len:, high_seq_len:video_seq_len] = True
-        return mask
-
-    @staticmethod
-    def _pad_video_latents_time(latents: torch.Tensor, target_frames: int) -> torch.Tensor:
-        if latents.ndim != 5:
-            raise ValueError(f"Expected [B, C, T, H, W] latents, got {tuple(latents.shape)}")
-        current_frames = int(latents.shape[2])
-        if current_frames > target_frames:
-            raise ValueError(
-                f"Cannot pad video latents from T={current_frames} down to target T={target_frames}."
-            )
-        if current_frames == target_frames:
-            return latents
-        pad_shape = list(latents.shape)
-        pad_shape[2] = target_frames - current_frames
-        pad = torch.zeros(pad_shape, device=latents.device, dtype=latents.dtype)
-        return torch.cat([latents, pad], dim=2)
 
     def _encode_proprio_action_token(
         self,
@@ -913,432 +728,6 @@ class FastWAM_Hierarchical(torch.nn.Module):
             action_t_mod,
         )
 
-    def _training_loss_hierarchical(self, sample, tiled: bool = False):
-        if "video" not in sample or "action" not in sample or "context" not in sample or "context_mask" not in sample:
-            raise ValueError("Hierarchical training requires video/action/context/context_mask in sample.")
-
-        video = sample["video"]
-        action = sample["action"]
-        proprio = sample.get("proprio", None)
-        image_is_pad = sample.get("image_is_pad", None)
-        action_is_pad = sample.get("action_is_pad", None)
-        if video.ndim != 5 or action.ndim != 3:
-            raise ValueError(
-                f"Hierarchical mode expects video/action as [B,3,T,H,W]/[B,T,d], got {tuple(video.shape)} and {tuple(action.shape)}"
-            )
-        batch_size = int(video.shape[0])
-        total_action_horizon = int(action.shape[1])
-        total_video_frames = int(video.shape[2])
-        if total_video_frames <= 1:
-            raise ValueError(f"Hierarchical mode expects video with at least 2 frames, got {total_video_frames}")
-        video_transitions = total_video_frames - 1
-        if total_action_horizon % video_transitions != 0:
-            raise ValueError(
-                "Hierarchical mode expects action horizon divisible by video transitions; "
-                f"got action={total_action_horizon}, transitions={video_transitions}."
-            )
-        action_per_video_step = total_action_horizon // video_transitions
-
-        num_chunks = int(self.hierarchical_num_chunks)
-        chunk_action_horizon = int(self.hierarchical_chunk_action_horizon)
-        if num_chunks * chunk_action_horizon != total_action_horizon:
-            if total_action_horizon % num_chunks == 0:
-                chunk_action_horizon = total_action_horizon // num_chunks
-            elif total_action_horizon % chunk_action_horizon == 0:
-                num_chunks = total_action_horizon // chunk_action_horizon
-            else:
-                raise ValueError(
-                    "Cannot infer chunk layout from action horizon. "
-                    f"Got total_action={total_action_horizon}, num_chunks={num_chunks}, chunk_action_horizon={chunk_action_horizon}."
-                )
-        if chunk_action_horizon % action_per_video_step != 0:
-            raise ValueError(
-                "chunk_action_horizon must align with low-level video stride. "
-                f"Got chunk_action_horizon={chunk_action_horizon}, action_per_video_step={action_per_video_step}."
-            )
-        chunk_video_steps = chunk_action_horizon // action_per_video_step
-        if num_chunks * chunk_video_steps != video_transitions:
-            raise ValueError(
-                "Chunk video/action alignment mismatch. "
-                f"num_chunks*chunk_video_steps={num_chunks * chunk_video_steps}, video_transitions={video_transitions}."
-            )
-
-        if proprio is not None and (proprio.ndim != 3 or int(proprio.shape[1]) != total_action_horizon):
-            raise ValueError(
-                f"Hierarchical mode expects proprio shape [B,{total_action_horizon},d], got {tuple(proprio.shape)}"
-            )
-
-        context = sample["context"].to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
-        context_mask = sample["context_mask"].to(device=self.device, dtype=torch.bool, non_blocking=True)
-        video = video.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
-        action = action.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
-        if proprio is not None:
-            proprio = proprio.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
-        if image_is_pad is not None:
-            image_is_pad = image_is_pad.to(device=self.device, dtype=torch.bool, non_blocking=True)
-        if action_is_pad is not None:
-            action_is_pad = action_is_pad.to(device=self.device, dtype=torch.bool, non_blocking=True)
-
-        # Build high-level target plan from full trajectory.
-        high_video = self._temporal_downsample(video, stride=self.hierarchical_high_stride)
-        high_latents = self._encode_video_latents(high_video, tiled=tiled)
-        high_image_is_pad_full = self._temporal_downsample_mask(image_is_pad, stride=self.hierarchical_high_stride) if image_is_pad is not None else None
-        fuse_flag = bool(getattr(self.video_expert, "fuse_vae_embedding_in_latents", False))
-
-        # Chunk-parallel unified training: each chunk sample includes high+low+action.
-        high_frame_count = int(high_latents.shape[2])
-        if high_frame_count <= 1:
-            raise ValueError(
-                f"Hierarchical high-level training requires at least 2 latent frames, got {high_frame_count}."
-            )
-
-        has_proprio = self.proprio_encoder is not None
-        patch_h = int(self.video_expert.patch_size[1])
-        patch_w = int(self.video_expert.patch_size[2])
-        if int(high_latents.shape[3]) % patch_h != 0 or int(high_latents.shape[4]) % patch_w != 0:
-            raise ValueError(
-                "High-level latent spatial shape must be divisible by DiT patch size, "
-                f"got HxW=({high_latents.shape[3]}, {high_latents.shape[4]}), patch=({patch_h}, {patch_w})"
-            )
-        tokens_per_frame = (int(high_latents.shape[3]) // patch_h) * (int(high_latents.shape[4]) // patch_w)
-
-        chunk_high_noisy = []
-        chunk_high_target = []
-        chunk_high_timestep = []
-        chunk_high_loss_timestep = []
-        chunk_high_predict_mask = []
-        chunk_high_image_pad = []
-
-        chunk_low_noisy = []
-        chunk_low_target = []
-        chunk_low_timestep = []
-        chunk_low_image_pad = []
-
-        chunk_action_noisy = []
-        chunk_action_target = []
-        chunk_action_timestep = []
-        chunk_action_is_pad = []
-
-        chunk_proprio_token = []
-        attention_masks = []
-        low_latent_t = None
-
-        for chunk_idx in range(num_chunks):
-            frame_start = chunk_idx * chunk_video_steps
-            frame_end = frame_start + chunk_video_steps + 1
-            action_start = chunk_idx * chunk_action_horizon
-            action_end = action_start + chunk_action_horizon
-
-            low_video_chunk = video[:, :, frame_start:frame_end]
-            low_plan_chunk = self._temporal_downsample(low_video_chunk, stride=self.hierarchical_low_stride)
-
-            # Low-level branch: independent timestep/noise per chunk sample.
-            low_latents_chunk = self._encode_video_latents(low_plan_chunk, tiled=tiled)
-            timestep_video_chunk = self.train_video_scheduler.sample_training_t(
-                batch_size=batch_size,
-                device=self.device,
-                dtype=low_latents_chunk.dtype,
-            )
-            noise_low_chunk = torch.randn_like(low_latents_chunk)
-            noisy_low_chunk = self.train_video_scheduler.add_noise(
-                low_latents_chunk,
-                noise_low_chunk,
-                timestep_video_chunk,
-            )
-            target_low_chunk = self.train_video_scheduler.training_target(
-                low_latents_chunk,
-                noise_low_chunk,
-                timestep_video_chunk,
-            )
-            if fuse_flag:
-                noisy_low_chunk[:, :, 0:1] = low_latents_chunk[:, :, 0:1]
-
-            if low_latent_t is None:
-                low_latent_t = int(noisy_low_chunk.shape[2])
-            elif low_latent_t != int(noisy_low_chunk.shape[2]):
-                raise ValueError(
-                    f"All chunk low-level latent lengths must match; got {low_latent_t} and {int(noisy_low_chunk.shape[2])}."
-                )
-
-            chunk_low_noisy.append(noisy_low_chunk)
-            chunk_low_target.append(target_low_chunk)
-            chunk_low_timestep.append(timestep_video_chunk)
-
-            # High-level branch: chunk i conditions on keyframes [0..i] as history,
-            # and the corresponding target keyframe is i+1.
-            history_frames = min(chunk_idx + 1, high_frame_count - 1)
-            timestep_high_scalar = self.train_video_scheduler.sample_training_t(
-                batch_size=batch_size,
-                device=self.device,
-                dtype=high_latents.dtype,
-            )
-            noise_high_chunk = torch.randn_like(high_latents)
-            noisy_high_chunk = self.train_video_scheduler.add_noise(
-                high_latents,
-                noise_high_chunk,
-                timestep_high_scalar,
-            )
-            target_high_chunk = self.train_video_scheduler.training_target(
-                high_latents,
-                noise_high_chunk,
-                timestep_high_scalar,
-            )
-            timestep_high_chunk = self._build_history_predict_timestep(
-                step_timestep=timestep_high_scalar,
-                total_frames=high_frame_count,
-                history_frames=history_frames,
-                dtype=high_latents.dtype,
-                device=self.device,
-            )
-            if fuse_flag:
-                noisy_high_chunk[:, :, :history_frames] = high_latents[:, :, :history_frames]
-            # Keep high-level history mostly clean, but occasionally condition on
-            # scheduler-noised history with matching per-frame timesteps.
-            noisy_high_chunk, timestep_high_chunk = self._perturb_history_latents_for_training(
-                noisy_high_chunk,
-                timestep_high_chunk,
-                clean_latents=high_latents,
-                history_frames=history_frames,
-                preserve_initial_frame=fuse_flag,
-            )
-
-            predict_mask = torch.zeros((batch_size, high_frame_count), dtype=high_latents.dtype, device=self.device)
-            predict_mask[:, history_frames:] = 1.0
-
-            chunk_high_noisy.append(noisy_high_chunk)
-            chunk_high_target.append(target_high_chunk)
-            chunk_high_timestep.append(timestep_high_chunk)
-            chunk_high_loss_timestep.append(timestep_high_scalar)
-            chunk_high_predict_mask.append(predict_mask)
-            if high_image_is_pad_full is not None:
-                chunk_high_image_pad.append(high_image_is_pad_full)
-
-            action_chunk = action[:, action_start:action_end]
-            timestep_action_chunk = self.train_action_scheduler.sample_training_t(
-                batch_size=batch_size,
-                device=self.device,
-                dtype=action.dtype,
-            )
-            noise_action = torch.randn_like(action_chunk)
-            noisy_action = self.train_action_scheduler.add_noise(action_chunk, noise_action, timestep_action_chunk)
-            target_action_chunk = self.train_action_scheduler.training_target(action_chunk, noise_action, timestep_action_chunk)
-
-            chunk_action_noisy.append(noisy_action)
-            chunk_action_target.append(target_action_chunk)
-            chunk_action_timestep.append(timestep_action_chunk)
-            chunk_action_is_pad.append(action_is_pad[:, action_start:action_end] if action_is_pad is not None else None)
-
-            if image_is_pad is not None:
-                low_image_pad_chunk = image_is_pad[:, frame_start:frame_end]
-                chunk_low_image_pad.append(
-                    self._temporal_downsample_mask(low_image_pad_chunk, stride=self.hierarchical_low_stride)
-                )
-            else:
-                chunk_low_image_pad.append(None)
-
-            if has_proprio:
-                if proprio is None:
-                    raise ValueError("`sample['proprio']` is required when `proprio_dim` is enabled.")
-                proprio_first = proprio[:, action_start, :]
-                chunk_proprio_token.append(
-                    self._encode_proprio_action_token(
-                        proprio=proprio_first,
-                        dtype=context.dtype,
-                    )
-                )
-
-            low_visible_high_start = 0
-            if self.hierarchical_mask_high_predict:
-                low_visible_high_end = history_frames - 1
-            else:
-                low_visible_high_end = min(history_frames, high_frame_count - 1)
-            action_seq_len = chunk_action_horizon + (1 if has_proprio else 0)
-            chunk_mask = self._build_hierarchical_training_attention_mask(
-                high_frames=high_frame_count,
-                low_frames=int(noisy_low_chunk.shape[2]),
-                tokens_per_frame=tokens_per_frame,
-                action_seq_len=action_seq_len,
-                has_proprio_token=has_proprio,
-                history_high_frames=history_frames,
-                low_visible_high_start=low_visible_high_start,
-                low_visible_high_end=low_visible_high_end,
-                device=self.device,
-            )
-            attention_masks.extend([chunk_mask] * batch_size)
-
-        high_noisy_batch = torch.cat(chunk_high_noisy, dim=0)
-        high_target_batch = torch.cat(chunk_high_target, dim=0)
-        high_timestep_batch = torch.cat(chunk_high_timestep, dim=0)
-        high_predict_mask_batch = torch.cat(chunk_high_predict_mask, dim=0)
-        high_image_is_pad_batch = (
-            torch.cat(chunk_high_image_pad, dim=0) if high_image_is_pad_full is not None else None
-        )
-        high_timestep_scalar_batch = torch.cat(chunk_high_loss_timestep, dim=0)
-
-        noisy_low_batch = torch.cat(chunk_low_noisy, dim=0)
-        target_low_batch = torch.cat(chunk_low_target, dim=0)
-        timestep_video_batch = torch.cat(chunk_low_timestep, dim=0)
-
-        chunk_action_noisy_batch = torch.cat(chunk_action_noisy, dim=0)
-        chunk_action_target_batch = torch.cat(chunk_action_target, dim=0)
-        timestep_action_batch = torch.cat(chunk_action_timestep, dim=0)
-        chunk_action_is_pad_batch = (
-            torch.cat(chunk_action_is_pad, dim=0) if action_is_pad is not None else None
-        )
-        chunk_low_image_pad_batch = (
-            torch.cat(chunk_low_image_pad, dim=0) if image_is_pad is not None else None
-        )
-        proprio_token_batch = torch.cat(chunk_proprio_token, dim=0) if has_proprio else None
-
-        low_latent_t = int(noisy_low_batch.shape[2])
-        high_timestep_pre = high_timestep_batch.clone()
-        low_timestep_matrix = timestep_video_batch.unsqueeze(1).expand(-1, low_latent_t).clone()
-        low_timestep_matrix[:, 0] = 0
-        action_joint_batch = chunk_action_noisy_batch
-        timestep_action_joint = timestep_action_batch
-
-        context_joint = context.repeat(num_chunks, 1, 1)
-        context_mask_joint = context_mask.repeat(num_chunks, 1)
-
-        high_pre = self.video_expert.pre_dit(
-            x=high_noisy_batch,
-            timestep=high_timestep_pre,
-            context=context_joint,
-            context_mask=context_mask_joint,
-            action=None,
-            fuse_vae_embedding_in_latents=fuse_flag,
-        )
-        low_pre = self.video_expert.pre_dit(
-            x=noisy_low_batch,
-            timestep=low_timestep_matrix,
-            context=context_joint,
-            context_mask=context_mask_joint,
-            action=None,
-            fuse_vae_embedding_in_latents=fuse_flag,
-        )
-        action_pre = self.action_expert.pre_dit(
-            action_tokens=action_joint_batch,
-            timestep=timestep_action_joint,
-            context=context_joint,
-            context_mask=context_mask_joint,
-        )
-
-        tokens_per_frame = int(high_pre["meta"]["tokens_per_frame"])
-        merged_video_tokens = torch.cat([high_pre["tokens"], low_pre["tokens"]], dim=1)
-        merged_video_freqs = torch.cat([high_pre["freqs"], low_pre["freqs"]], dim=0)
-        merged_video_t_mod = torch.cat([high_pre["t_mod"], low_pre["t_mod"]], dim=1)
-        merged_video_context_mask = torch.cat([high_pre["context_mask"], low_pre["context_mask"]], dim=1)
-
-        action_tokens, action_freqs, action_ctx, action_ctx_mask, action_t_mod = self._prepend_proprio_to_action_pre(
-            action_pre,
-            proprio_token_batch,
-        )
-
-        attention_mask_batch = torch.stack(attention_masks, dim=0)
-        tokens_out = self.mot(
-            embeds_all={
-                "video": merged_video_tokens,
-                "action": action_tokens,
-            },
-            attention_mask=attention_mask_batch,
-            freqs_all={
-                "video": merged_video_freqs,
-                "action": action_freqs,
-            },
-            context_all={
-                "video": {
-                    "context": high_pre["context"],
-                    "mask": merged_video_context_mask,
-                },
-                "action": {
-                    "context": action_ctx,
-                    "mask": action_ctx_mask,
-                },
-            },
-            t_mod_all={
-                "video": merged_video_t_mod,
-                "action": action_t_mod,
-            },
-        )
-
-        high_seq_len = int(high_pre["tokens"].shape[1])
-        pred_high_all = self.video_expert.post_dit(tokens_out["video"][:, :high_seq_len], high_pre)
-        pred_low_all = self.video_expert.post_dit(tokens_out["video"][:, high_seq_len:], low_pre)
-        pred_low_eval = pred_low_all[:, :, 1:] if fuse_flag else pred_low_all
-        target_low_eval = target_low_batch[:, :, 1:] if fuse_flag else target_low_batch
-
-        pred_action_all_with_prop = self.action_expert.post_dit(tokens_out["action"], action_pre)
-        pred_action_all = pred_action_all_with_prop[:, 1:] if has_proprio else pred_action_all_with_prop
-        pred_action_chunks = pred_action_all
-
-        pred_high_eval = pred_high_all[:, :, 1:] if fuse_flag else pred_high_all
-        target_high_eval = high_target_batch[:, :, 1:] if fuse_flag else high_target_batch
-        timestep_high_eval = high_timestep_pre[:, 1:] if fuse_flag else high_timestep_pre
-        predict_mask_high_eval = high_predict_mask_batch[:, 1:] if fuse_flag else high_predict_mask_batch
-        high_image_is_pad_eval = high_image_is_pad_batch
-        high_loss_per_sample = self._compute_video_loss_per_sample(
-            pred_video=pred_high_eval,
-            target_video=target_high_eval,
-            image_is_pad=high_image_is_pad_eval,
-            include_initial_video_step=not fuse_flag,
-            temporal_weights=predict_mask_high_eval.to(dtype=high_latents.dtype),
-        )
-        low_loss_per_chunk_sample = self._compute_video_loss_per_sample(
-            pred_video=pred_low_eval,
-            target_video=target_low_eval,
-            image_is_pad=chunk_low_image_pad_batch,
-            include_initial_video_step=not fuse_flag,
-        )
-
-        action_loss_token = F.mse_loss(
-            pred_action_chunks.float(),
-            chunk_action_target_batch.float(),
-            reduction="none",
-        ).mean(dim=2)
-        if chunk_action_is_pad_batch is not None:
-            valid = (~chunk_action_is_pad_batch).to(
-                device=action_loss_token.device,
-                dtype=action_loss_token.dtype,
-            )
-            valid_sum = valid.sum(dim=1).clamp(min=1.0)
-            action_loss_per_chunk_sample = (action_loss_token * valid).sum(dim=1) / valid_sum
-        else:
-            action_loss_per_chunk_sample = action_loss_token.mean(dim=1)
-
-        high_loss_chunks = high_loss_per_sample.reshape(num_chunks, batch_size).transpose(0, 1)
-        low_loss_chunks = low_loss_per_chunk_sample.reshape(num_chunks, batch_size).transpose(0, 1)
-        action_loss_chunks = action_loss_per_chunk_sample.reshape(num_chunks, batch_size).transpose(0, 1)
-
-        high_weight_chunks = self.train_video_scheduler.training_weight(high_timestep_scalar_batch).to(
-            device=self.device,
-            dtype=high_latents.dtype,
-        ).reshape(num_chunks, batch_size).transpose(0, 1)
-        low_weight_chunks = self.train_video_scheduler.training_weight(timestep_video_batch).to(
-            device=self.device,
-            dtype=high_latents.dtype,
-        ).reshape(num_chunks, batch_size).transpose(0, 1)
-        action_weight_chunks = self.train_action_scheduler.training_weight(timestep_action_batch).to(
-            device=self.device,
-            dtype=action.dtype,
-        ).reshape(num_chunks, batch_size).transpose(0, 1)
-
-        high_loss_per_sample = (high_loss_chunks * high_weight_chunks).mean(dim=1)
-        low_loss_per_sample = (low_loss_chunks * low_weight_chunks).mean(dim=1)
-        action_loss_per_sample = (action_loss_chunks * action_weight_chunks).mean(dim=1)
-
-        loss_high = high_loss_per_sample.mean()
-        loss_low = low_loss_per_sample.mean()
-        loss_action = action_loss_per_sample.mean()
-
-        loss_video = loss_high + loss_low
-        loss_total = self.loss_lambda_video * loss_video + self.loss_lambda_action * loss_action
-        loss_dict = {
-            "loss_video": self.loss_lambda_video * float(loss_video.detach().item()),
-            "loss_video_high": self.loss_lambda_video * float(loss_high.detach().item()),
-            "loss_video_low": self.loss_lambda_video * float(loss_low.detach().item()),
-            "loss_action": self.loss_lambda_action * float(loss_action.detach().item()),
-        }
-        return loss_total, loss_dict
 
     def _compute_video_loss_per_sample(
         self,
@@ -1394,35 +783,440 @@ class FastWAM_Hierarchical(torch.nn.Module):
         weight_sum = weight.sum(dim=1).clamp(min=1e-8)
         return (video_loss_token * weight).sum(dim=1) / weight_sum
 
-    def training_loss(self, sample, tiled: bool = False):
-        return self._training_loss_hierarchical(sample, tiled=tiled)
-
-    @torch.no_grad()
-    def _predict_action_noise_with_cache(
+    def _predict_low_action_joint_noise(
         self,
-        latents_action: torch.Tensor,
-        timestep_action: torch.Tensor,
+        *,
+        keyframe_cond_latents: torch.Tensor,
+        low_latents: torch.Tensor,
+        action_latents: torch.Tensor,
+        keyframe_timestep: torch.Tensor,
+        low_timestep: torch.Tensor,
+        action_timestep: torch.Tensor,
         context: torch.Tensor,
         context_mask: torch.Tensor,
-        video_kv_cache: list[dict[str, torch.Tensor]],
-        attention_mask: torch.Tensor,
-        video_seq_len: int,
-        proprio_action_token: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        proprio_token: Optional[torch.Tensor],
+        fuse_vae_embedding_in_latents: bool,
+        history_high_frames: Optional[int] = None,
+        visible_high_start: Optional[int] = None,
+        visible_high_end: Optional[int] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        high_pre = self.video_expert.pre_dit(
+            x=keyframe_cond_latents,
+            timestep=keyframe_timestep,
+            context=context,
+            context_mask=context_mask,
+            action=None,
+            fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+        )
+        low_pre = self.video_expert.pre_dit(
+            x=low_latents,
+            timestep=low_timestep,
+            context=context,
+            context_mask=context_mask,
+            action=None,
+            fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+        )
         action_pre = self.action_expert.pre_dit(
-            action_tokens=latents_action,
-            timestep=timestep_action,
+            action_tokens=action_latents,
+            timestep=action_timestep,
             context=context,
             context_mask=context_mask,
         )
-        action_tokens = action_pre["tokens"]
-        action_freqs = action_pre["freqs"]
-        action_ctx = action_pre["context"]
-        action_ctx_mask = action_pre["context_mask"]
-        has_proprio_token = proprio_action_token is not None
+
+        tokens_per_frame = int(high_pre["meta"]["tokens_per_frame"])
+        if int(low_pre["meta"]["tokens_per_frame"]) != tokens_per_frame:
+            raise ValueError(
+                "Token-per-frame mismatch between keyframe and low video branches: "
+                f"keyframe={tokens_per_frame}, low={int(low_pre['meta']['tokens_per_frame'])}."
+            )
         action_tokens, action_freqs, action_ctx, action_ctx_mask, action_t_mod = self._prepend_proprio_to_action_pre(
             action_pre,
-            proprio_action_token,
+            proprio_token,
+        )
+        has_proprio = proprio_token is not None
+        action_seq_len = int(action_tokens.shape[1])
+        high_frames = int(keyframe_cond_latents.shape[2])
+        history_high_frames = high_frames if history_high_frames is None else int(history_high_frames)
+        visible_high_start = 0 if visible_high_start is None else int(visible_high_start)
+        visible_high_end = high_frames - 1 if visible_high_end is None else int(visible_high_end)
+        attention_mask = self._build_hierarchical_training_attention_mask(
+            high_frames=high_frames,
+            low_frames=int(low_latents.shape[2]),
+            tokens_per_frame=tokens_per_frame,
+            action_seq_len=action_seq_len,
+            has_proprio_token=has_proprio,
+            history_high_frames=history_high_frames,
+            low_visible_high_start=visible_high_start,
+            low_visible_high_end=visible_high_end,
+            device=low_latents.device,
+        )
+
+        merged_video_tokens = torch.cat([high_pre["tokens"], low_pre["tokens"]], dim=1)
+        merged_video_freqs = torch.cat([high_pre["freqs"], low_pre["freqs"]], dim=0)
+        merged_video_t_mod = torch.cat([high_pre["t_mod"], low_pre["t_mod"]], dim=1)
+        merged_video_context_mask = torch.cat([high_pre["context_mask"], low_pre["context_mask"]], dim=1)
+
+        tokens_out = self.mot(
+            embeds_all={
+                "video": merged_video_tokens,
+                "action": action_tokens,
+            },
+            attention_mask=attention_mask,
+            freqs_all={
+                "video": merged_video_freqs,
+                "action": action_freqs,
+            },
+            context_all={
+                "video": {
+                    "context": high_pre["context"],
+                    "mask": merged_video_context_mask,
+                },
+                "action": {
+                    "context": action_ctx,
+                    "mask": action_ctx_mask,
+                },
+            },
+            t_mod_all={
+                "video": merged_video_t_mod,
+                "action": action_t_mod,
+            },
+        )
+
+        high_seq_len = int(high_pre["tokens"].shape[1])
+        pred_keyframe = self.video_expert.post_dit(tokens_out["video"][:, :high_seq_len], high_pre)
+        pred_low = self.video_expert.post_dit(tokens_out["video"][:, high_seq_len:], low_pre)
+        pred_action_all = self.action_expert.post_dit(tokens_out["action"], action_pre)
+        pred_action = pred_action_all[:, 1:] if has_proprio else pred_action_all
+        return pred_keyframe, pred_low, pred_action
+
+    @staticmethod
+    def _should_run_diffusion_step(
+        *,
+        prev_predictions: list[torch.Tensor],
+        skip_countdown: int,
+        enabled: bool,
+    ) -> tuple[bool, int]:
+        if not enabled or len(prev_predictions) < 2:
+            return True, skip_countdown
+        if skip_countdown > 1:
+            return False, skip_countdown - 1
+        if skip_countdown == 1:
+            return True, 0
+
+        v_last = prev_predictions[-1].flatten(1).float()
+        v_prev = prev_predictions[-2].flatten(1).float()
+        sim = F.cosine_similarity(v_last, v_prev, dim=1).mean()
+        for threshold, countdown in ((0.95, 4), (0.93, 2)):
+            if bool(sim > threshold):
+                return False, countdown
+        return True, 0
+
+    def _downstream_high_visible_range(self, history_frames: int) -> tuple[int, int]:
+        mode = self.hierarchical_high_condition_mode
+        if self.hierarchical_mask_high_predict:
+            if mode == "history":
+                return 0, history_frames - 1
+            return history_frames - 1, history_frames - 1
+        if mode == "history":
+            return 0, history_frames
+        if mode == "boundary":
+            return history_frames - 1, history_frames
+        return history_frames, history_frames
+
+    def _select_downstream_keyframes(
+        self,
+        keyframe_latents: torch.Tensor,
+        keyframe_timestep: torch.Tensor,
+        *,
+        history_frames: int,
+    ) -> tuple[torch.Tensor, torch.Tensor, int, int, int]:
+        selected, selected_history_frames = self._downstream_keyframe_indices(history_frames)
+        indices = torch.tensor(selected, device=keyframe_latents.device, dtype=torch.long)
+        return (
+            torch.index_select(keyframe_latents, dim=2, index=indices),
+            torch.index_select(keyframe_timestep, dim=1, index=indices),
+            selected_history_frames,
+            0,
+            len(selected) - 1,
+        )
+
+    def _downstream_keyframe_indices(self, history_frames: int) -> tuple[list[int], int]:
+        mode = self.hierarchical_high_condition_mode
+        if self.hierarchical_mask_high_predict:
+            if mode == "history":
+                return list(range(history_frames)), history_frames
+            return [history_frames - 1], 1
+        if mode == "history":
+            return list(range(history_frames + 1)), history_frames
+        if mode == "boundary":
+            return [history_frames - 1, history_frames], 1
+        return [history_frames], 1
+
+    @staticmethod
+    def _concat_video_kv_caches(
+        prefix_cache: list[dict[str, torch.Tensor]],
+        suffix_cache: list[dict[str, torch.Tensor]],
+    ) -> list[dict[str, torch.Tensor]]:
+        if len(prefix_cache) != len(suffix_cache):
+            raise ValueError(
+                f"Cache layer mismatch: prefix={len(prefix_cache)}, suffix={len(suffix_cache)}."
+            )
+        return [
+            {
+                "k": torch.cat([prefix_layer["k"], suffix_layer["k"]], dim=1),
+                "v": torch.cat([prefix_layer["v"], suffix_layer["v"]], dim=1),
+            }
+            for prefix_layer, suffix_layer in zip(prefix_cache, suffix_cache)
+        ]
+
+    @staticmethod
+    def _slice_video_kv_cache(
+        cache: list[dict[str, torch.Tensor]],
+        *,
+        frame_indices: list[int],
+        tokens_per_frame: int,
+    ) -> list[dict[str, torch.Tensor]]:
+        token_indices = []
+        for frame_idx in frame_indices:
+            start = int(frame_idx) * int(tokens_per_frame)
+            token_indices.extend(range(start, start + int(tokens_per_frame)))
+        if not token_indices:
+            raise ValueError("Cannot slice an empty keyframe cache selection.")
+        index = None
+        sliced: list[dict[str, torch.Tensor]] = []
+        for layer in cache:
+            if index is None:
+                index = torch.tensor(token_indices, device=layer["k"].device, dtype=torch.long)
+            sliced.append(
+                {
+                    "k": torch.index_select(layer["k"], dim=1, index=index),
+                    "v": torch.index_select(layer["v"], dim=1, index=index),
+                }
+            )
+        return sliced
+
+    @torch.no_grad()
+    def _prefill_keyframe_cache(
+        self,
+        *,
+        keyframe_cond_latents: torch.Tensor,
+        keyframe_timestep: torch.Tensor,
+        context: torch.Tensor,
+        context_mask: torch.Tensor,
+        fuse_vae_embedding_in_latents: bool,
+        history_high_frames: int,
+        visible_high_start: int,
+        visible_high_end: int,
+    ) -> tuple[list[dict[str, torch.Tensor]], int, int]:
+        key_pre = self.video_expert.pre_dit(
+            x=keyframe_cond_latents,
+            timestep=keyframe_timestep,
+            context=context,
+            context_mask=context_mask,
+            action=None,
+            fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+        )
+        tokens_per_frame = int(key_pre["meta"]["tokens_per_frame"])
+        high_frames = int(keyframe_cond_latents.shape[2])
+        attention_mask = self._build_hierarchical_training_attention_mask(
+            high_frames=high_frames,
+            low_frames=0,
+            tokens_per_frame=tokens_per_frame,
+            action_seq_len=0,
+            has_proprio_token=False,
+            history_high_frames=history_high_frames,
+            low_visible_high_start=visible_high_start,
+            low_visible_high_end=visible_high_end,
+            device=key_pre["tokens"].device,
+        )
+        key_cache = self.mot.prefill_video_cache(
+            video_tokens=key_pre["tokens"],
+            video_freqs=key_pre["freqs"],
+            video_t_mod=key_pre["t_mod"],
+            video_context_payload={
+                "context": key_pre["context"],
+                "mask": key_pre["context_mask"],
+            },
+            video_attention_mask=attention_mask,
+        )
+        return key_cache, int(key_pre["tokens"].shape[1]), tokens_per_frame
+
+    @torch.no_grad()
+    def _prefill_low_cache_with_keyframe_cache(
+        self,
+        *,
+        keyframe_cache: list[dict[str, torch.Tensor]],
+        keyframe_seq_len: int,
+        keyframe_frames: int,
+        low_latents: torch.Tensor,
+        low_timestep: torch.Tensor,
+        context: torch.Tensor,
+        context_mask: torch.Tensor,
+        fuse_vae_embedding_in_latents: bool,
+        tokens_per_frame: int,
+        history_high_frames: int,
+        visible_high_start: int,
+        visible_high_end: int,
+    ) -> tuple[list[dict[str, torch.Tensor]], torch.Tensor, dict[str, torch.Tensor]]:
+        low_pre = self.video_expert.pre_dit(
+            x=low_latents,
+            timestep=low_timestep,
+            context=context,
+            context_mask=context_mask,
+            action=None,
+            fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+        )
+        if int(low_pre["meta"]["tokens_per_frame"]) != tokens_per_frame:
+            raise ValueError(
+                "Token-per-frame mismatch between keyframe and low video cache branches: "
+                f"keyframe={tokens_per_frame}, low={int(low_pre['meta']['tokens_per_frame'])}."
+            )
+        low_frames = int(low_latents.shape[2])
+        attention_mask = self._build_hierarchical_training_attention_mask(
+            high_frames=keyframe_frames,
+            low_frames=low_frames,
+            tokens_per_frame=tokens_per_frame,
+            action_seq_len=0,
+            has_proprio_token=False,
+            history_high_frames=history_high_frames,
+            low_visible_high_start=visible_high_start,
+            low_visible_high_end=visible_high_end,
+            device=low_pre["tokens"].device,
+        )
+        low_cache, low_tokens = self.mot.prefill_video_cache_with_prefix(
+            video_tokens=low_pre["tokens"],
+            video_freqs=low_pre["freqs"],
+            video_t_mod=low_pre["t_mod"],
+            video_context_payload={
+                "context": low_pre["context"],
+                "mask": low_pre["context_mask"],
+            },
+            prefix_kv_cache=keyframe_cache,
+            attention_mask=attention_mask,
+            prefix_seq_len=keyframe_seq_len,
+            return_tokens=True,
+        )
+        return low_cache, low_tokens, low_pre
+
+    @torch.no_grad()
+    def _predict_low_action_with_keyframe_cache(
+        self,
+        *,
+        keyframe_cache: list[dict[str, torch.Tensor]],
+        keyframe_seq_len: int,
+        keyframe_frames: int,
+        low_latents: torch.Tensor,
+        action_latents: torch.Tensor,
+        low_timestep: torch.Tensor,
+        action_timestep: torch.Tensor,
+        context: torch.Tensor,
+        context_mask: torch.Tensor,
+        proprio_token: Optional[torch.Tensor],
+        fuse_vae_embedding_in_latents: bool,
+        tokens_per_frame: int,
+        history_high_frames: int,
+        visible_high_start: int,
+        visible_high_end: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        low_pre = self.video_expert.pre_dit(
+            x=low_latents,
+            timestep=low_timestep,
+            context=context,
+            context_mask=context_mask,
+            action=None,
+            fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+        )
+        action_pre = self.action_expert.pre_dit(
+            action_tokens=action_latents,
+            timestep=action_timestep,
+            context=context,
+            context_mask=context_mask,
+        )
+        if int(low_pre["meta"]["tokens_per_frame"]) != tokens_per_frame:
+            raise ValueError(
+                "Token-per-frame mismatch between keyframe and low video branches: "
+                f"keyframe={tokens_per_frame}, low={int(low_pre['meta']['tokens_per_frame'])}."
+            )
+        action_tokens, action_freqs, action_ctx, action_ctx_mask, action_t_mod = self._prepend_proprio_to_action_pre(
+            action_pre,
+            proprio_token,
+        )
+        has_proprio = proprio_token is not None
+        low_frames = int(low_latents.shape[2])
+        attention_mask = self._build_hierarchical_training_attention_mask(
+            high_frames=keyframe_frames,
+            low_frames=low_frames,
+            tokens_per_frame=tokens_per_frame,
+            action_seq_len=int(action_tokens.shape[1]),
+            has_proprio_token=has_proprio,
+            history_high_frames=history_high_frames,
+            low_visible_high_start=visible_high_start,
+            low_visible_high_end=visible_high_end,
+            device=action_latents.device,
+        )
+        low_tokens, action_tokens = self.mot.forward_video_action_with_video_cache(
+            video_tokens=low_pre["tokens"],
+            video_freqs=low_pre["freqs"],
+            video_t_mod=low_pre["t_mod"],
+            video_context_payload={
+                "context": low_pre["context"],
+                "mask": low_pre["context_mask"],
+            },
+            action_tokens=action_tokens,
+            action_freqs=action_freqs,
+            action_t_mod=action_t_mod,
+            action_context_payload={
+                "context": action_ctx,
+                "mask": action_ctx_mask,
+            },
+            prefix_kv_cache=keyframe_cache,
+            attention_mask=attention_mask,
+            prefix_seq_len=keyframe_seq_len,
+        )
+        pred_low = self.video_expert.post_dit(low_tokens, low_pre)
+        pred_action_all = self.action_expert.post_dit(action_tokens, action_pre)
+        pred_action = pred_action_all[:, 1:] if has_proprio else pred_action_all
+        return pred_low, pred_action
+
+    @torch.no_grad()
+    def _predict_action_with_frozen_video_cache(
+        self,
+        *,
+        action_latents: torch.Tensor,
+        action_timestep: torch.Tensor,
+        context: torch.Tensor,
+        context_mask: torch.Tensor,
+        video_cache: list[dict[str, torch.Tensor]],
+        video_seq_len: int,
+        tokens_per_frame: int,
+        high_frames: int,
+        low_frames: int,
+        history_high_frames: int,
+        visible_high_start: int,
+        visible_high_end: int,
+        proprio_token: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        action_pre = self.action_expert.pre_dit(
+            action_tokens=action_latents,
+            timestep=action_timestep,
+            context=context,
+            context_mask=context_mask,
+        )
+        action_tokens, action_freqs, action_ctx, action_ctx_mask, action_t_mod = self._prepend_proprio_to_action_pre(
+            action_pre,
+            proprio_token,
+        )
+        has_proprio = proprio_token is not None
+        attention_mask = self._build_hierarchical_training_attention_mask(
+            high_frames=high_frames,
+            low_frames=low_frames,
+            tokens_per_frame=tokens_per_frame,
+            action_seq_len=int(action_tokens.shape[1]),
+            has_proprio_token=has_proprio,
+            history_high_frames=history_high_frames,
+            low_visible_high_start=visible_high_start,
+            low_visible_high_end=visible_high_end,
+            device=action_latents.device,
         )
         action_tokens = self.mot.forward_action_with_video_cache(
             action_tokens=action_tokens,
@@ -1432,314 +1226,216 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 "context": action_ctx,
                 "mask": action_ctx_mask,
             },
-            video_kv_cache=video_kv_cache,
+            video_kv_cache=video_cache,
             attention_mask=attention_mask,
             video_seq_len=video_seq_len,
         )
-        pred_action_all = self.action_expert.post_dit(action_tokens, action_pre)
-        return pred_action_all[:, 1:] if has_proprio_token else pred_action_all
+        pred_action = self.action_expert.post_dit(action_tokens, action_pre)
+        return pred_action[:, 1:] if has_proprio else pred_action
 
-    @torch.no_grad()
-    def _infer_action_from_video_condition(
-        self,
-        *,
-        latents_video_cond: torch.Tensor,
-        chunk_horizon: int,
-        context: torch.Tensor,
-        context_mask: torch.Tensor,
-        action_timesteps: torch.Tensor,
-        action_deltas: torch.Tensor,
-        generator: Optional[torch.Generator],
-        rand_device: str,
-        proprio: Optional[torch.Tensor],
-        fuse_vae_embedding_in_latents: bool,
-        only_first_low_frame: bool,
-        low_cache_predict_timestep: Optional[torch.Tensor] = None,
-        high_kv_cache_for_low: Optional[list[dict[str, torch.Tensor]]] = None,
-        high_frames_for_low: Optional[int] = None,
-        high_tokens_per_frame_for_low: Optional[int] = None,
-    ) -> torch.Tensor:
-        if only_first_low_frame:
-            latents_video_cond = latents_video_cond[:, :, :1]
+    def _training_loss_hierarchical(self, sample, tiled: bool = False):
+        required = {"video", "keyframe", "action", "context", "context_mask"}
+        missing = required - set(sample.keys())
+        if missing:
+            raise ValueError(f"Hierarchical training requires keys {sorted(required)}, missing {sorted(missing)}.")
 
-        cache_timestep = None
-        action_high_frames = 0
-        if low_cache_predict_timestep is not None:
-            cache_timestep = self._build_history_predict_timestep(
-                step_timestep=low_cache_predict_timestep,
-                total_frames=int(latents_video_cond.shape[2]),
-                history_frames=1,
-                dtype=latents_video_cond.dtype,
-                device=latents_video_cond.device,
+        video = sample["video"]
+        keyframe = sample["keyframe"]
+        action = sample["action"]
+        proprio = sample.get("proprio", None)
+        image_is_pad = sample.get("image_is_pad", None)
+        keyframe_is_pad = sample.get("keyframe_is_pad", None)
+        action_is_pad = sample.get("action_is_pad", None)
+        if video.ndim != 5 or keyframe.ndim != 5 or action.ndim != 3:
+            raise ValueError(
+                "Hierarchical mode expects video/keyframe/action as "
+                f"[B,3,T,H,W]/[B,3,T,H,W]/[B,T,d], got {tuple(video.shape)}, "
+                f"{tuple(keyframe.shape)}, {tuple(action.shape)}"
             )
-        if high_kv_cache_for_low is None:
-            video_kv_cache, video_seq_len, low_tokens_per_frame = self._build_video_kv_cache(
-                latents_video=latents_video_cond,
-                context=context,
-                context_mask=context_mask,
-                fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
-                timestep_video=cache_timestep,
+        batch_size = int(video.shape[0])
+        action_horizon = int(action.shape[1])
+        if action_horizon != int(self.hierarchical_action_horizon):
+            raise ValueError(
+                "New hierarchical training expects one sample per action horizon. "
+                f"Got action_horizon={action_horizon}, configured horizon={self.hierarchical_action_horizon}."
             )
-        else:
-            if high_frames_for_low is None or high_tokens_per_frame_for_low is None:
-                raise ValueError(
-                    "`high_frames_for_low` and `high_tokens_per_frame_for_low` are required "
-                    "when `high_kv_cache_for_low` is provided."
-                )
-            timestep_input = (
-                torch.zeros(
-                    (latents_video_cond.shape[0],),
-                    dtype=latents_video_cond.dtype,
-                    device=latents_video_cond.device,
-                )
-                if cache_timestep is None
-                else cache_timestep.to(device=latents_video_cond.device, dtype=latents_video_cond.dtype)
-            )
-            low_pre = self.video_expert.pre_dit(
-                x=latents_video_cond,
-                timestep=timestep_input,
-                context=context,
-                context_mask=context_mask,
-                action=None,
-                fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
-            )
-            low_tokens_per_frame = int(low_pre["meta"]["tokens_per_frame"])
-            if int(high_tokens_per_frame_for_low) != low_tokens_per_frame:
-                raise ValueError(
-                    "Token-per-frame mismatch between high cache and low chunk: "
-                    f"high={high_tokens_per_frame_for_low}, low={low_tokens_per_frame}."
-                )
+        if video.shape[2] != 9:
+            raise ValueError(f"New hierarchical training expects low video with 9 frames, got {video.shape[2]}.")
+        if keyframe.shape[2] != 17:
+            raise ValueError(f"New hierarchical training expects keyframe with 17 frames, got {keyframe.shape[2]}.")
+        if proprio is not None and (proprio.ndim != 3 or int(proprio.shape[1]) != action_horizon):
+            raise ValueError(f"Expected proprio shape [B,{action_horizon},d], got {tuple(proprio.shape)}.")
 
-            low_cache_attention_mask = self._build_chunk_attention_mask(
-                high_frames=int(high_frames_for_low),
-                low_frames=int(latents_video_cond.shape[2]),
-                tokens_per_frame=low_tokens_per_frame,
-                action_seq_len=0,
-                has_proprio_token=False,
-                device=latents_video_cond.device,
-                visible_high_start=0,
-                visible_high_end=max(0, int(high_frames_for_low) - 1),
-            )
-            high_seq_len_for_low = int(high_frames_for_low) * low_tokens_per_frame
-            low_kv_cache = self.mot.prefill_video_cache_with_prefix(
-                video_tokens=low_pre["tokens"],
-                video_freqs=low_pre["freqs"],
-                video_t_mod=low_pre["t_mod"],
-                video_context_payload={
-                    "context": low_pre["context"],
-                    "mask": low_pre["context_mask"],
-                },
-                prefix_kv_cache=high_kv_cache_for_low,
-                attention_mask=low_cache_attention_mask,
-                prefix_seq_len=high_seq_len_for_low,
-            )
-            # Action decoding should condition on the same high-history prefix
-            # that the low-level video chunk used, plus the low chunk itself.
-            video_kv_cache = self._concat_video_kv_caches(
-                high_kv_cache_for_low,
-                low_kv_cache,
-            )
-            video_seq_len = high_seq_len_for_low + int(low_pre["tokens"].shape[1])
-            action_high_frames = int(high_frames_for_low)
-        proprio_action_token = None
-        if self.proprio_encoder is not None:
+        context = sample["context"].to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
+        context_mask = sample["context_mask"].to(device=self.device, dtype=torch.bool, non_blocking=True)
+        video = video.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
+        keyframe = keyframe.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
+        action = action.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
+        if proprio is not None:
+            proprio = proprio.to(device=self.device, dtype=self.torch_dtype, non_blocking=True)
+        if image_is_pad is not None:
+            image_is_pad = image_is_pad.to(device=self.device, dtype=torch.bool, non_blocking=True)
+        if keyframe_is_pad is not None:
+            keyframe_is_pad = keyframe_is_pad.to(device=self.device, dtype=torch.bool, non_blocking=True)
+        if action_is_pad is not None:
+            action_is_pad = action_is_pad.to(device=self.device, dtype=torch.bool, non_blocking=True)
+
+        fuse_flag = bool(getattr(self.video_expert, "fuse_vae_embedding_in_latents", False))
+        keyframe_latents = self._encode_video_latents(keyframe, tiled=tiled)
+        low_latents = self._encode_video_latents(video, tiled=tiled)
+        if int(keyframe_latents.shape[2]) != 5:
+            raise ValueError(f"Expected encoded keyframe to have 5 latent frames, got {keyframe_latents.shape[2]}.")
+        if int(low_latents.shape[2]) != 3:
+            raise ValueError(f"Expected encoded video to have 3 latent frames, got {low_latents.shape[2]}.")
+
+        history_key_latents = 3
+        predict_key_latents = int(keyframe_latents.shape[2]) - history_key_latents
+        timestep_key = self.train_video_scheduler.sample_training_t(
+            batch_size=batch_size,
+            device=self.device,
+            dtype=keyframe_latents.dtype,
+        )
+        noise_key = torch.randn_like(keyframe_latents)
+        noisy_key = keyframe_latents.clone()
+        noisy_key_predict = self.train_video_scheduler.add_noise(
+            keyframe_latents[:, :, history_key_latents:],
+            noise_key[:, :, history_key_latents:],
+            timestep_key,
+        )
+        noisy_key[:, :, history_key_latents:] = noisy_key_predict
+        target_key = self.train_video_scheduler.training_target(
+            keyframe_latents,
+            noise_key,
+            timestep_key,
+        )
+        timestep_key_matrix = torch.zeros(
+            (batch_size, int(keyframe_latents.shape[2])),
+            dtype=keyframe_latents.dtype,
+            device=self.device,
+        )
+        timestep_key_matrix[:, history_key_latents:] = timestep_key.unsqueeze(1).expand(-1, predict_key_latents)
+        noisy_key, timestep_key_matrix = self._perturb_history_latents_for_training(
+            noisy_key,
+            timestep_key_matrix,
+            clean_latents=keyframe_latents,
+            history_frames=history_key_latents,
+            preserve_initial_frame=fuse_flag,
+            probability=0.5,
+            max_noise_scale=0.5,
+        )
+
+        timestep_low = self.train_video_scheduler.sample_training_t(
+            batch_size=batch_size,
+            device=self.device,
+            dtype=low_latents.dtype,
+        )
+        noise_low = torch.randn_like(low_latents)
+        noisy_low = self.train_video_scheduler.add_noise(low_latents, noise_low, timestep_low)
+        target_low = self.train_video_scheduler.training_target(low_latents, noise_low, timestep_low)
+        low_timestep_matrix = timestep_low.unsqueeze(1).expand(-1, int(low_latents.shape[2])).clone()
+        if fuse_flag:
+            noisy_low[:, :, 0:1] = low_latents[:, :, 0:1]
+            low_timestep_matrix[:, 0] = 0
+
+        timestep_action = self.train_action_scheduler.sample_training_t(
+            batch_size=batch_size,
+            device=self.device,
+            dtype=action.dtype,
+        )
+        noise_action = torch.randn_like(action)
+        noisy_action = self.train_action_scheduler.add_noise(action, noise_action, timestep_action)
+        target_action = self.train_action_scheduler.training_target(action, noise_action, timestep_action)
+
+        has_proprio = self.proprio_encoder is not None
+        proprio_token = None
+        if has_proprio:
             if proprio is None:
-                raise ValueError("`proprio` must be provided in hierarchical infer when `proprio_dim` is enabled.")
-            if proprio.ndim == 1:
-                proprio = proprio.unsqueeze(0)
-            if proprio.ndim != 2 or proprio.shape[1] != self.proprio_dim:
-                raise ValueError(
-                    f"Expected proprio shape [1,{self.proprio_dim}] in hierarchical infer, got {tuple(proprio.shape)}"
-                )
-            proprio_action_token = self._encode_proprio_action_token(
-                proprio=proprio.to(device=self.device, dtype=self.torch_dtype),
+                raise ValueError("`sample['proprio']` is required when `proprio_dim` is enabled.")
+            proprio_token = self._encode_proprio_action_token(
+                proprio=proprio[:, 0, :],
                 dtype=context.dtype,
             )
 
-        action_seq_len = chunk_horizon + (1 if proprio_action_token is not None else 0)
-        full_attention_mask = self._build_action_from_low_attention_mask(
-            high_frames=action_high_frames,
-            low_frames=int(latents_video_cond.shape[2]),
-            tokens_per_frame=low_tokens_per_frame,
-            action_seq_len=action_seq_len,
-            has_proprio_token=proprio_action_token is not None,
-            only_first_low_frame=only_first_low_frame,
-            device=self.device,
-            visible_high_start=0,
-            visible_high_end=max(0, action_high_frames - 1),
-        )
-
-        latents_action = torch.randn(
-            (1, chunk_horizon, self.action_expert.action_dim),
-            generator=generator,
-            device=rand_device,
-            dtype=torch.float32,
-        ).to(device=self.device, dtype=self.torch_dtype)
-        for step_t_act, step_d_act in zip(action_timesteps, action_deltas):
-            t_action = step_t_act.unsqueeze(0).to(device=self.device, dtype=latents_action.dtype)
-            pred_action = self._predict_action_noise_with_cache(
-                latents_action=latents_action,
-                timestep_action=t_action,
-                context=context,
-                context_mask=context_mask,
-                video_kv_cache=video_kv_cache,
-                attention_mask=full_attention_mask,
-                video_seq_len=video_seq_len,
-                proprio_action_token=proprio_action_token,
-            )
-            latents_action = self.infer_action_scheduler.step(pred_action, step_d_act, latents_action)
-        return latents_action[0].detach().to(device="cpu", dtype=torch.float32)
-
-    @torch.no_grad()
-    def _build_video_kv_cache(
-        self,
-        *,
-        latents_video: torch.Tensor,
-        context: torch.Tensor,
-        context_mask: torch.Tensor,
-        fuse_vae_embedding_in_latents: bool,
-        timestep_video: Optional[torch.Tensor] = None,
-    ) -> tuple[list[dict[str, torch.Tensor]], int, int]:
-        if timestep_video is None:
-            timestep_input = torch.zeros(
-                (latents_video.shape[0],),
-                dtype=latents_video.dtype,
-                device=latents_video.device,
-            )
-        else:
-            timestep_input = timestep_video.to(device=latents_video.device, dtype=latents_video.dtype)
-        video_pre = self.video_expert.pre_dit(
-            x=latents_video,
-            timestep=timestep_input,
+        visible_high_start, visible_high_end = self._downstream_high_visible_range(history_key_latents)
+        pred_key, pred_low, pred_action = self._predict_low_action_joint_noise(
+            keyframe_cond_latents=noisy_key,
+            low_latents=noisy_low,
+            action_latents=noisy_action,
+            keyframe_timestep=timestep_key_matrix,
+            low_timestep=low_timestep_matrix,
+            action_timestep=timestep_action,
             context=context,
             context_mask=context_mask,
-            action=None,
-            fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
-        )
-        video_seq_len = int(video_pre["tokens"].shape[1])
-        tokens_per_frame = int(video_pre["meta"]["tokens_per_frame"])
-        video_attention_mask = self.video_expert.build_video_to_video_mask(
-            video_seq_len=video_seq_len,
-            video_tokens_per_frame=tokens_per_frame,
-            device=video_pre["tokens"].device,
-        )
-        video_kv_cache = self.mot.prefill_video_cache(
-            video_tokens=video_pre["tokens"],
-            video_freqs=video_pre["freqs"],
-            video_t_mod=video_pre["t_mod"],
-            video_context_payload={
-                "context": video_pre["context"],
-                "mask": video_pre["context_mask"],
-            },
-            video_attention_mask=video_attention_mask,
-        )
-        return video_kv_cache, video_seq_len, tokens_per_frame
-
-    @staticmethod
-    def _concat_chunk_video_tensors(
-        video_chunks: list[torch.Tensor],
-        *,
-        replace_boundary_with_next_chunk_first_frame: bool = False,
-    ) -> torch.Tensor:
-        if len(video_chunks) == 0:
-            raise ValueError("`video_chunks` must contain at least one chunk.")
-        full_video = video_chunks[0]
-        for chunk_idx, chunk_video in enumerate(video_chunks[1:], start=1):
-            if chunk_video.ndim != 4 or chunk_video.shape[0] != 3:
-                raise ValueError(
-                    f"Chunk video at index {chunk_idx} must have shape [3,T,H,W], got {tuple(chunk_video.shape)}."
-                )
-            if replace_boundary_with_next_chunk_first_frame:
-                full_video = torch.cat([full_video[:, :-1], chunk_video], dim=1)
-            else:
-                full_video = torch.cat([full_video, chunk_video[:, 1:]], dim=1)
-        return full_video
-
-    def _get_chunk_proprio(
-        self,
-        proprio: Optional[torch.Tensor],
-        *,
-        action_start: int,
-    ) -> Optional[torch.Tensor]:
-        if self.proprio_encoder is None or proprio is None:
-            return None
-        if proprio.ndim == 1:
-            if proprio.shape[0] != self.proprio_dim:
-                raise ValueError(
-                    f"Expected proprio shape [{self.proprio_dim}] in hierarchical infer, got {tuple(proprio.shape)}"
-                )
-            return proprio.unsqueeze(0).to(device=self.device, dtype=self.torch_dtype)
-        if proprio.ndim == 2:
-            if int(proprio.shape[1]) != int(self.proprio_dim):
-                raise ValueError(
-                    f"Expected proprio shape [T,{self.proprio_dim}] in hierarchical infer, got {tuple(proprio.shape)}"
-                )
-            if int(proprio.shape[0]) == 1:
-                return proprio.to(device=self.device, dtype=self.torch_dtype)
-            if action_start >= int(proprio.shape[0]):
-                raise ValueError(
-                    f"`action_start`={action_start} exceeds proprio horizon {int(proprio.shape[0])}."
-                )
-            return proprio[action_start : action_start + 1].to(device=self.device, dtype=self.torch_dtype)
-        if proprio.ndim == 3:
-            if proprio.shape[0] != 1 or int(proprio.shape[2]) != int(self.proprio_dim):
-                raise ValueError(
-                    f"Expected proprio shape [1,T,{self.proprio_dim}] in hierarchical infer, got {tuple(proprio.shape)}"
-                )
-            if action_start >= int(proprio.shape[1]):
-                raise ValueError(
-                    f"`action_start`={action_start} exceeds proprio horizon {int(proprio.shape[1])}."
-                )
-            return proprio[:, action_start, :].to(device=self.device, dtype=self.torch_dtype)
-        raise ValueError(
-            f"`proprio` must have shape [D], [T,D], or [1,T,D] in hierarchical infer, got {tuple(proprio.shape)}"
+            proprio_token=proprio_token,
+            fuse_vae_embedding_in_latents=fuse_flag,
+            history_high_frames=history_key_latents,
+            visible_high_start=visible_high_start,
+            visible_high_end=visible_high_end,
         )
 
-    @staticmethod
-    def _slice_video_kv_cache(
-        kv_cache: list[dict[str, torch.Tensor]],
-        *,
-        token_start: int,
-        token_end: int,
-    ) -> list[dict[str, torch.Tensor]]:
-        if token_start < 0 or token_end <= token_start:
-            raise ValueError(f"Invalid cache slice range [{token_start}, {token_end}).")
-        sliced = []
-        for layer_idx, layer_cache in enumerate(kv_cache):
-            if "k" not in layer_cache or "v" not in layer_cache:
-                raise ValueError(f"`kv_cache[{layer_idx}]` must contain `k` and `v`.")
-            k = layer_cache["k"]
-            v = layer_cache["v"]
-            if token_end > int(k.shape[1]) or token_end > int(v.shape[1]):
-                raise ValueError(
-                    f"Cache slice end {token_end} exceeds layer {layer_idx} seq len "
-                    f"k={k.shape[1]}, v={v.shape[1]}."
-                )
-            sliced.append({
-                "k": k[:, token_start:token_end],
-                "v": v[:, token_start:token_end],
-            })
-        return sliced
+        key_temporal_weights = torch.zeros(
+            (batch_size, int(keyframe_latents.shape[2])),
+            dtype=keyframe_latents.dtype,
+            device=self.device,
+        )
+        key_temporal_weights[:, history_key_latents:] = 1.0
+        key_loss_per_sample = self._compute_video_loss_per_sample(
+            pred_video=pred_key,
+            target_video=target_key,
+            image_is_pad=keyframe_is_pad,
+            include_initial_video_step=True,
+            temporal_weights=key_temporal_weights,
+        )
+        low_loss_per_sample = self._compute_video_loss_per_sample(
+            pred_video=pred_low[:, :, 1:] if fuse_flag else pred_low,
+            target_video=target_low[:, :, 1:] if fuse_flag else target_low,
+            image_is_pad=image_is_pad,
+            include_initial_video_step=not fuse_flag,
+        )
 
-    @staticmethod
-    def _concat_video_kv_caches(
-        first_cache: list[dict[str, torch.Tensor]],
-        second_cache: list[dict[str, torch.Tensor]],
-    ) -> list[dict[str, torch.Tensor]]:
-        if len(first_cache) != len(second_cache):
-            raise ValueError(
-                "Cannot concatenate KV caches with different layer counts: "
-                f"{len(first_cache)} vs {len(second_cache)}."
-            )
-        merged = []
-        for layer_idx, (first_layer, second_layer) in enumerate(zip(first_cache, second_cache)):
-            if "k" not in first_layer or "v" not in first_layer or "k" not in second_layer or "v" not in second_layer:
-                raise ValueError(f"Both KV caches must contain `k` and `v` at layer {layer_idx}.")
-            merged.append({
-                "k": torch.cat([first_layer["k"], second_layer["k"]], dim=1),
-                "v": torch.cat([first_layer["v"], second_layer["v"]], dim=1),
-            })
-        return merged
+        action_loss_token = F.mse_loss(pred_action.float(), target_action.float(), reduction="none").mean(dim=2)
+        if action_is_pad is not None:
+            valid = (~action_is_pad).to(device=action_loss_token.device, dtype=action_loss_token.dtype)
+            valid_sum = valid.sum(dim=1).clamp(min=1.0)
+            action_loss_per_sample = (action_loss_token * valid).sum(dim=1) / valid_sum
+        else:
+            action_loss_per_sample = action_loss_token.mean(dim=1)
+
+        key_weight = self.train_video_scheduler.training_weight(timestep_key).to(
+            device=self.device,
+            dtype=key_loss_per_sample.dtype,
+        )
+        low_weight = self.train_video_scheduler.training_weight(timestep_low).to(
+            device=self.device,
+            dtype=low_loss_per_sample.dtype,
+        )
+        action_weight = self.train_action_scheduler.training_weight(timestep_action).to(
+            device=self.device,
+            dtype=action_loss_per_sample.dtype,
+        )
+
+        loss_high = (key_loss_per_sample * key_weight).mean()
+        loss_low = (low_loss_per_sample * low_weight).mean()
+        loss_action = (action_loss_per_sample * action_weight).mean()
+        loss_video = loss_high + loss_low
+        loss_total = self.loss_lambda_video * loss_video + self.loss_lambda_action * loss_action
+        loss_dict = {
+            "loss_video": self.loss_lambda_video * float(loss_video.detach().item()),
+            "loss_video_high": self.loss_lambda_video * float(loss_high.detach().item()),
+            "loss_video_low": self.loss_lambda_video * float(loss_low.detach().item()),
+            "loss_action": self.loss_lambda_action * float(loss_action.detach().item()),
+        }
+        return loss_total, loss_dict
+
+    def training_loss(self, sample, tiled: bool = False):
+        return self._training_loss_hierarchical(sample, tiled=tiled)
+
+
+
+
+
+
+
 
     @staticmethod
     def _truncate_inference_schedule(
@@ -1778,73 +1474,6 @@ class FastWAM_Hierarchical(torch.nn.Module):
             return torch.tensor(0.0, device=device, dtype=dtype)
         return full_timesteps[used_steps].to(device=device, dtype=dtype)
 
-    @torch.no_grad()
-    def _predict_low_video_noise_with_high_cache(
-        self,
-        *,
-        low_chunk_latents: torch.Tensor,
-        timestep_video: torch.Tensor,
-        context: torch.Tensor,
-        context_mask: torch.Tensor,
-        high_kv_cache: list[dict[str, torch.Tensor]],
-        high_seq_len: int,
-        high_frames: int,
-        tokens_per_frame: int,
-        fuse_vae_embedding_in_latents: bool,
-        visible_high_start: Optional[int] = None,
-        visible_high_end: Optional[int] = None,
-        mask_low_predict: bool = False,
-    ) -> torch.Tensor:
-        low_pre = self.video_expert.pre_dit(
-            x=low_chunk_latents,
-            timestep=timestep_video,
-            context=context,
-            context_mask=context_mask,
-            action=None,
-            fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
-        )
-        low_tokens = low_pre["tokens"]
-        low_frames = int(low_chunk_latents.shape[2])
-        low_tokens_per_frame = int(low_pre["meta"]["tokens_per_frame"])
-        if low_tokens_per_frame != tokens_per_frame:
-            raise ValueError(
-                "Token-per-frame mismatch between high cache and low chunk: "
-                f"high={tokens_per_frame}, low={low_tokens_per_frame}."
-            )
-        total_seq_len = (high_frames + low_frames) * tokens_per_frame
-        attention_mask = torch.zeros((total_seq_len, total_seq_len), dtype=torch.bool, device=low_tokens.device)
-        high_seq = high_frames * tokens_per_frame
-        low_seq = low_frames * tokens_per_frame
-        if high_seq > 0:
-            attention_mask[:high_seq, :high_seq] = True
-            if visible_high_start is None or visible_high_end is None:
-                visible_high_start = 0
-                visible_high_end = high_frames - 1
-            col_start = max(0, min(int(visible_high_start), high_frames - 1)) * tokens_per_frame
-            col_end = (max(0, min(int(visible_high_end), high_frames - 1)) + 1) * tokens_per_frame
-            attention_mask[high_seq:, col_start:col_end] = True
-        if mask_low_predict:
-            low_mask = self._build_first_frame_causal_mask(
-                num_frames=low_frames,
-                tokens_per_frame=tokens_per_frame,
-                device=low_tokens.device,
-            )
-        else:
-            low_mask = torch.ones((low_seq, low_seq), dtype=torch.bool, device=low_tokens.device)
-        attention_mask[high_seq:, high_seq:] = low_mask
-        low_tokens_out = self.mot.forward_video_with_video_cache(
-            video_tokens=low_tokens,
-            video_freqs=low_pre["freqs"],
-            video_t_mod=low_pre["t_mod"],
-            video_context_payload={
-                "context": low_pre["context"],
-                "mask": low_pre["context_mask"],
-            },
-            prefix_kv_cache=high_kv_cache,
-            attention_mask=attention_mask,
-            prefix_seq_len=high_seq_len,
-        )
-        return self.video_expert.post_dit(low_tokens_out, low_pre)
 
     @torch.no_grad()
     def infer_joint(
@@ -1894,6 +1523,421 @@ class FastWAM_Hierarchical(torch.nn.Module):
             return_high_level_video=return_high_level_video,
         )
 
+
+
+
+    @torch.no_grad()
+    def _build_keyframe_history_video_for_infer(
+        self,
+        *,
+        input_image: torch.Tensor,
+        observed_chunk_videos: Optional[list[torch.Tensor]] = None,
+        gt_keyframe: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        if gt_keyframe is not None:
+            keyframe = gt_keyframe
+            if keyframe.ndim == 4:
+                keyframe = keyframe.unsqueeze(0)
+            if keyframe.ndim != 5 or keyframe.shape[0] != 1 or keyframe.shape[1] != 3:
+                raise ValueError(f"`gt_keyframe` must be [3,T,H,W] or [1,3,T,H,W], got {tuple(gt_keyframe.shape)}.")
+            if int(keyframe.shape[2]) < 9:
+                raise ValueError(f"`gt_keyframe` must contain at least 9 history frames, got {keyframe.shape[2]}.")
+            return keyframe[:, :, :9].to(device=self.device, dtype=self.torch_dtype)
+
+        frames: list[torch.Tensor] = []
+        if observed_chunk_videos is not None:
+            for idx, observed in enumerate(observed_chunk_videos):
+                if observed is None:
+                    continue
+                if observed.ndim == 3:
+                    if observed.shape[0] != 3:
+                        raise ValueError(f"Observed frame at {idx} must be [3,H,W], got {tuple(observed.shape)}.")
+                    frames.append(observed.to(device=self.device, dtype=self.torch_dtype))
+                elif observed.ndim == 4:
+                    if observed.shape[0] == 3:
+                        video = observed.unsqueeze(0)
+                    elif observed.shape[1] == 3:
+                        video = observed.permute(1, 0, 2, 3).unsqueeze(0)
+                    else:
+                        raise ValueError(f"Observed 4D item at {idx} must be [3,T,H,W] or [T,3,H,W], got {tuple(observed.shape)}.")
+                    video = video.to(device=self.device, dtype=self.torch_dtype)
+                    for t in range(int(video.shape[2])):
+                        frames.append(video[0, :, t])
+                elif observed.ndim == 5:
+                    if observed.shape[0] != 1 or observed.shape[1] != 3:
+                        raise ValueError(f"Observed 5D item at {idx} must be [1,3,T,H,W], got {tuple(observed.shape)}.")
+                    video = observed.to(device=self.device, dtype=self.torch_dtype)
+                    for t in range(int(video.shape[2])):
+                        frames.append(video[0, :, t])
+                else:
+                    raise ValueError(f"Invalid observed item at {idx}: {tuple(observed.shape)}.")
+
+        current = input_image[0].to(device=self.device, dtype=self.torch_dtype)
+        if len(frames) == 0 or not torch.equal(frames[-1], current):
+            frames.append(current)
+        frames = frames[-9:]
+        if len(frames) < 9:
+            frames = [frames[0]] * (9 - len(frames)) + frames
+        return torch.stack(frames, dim=1).unsqueeze(0)
+
+    @torch.no_grad()
+    def _infer_hierarchical_action_horizon(
+        self,
+        *,
+        input_image: torch.Tensor,
+        context: torch.Tensor,
+        context_mask: torch.Tensor,
+        action_horizon: int,
+        num_video_frames: int,
+        proprio: Optional[torch.Tensor],
+        observed_chunk_videos: Optional[list[torch.Tensor]],
+        gt_keyframe: Optional[torch.Tensor],
+        high_video_inference_steps: Optional[int],
+        low_video_inference_steps: Optional[int],
+        high_denoise_step: Optional[int],
+        low_denoise_step: Optional[int],
+        action_inference_steps: Optional[int],
+        num_inference_steps: int,
+        sigma_shift: Optional[float],
+        seed: Optional[int],
+        rand_device: str,
+        tiled: bool,
+        full_visualization: bool = False,
+    ) -> dict[str, Any]:
+        if input_image.ndim == 3:
+            input_image = input_image.unsqueeze(0)
+        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
+            raise ValueError(f"`input_image` must be [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}.")
+        _, _, height, width = input_image.shape
+        checked_h, checked_w, checked_t = self._check_resize_height_width(height, width, num_video_frames)
+        if (checked_h, checked_w) != (height, width) or checked_t != num_video_frames:
+            raise ValueError(
+                f"Invalid infer shape: expected H/W multiples of 16 and T%4==1, got HxW=({height},{width}), T={num_video_frames}."
+            )
+        if int(num_video_frames) != 9:
+            raise ValueError(f"New hierarchical infer expects 9 low video frames, got {num_video_frames}.")
+        if int(action_horizon) != int(self.hierarchical_action_horizon):
+            raise ValueError(
+                f"New hierarchical infer expects action_horizon={self.hierarchical_action_horizon}, got {action_horizon}."
+            )
+
+        input_image = input_image.to(device=self.device, dtype=self.torch_dtype)
+        fuse_flag = bool(getattr(self.video_expert, "fuse_vae_embedding_in_latents", False))
+        first_frame_latents = self._encode_input_image_latents_tensor(input_image=input_image, tiled=tiled)
+        key_history_video = self._build_keyframe_history_video_for_infer(
+            input_image=input_image,
+            observed_chunk_videos=observed_chunk_videos,
+            gt_keyframe=gt_keyframe,
+        )
+        key_history_latents = self._encode_video_latents(key_history_video, tiled=tiled)
+        if int(key_history_latents.shape[2]) != 3:
+            raise ValueError(f"Expected encoded keyframe history to have 3 latent frames, got {key_history_latents.shape[2]}.")
+        latent_h = height // self.vae.upsampling_factor
+        latent_w = width // self.vae.upsampling_factor
+        z_dim = self.vae.model.z_dim
+        g_video = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
+        g_action = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
+
+        key_latents = torch.randn(
+            (1, z_dim, 5, latent_h, latent_w),
+            generator=g_video,
+            device=rand_device,
+            dtype=torch.float32,
+        ).to(device=self.device, dtype=self.torch_dtype)
+        key_latents[:, :, :3] = key_history_latents
+        fixed_key_history = key_history_latents.clone()
+
+        high_steps = max(1, int(high_video_inference_steps if high_video_inference_steps is not None else num_inference_steps))
+        high_timesteps_full, high_deltas_full = self.infer_video_scheduler.build_inference_schedule(
+            num_inference_steps=high_steps,
+            device=self.device,
+            dtype=key_latents.dtype,
+            shift_override=sigma_shift,
+        )
+        run_high_denoise = full_visualization or not self.hierarchical_mask_high_predict
+        effective_high_denoise_step = None if full_visualization else high_denoise_step
+        high_timesteps, high_deltas = self._truncate_inference_schedule(
+            high_timesteps_full,
+            high_deltas_full,
+            effective_high_denoise_step,
+            name="high_denoise_step",
+        )
+        if not run_high_denoise:
+            high_timesteps = high_timesteps[:0]
+            high_deltas = high_deltas[:0]
+        high_cache_t = self._next_schedule_timestep(
+            full_timesteps=high_timesteps_full,
+            used_steps=int(high_timesteps.shape[0]),
+            dtype=key_latents.dtype,
+            device=self.device,
+        )
+        high_prev_denoise_predictions: list[torch.Tensor] = []
+        high_skip_countdown = 0
+        prev_high_pred: Optional[torch.Tensor] = None
+        for step_idx_high, (step_t_high, step_d_high) in enumerate(zip(high_timesteps, high_deltas)):
+            t_high = self._build_history_predict_timestep(
+                step_timestep=step_t_high,
+                total_frames=5,
+                history_frames=3,
+                dtype=key_latents.dtype,
+                device=self.device,
+            )
+            should_run_high, high_skip_countdown = self._should_run_diffusion_step(
+                prev_predictions=high_prev_denoise_predictions,
+                skip_countdown=high_skip_countdown,
+                enabled=self.hierarchical_dynamic_skip,
+            )
+            if should_run_high:
+                if self.hierarchical_mask_high_predict:
+                    pred_high = self._predict_high_video_noise_masked(
+                        latents_video=key_latents,
+                        timestep_video=t_high,
+                        context=context,
+                        context_mask=context_mask,
+                        history_frames=3,
+                        fuse_vae_embedding_in_latents=fuse_flag,
+                    )
+                else:
+                    pred_high = self._predict_video_only_noise(
+                        latents_video=key_latents,
+                        timestep_video=t_high,
+                        context=context,
+                        context_mask=context_mask,
+                        fuse_vae_embedding_in_latents=fuse_flag,
+                    )
+                prev_high_pred = pred_high
+                high_prev_denoise_predictions.append(pred_high[:, :, 3:].detach())
+                if len(high_prev_denoise_predictions) > 2:
+                    high_prev_denoise_predictions.pop(0)
+            else:
+                if prev_high_pred is None:
+                    raise RuntimeError("Dynamic skip requested before a keyframe prediction is available.")
+                pred_high = prev_high_pred
+            key_latents = self.infer_video_scheduler.step(pred_high, step_d_high, key_latents)
+            key_latents[:, :, :3] = fixed_key_history
+
+        key_timestep = self._build_history_predict_timestep(
+            step_timestep=high_cache_t,
+            total_frames=5,
+            history_frames=3,
+            dtype=key_latents.dtype,
+            device=self.device,
+        )
+        (
+            downstream_key_latents,
+            downstream_key_timestep,
+            downstream_history_frames,
+            downstream_visible_start,
+            downstream_visible_end,
+        ) = self._select_downstream_keyframes(
+            key_latents,
+            key_timestep,
+            history_frames=3,
+        )
+        selected_key_indices, downstream_history_frames = self._downstream_keyframe_indices(3)
+        keyframe_cache: list[dict[str, torch.Tensor]]
+        keyframe_seq_len: int
+        cache_tokens_per_frame: int
+        if self.hierarchical_mask_high_predict:
+            history_keyframe_cache, _, history_keyframe_tokens_per_frame = self._prefill_keyframe_cache(
+                keyframe_cond_latents=key_latents[:, :, :3],
+                keyframe_timestep=key_timestep[:, :3],
+                context=context,
+                context_mask=context_mask,
+                fuse_vae_embedding_in_latents=fuse_flag,
+                history_high_frames=3,
+                visible_high_start=0,
+                visible_high_end=2,
+            )
+            keyframe_cache = self._slice_video_kv_cache(
+                history_keyframe_cache,
+                frame_indices=selected_key_indices,
+                tokens_per_frame=history_keyframe_tokens_per_frame,
+            )
+            cache_tokens_per_frame = history_keyframe_tokens_per_frame
+            keyframe_seq_len = len(selected_key_indices) * cache_tokens_per_frame
+        else:
+            all_keyframe_cache, _, cache_tokens_per_frame = self._prefill_keyframe_cache(
+                keyframe_cond_latents=key_latents,
+                keyframe_timestep=key_timestep,
+                context=context,
+                context_mask=context_mask,
+                fuse_vae_embedding_in_latents=fuse_flag,
+                history_high_frames=3,
+                visible_high_start=0,
+                visible_high_end=int(key_latents.shape[2]) - 1,
+            )
+            keyframe_cache = self._slice_video_kv_cache(
+                all_keyframe_cache,
+                frame_indices=selected_key_indices,
+                tokens_per_frame=cache_tokens_per_frame,
+            )
+            keyframe_seq_len = len(selected_key_indices) * cache_tokens_per_frame
+        low_latents = torch.randn(
+            (1, z_dim, 3, latent_h, latent_w),
+            generator=g_video,
+            device=rand_device,
+            dtype=torch.float32,
+        ).to(device=self.device, dtype=self.torch_dtype)
+        low_latents[:, :, 0:1] = first_frame_latents.clone()
+        action_latents = torch.randn(
+            (1, int(action_horizon), self.action_expert.action_dim),
+            generator=g_action,
+            device=rand_device,
+            dtype=torch.float32,
+        ).to(device=self.device, dtype=self.torch_dtype)
+
+        low_steps = max(1, int(low_video_inference_steps if low_video_inference_steps is not None else num_inference_steps))
+        action_steps = max(1, int(action_inference_steps if action_inference_steps is not None else num_inference_steps))
+        if full_visualization:
+            low_steps = action_steps
+        if low_steps < action_steps:
+            raise ValueError(
+                "`low_video_inference_steps` must be >= `action_inference_steps` for hierarchical infer_action, "
+                f"got {low_steps} and {action_steps}."
+            )
+        effective_low_denoise_step = None if full_visualization else low_denoise_step
+        low_actual_steps = action_steps if effective_low_denoise_step is None else int(effective_low_denoise_step)
+        if low_actual_steps < 0 or low_actual_steps > action_steps:
+            raise ValueError(
+                "`low_denoise_step` must be in [0, action_inference_steps] when provided, "
+                f"got low_denoise_step={low_actual_steps}, action_inference_steps={action_steps}."
+            )
+        low_timesteps_full, low_deltas_full = self.infer_video_scheduler.build_inference_schedule(
+            num_inference_steps=low_steps,
+            device=self.device,
+            dtype=low_latents.dtype,
+            shift_override=sigma_shift,
+        )
+        low_timesteps, low_deltas = self._truncate_inference_schedule(
+            low_timesteps_full,
+            low_deltas_full,
+            low_actual_steps,
+            name="low_denoise_step",
+        )
+        action_timesteps, action_deltas = self.infer_action_scheduler.build_inference_schedule(
+            num_inference_steps=action_steps,
+            device=self.device,
+            dtype=action_latents.dtype,
+            shift_override=sigma_shift,
+        )
+
+        proprio_token = None
+        if self.proprio_encoder is not None:
+            if proprio is None:
+                raise ValueError("`proprio` must be provided when `proprio_dim` is enabled.")
+            if proprio.ndim == 1:
+                proprio = proprio.unsqueeze(0)
+            elif proprio.ndim == 3:
+                proprio = proprio[:, 0, :]
+            if proprio.ndim != 2 or int(proprio.shape[1]) != int(self.proprio_dim):
+                raise ValueError(f"Expected proprio shape [1,{self.proprio_dim}], got {tuple(proprio.shape)}.")
+            proprio_token = self._encode_proprio_action_token(
+                proprio=proprio.to(device=self.device, dtype=self.torch_dtype),
+                dtype=context.dtype,
+            )
+
+        joint_prev_denoise_predictions: list[torch.Tensor] = []
+        joint_skip_countdown = 0
+        prev_low_pred: Optional[torch.Tensor] = None
+        prev_action_pred: Optional[torch.Tensor] = None
+        joint_low_steps = 0 if (self.hierarchical_mask_low_predict and not full_visualization) else low_actual_steps
+        for step_idx in range(joint_low_steps):
+            t_low = low_timesteps[step_idx].reshape(1).to(device=self.device, dtype=low_latents.dtype)
+            t_action = action_timesteps[step_idx].reshape(1).to(device=self.device, dtype=action_latents.dtype)
+            low_timestep = t_low.unsqueeze(1).expand(-1, 3).clone()
+            low_timestep[:, 0] = 0
+            should_run_joint, joint_skip_countdown = self._should_run_diffusion_step(
+                prev_predictions=joint_prev_denoise_predictions,
+                skip_countdown=joint_skip_countdown,
+                enabled=self.hierarchical_dynamic_skip,
+            )
+            if should_run_joint:
+                pred_low, pred_action = self._predict_low_action_with_keyframe_cache(
+                    keyframe_cache=keyframe_cache,
+                    keyframe_seq_len=keyframe_seq_len,
+                    keyframe_frames=int(downstream_key_latents.shape[2]),
+                    low_latents=low_latents,
+                    action_latents=action_latents,
+                    low_timestep=low_timestep,
+                    action_timestep=t_action,
+                    context=context,
+                    context_mask=context_mask,
+                    proprio_token=proprio_token,
+                    fuse_vae_embedding_in_latents=fuse_flag,
+                    tokens_per_frame=cache_tokens_per_frame,
+                    history_high_frames=downstream_history_frames,
+                    visible_high_start=downstream_visible_start,
+                    visible_high_end=downstream_visible_end,
+                )
+                prev_low_pred = pred_low
+                joint_prev_denoise_predictions.append(pred_low[:, :, 1:].detach())
+                if len(joint_prev_denoise_predictions) > 2:
+                    joint_prev_denoise_predictions.pop(0)
+            else:
+                if prev_low_pred is None or prev_action_pred is None:
+                    raise RuntimeError("Dynamic skip requested before a low/action prediction is available.")
+                pred_low = prev_low_pred
+                pred_action = prev_action_pred
+            low_latents = self.infer_video_scheduler.step(pred_low, low_deltas[step_idx], low_latents)
+            low_latents[:, :, 0:1] = first_frame_latents.clone()
+            action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
+            prev_action_pred = pred_action
+
+        action_only_start = joint_low_steps
+        if action_only_start < action_steps:
+            cache_used_steps = 0 if (self.hierarchical_mask_low_predict and not full_visualization) else low_actual_steps
+            cache_t_low = self._next_schedule_timestep(
+                full_timesteps=low_timesteps_full,
+                used_steps=cache_used_steps,
+                dtype=low_latents.dtype,
+                device=self.device,
+            )
+            low_cache_timestep = cache_t_low.reshape(1).unsqueeze(1).expand(-1, 3).clone()
+            low_cache_timestep[:, 0] = 0
+            cache_low_latents = low_latents[:, :, :1] if self.hierarchical_mask_low_predict else low_latents
+            cache_low_timestep = low_cache_timestep[:, :1] if self.hierarchical_mask_low_predict else low_cache_timestep
+            low_cache, _, _ = self._prefill_low_cache_with_keyframe_cache(
+                keyframe_cache=keyframe_cache,
+                keyframe_seq_len=keyframe_seq_len,
+                keyframe_frames=int(downstream_key_latents.shape[2]),
+                low_latents=cache_low_latents,
+                low_timestep=cache_low_timestep,
+                context=context,
+                context_mask=context_mask,
+                fuse_vae_embedding_in_latents=fuse_flag,
+                tokens_per_frame=cache_tokens_per_frame,
+                history_high_frames=downstream_history_frames,
+                visible_high_start=downstream_visible_start,
+                visible_high_end=downstream_visible_end,
+            )
+            video_cache = self._concat_video_kv_caches(keyframe_cache, low_cache)
+            video_seq_len = keyframe_seq_len + int(cache_low_latents.shape[2]) * cache_tokens_per_frame
+            for step_idx in range(action_only_start, action_steps):
+                t_action = action_timesteps[step_idx].reshape(1).to(device=self.device, dtype=action_latents.dtype)
+                pred_action = self._predict_action_with_frozen_video_cache(
+                    action_latents=action_latents,
+                    action_timestep=t_action,
+                    context=context,
+                    context_mask=context_mask,
+                    video_cache=video_cache,
+                    video_seq_len=video_seq_len,
+                    tokens_per_frame=cache_tokens_per_frame,
+                    high_frames=int(downstream_key_latents.shape[2]),
+                    low_frames=int(cache_low_latents.shape[2]),
+                    history_high_frames=downstream_history_frames,
+                    visible_high_start=downstream_visible_start,
+                    visible_high_end=downstream_visible_end,
+                    proprio_token=proprio_token,
+                )
+                action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
+
+        return {
+            "action": action_latents[0].detach().to(device="cpu", dtype=torch.float32),
+            "low_latents": low_latents,
+            "keyframe_latents": key_latents,
+        }
+
     @torch.no_grad()
     def infer_action(
         self,
@@ -1918,244 +1962,101 @@ class FastWAM_Hierarchical(torch.nn.Module):
         rand_device: str = "cpu",
         tiled: bool = False,
     ) -> dict[str, Any]:
-        if num_video_frames is None:
-            raise ValueError("`num_video_frames` is required for hierarchical `infer_action`.")
-        single_chunk_horizon = int(self.hierarchical_chunk_action_horizon)
-        if int(action_horizon) != single_chunk_horizon:
-            logger.warning(
-                "Hierarchical `infer_action` expects single-chunk horizon=%d, but got action_horizon=%d. "
-                "Overriding to single-chunk horizon.",
-                single_chunk_horizon,
-                int(action_horizon),
-            )
         del negative_prompt, text_cfg_scale
         self.eval()
-        if input_image.ndim == 3:
-            input_image = input_image.unsqueeze(0)
-        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
-            raise ValueError(
-                f"`input_image` must have shape [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
-            )
-
         context, context_mask = self._prepare_infer_context(
             prompt=prompt,
             context=context,
             context_mask=context_mask,
         )
-
-        input_image = input_image.to(device=self.device, dtype=self.torch_dtype)
-        first_frame_latents = self._encode_input_image_latents_tensor(input_image=input_image, tiled=tiled)
-        fuse_flag = bool(getattr(self.video_expert, "fuse_vae_embedding_in_latents", False))
-        action_steps = max(1, int(action_inference_steps if action_inference_steps is not None else num_inference_steps))
-        action_timesteps, action_deltas = self.infer_action_scheduler.build_inference_schedule(
-            num_inference_steps=action_steps,
-            device=self.device,
-            dtype=first_frame_latents.dtype,
-            shift_override=sigma_shift,
-        )
-        g_video = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
-        g_action = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
-
-        high_prefix_latents, observed_low_init_latent = self._extract_observed_history_latents(
-            observed_chunk_videos,
-            tiled=tiled,
-        )
-        if observed_low_init_latent is not None:
-            first_frame_latents = observed_low_init_latent
-
-        checked_h, checked_w, checked_t = self._check_resize_height_width(
-            int(input_image.shape[2]),
-            int(input_image.shape[3]),
-            num_video_frames,
-        )
-        if checked_t != num_video_frames or checked_h != int(input_image.shape[2]) or checked_w != int(input_image.shape[3]):
-            raise ValueError(
-                f"Invalid infer shape: expected H/W multiples of 16 and T%4==1, got HxW=({input_image.shape[2]},{input_image.shape[3]}), T={num_video_frames}."
-            )
-        # In infer_action, `num_video_frames` is chunk-level (from deploy policy), not full-block frames.
-        chunk_video_steps = int(num_video_frames) - 1
-        if chunk_video_steps <= 0 or single_chunk_horizon % chunk_video_steps != 0:
-            raise ValueError(
-                "Hierarchical `infer_action` expects single-chunk action horizon divisible by video transitions. "
-                f"Got action_horizon={single_chunk_horizon}, video_transitions={chunk_video_steps}."
-            )
-        action_per_video_step = single_chunk_horizon // chunk_video_steps
-        low_frames = chunk_video_steps // self.hierarchical_low_stride + 1
-        low_latent_t = (low_frames - 1) // self.vae.temporal_downsample_factor + 1
-        latent_h = int(input_image.shape[2]) // self.vae.upsampling_factor
-        latent_w = int(input_image.shape[3]) // self.vae.upsampling_factor
-        z_dim = self.vae.model.z_dim
-
-        # High-level planning is global across the block, not per-chunk.
-        global_video_steps = chunk_video_steps * int(self.hierarchical_num_chunks)
-        global_high_frames = global_video_steps // self.hierarchical_high_stride + 1
-        high_latent_t = (global_high_frames - 1) // self.vae.temporal_downsample_factor + 1
-        history_high_frames = int(high_prefix_latents.shape[2]) if high_prefix_latents is not None else 1
-        history_high_frames = max(1, min(history_high_frames, high_latent_t))
-
-        if self.hierarchical_mask_high_predict:
-            high_history_latents = (
-                high_prefix_latents[:, :, :history_high_frames].clone()
-                if high_prefix_latents is not None and int(high_prefix_latents.shape[2]) > 0
-                else first_frame_latents.clone()
-            )
-            high_kv_cache, high_seq_len, high_tokens_per_frame = self._build_video_kv_cache(
-                latents_video=high_history_latents,
-                context=context,
-                context_mask=context_mask,
-                fuse_vae_embedding_in_latents=fuse_flag,
-            )
-            del high_seq_len
-            total_high_frames = int(high_history_latents.shape[2])
-            pair_left = 0
-            pair_right = max(0, total_high_frames - 1)
-        else:
-            high_latents = torch.randn(
-                (1, z_dim, high_latent_t, latent_h, latent_w),
-                generator=g_video,
-                device=rand_device,
-                dtype=torch.float32,
-            ).to(device=self.device, dtype=self.torch_dtype)
-            high_latents[:, :, 0:1] = first_frame_latents.clone()
-            fixed_high_len = 1
-            if high_prefix_latents is not None:
-                prefix_len = min(int(high_prefix_latents.shape[2]), int(high_latents.shape[2]))
-                if prefix_len > 0:
-                    high_latents[:, :, :prefix_len] = high_prefix_latents[:, :, :prefix_len]
-                    fixed_high_len = prefix_len
-            fixed_high_latents = high_latents[:, :, :fixed_high_len].clone()
-
-            high_steps = max(1, int(high_video_inference_steps if high_video_inference_steps is not None else num_inference_steps // 2))
-            high_timesteps_full, high_deltas_full = self.infer_video_scheduler.build_inference_schedule(
-                num_inference_steps=high_steps,
-                device=self.device,
-                dtype=high_latents.dtype,
-                shift_override=sigma_shift,
-            )
-            high_timesteps, high_deltas = self._truncate_inference_schedule(
-                high_timesteps_full,
-                high_deltas_full,
-                high_denoise_step,
-                name="high_denoise_step",
-            )
-            high_cache_predict_timestep = self._next_schedule_timestep(
-                full_timesteps=high_timesteps_full,
-                used_steps=int(high_timesteps.shape[0]),
-                dtype=high_latents.dtype,
-                device=self.device,
-            )
-            for step_t, step_delta in zip(high_timesteps, high_deltas):
-                t_video = self._build_history_predict_timestep(
-                    step_timestep=step_t,
-                    total_frames=int(high_latents.shape[2]),
-                    history_frames=fixed_high_len,
-                    dtype=high_latents.dtype,
-                    device=self.device,
-                )
-                pred_high = self._predict_video_only_noise(
-                    latents_video=high_latents,
-                    timestep_video=t_video,
-                    context=context,
-                    context_mask=context_mask,
-                    fuse_vae_embedding_in_latents=fuse_flag,
-                )
-                high_latents = self.infer_video_scheduler.step(pred_high, step_delta, high_latents)
-                high_latents[:, :, :fixed_high_len] = fixed_high_latents
-
-            high_cache_timestep = self._build_history_predict_timestep(
-                step_timestep=high_cache_predict_timestep,
-                total_frames=int(high_latents.shape[2]),
-                history_frames=fixed_high_len,
-                dtype=high_latents.dtype,
-                device=self.device,
-            )
-
-            high_kv_cache, high_seq_len, high_tokens_per_frame = self._build_video_kv_cache(
-                latents_video=high_latents,
-                context=context,
-                context_mask=context_mask,
-                fuse_vae_embedding_in_latents=fuse_flag,
-                timestep_video=high_cache_timestep,
-            )
-            del high_seq_len
-            total_high_frames = int(high_latents.shape[2])
-            pair_left = 0
-            pair_right = min(history_high_frames, total_high_frames - 1)
-
-        pair_token_start = pair_left * high_tokens_per_frame
-        pair_token_end = (pair_right + 1) * high_tokens_per_frame
-        pair_high_kv_cache = self._slice_video_kv_cache(
-            high_kv_cache,
-            token_start=pair_token_start,
-            token_end=pair_token_end,
-        )
-        high_frames_for_low = pair_right - pair_left + 1
-
-        if self.hierarchical_mask_low_predict:
-            low_cond_latents = first_frame_latents.clone()
-            low_cache_predict_timestep = None
-        else:
-            latents_low = torch.randn(
-                (1, z_dim, low_latent_t, latent_h, latent_w),
-                generator=g_video,
-                device=rand_device,
-                dtype=torch.float32,
-            ).to(device=self.device, dtype=self.torch_dtype)
-            latents_low[:, :, 0:1] = first_frame_latents.clone()
-            low_steps = max(1, int(low_video_inference_steps if low_video_inference_steps is not None else num_inference_steps // 2))
-            low_timesteps_full, low_deltas_full = self.infer_video_scheduler.build_inference_schedule(
-                num_inference_steps=low_steps,
-                device=self.device,
-                dtype=latents_low.dtype,
-                shift_override=sigma_shift,
-            )
-            low_timesteps, low_deltas = self._truncate_inference_schedule(
-                low_timesteps_full,
-                low_deltas_full,
-                low_denoise_step,
-                name="low_denoise_step",
-            )
-            low_cache_predict_timestep = self._next_schedule_timestep(
-                full_timesteps=low_timesteps_full,
-                used_steps=int(low_timesteps.shape[0]),
-                dtype=latents_low.dtype,
-                device=self.device,
-            )
-            for step_t_low, step_d_low in zip(low_timesteps, low_deltas):
-                pred_low = self._predict_low_video_noise_with_high_cache(
-                    low_chunk_latents=latents_low,
-                    timestep_video=step_t_low.unsqueeze(0).to(device=self.device, dtype=latents_low.dtype),
-                    context=context,
-                    context_mask=context_mask,
-                    high_kv_cache=pair_high_kv_cache,
-                    high_seq_len=high_tokens_per_frame * high_frames_for_low,
-                    high_frames=high_frames_for_low,
-                    tokens_per_frame=high_tokens_per_frame,
-                    fuse_vae_embedding_in_latents=fuse_flag,
-                    mask_low_predict=False,
-                )
-                latents_low = self.infer_video_scheduler.step(pred_low, step_d_low, latents_low)
-                latents_low[:, :, 0:1] = first_frame_latents
-            low_cond_latents = latents_low
-
-        action_out = self._infer_action_from_video_condition(
-            latents_video_cond=low_cond_latents,
-            chunk_horizon=single_chunk_horizon,
+        out = self._infer_hierarchical_action_horizon(
+            input_image=input_image,
             context=context,
             context_mask=context_mask,
-            action_timesteps=action_timesteps,
-            action_deltas=action_deltas,
-            generator=g_action,
-            rand_device=rand_device,
+            action_horizon=int(action_horizon),
+            num_video_frames=9 if num_video_frames is None else int(num_video_frames),
             proprio=proprio,
-            fuse_vae_embedding_in_latents=fuse_flag,
-            only_first_low_frame=self.hierarchical_mask_low_predict,
-            low_cache_predict_timestep=low_cache_predict_timestep,
-            high_kv_cache_for_low=pair_high_kv_cache,
-            high_frames_for_low=high_frames_for_low,
-            high_tokens_per_frame_for_low=high_tokens_per_frame,
+            observed_chunk_videos=observed_chunk_videos,
+            gt_keyframe=None,
+            high_video_inference_steps=high_video_inference_steps,
+            low_video_inference_steps=low_video_inference_steps,
+            high_denoise_step=high_denoise_step,
+            low_denoise_step=low_denoise_step,
+            action_inference_steps=action_inference_steps,
+            num_inference_steps=num_inference_steps,
+            sigma_shift=sigma_shift,
+            seed=seed,
+            rand_device=rand_device,
+            tiled=tiled,
+            full_visualization=False,
         )
-        return {"action": action_out}
+        return {"action": out["action"]}
+
+    @torch.no_grad()
+    def infer_hierarchical(
+        self,
+        prompt: Optional[str],
+        input_image: torch.Tensor,
+        num_video_frames: int,
+        action_horizon: Optional[int],
+        proprio: Optional[torch.Tensor] = None,
+        context: Optional[torch.Tensor] = None,
+        context_mask: Optional[torch.Tensor] = None,
+        negative_prompt: Optional[str] = None,
+        text_cfg_scale: float = 1.0,
+        num_inference_steps: int = 20,
+        high_video_inference_steps: Optional[int] = None,
+        low_video_inference_steps: Optional[int] = None,
+        high_denoise_step: Optional[int] = None,
+        low_denoise_step: Optional[int] = None,
+        action_inference_steps: Optional[int] = None,
+        return_high_level_video: bool = False,
+        sigma_shift: Optional[float] = None,
+        seed: Optional[int] = None,
+        rand_device: str = "cpu",
+        tiled: bool = False,
+        gt_video: Optional[torch.Tensor] = None,
+        gt_keyframe: Optional[torch.Tensor] = None,
+    ) -> dict[str, Any]:
+        del negative_prompt, text_cfg_scale, gt_video
+        self.eval()
+        context, context_mask = self._prepare_infer_context(
+            prompt=prompt,
+            context=context,
+            context_mask=context_mask,
+        )
+        action_horizon_cfg = int(self.hierarchical_action_horizon)
+        eval_action_steps = max(1, int(action_inference_steps if action_inference_steps is not None else num_inference_steps))
+        out = self._infer_hierarchical_action_horizon(
+            input_image=input_image,
+            context=context,
+            context_mask=context_mask,
+            action_horizon=action_horizon_cfg if action_horizon is None else int(action_horizon),
+            num_video_frames=int(num_video_frames),
+            proprio=proprio,
+            observed_chunk_videos=None,
+            gt_keyframe=gt_keyframe,
+            high_video_inference_steps=high_video_inference_steps,
+            low_video_inference_steps=eval_action_steps,
+            high_denoise_step=None,
+            low_denoise_step=None,
+            action_inference_steps=eval_action_steps,
+            num_inference_steps=num_inference_steps,
+            sigma_shift=sigma_shift,
+            seed=seed,
+            rand_device=rand_device,
+            tiled=tiled,
+            full_visualization=True,
+        )
+        low_video = self._decode_latents_to_tensor(out["low_latents"], tiled=tiled)
+        result = {
+            "video": self._video_tensor_to_pil(low_video),
+            "action": out["action"],
+        }
+        if return_high_level_video:
+            key_video = self._decode_latents_to_tensor(out["keyframe_latents"], tiled=tiled)
+            result["video_high_chunk0"] = self._video_tensor_to_pil(key_video)
+        return result
 
     @torch.no_grad()
     def infer(
@@ -2174,6 +2075,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
         num_inference_steps: int = 20,
         high_video_inference_steps: Optional[int] = None,
         low_video_inference_steps: Optional[int] = None,
+        high_denoise_step: Optional[int] = None,
+        low_denoise_step: Optional[int] = None,
         action_inference_steps: Optional[int] = None,
         return_high_level_video: bool = False,
         sigma_shift: Optional[float] = None,
@@ -2181,6 +2084,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         rand_device: str = "cpu",
         tiled: bool = False,
         gt_video: Optional[torch.Tensor] = None,
+        gt_keyframe: Optional[torch.Tensor] = None,
     ):
         del action, action_cfg_scale
         return self.infer_hierarchical(
@@ -2189,6 +2093,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
             num_video_frames=num_frames,
             action_horizon=action_horizon,
             gt_video=gt_video,
+            gt_keyframe=gt_keyframe,
             proprio=proprio,
             context=context,
             context_mask=context_mask,
@@ -2197,6 +2102,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
             num_inference_steps=num_inference_steps,
             high_video_inference_steps=high_video_inference_steps,
             low_video_inference_steps=low_video_inference_steps,
+            high_denoise_step=high_denoise_step,
+            low_denoise_step=low_denoise_step,
             action_inference_steps=action_inference_steps,
             return_high_level_video=return_high_level_video,
             sigma_shift=sigma_shift,
@@ -2204,342 +2111,6 @@ class FastWAM_Hierarchical(torch.nn.Module):
             rand_device=rand_device,
             tiled=tiled,
         )
-
-    @torch.no_grad()
-    def infer_hierarchical(
-        self,
-        prompt: Optional[str],
-        input_image: torch.Tensor,
-        num_video_frames: int,
-        action_horizon: Optional[int],
-        proprio: Optional[torch.Tensor] = None,
-        context: Optional[torch.Tensor] = None,
-        context_mask: Optional[torch.Tensor] = None,
-        negative_prompt: Optional[str] = None,
-        text_cfg_scale: float = 1.0,
-        num_inference_steps: int = 20,
-        high_video_inference_steps: Optional[int] = None,
-        low_video_inference_steps: Optional[int] = None,
-        action_inference_steps: Optional[int] = None,
-        return_high_level_video: bool = False,
-        sigma_shift: Optional[float] = None,
-        seed: Optional[int] = None,
-        rand_device: str = "cpu",
-        tiled: bool = False,
-        gt_video: Optional[torch.Tensor] = None,
-    ) -> dict[str, Any]:
-        del negative_prompt, text_cfg_scale
-        self.eval()
-
-        if input_image.ndim == 3:
-            input_image = input_image.unsqueeze(0)
-        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
-            raise ValueError(
-                f"`input_image` must have shape [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}"
-            )
-        _, _, height, width = input_image.shape
-        checked_h, checked_w, checked_t = self._check_resize_height_width(height, width, num_video_frames)
-        if (checked_h, checked_w) != (height, width) or checked_t != num_video_frames:
-            raise ValueError(
-                f"Invalid infer shape: expected H/W multiples of 16 and T%4==1, got HxW=({height},{width}), T={num_video_frames}."
-            )
-
-        chunk_h = self.hierarchical_chunk_action_horizon
-        total_action = int(action_horizon) if action_horizon is not None else int(self.hierarchical_num_chunks * chunk_h)
-        if total_action <= 0:
-            raise ValueError(f"Invalid action horizon in hierarchical infer: {total_action}")
-        video_transitions = num_video_frames - 1
-        if video_transitions <= 0:
-            raise ValueError(f"Invalid num_video_frames in hierarchical infer: {num_video_frames}")
-        if total_action % video_transitions != 0:
-            raise ValueError(
-                "Hierarchical infer expects action horizon divisible by video transitions. "
-                f"Got action_horizon={total_action}, video_transitions={video_transitions}."
-            )
-        action_per_video_step = total_action // video_transitions
-        if total_action % chunk_h != 0:
-            raise ValueError(
-                f"Hierarchical infer expects action_horizon divisible by chunk_horizon={chunk_h}, got {total_action}."
-            )
-        num_chunks = total_action // chunk_h
-        if chunk_h % action_per_video_step != 0:
-            raise ValueError(
-                "chunk_horizon must align with low-level video stride in infer. "
-                f"Got chunk_horizon={chunk_h}, action_per_video_step={action_per_video_step}."
-            )
-
-        context, context_mask = self._prepare_infer_context(
-            prompt=prompt,
-            context=context,
-            context_mask=context_mask,
-        )
-
-        if gt_video is None:
-            raise ValueError("Hierarchical infer now requires `gt_video` for teacher-forced chunk conditioning.")
-        if gt_video.ndim == 4:
-            gt_video_batch = gt_video.unsqueeze(0)
-        elif gt_video.ndim == 5:
-            gt_video_batch = gt_video
-        else:
-            raise ValueError(
-                f"`gt_video` must have shape [3,T,H,W] or [1,3,T,H,W], got {tuple(gt_video.shape)}"
-            )
-        if gt_video_batch.shape[0] != 1 or gt_video_batch.shape[1] != 3:
-            raise ValueError(
-                f"`gt_video` must have shape [1,3,T,H,W], got {tuple(gt_video_batch.shape)}"
-            )
-        if int(gt_video_batch.shape[2]) != int(num_video_frames):
-            raise ValueError(
-                f"`gt_video` frame count mismatch: expected {num_video_frames}, got {int(gt_video_batch.shape[2])}."
-            )
-        gt_video_batch = gt_video_batch.to(device=self.device, dtype=self.torch_dtype)
-
-        input_image = input_image.to(device=self.device, dtype=self.torch_dtype)
-        first_frame_latents = self._encode_input_image_latents_tensor(
-            input_image=gt_video_batch[0, :, 0].unsqueeze(0),
-            tiled=tiled,
-        )
-        fuse_flag = bool(getattr(self.video_expert, "fuse_vae_embedding_in_latents", False))
-
-        latent_h = height // self.vae.upsampling_factor
-        latent_w = width // self.vae.upsampling_factor
-        z_dim = self.vae.model.z_dim
-        high_frames = (num_video_frames - 1) // self.hierarchical_high_stride + 1
-        high_latent_t = (high_frames - 1) // self.vae.temporal_downsample_factor + 1
-        chunk_video_steps = chunk_h // action_per_video_step
-        low_frames = chunk_video_steps // self.hierarchical_low_stride + 1
-        low_latent_t = (low_frames - 1) // self.vae.temporal_downsample_factor + 1
-        gt_high_video = self._temporal_downsample(gt_video_batch, stride=self.hierarchical_high_stride)
-        gt_high_latents = self._encode_video_latents(gt_high_video, tiled=tiled)
-        if int(gt_high_latents.shape[2]) != int(high_latent_t):
-            raise ValueError(
-                "GT high-level latent length mismatch: "
-                f"expected {high_latent_t}, got {int(gt_high_latents.shape[2])}."
-            )
-
-        g_video = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
-        g_action = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
-
-        high_latents = torch.randn(
-            (1, z_dim, high_latent_t, latent_h, latent_w),
-            generator=g_video,
-            device=rand_device,
-            dtype=torch.float32,
-        ).to(device=self.device, dtype=self.torch_dtype)
-        high_latents[:, :, 0:1] = first_frame_latents.clone()
-
-        if high_video_inference_steps is None:
-            high_video_inference_steps = max(1, int(num_inference_steps) // 2)
-        if low_video_inference_steps is None:
-            low_video_inference_steps = max(1, int(num_inference_steps) // 2)
-        if action_inference_steps is None:
-            action_inference_steps = int(num_inference_steps)
-
-        high_video_inference_steps = max(1, int(high_video_inference_steps))
-        low_video_inference_steps = max(1, int(low_video_inference_steps))
-        action_inference_steps = max(1, int(action_inference_steps))
-
-        high_timesteps, high_deltas = self.infer_video_scheduler.build_inference_schedule(
-            num_inference_steps=high_video_inference_steps,
-            device=self.device,
-            dtype=high_latents.dtype,
-            shift_override=sigma_shift,
-        )
-        high_cache_predict_timestep = self._next_schedule_timestep(
-            full_timesteps=high_timesteps,
-            used_steps=int(high_timesteps.shape[0]),
-            dtype=high_latents.dtype,
-            device=self.device,
-        )
-
-        low_timesteps, low_deltas = self.infer_video_scheduler.build_inference_schedule(
-            num_inference_steps=low_video_inference_steps,
-            device=self.device,
-            dtype=high_latents.dtype,
-            shift_override=sigma_shift,
-        )
-        low_cache_predict_timestep = self._next_schedule_timestep(
-            full_timesteps=low_timesteps,
-            used_steps=int(low_timesteps.shape[0]),
-            dtype=high_latents.dtype,
-            device=self.device,
-        )
-        action_timesteps, action_deltas = self.infer_action_scheduler.build_inference_schedule(
-            num_inference_steps=action_inference_steps,
-            device=self.device,
-            dtype=high_latents.dtype,
-            shift_override=sigma_shift,
-        )
-
-        pred_chunk_videos: list[torch.Tensor] = []
-        pred_chunk_actions: list[torch.Tensor] = []
-        first_chunk_high_video = None
-        chunk_first_frame_latents = first_frame_latents.clone()
-        total_high_frames = int(high_latents.shape[2])
-
-        for chunk_idx in range(num_chunks):
-            current_fixed_high = min(chunk_idx + 1, total_high_frames)
-            fixed_high_latents = gt_high_latents[:, :, :current_fixed_high].clone()
-
-            if current_fixed_high < total_high_frames:
-                high_latents[:, :, :current_fixed_high] = fixed_high_latents[:, :, :current_fixed_high]
-                for step_t, step_delta in zip(high_timesteps, high_deltas):
-                    t_video = self._build_history_predict_timestep(
-                        step_timestep=step_t,
-                        total_frames=total_high_frames,
-                        history_frames=current_fixed_high,
-                        dtype=high_latents.dtype,
-                        device=self.device,
-                    )
-                    if self.hierarchical_mask_high_predict:
-                        pred_high = self._predict_high_video_noise_masked(
-                            latents_video=high_latents,
-                            timestep_video=t_video,
-                            context=context,
-                            context_mask=context_mask,
-                            history_frames=current_fixed_high,
-                            fuse_vae_embedding_in_latents=fuse_flag,
-                        )
-                    else:
-                        pred_high = self._predict_video_only_noise(
-                            latents_video=high_latents,
-                            timestep_video=t_video,
-                            context=context,
-                            context_mask=context_mask,
-                            fuse_vae_embedding_in_latents=fuse_flag,
-                        )
-                    high_latents = self.infer_video_scheduler.step(pred_high, step_delta, high_latents)
-                    high_latents[:, :, :current_fixed_high] = fixed_high_latents[:, :, :current_fixed_high]
-            elif current_fixed_high > 0:
-                high_latents[:, :, :current_fixed_high] = fixed_high_latents[:, :, :current_fixed_high]
-
-            if chunk_idx == 0 and return_high_level_video:
-                first_chunk_high_video = self._decode_latents_to_tensor(high_latents, tiled=tiled)
-
-            if self.hierarchical_mask_high_predict:
-                # Align with mask semantics: forward all available history, then slice the visible part.
-                high_cache_source = high_latents[:, :, :current_fixed_high].clone()
-                cache_timestep_high = self._build_history_predict_timestep(
-                    step_timestep=high_cache_predict_timestep,
-                    total_frames=int(high_cache_source.shape[2]),
-                    history_frames=int(high_cache_source.shape[2]),
-                    dtype=high_cache_source.dtype,
-                    device=self.device,
-                )
-                source_kv_cache, _, high_tokens_per_frame = self._build_video_kv_cache(
-                    latents_video=high_cache_source,
-                    context=context,
-                    context_mask=context_mask,
-                    fuse_vae_embedding_in_latents=fuse_flag,
-                    timestep_video=cache_timestep_high,
-                )
-            else:
-                # No high-mask: forward full high sequence, then slice the visible part.
-                cache_timestep_high = self._build_history_predict_timestep(
-                    step_timestep=high_cache_predict_timestep,
-                    total_frames=int(high_latents.shape[2]),
-                    history_frames=current_fixed_high,
-                    dtype=high_latents.dtype,
-                    device=self.device,
-                )
-                source_kv_cache, _, high_tokens_per_frame = self._build_video_kv_cache(
-                    latents_video=high_latents,
-                    context=context,
-                    context_mask=context_mask,
-                    fuse_vae_embedding_in_latents=fuse_flag,
-                    timestep_video=cache_timestep_high,
-                )
-
-            visible_high_start = 0
-            if self.hierarchical_mask_high_predict:
-                visible_high_end = max(0, current_fixed_high - 1)
-            else:
-                visible_high_end = min(current_fixed_high, total_high_frames - 1)
-
-            visible_token_start = visible_high_start * high_tokens_per_frame
-            visible_token_end = (visible_high_end + 1) * high_tokens_per_frame
-            high_kv_cache = self._slice_video_kv_cache(
-                source_kv_cache,
-                token_start=visible_token_start,
-                token_end=visible_token_end,
-            )
-            high_frames_for_low = visible_high_end - visible_high_start + 1
-            high_seq_len = high_frames_for_low * high_tokens_per_frame
-
-            latents_low = torch.randn(
-                (1, z_dim, low_latent_t, latent_h, latent_w),
-                generator=g_video,
-                device=rand_device,
-                dtype=torch.float32,
-            ).to(device=self.device, dtype=self.torch_dtype)
-            chunk_frame_start = chunk_idx * chunk_video_steps
-            chunk_first_frame_latents = self._encode_input_image_latents_tensor(
-                gt_video_batch[0, :, chunk_frame_start].unsqueeze(0),
-                tiled=tiled,
-            )
-            latents_low[:, :, 0:1] = chunk_first_frame_latents.clone()
-
-            for step_t_low, step_d_low in zip(low_timesteps, low_deltas):
-                t_low = step_t_low.unsqueeze(0).to(device=self.device, dtype=latents_low.dtype)
-                pred_low = self._predict_low_video_noise_with_high_cache(
-                    low_chunk_latents=latents_low,
-                    timestep_video=t_low,
-                    context=context,
-                    context_mask=context_mask,
-                    high_kv_cache=high_kv_cache,
-                    high_seq_len=high_seq_len,
-                    high_frames=high_frames_for_low,
-                    tokens_per_frame=high_tokens_per_frame,
-                    fuse_vae_embedding_in_latents=fuse_flag,
-                    visible_high_start=0,
-                    visible_high_end=high_frames_for_low - 1,
-                    mask_low_predict=self.hierarchical_mask_low_predict,
-                )
-                latents_low = self.infer_video_scheduler.step(pred_low, step_d_low, latents_low)
-                latents_low[:, :, 0:1] = chunk_first_frame_latents
-
-            if self.hierarchical_mask_low_predict:
-                low_cache_latents = latents_low[:, :, :1].clone()
-            else:
-                low_cache_latents = latents_low
-
-            chunk_action_start = chunk_idx * chunk_h
-            chunk_proprio = self._get_chunk_proprio(proprio, action_start=chunk_action_start)
-            pred_action_chunk = self._infer_action_from_video_condition(
-                latents_video_cond=low_cache_latents,
-                chunk_horizon=chunk_h,
-                context=context,
-                context_mask=context_mask,
-                action_timesteps=action_timesteps,
-                action_deltas=action_deltas,
-                generator=g_action,
-                rand_device=rand_device,
-                proprio=chunk_proprio,
-                fuse_vae_embedding_in_latents=fuse_flag,
-                only_first_low_frame=self.hierarchical_mask_low_predict,
-                low_cache_predict_timestep=low_cache_predict_timestep,
-                high_kv_cache_for_low=high_kv_cache,
-                high_frames_for_low=high_frames_for_low,
-                high_tokens_per_frame_for_low=high_tokens_per_frame,
-            )
-
-            low_video_chunk = self._decode_latents_to_tensor(latents_low, tiled=tiled)
-            pred_chunk_videos.append(low_video_chunk)
-            pred_chunk_actions.append(pred_action_chunk)
-
-        full_video = self._concat_chunk_video_tensors(
-            pred_chunk_videos,
-            replace_boundary_with_next_chunk_first_frame=True,
-        )
-        full_action = torch.cat(pred_chunk_actions, dim=0)
-        out = {
-            "video": self._video_tensor_to_pil(full_video),
-            "action": full_action.detach().to(device="cpu", dtype=torch.float32),
-        }
-        if return_high_level_video:
-            if first_chunk_high_video is not None:
-                out["video_high_chunk0"] = self._video_tensor_to_pil(first_chunk_high_video)
-        return out
 
     def save_checkpoint(self, path, optimizer=None, step=None):
         payload = {

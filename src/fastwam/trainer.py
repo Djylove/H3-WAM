@@ -50,6 +50,12 @@ class Wan22Trainer:
         self.eval_low_video_inference_steps = self._parse_optional_int(
             cfg.get("low_video_inference_steps", None)
         )
+        self.eval_high_denoise_step = self._parse_optional_int(
+            cfg.get("high_denoise_step", None)
+        )
+        self.eval_low_denoise_step = self._parse_optional_int(
+            cfg.get("low_denoise_step", None)
+        )
         self.eval_action_inference_steps = self._parse_optional_int(
             cfg.get("action_inference_steps", None)
         )
@@ -316,6 +322,8 @@ class Wan22Trainer:
     @staticmethod
     def _to_batched_eval_sample(sample):
         video = sample["video"]
+        keyframe = sample.get("keyframe", None)
+        keyframe_is_pad = sample.get("keyframe_is_pad", None)
         prompt = sample["prompt"]
         action = sample.get("action", None)
         proprio = sample.get("proprio", None)
@@ -334,6 +342,18 @@ class Wan22Trainer:
         num_video_frames = video.shape[2]
         if num_video_frames <= 1:
             raise ValueError(f"`sample['video']` must have at least 2 frames for action evaluation, got {num_video_frames}")
+        if keyframe is not None:
+            if not isinstance(keyframe, torch.Tensor):
+                raise TypeError(f"`sample['keyframe']` must be a torch.Tensor, got {type(keyframe)}")
+            if keyframe.ndim == 4:
+                keyframe = keyframe.unsqueeze(0)
+            if keyframe.ndim != 5:
+                raise ValueError(f"`sample['keyframe']` must be [B,3,T,H,W], got {tuple(keyframe.shape)}")
+        if keyframe_is_pad is not None:
+            if keyframe_is_pad.ndim == 1:
+                keyframe_is_pad = keyframe_is_pad.unsqueeze(0)
+            if keyframe_is_pad.ndim != 2:
+                raise ValueError(f"`sample['keyframe_is_pad']` must be [B,T], got {tuple(keyframe_is_pad.shape)}")
 
         if isinstance(prompt, str):
             prompt = [prompt]
@@ -384,6 +404,8 @@ class Wan22Trainer:
 
         return {
             "video": video,
+            "keyframe": keyframe,
+            "keyframe_is_pad": keyframe_is_pad,
             "prompt": prompt,
             "action": action,
             "proprio": proprio,
@@ -413,9 +435,11 @@ class Wan22Trainer:
         
         prompt = sample["prompt"][0]
         video0 = sample["video"][0] # Tensor [3, T, H, W] in (-1, 1)
+        keyframe0 = sample["keyframe"][0] if sample.get("keyframe", None) is not None else None
         action = sample["action"][0] if "action" in sample and sample["action"] is not None else None
+        is_hierarchical_model = callable(getattr(model, "infer_hierarchical", None))
         if "proprio" in sample and sample["proprio"] is not None:
-            if hasattr(model, "hierarchical_num_chunks"):
+            if is_hierarchical_model:
                 proprio = sample["proprio"][0]
             else:
                 proprio = sample["proprio"][0, 0]  # from [1, T, d] to [d]
@@ -443,11 +467,16 @@ class Wan22Trainer:
             infer_kwargs["context_mask"] = sample["context_mask"][0]
         else:
             infer_kwargs["prompt"] = prompt
-        if hasattr(model, "hierarchical_num_chunks"):
+        if is_hierarchical_model:
             infer_kwargs["gt_video"] = video0
+            if keyframe0 is not None:
+                infer_kwargs["gt_keyframe"] = keyframe0
+            eval_action_steps = self.eval_action_inference_steps or self.eval_num_inference_steps
             infer_kwargs["high_video_inference_steps"] = self.eval_high_video_inference_steps
-            infer_kwargs["low_video_inference_steps"] = self.eval_low_video_inference_steps
-            infer_kwargs["action_inference_steps"] = self.eval_action_inference_steps
+            infer_kwargs["low_video_inference_steps"] = eval_action_steps
+            infer_kwargs["high_denoise_step"] = None
+            infer_kwargs["low_denoise_step"] = None
+            infer_kwargs["action_inference_steps"] = eval_action_steps
         if "return_high_level_video" in inspect.signature(model.infer).parameters:
             infer_kwargs["return_high_level_video"] = True
 
