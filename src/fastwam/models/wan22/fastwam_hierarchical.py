@@ -2057,7 +2057,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         }
         if return_high_level_video:
             key_video = self._decode_latents_to_tensor(out["keyframe_latents"], tiled=tiled)
-            result["video_high_chunk0"] = self._video_tensor_to_pil(key_video)
+            result["video_high"] = self._video_tensor_to_pil(key_video)
         return result
 
     @torch.no_grad()
