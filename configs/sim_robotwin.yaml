@@ -31,6 +31,7 @@ EVALUATION:
   high_denoise_step: ${oc.select:high_denoise_step,null}
   low_denoise_step: ${oc.select:low_denoise_step,null}
   action_inference_steps: ${oc.select:action_inference_steps,null}
+  joint_denoise: ${oc.select:joint_denoise,false}
   sigma_shift: null
   text_cfg_scale: 1.0
   negative_prompt: ""
@@ -46,7 +47,7 @@ EVALUATION:
 MULTIRUN:
   enabled: false
   num_gpus: 8
-  max_tasks_per_gpu: 1
+  max_tasks_per_gpu: 2
 
 hydra:
   job:

@@ -26,6 +26,7 @@ low_video_inference_steps: 20
 high_denoise_step: null
 low_denoise_step: null
 action_inference_steps: 20
+joint_denoise: false
 
 data:
   train:

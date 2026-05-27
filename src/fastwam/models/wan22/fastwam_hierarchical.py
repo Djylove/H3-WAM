@@ -1941,6 +1941,349 @@ class FastWAM_Hierarchical(torch.nn.Module):
         }
 
     @torch.no_grad()
+    def _infer_hierarchical_joint_denoise_action_horizon(
+        self,
+        *,
+        input_image: torch.Tensor,
+        context: torch.Tensor,
+        context_mask: torch.Tensor,
+        action_horizon: int,
+        num_video_frames: int,
+        proprio: Optional[torch.Tensor],
+        observed_chunk_videos: Optional[list[torch.Tensor]],
+        gt_keyframe: Optional[torch.Tensor],
+        high_video_inference_steps: Optional[int],
+        low_video_inference_steps: Optional[int],
+        high_denoise_step: Optional[int],
+        low_denoise_step: Optional[int],
+        action_inference_steps: Optional[int],
+        num_inference_steps: int,
+        sigma_shift: Optional[float],
+        seed: Optional[int],
+        rand_device: str,
+        tiled: bool,
+    ) -> dict[str, Any]:
+        if self.hierarchical_mask_high_predict or self.hierarchical_mask_low_predict:
+            raise ValueError("Joint denoise infer_action requires both hierarchical masks to be disabled.")
+        if input_image.ndim == 3:
+            input_image = input_image.unsqueeze(0)
+        if input_image.ndim != 4 or input_image.shape[0] != 1 or input_image.shape[1] != 3:
+            raise ValueError(f"`input_image` must be [1,3,H,W] or [3,H,W], got {tuple(input_image.shape)}.")
+        _, _, height, width = input_image.shape
+        checked_h, checked_w, checked_t = self._check_resize_height_width(height, width, num_video_frames)
+        if (checked_h, checked_w) != (height, width) or checked_t != num_video_frames:
+            raise ValueError(
+                f"Invalid infer shape: expected H/W multiples of 16 and T%4==1, got HxW=({height},{width}), T={num_video_frames}."
+            )
+        if int(num_video_frames) != 9:
+            raise ValueError(f"New hierarchical infer expects 9 low video frames, got {num_video_frames}.")
+        if int(action_horizon) != int(self.hierarchical_action_horizon):
+            raise ValueError(
+                f"New hierarchical infer expects action_horizon={self.hierarchical_action_horizon}, got {action_horizon}."
+            )
+
+        input_image = input_image.to(device=self.device, dtype=self.torch_dtype)
+        fuse_flag = bool(getattr(self.video_expert, "fuse_vae_embedding_in_latents", False))
+        first_frame_latents = self._encode_input_image_latents_tensor(input_image=input_image, tiled=tiled)
+        key_history_video = self._build_keyframe_history_video_for_infer(
+            input_image=input_image,
+            observed_chunk_videos=observed_chunk_videos,
+            gt_keyframe=gt_keyframe,
+        )
+        key_history_latents = self._encode_video_latents(key_history_video, tiled=tiled)
+        if int(key_history_latents.shape[2]) != 3:
+            raise ValueError(f"Expected encoded keyframe history to have 3 latent frames, got {key_history_latents.shape[2]}.")
+
+        latent_h = height // self.vae.upsampling_factor
+        latent_w = width // self.vae.upsampling_factor
+        z_dim = self.vae.model.z_dim
+        g_video = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
+        g_action = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
+
+        key_latents = torch.randn(
+            (1, z_dim, 5, latent_h, latent_w),
+            generator=g_video,
+            device=rand_device,
+            dtype=torch.float32,
+        ).to(device=self.device, dtype=self.torch_dtype)
+        key_latents[:, :, :3] = key_history_latents
+        fixed_key_history = key_history_latents.clone()
+
+        low_latents = torch.randn(
+            (1, z_dim, 3, latent_h, latent_w),
+            generator=g_video,
+            device=rand_device,
+            dtype=torch.float32,
+        ).to(device=self.device, dtype=self.torch_dtype)
+        low_latents[:, :, 0:1] = first_frame_latents.clone()
+
+        action_latents = torch.randn(
+            (1, int(action_horizon), self.action_expert.action_dim),
+            generator=g_action,
+            device=rand_device,
+            dtype=torch.float32,
+        ).to(device=self.device, dtype=self.torch_dtype)
+
+        high_steps = max(1, int(high_video_inference_steps if high_video_inference_steps is not None else num_inference_steps))
+        low_steps = max(1, int(low_video_inference_steps if low_video_inference_steps is not None else num_inference_steps))
+        action_steps = max(1, int(action_inference_steps if action_inference_steps is not None else num_inference_steps))
+        high_timesteps_full, high_deltas_full = self.infer_video_scheduler.build_inference_schedule(
+            num_inference_steps=high_steps,
+            device=self.device,
+            dtype=key_latents.dtype,
+            shift_override=sigma_shift,
+        )
+        low_timesteps_full, low_deltas_full = self.infer_video_scheduler.build_inference_schedule(
+            num_inference_steps=low_steps,
+            device=self.device,
+            dtype=low_latents.dtype,
+            shift_override=sigma_shift,
+        )
+        high_timesteps, high_deltas = self._truncate_inference_schedule(
+            high_timesteps_full,
+            high_deltas_full,
+            high_denoise_step,
+            name="high_denoise_step",
+        )
+        low_timesteps, low_deltas = self._truncate_inference_schedule(
+            low_timesteps_full,
+            low_deltas_full,
+            low_denoise_step,
+            name="low_denoise_step",
+        )
+        action_timesteps, action_deltas = self.infer_action_scheduler.build_inference_schedule(
+            num_inference_steps=action_steps,
+            device=self.device,
+            dtype=action_latents.dtype,
+            shift_override=sigma_shift,
+        )
+        high_actual_steps = int(high_timesteps.shape[0])
+        low_actual_steps = int(low_timesteps.shape[0])
+        if high_actual_steps > low_actual_steps or low_actual_steps > action_steps:
+            raise ValueError(
+                "Joint denoise infer_action requires "
+                "high_denoise_steps <= low_denoise_steps <= action_inference_steps, "
+                f"got {high_actual_steps}, {low_actual_steps}, {action_steps}."
+            )
+
+        proprio_token = None
+        if self.proprio_encoder is not None:
+            if proprio is None:
+                raise ValueError("`proprio` must be provided when `proprio_dim` is enabled.")
+            if proprio.ndim == 1:
+                proprio = proprio.unsqueeze(0)
+            elif proprio.ndim == 2 and int(proprio.shape[0]) != 1:
+                proprio = proprio[:1]
+            elif proprio.ndim == 3:
+                proprio = proprio[:, 0, :]
+            if proprio.ndim != 2 or int(proprio.shape[1]) != int(self.proprio_dim):
+                raise ValueError(f"Expected proprio shape [1,{self.proprio_dim}], got {tuple(proprio.shape)}.")
+            proprio_token = self._encode_proprio_action_token(
+                proprio=proprio.to(device=self.device, dtype=self.torch_dtype),
+                dtype=context.dtype,
+            )
+
+        visible_high_start, visible_high_end = self._downstream_high_visible_range(3)
+        joint_prev_denoise_predictions: list[torch.Tensor] = []
+        joint_skip_countdown = 0
+        prev_pred_high: Optional[torch.Tensor] = None
+        prev_pred_low: Optional[torch.Tensor] = None
+        prev_pred_action: Optional[torch.Tensor] = None
+
+        for step_idx in range(high_actual_steps):
+            t_high = self._build_history_predict_timestep(
+                step_timestep=high_timesteps[step_idx],
+                total_frames=5,
+                history_frames=3,
+                dtype=key_latents.dtype,
+                device=self.device,
+            )
+            t_low = low_timesteps[step_idx].reshape(1).to(device=self.device, dtype=low_latents.dtype)
+            t_action = action_timesteps[step_idx].reshape(1).to(device=self.device, dtype=action_latents.dtype)
+            low_timestep = t_low.unsqueeze(1).expand(-1, 3).clone()
+            low_timestep[:, 0] = 0
+            should_run_joint, joint_skip_countdown = self._should_run_diffusion_step(
+                prev_predictions=joint_prev_denoise_predictions,
+                skip_countdown=joint_skip_countdown,
+                enabled=self.hierarchical_dynamic_skip,
+            )
+            if should_run_joint:
+                pred_high, pred_low, pred_action = self._predict_low_action_joint_noise(
+                    keyframe_cond_latents=key_latents,
+                    low_latents=low_latents,
+                    action_latents=action_latents,
+                    keyframe_timestep=t_high,
+                    low_timestep=low_timestep,
+                    action_timestep=t_action,
+                    context=context,
+                    context_mask=context_mask,
+                    proprio_token=proprio_token,
+                    fuse_vae_embedding_in_latents=fuse_flag,
+                    history_high_frames=3,
+                    visible_high_start=visible_high_start,
+                    visible_high_end=visible_high_end,
+                )
+                prev_pred_high = pred_high
+                prev_pred_low = pred_low
+                prev_pred_action = pred_action
+                joint_prev_denoise_predictions.append(
+                    torch.cat([pred_high[:, :, 3:].flatten(1), pred_low[:, :, 1:].flatten(1)], dim=1).detach()
+                )
+                if len(joint_prev_denoise_predictions) > 2:
+                    joint_prev_denoise_predictions.pop(0)
+            else:
+                if prev_pred_high is None or prev_pred_low is None or prev_pred_action is None:
+                    raise RuntimeError("Dynamic skip requested before a joint prediction is available.")
+                pred_high = prev_pred_high
+                pred_low = prev_pred_low
+                pred_action = prev_pred_action
+
+            key_latents = self.infer_video_scheduler.step(pred_high, high_deltas[step_idx], key_latents)
+            key_latents[:, :, :3] = fixed_key_history
+            low_latents = self.infer_video_scheduler.step(pred_low, low_deltas[step_idx], low_latents)
+            low_latents[:, :, 0:1] = first_frame_latents.clone()
+            action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
+
+        key_cache_t = self._next_schedule_timestep(
+            full_timesteps=high_timesteps_full,
+            used_steps=high_actual_steps,
+            dtype=key_latents.dtype,
+            device=self.device,
+        )
+        key_timestep = self._build_history_predict_timestep(
+            step_timestep=key_cache_t,
+            total_frames=5,
+            history_frames=3,
+            dtype=key_latents.dtype,
+            device=self.device,
+        )
+        (
+            downstream_key_latents,
+            _downstream_key_timestep,
+            downstream_history_frames,
+            downstream_visible_start,
+            downstream_visible_end,
+        ) = self._select_downstream_keyframes(
+            key_latents,
+            key_timestep,
+            history_frames=3,
+        )
+        selected_key_indices, _ = self._downstream_keyframe_indices(3)
+        all_keyframe_cache, _, cache_tokens_per_frame = self._prefill_keyframe_cache(
+            keyframe_cond_latents=key_latents,
+            keyframe_timestep=key_timestep,
+            context=context,
+            context_mask=context_mask,
+            fuse_vae_embedding_in_latents=fuse_flag,
+            history_high_frames=3,
+            visible_high_start=0,
+            visible_high_end=int(key_latents.shape[2]) - 1,
+        )
+        keyframe_cache = self._slice_video_kv_cache(
+            all_keyframe_cache,
+            frame_indices=selected_key_indices,
+            tokens_per_frame=cache_tokens_per_frame,
+        )
+        keyframe_seq_len = len(selected_key_indices) * cache_tokens_per_frame
+
+        low_prev_denoise_predictions: list[torch.Tensor] = []
+        low_skip_countdown = 0
+        prev_low_pred: Optional[torch.Tensor] = None
+        prev_action_pred: Optional[torch.Tensor] = None
+        for step_idx in range(high_actual_steps, low_actual_steps):
+            t_low = low_timesteps[step_idx].reshape(1).to(device=self.device, dtype=low_latents.dtype)
+            t_action = action_timesteps[step_idx].reshape(1).to(device=self.device, dtype=action_latents.dtype)
+            low_timestep = t_low.unsqueeze(1).expand(-1, 3).clone()
+            low_timestep[:, 0] = 0
+            should_run_low, low_skip_countdown = self._should_run_diffusion_step(
+                prev_predictions=low_prev_denoise_predictions,
+                skip_countdown=low_skip_countdown,
+                enabled=self.hierarchical_dynamic_skip,
+            )
+            if should_run_low:
+                pred_low, pred_action = self._predict_low_action_with_keyframe_cache(
+                    keyframe_cache=keyframe_cache,
+                    keyframe_seq_len=keyframe_seq_len,
+                    keyframe_frames=int(downstream_key_latents.shape[2]),
+                    low_latents=low_latents,
+                    action_latents=action_latents,
+                    low_timestep=low_timestep,
+                    action_timestep=t_action,
+                    context=context,
+                    context_mask=context_mask,
+                    proprio_token=proprio_token,
+                    fuse_vae_embedding_in_latents=fuse_flag,
+                    tokens_per_frame=cache_tokens_per_frame,
+                    history_high_frames=downstream_history_frames,
+                    visible_high_start=downstream_visible_start,
+                    visible_high_end=downstream_visible_end,
+                )
+                prev_low_pred = pred_low
+                prev_action_pred = pred_action
+                low_prev_denoise_predictions.append(pred_low[:, :, 1:].detach())
+                if len(low_prev_denoise_predictions) > 2:
+                    low_prev_denoise_predictions.pop(0)
+            else:
+                if prev_low_pred is None or prev_action_pred is None:
+                    raise RuntimeError("Dynamic skip requested before a low/action prediction is available.")
+                pred_low = prev_low_pred
+                pred_action = prev_action_pred
+
+            low_latents = self.infer_video_scheduler.step(pred_low, low_deltas[step_idx], low_latents)
+            low_latents[:, :, 0:1] = first_frame_latents.clone()
+            action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
+
+        if low_actual_steps < action_steps:
+            cache_t_low = self._next_schedule_timestep(
+                full_timesteps=low_timesteps_full,
+                used_steps=low_actual_steps,
+                dtype=low_latents.dtype,
+                device=self.device,
+            )
+            low_cache_timestep = cache_t_low.reshape(1).unsqueeze(1).expand(-1, 3).clone()
+            low_cache_timestep[:, 0] = 0
+            low_cache, _, _ = self._prefill_low_cache_with_keyframe_cache(
+                keyframe_cache=keyframe_cache,
+                keyframe_seq_len=keyframe_seq_len,
+                keyframe_frames=int(downstream_key_latents.shape[2]),
+                low_latents=low_latents,
+                low_timestep=low_cache_timestep,
+                context=context,
+                context_mask=context_mask,
+                fuse_vae_embedding_in_latents=fuse_flag,
+                tokens_per_frame=cache_tokens_per_frame,
+                history_high_frames=downstream_history_frames,
+                visible_high_start=downstream_visible_start,
+                visible_high_end=downstream_visible_end,
+            )
+            video_cache = self._concat_video_kv_caches(keyframe_cache, low_cache)
+            video_seq_len = keyframe_seq_len + int(low_latents.shape[2]) * cache_tokens_per_frame
+            for step_idx in range(low_actual_steps, action_steps):
+                t_action = action_timesteps[step_idx].reshape(1).to(device=self.device, dtype=action_latents.dtype)
+                pred_action = self._predict_action_with_frozen_video_cache(
+                    action_latents=action_latents,
+                    action_timestep=t_action,
+                    context=context,
+                    context_mask=context_mask,
+                    video_cache=video_cache,
+                    video_seq_len=video_seq_len,
+                    tokens_per_frame=cache_tokens_per_frame,
+                    high_frames=int(downstream_key_latents.shape[2]),
+                    low_frames=int(low_latents.shape[2]),
+                    history_high_frames=downstream_history_frames,
+                    visible_high_start=downstream_visible_start,
+                    visible_high_end=downstream_visible_end,
+                    proprio_token=proprio_token,
+                )
+                action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
+
+        return {
+            "action": action_latents[0].detach().to(device="cpu", dtype=torch.float32),
+            "low_latents": low_latents,
+            "keyframe_latents": key_latents,
+        }
+
+    @torch.no_grad()
     def infer_action(
         self,
         prompt: Optional[str],
@@ -1963,6 +2306,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         seed: Optional[int] = None,
         rand_device: str = "cpu",
         tiled: bool = False,
+        joint_denoise: bool = False,
     ) -> dict[str, Any]:
         del negative_prompt, text_cfg_scale
         self.eval()
@@ -1971,6 +2315,28 @@ class FastWAM_Hierarchical(torch.nn.Module):
             context=context,
             context_mask=context_mask,
         )
+        if bool(joint_denoise) and not self.hierarchical_mask_high_predict and not self.hierarchical_mask_low_predict:
+            out = self._infer_hierarchical_joint_denoise_action_horizon(
+                input_image=input_image,
+                context=context,
+                context_mask=context_mask,
+                action_horizon=int(action_horizon),
+                num_video_frames=9 if num_video_frames is None else int(num_video_frames),
+                proprio=proprio,
+                observed_chunk_videos=observed_chunk_videos,
+                gt_keyframe=None,
+                high_video_inference_steps=high_video_inference_steps,
+                low_video_inference_steps=low_video_inference_steps,
+                high_denoise_step=high_denoise_step,
+                low_denoise_step=low_denoise_step,
+                action_inference_steps=action_inference_steps,
+                num_inference_steps=num_inference_steps,
+                sigma_shift=sigma_shift,
+                seed=seed,
+                rand_device=rand_device,
+                tiled=tiled,
+            )
+            return {"action": out["action"]}
         out = self._infer_hierarchical_action_horizon(
             input_image=input_image,
             context=context,

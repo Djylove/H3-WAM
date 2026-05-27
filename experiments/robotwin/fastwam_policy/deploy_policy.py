@@ -158,6 +158,7 @@ class WorldActionRobotWinPolicy:
         negative_prompt: str,
         rand_device: str,
         tiled: bool,
+        joint_denoise: bool,
         timing_enabled: bool,
         num_video_frames: int,
     ) -> None:
@@ -214,6 +215,7 @@ class WorldActionRobotWinPolicy:
         self.negative_prompt = str(negative_prompt)
         self.rand_device = str(rand_device)
         self.tiled = bool(tiled)
+        self.joint_denoise = bool(joint_denoise)
         self.timing_enabled = bool(timing_enabled)
 
         self.pending_actions: deque[np.ndarray] = deque()
@@ -316,6 +318,8 @@ class WorldActionRobotWinPolicy:
             infer_action_kwargs["low_denoise_step"] = self.low_denoise_step
         if "action_inference_steps" in infer_action_sig:
             infer_action_kwargs["action_inference_steps"] = self.action_inference_steps
+        if "joint_denoise" in infer_action_sig:
+            infer_action_kwargs["joint_denoise"] = self.joint_denoise
         if self._is_hierarchical_model and "observed_chunk_videos" in infer_action_sig:
             keyframe_history = self._get_padded_keyframe_history()
             if len(keyframe_history) > 0:
@@ -525,6 +529,7 @@ def get_model(usr_args: Dict[str, Any]):
     negative_prompt = str(usr_args.get("negative_prompt", cfg.EVALUATION.get("negative_prompt", "")))
     rand_device = str(usr_args.get("rand_device", cfg.EVALUATION.get("rand_device", "cpu")))
     tiled = _parse_bool(usr_args.get("tiled", cfg.EVALUATION.get("tiled", False)))
+    joint_denoise = _parse_bool(usr_args.get("joint_denoise", cfg.EVALUATION.get("joint_denoise", False)))
     timing_enabled = _parse_bool(
         usr_args.get("timing_enabled", cfg.EVALUATION.get("timing_enabled", False))
     )
@@ -550,6 +555,7 @@ def get_model(usr_args: Dict[str, Any]):
         negative_prompt=negative_prompt,
         rand_device=rand_device,
         tiled=tiled,
+        joint_denoise=joint_denoise,
         timing_enabled=timing_enabled,
         num_video_frames=(int(cfg.data.train.num_frames) - 1) // int(cfg.data.train.action_video_freq_ratio) + 1,
     )
