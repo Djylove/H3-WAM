@@ -151,6 +151,8 @@ class WorldActionRobotWinPolicy:
         low_video_inference_steps: Optional[int],
         high_denoise_step: Optional[int],
         low_denoise_step: Optional[int],
+        high_reuse_step: Optional[int],
+        low_reuse_step: Optional[int],
         action_inference_steps: Optional[int],
         sigma_shift: Optional[float],
         seed: Optional[int],
@@ -208,6 +210,8 @@ class WorldActionRobotWinPolicy:
         self.low_video_inference_steps = low_video_inference_steps
         self.high_denoise_step = high_denoise_step
         self.low_denoise_step = low_denoise_step
+        self.high_reuse_step = high_reuse_step
+        self.low_reuse_step = low_reuse_step
         self.action_inference_steps = action_inference_steps
         self.sigma_shift = sigma_shift
         self.seed = seed
@@ -316,6 +320,10 @@ class WorldActionRobotWinPolicy:
             infer_action_kwargs["high_denoise_step"] = self.high_denoise_step
         if "low_denoise_step" in infer_action_sig:
             infer_action_kwargs["low_denoise_step"] = self.low_denoise_step
+        if "high_reuse_step" in infer_action_sig:
+            infer_action_kwargs["high_reuse_step"] = self.high_reuse_step
+        if "low_reuse_step" in infer_action_sig:
+            infer_action_kwargs["low_reuse_step"] = self.low_reuse_step
         if "action_inference_steps" in infer_action_sig:
             infer_action_kwargs["action_inference_steps"] = self.action_inference_steps
         if "joint_denoise" in infer_action_sig:
@@ -451,6 +459,9 @@ class WorldActionRobotWinPolicy:
         self.pending_actions.clear()
         self._pending_keyframes.clear()
         self._keyframe_history.clear()
+        clear_reuse_cache = getattr(self.model, "clear_hierarchical_reuse_cache", None)
+        if callable(clear_reuse_cache):
+            clear_reuse_cache()
         self._horizon_start_frame = None
         self._last_action_executed = False
         self._horizon_executed_actions = 0
@@ -516,6 +527,12 @@ def get_model(usr_args: Dict[str, Any]):
     low_denoise_step = _parse_optional_int(usr_args.get("low_denoise_step"))
     if low_denoise_step is None:
         low_denoise_step = _parse_optional_int(cfg.EVALUATION.get("low_denoise_step"))
+    high_reuse_step = _parse_optional_int(usr_args.get("high_reuse_step"))
+    if high_reuse_step is None:
+        high_reuse_step = _parse_optional_int(cfg.EVALUATION.get("high_reuse_step"))
+    low_reuse_step = _parse_optional_int(usr_args.get("low_reuse_step"))
+    if low_reuse_step is None:
+        low_reuse_step = _parse_optional_int(cfg.EVALUATION.get("low_reuse_step"))
     action_inference_steps = _parse_optional_int(usr_args.get("action_inference_steps"))
     if action_inference_steps is None:
         action_inference_steps = _parse_optional_int(cfg.EVALUATION.get("action_inference_steps"))
@@ -548,6 +565,8 @@ def get_model(usr_args: Dict[str, Any]):
         low_video_inference_steps=low_video_inference_steps,
         high_denoise_step=high_denoise_step,
         low_denoise_step=low_denoise_step,
+        high_reuse_step=high_reuse_step,
+        low_reuse_step=low_reuse_step,
         action_inference_steps=action_inference_steps,
         sigma_shift=sigma_shift,
         seed=seed,
