@@ -1752,7 +1752,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
             high_deltas = high_deltas[:0]
         high_actual_steps = int(high_timesteps.shape[0])
         high_reuse_start = 0
-        if run_high_denoise and not full_visualization:
+        if run_high_denoise and not full_visualization and high_reuse_step is not None:
             key_latents, high_reuse_start = self._maybe_reuse_video_prediction_latents(
                 latents=key_latents,
                 cache_name="high",
@@ -1817,7 +1817,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
             key_latents = self.infer_video_scheduler.step(pred_high, step_d_high, key_latents)
             key_latents[:, :, :3] = fixed_key_history
 
-        if run_high_denoise and not full_visualization:
+        if run_high_denoise and not full_visualization and high_reuse_step is not None:
             self._store_video_prediction_reuse_latents(
                 cache_name="high",
                 latents=key_latents,
@@ -1932,7 +1932,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         )
         joint_low_steps = 0 if (self.hierarchical_mask_low_predict and not full_visualization) else low_actual_steps
         low_reuse_start = 0
-        if joint_low_steps > 0 and not full_visualization:
+        if joint_low_steps > 0 and not full_visualization and low_reuse_step is not None:
             low_latents, low_reuse_start = self._maybe_reuse_video_prediction_latents(
                 latents=low_latents,
                 cache_name="low",
@@ -2008,7 +2008,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
             action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
             prev_action_pred = pred_action
 
-        if joint_low_steps > 0 and not full_visualization:
+        if joint_low_steps > 0 and not full_visualization and low_reuse_step is not None:
             self._store_video_prediction_reuse_latents(
                 cache_name="low",
                 latents=low_latents,
@@ -2198,7 +2198,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 f"got {high_actual_steps}, {low_actual_steps}, {action_steps}."
             )
         high_reuse_start = 0
-        if high_actual_steps > 0:
+        if high_actual_steps > 0 and high_reuse_step is not None:
             key_latents, high_reuse_start = self._maybe_reuse_video_prediction_latents(
                 latents=key_latents,
                 cache_name="high",
@@ -2211,7 +2211,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
             )
             key_latents[:, :, :3] = fixed_key_history
         low_reuse_start = 0
-        if low_actual_steps > 0:
+        if low_actual_steps > 0 and low_reuse_step is not None:
             low_latents, low_reuse_start = self._maybe_reuse_video_prediction_latents(
                 latents=low_latents,
                 cache_name="low",
@@ -2327,7 +2327,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 low_latents[:, :, 0:1] = first_frame_latents.clone()
             action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
 
-        if high_actual_steps > 0:
+        if high_actual_steps > 0 and high_reuse_step is not None:
             self._store_video_prediction_reuse_latents(
                 cache_name="high",
                 latents=key_latents,
@@ -2424,7 +2424,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
             low_latents[:, :, 0:1] = first_frame_latents.clone()
             action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
 
-        if low_actual_steps > 0:
+        if low_actual_steps > 0 and low_reuse_step is not None:
             self._store_video_prediction_reuse_latents(
                 cache_name="low",
                 latents=low_latents,

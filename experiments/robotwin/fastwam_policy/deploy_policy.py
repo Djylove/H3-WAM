@@ -102,12 +102,18 @@ def _compose_sim_cfg(
     sim_cfg_path: Optional[str],
     sim_cfg_name: Optional[str],
     sim_task: Optional[str],
+    sim_cfg_overrides: Optional[Any] = None,
 ) -> DictConfig:
     config_name = _resolve_sim_cfg_name(sim_cfg_path=sim_cfg_path, sim_cfg_name=sim_cfg_name)
     configs_root = (PROJECT_ROOT / "configs").resolve()
     overrides = []
     if not _is_none_like(sim_task):
         overrides.append(f"task={str(sim_task)}")
+    if not _is_none_like(sim_cfg_overrides):
+        if isinstance(sim_cfg_overrides, (list, tuple)):
+            overrides.extend(str(item) for item in sim_cfg_overrides)
+        else:
+            overrides.append(str(sim_cfg_overrides))
 
     if GlobalHydra.instance().is_initialized():
         GlobalHydra.instance().clear()
@@ -233,6 +239,14 @@ class WorldActionRobotWinPolicy:
             dataset_stats_path,
             self.action_horizon,
             self.replan_steps,
+        )
+        logger.info(
+            "FastWAM hierarchical cfg | mask_high=%s | mask_low=%s | joint_denoise=%s | high_reuse_step=%s | low_reuse_step=%s",
+            getattr(self.model, "hierarchical_mask_high_predict", None),
+            getattr(self.model, "hierarchical_mask_low_predict", None),
+            self.joint_denoise,
+            self.high_reuse_step,
+            self.low_reuse_step,
         )
 
     def _normalize_state(self, state: np.ndarray) -> torch.Tensor:
@@ -478,10 +492,12 @@ def get_model(usr_args: Dict[str, Any]):
     sim_cfg_path = usr_args.get("sim_cfg_path")
     sim_cfg_name = usr_args.get("sim_cfg_name")
     sim_task = usr_args.get("sim_task")
+    sim_cfg_overrides = usr_args.get("sim_cfg_overrides")
     cfg = _compose_sim_cfg(
         sim_cfg_path=sim_cfg_path,
         sim_cfg_name=sim_cfg_name,
         sim_task=sim_task,
+        sim_cfg_overrides=sim_cfg_overrides,
     )
 
     checkpoint_path = usr_args.get("ckpt_setting")

@@ -137,6 +137,8 @@ def _format_override_value(value: Any) -> str:
         return "None"
     if isinstance(value, (int, float)):
         return str(value)
+    if isinstance(value, (list, tuple, dict)):
+        return repr(value)
     return repr(str(value))
 
 
@@ -144,6 +146,16 @@ def _append_override(overrides: list[str], key: str, value: Any, *, skip_none: b
     if skip_none and value is None:
         return
     overrides.extend([f"--{key}", _format_override_value(value)])
+
+
+def _collect_sim_cfg_overrides() -> list[str]:
+    forwarded_prefixes = ("model.",)
+    collected: list[str] = []
+    for override in HydraConfig.get().overrides.task:
+        key = override.split("=", 1)[0].lstrip("+~")
+        if key.startswith(forwarded_prefixes):
+            collected.append(override)
+    return collected
 
 
 @hydra.main(version_base="1.3", config_path="../../configs", config_name="sim_robotwin.yaml")
@@ -208,6 +220,7 @@ def main(cfg: DictConfig):
 
     _append_override(overrides, "sim_cfg_path", str(sim_cfg_path))
     _append_override(overrides, "sim_task", sim_task)
+    _append_override(overrides, "sim_cfg_overrides", _collect_sim_cfg_overrides())
     _append_override(overrides, "eval_output_dir", str(robotwin_eval_base))
     _append_override(overrides, "mixed_precision", cfg.mixed_precision)
     _append_override(overrides, "device", cfg.EVALUATION.device)
@@ -219,7 +232,10 @@ def main(cfg: DictConfig):
     _append_override(overrides, "low_video_inference_steps", cfg.EVALUATION.low_video_inference_steps)
     _append_override(overrides, "high_denoise_step", cfg.EVALUATION.high_denoise_step)
     _append_override(overrides, "low_denoise_step", cfg.EVALUATION.low_denoise_step)
+    _append_override(overrides, "high_reuse_step", cfg.EVALUATION.high_reuse_step)
+    _append_override(overrides, "low_reuse_step", cfg.EVALUATION.low_reuse_step)
     _append_override(overrides, "action_inference_steps", cfg.EVALUATION.action_inference_steps)
+    _append_override(overrides, "joint_denoise", cfg.EVALUATION.joint_denoise)
     _append_override(overrides, "sigma_shift", cfg.EVALUATION.sigma_shift)
     _append_override(overrides, "text_cfg_scale", cfg.EVALUATION.text_cfg_scale)
     _append_override(overrides, "negative_prompt", cfg.EVALUATION.negative_prompt)
