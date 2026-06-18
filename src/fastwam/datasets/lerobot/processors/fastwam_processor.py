@@ -37,6 +37,8 @@ class FastWAMProcessor(BaseProcessor):
         # instruction transform
         drop_high_level_prob: float = 1.0,
         use_zh_instruction: bool = False,
+        low_level_instruction_key: str = "task",
+        high_level_instruction_key: str = "coarse_task",
 
         tokenizer: Optional[Any] = None,
         delta_action_dim_mask: Optional[Dict[str, List[bool]]] = None,
@@ -49,6 +51,8 @@ class FastWAMProcessor(BaseProcessor):
 
         self.drop_high_level_prob = drop_high_level_prob
         self.use_zh_instruction = use_zh_instruction
+        self.low_level_instruction_key = low_level_instruction_key
+        self.high_level_instruction_key = high_level_instruction_key
 
         # image
         self.train_transforms = train_transforms
@@ -126,14 +130,13 @@ class FastWAMProcessor(BaseProcessor):
             List[str], processed instructions
         """
         # if single instruction, convert to list
-        if "coarse_task" in data:
-            high_level_instruction = data["coarse_task"]
-        else:
-            high_level_instruction = ""
-        if "task" not in data:
+        high_level_instruction = data.get(self.high_level_instruction_key, "")
+        low_level_instruction = data.get(self.low_level_instruction_key)
+        if low_level_instruction in (None, "") and self.low_level_instruction_key != "task":
+            low_level_instruction = data.get("task")
+        if low_level_instruction in (None, ""):
             return f"[high] {high_level_instruction}"
 
-        low_level_instruction = data["task"]
         # Galaxea lerobot use @ to split Chinese and English instruction
         if "@" in low_level_instruction:
             zh, eng = low_level_instruction.split("@")

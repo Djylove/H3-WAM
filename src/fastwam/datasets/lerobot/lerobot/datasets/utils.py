@@ -30,6 +30,7 @@ import datasets
 import jsonlines
 import numpy as np
 import packaging.version
+import pyarrow.parquet as pq
 import torch
 from datasets.table import embed_table_storage
 from huggingface_hub import DatasetCard, DatasetCardData, HfApi
@@ -226,17 +227,73 @@ def write_task(task_index: int, task: dict, local_dir: Path):
 
 
 def load_tasks(local_dir: Path) -> tuple[dict, dict]:
-    tasks = load_jsonlines(local_dir / TASKS_PATH)
-    tasks = {item["task_index"]: item["task"] for item in sorted(tasks, key=lambda x: x["task_index"])}
+    jsonl_path = local_dir / TASKS_PATH
+    if jsonl_path.exists():
+        task_rows = load_jsonlines(jsonl_path)
+        tasks = {
+            int(item["task_index"]): item["task"]
+            for item in sorted(task_rows, key=lambda x: x["task_index"])
+        }
+    else:
+        parquet_path = local_dir / "meta" / "tasks.parquet"
+        if not parquet_path.exists():
+            raise FileNotFoundError(f"Missing tasks metadata: {jsonl_path} or {parquet_path}")
+        rows = pq.read_table(parquet_path).to_pylist()
+        tasks = {}
+        for row_idx, row in enumerate(rows):
+            task_index = row.get("task_index", row_idx)
+            task = row.get("task")
+            if task is None:
+                task = row.get("__index_level_0__")
+            if task is None:
+                for key, value in row.items():
+                    if key != "task_index" and isinstance(value, str):
+                        task = value
+                        break
+            if task is None:
+                raise KeyError(f"Could not find task text in {parquet_path} row {row_idx}: {row}")
+            tasks[int(task_index)] = str(task)
     task_to_task_index = {task: task_index for task_index, task in tasks.items()}
     return tasks, task_to_task_index
 
 def load_annotations(local_dir: Path) -> dict[str, dict[int, str]]:
     annotations = {}
     for key, path in ANNOTATION_PATHS.items():
-        anno = load_jsonlines(local_dir / path)
-        anno = {item[f"{key}_index"]: item[key] for item in sorted(anno, key=lambda x: x[f"{key}_index"])}
-        annotations[key] = anno
+        jsonl_path = local_dir / path
+        if not jsonl_path.exists():
+            continue
+        anno = load_jsonlines(jsonl_path)
+        annotations[key] = {
+            int(item[f"{key}_index"]): item[key]
+            for item in sorted(anno, key=lambda x: x[f"{key}_index"])
+        }
+
+    parquet_specs = [
+        ("subtask", local_dir / "meta" / "subtask.parquet", "subtask_index", "subtask"),
+        (
+            "expand_task",
+            local_dir / "meta" / "expand_annotation" / "expand_task_annotation.parquet",
+            "index",
+            "expand_task",
+        ),
+    ]
+    for key, parquet_path, index_col, text_col in parquet_specs:
+        if not parquet_path.exists():
+            continue
+        rows = pq.read_table(parquet_path).to_pylist()
+        if rows and index_col not in rows[0]:
+            fallback_cols = [index_col, f"{key}_index", "__index_level_0__", "index"]
+            index_col = next((col for col in fallback_cols if col in rows[0]), None)
+            if index_col is None:
+                raise KeyError(
+                    f"Could not find annotation index column in {parquet_path}. "
+                    f"Available columns: {sorted(rows[0].keys())}"
+                )
+        annotations[key] = {
+            int(row[index_col]): str(row[text_col])
+            for row in rows
+            if row.get(text_col) is not None
+        }
     return annotations
 
 def write_episode(episode: dict, local_dir: Path):
@@ -244,8 +301,20 @@ def write_episode(episode: dict, local_dir: Path):
 
 
 def load_episodes(local_dir: Path) -> dict:
-    episodes = load_jsonlines(local_dir / EPISODES_PATH)
-    return {item["episode_index"]: item for item in sorted(episodes, key=lambda x: x["episode_index"])}
+    jsonl_path = local_dir / EPISODES_PATH
+    if jsonl_path.exists():
+        episodes = load_jsonlines(jsonl_path)
+    else:
+        parquet_paths = sorted((local_dir / "meta" / "episodes").glob("chunk-*/file-*.parquet"))
+        if not parquet_paths:
+            raise FileNotFoundError(f"Missing episodes metadata: {jsonl_path} or meta/episodes parquet files")
+        episodes = []
+        for parquet_path in parquet_paths:
+            episodes.extend(pq.read_table(parquet_path).to_pylist())
+    return {
+        int(item["episode_index"]): item
+        for item in sorted(episodes, key=lambda x: x["episode_index"])
+    }
 
 
 def write_episode_stats(episode_index: int, episode_stats: dict, local_dir: Path):
@@ -256,11 +325,34 @@ def write_episode_stats(episode_index: int, episode_stats: dict, local_dir: Path
 
 
 def load_episodes_stats(local_dir: Path) -> dict:
-    episodes_stats = load_jsonlines(local_dir / EPISODES_STATS_PATH)
-    return {
-        item["episode_index"]: cast_stats_to_numpy(item["stats"])
-        for item in sorted(episodes_stats, key=lambda x: x["episode_index"])
-    }
+    jsonl_path = local_dir / EPISODES_STATS_PATH
+    if jsonl_path.exists():
+        episodes_stats = load_jsonlines(jsonl_path)
+        return {
+            int(item["episode_index"]): cast_stats_to_numpy(item["stats"])
+            for item in sorted(episodes_stats, key=lambda x: x["episode_index"])
+        }
+
+    parquet_paths = sorted((local_dir / "meta" / "episodes").glob("chunk-*/file-*.parquet"))
+    if not parquet_paths:
+        raise FileNotFoundError(f"Missing episodes stats metadata: {jsonl_path}")
+
+    episodes_stats = {}
+    for parquet_path in parquet_paths:
+        for row in pq.read_table(parquet_path).to_pylist():
+            episode_index = int(row["episode_index"])
+            stats = {}
+            for key, value in row.items():
+                if not key.startswith("stats/") or value is None:
+                    continue
+                _, feature_key, stat_key = key.split("/", 2)
+                stats.setdefault(feature_key, {})[stat_key] = np.asarray(value)
+            if stats:
+                episodes_stats[episode_index] = stats
+
+    if not episodes_stats:
+        raise FileNotFoundError(f"No per-episode stats found in {parquet_paths}")
+    return episodes_stats
 
 
 def backward_compatible_episodes_stats(

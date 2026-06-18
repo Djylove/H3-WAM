@@ -31,6 +31,10 @@ max_grad_norm: 1.0
 weight_decay: 0.0
 resume: null
 
+# text embedding precompute options
+overwrite: false
+override_instruction: null
+
 # wandb
 wandb:
   enabled: true

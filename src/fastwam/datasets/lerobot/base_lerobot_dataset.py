@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import traceback
 from fastwam.utils.logging_config import get_logger
 from .processors.base_processor import BaseProcessor
+from .path_utils import expand_lerobot_dataset_dirs
 
 logger = get_logger(__name__)
 
@@ -30,12 +31,21 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
         val_set_proportion: float = 0.05, 
         is_training_set: bool = False,
         seed: int = 42,
+        dataset_proportion: float = 1.0,
+        max_datasets: Optional[int] = None,
+        max_episodes_per_dataset: Optional[int] = None,
 
         # sampling
         global_sample_stride: int = 1,
         image_delta_indices: Optional[List[int]] = None,
         state_delta_indices: Optional[List[int]] = None,
     ):
+        dataset_dirs = expand_lerobot_dataset_dirs(dataset_dirs)
+        if max_datasets is not None:
+            max_datasets = int(max_datasets)
+            if max_datasets <= 0:
+                raise ValueError(f"`max_datasets` must be positive or null, got {max_datasets}.")
+            dataset_dirs = dataset_dirs[:max_datasets]
         assert len(dataset_dirs) > 0, "At least one dataset directory is required"
         if past_action_size != 0:
             raise ValueError("Past actions are not supported by this dataset wrapper yet.")
@@ -43,8 +53,22 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
             raise ValueError(f"`past_obs_size` must be non-negative, got {past_obs_size}.")
         if obs_size <= 0 or action_size <= 0:
             raise ValueError(f"`obs_size` and `action_size` must be positive, got {obs_size} and {action_size}.")
+        if not (0.0 < float(dataset_proportion) <= 1.0):
+            raise ValueError(f"`dataset_proportion` must be in (0, 1], got {dataset_proportion}.")
+        if max_episodes_per_dataset is not None:
+            max_episodes_per_dataset = int(max_episodes_per_dataset)
+            if max_episodes_per_dataset <= 0:
+                raise ValueError(
+                    f"`max_episodes_per_dataset` must be positive or null, got {max_episodes_per_dataset}."
+                )
         
         self.dataset_dirs = dataset_dirs
+        logger.info(
+            "Using %d concrete LeRobot dataset directories (dataset_proportion=%.4f, max_episodes_per_dataset=%s).",
+            len(self.dataset_dirs),
+            float(dataset_proportion),
+            max_episodes_per_dataset,
+        )
         self.shape_meta = shape_meta
         self.action_size = action_size
         self.past_action_size = past_action_size
@@ -100,10 +124,24 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
             meta["lerobot_key"] = f"action.{key}" if key != "default" else "action"
             delta_timestamps[meta["lerobot_key"]] = [(t * global_sample_stride) / fps for t in range(-past_action_size, -past_action_size + action_size)]
 
+        def limit_episode_indices(indices: list[int]) -> list[int]:
+            if not indices:
+                return indices
+            limited = list(indices)
+            if float(dataset_proportion) < 1.0:
+                keep = max(1, int(len(limited) * float(dataset_proportion)))
+                limited = limited[:keep]
+            if max_episodes_per_dataset is not None:
+                limited = limited[:max_episodes_per_dataset]
+            return limited
+
         episodes = {}
         if val_set_proportion < 1e-6:
+            rng = np.random.default_rng(seed)
             for meta in metas:
-                episodes.update({meta.repo_id: list(range(meta.total_episodes))})
+                episode_indices = list(range(meta.total_episodes))
+                rng.shuffle(episode_indices)
+                episodes.update({meta.repo_id: limit_episode_indices(episode_indices)})
         else:
             for meta in metas:
                 split_idx = int(meta.total_episodes * (1 - val_set_proportion))
@@ -112,9 +150,10 @@ class BaseLerobotDataset(torch.utils.data.Dataset):
                 rng = np.random.default_rng(seed)
                 rng.shuffle(episode_indices)
                 if self.is_training_set:
-                    episodes.update({meta.repo_id: [episode_indices[i] for i in range(split_idx)]})
+                    selected = [episode_indices[i] for i in range(split_idx)]
                 else:
-                    episodes.update({meta.repo_id: [episode_indices[i] for i in range(split_idx, meta.total_episodes)]})
+                    selected = [episode_indices[i] for i in range(split_idx, meta.total_episodes)]
+                episodes.update({meta.repo_id: limit_episode_indices(selected)})
 
         self.multi_dataset = MultiLeRobotDataset(
             dataset_dirs=self.dataset_dirs,

@@ -14,6 +14,7 @@ from omegaconf import DictConfig, ListConfig
 from tqdm import tqdm
 
 from fastwam.datasets.lerobot.robot_video_dataset import DEFAULT_PROMPT
+from fastwam.datasets.lerobot.path_utils import expand_lerobot_dataset_dirs
 from fastwam.models.wan22.helpers.loader import _load_registered_model, _resolve_configs
 from fastwam.models.wan22.wan_video_text_encoder import HuggingfaceTokenizer
 from fastwam.utils.config_resolvers import register_default_resolvers
@@ -71,6 +72,7 @@ def _collect_dataset_settings(data_cfg: DictConfig):
     dataset_dirs: list[str] = []
     cache_dirs: list[Path] = []
     context_lens = set()
+    instruction_keys = set()
 
     for node_path, node in _iter_dataset_nodes(data_cfg, path="data"):
         raw_dirs = node.get("dataset_dirs")
@@ -84,7 +86,11 @@ def _collect_dataset_settings(data_cfg: DictConfig):
                 "(this node defines `dataset_dirs`)."
             )
 
-        for ds in raw_dirs:
+        expanded_dirs = expand_lerobot_dataset_dirs(raw_dirs)
+        max_datasets = node.get("max_datasets")
+        if max_datasets is not None:
+            expanded_dirs = expanded_dirs[: int(max_datasets)]
+        for ds in expanded_dirs:
             ds_str = str(ds)
             if ds_str not in dataset_dirs:
                 dataset_dirs.append(ds_str)
@@ -97,9 +103,22 @@ def _collect_dataset_settings(data_cfg: DictConfig):
         if context_len is not None:
             context_lens.add(int(context_len))
 
-        logger.info("Discovered dataset node `%s` with %d dataset_dirs.", node_path, len(raw_dirs))
+        processor_cfg = node.get("processor")
+        if processor_cfg is not None:
+            low_key = processor_cfg.get("low_level_instruction_key", "task")
+            if low_key is not None:
+                instruction_keys.add(str(low_key))
 
-    return dataset_dirs, cache_dirs, context_lens
+        logger.info(
+            "Discovered dataset node `%s` with %d raw dataset_dirs expanded to %d concrete dirs.",
+            node_path,
+            len(raw_dirs),
+            len(expanded_dirs),
+        )
+
+    if not instruction_keys:
+        instruction_keys.add("task")
+    return dataset_dirs, cache_dirs, context_lens, instruction_keys
 
 
 def _resolve_context_len(context_lens: set[int]) -> int:
@@ -111,35 +130,103 @@ def _resolve_context_len(context_lens: set[int]) -> int:
     return next(iter(context_lens))
 
 
-def _read_unique_prompts(dataset_dirs: list[str]) -> list[str]:
-    prompts: list[str] = []
-    seen = set()
-    total_task_rows = 0
+def _read_parquet_rows(path: Path) -> list[dict[str, Any]]:
+    import pyarrow.parquet as pq
 
-    for ds_dir in dataset_dirs:
-        tasks_path = Path(ds_dir) / "meta" / "tasks.jsonl"
-        if not tasks_path.exists():
-            raise FileNotFoundError(f"Missing tasks file: {tasks_path}")
+    return pq.read_table(path).to_pylist()
 
-        with tasks_path.open("r", encoding="utf-8") as f:
+
+def _read_task_texts(ds_dir: str) -> list[str]:
+    ds_root = Path(ds_dir)
+    tasks_jsonl = ds_root / "meta" / "tasks.jsonl"
+    tasks_parquet = ds_root / "meta" / "tasks.parquet"
+    tasks: list[str] = []
+
+    if tasks_jsonl.exists():
+        with tasks_jsonl.open("r", encoding="utf-8") as f:
             for line_idx, line in enumerate(f, start=1):
                 line = line.strip()
                 if not line:
                     continue
                 record = json.loads(line)
                 if "task" not in record:
-                    raise KeyError(f"Missing `task` field at {tasks_path}:{line_idx}")
-                task = str(record["task"])
-                prompt = DEFAULT_PROMPT.format(task=task)
-                total_task_rows += 1
-                if prompt not in seen:
-                    seen.add(prompt)
-                    prompts.append(prompt)
+                    raise KeyError(f"Missing `task` field at {tasks_jsonl}:{line_idx}")
+                tasks.append(str(record["task"]))
+        return tasks
+
+    if tasks_parquet.exists():
+        for row_idx, row in enumerate(_read_parquet_rows(tasks_parquet)):
+            task = row.get("task")
+            if task is None:
+                task = row.get("__index_level_0__")
+            if task is None:
+                for key, value in row.items():
+                    if key != "task_index" and isinstance(value, str):
+                        task = value
+                        break
+            if task is None:
+                raise KeyError(f"Could not find task text in {tasks_parquet} row {row_idx}: {row}")
+            tasks.append(str(task))
+        return tasks
+
+    raise FileNotFoundError(f"Missing tasks file: {tasks_jsonl} or {tasks_parquet}")
+
+
+def _read_expand_task_texts(ds_dir: str) -> list[str]:
+    ds_root = Path(ds_dir)
+    expand_parquet = ds_root / "meta" / "expand_annotation" / "expand_task_annotation.parquet"
+    texts: list[str] = []
+
+    if expand_parquet.exists():
+        for row in _read_parquet_rows(expand_parquet):
+            text = row.get("expand_task")
+            if text not in (None, ""):
+                texts.append(str(text))
+
+    episodes_dir = ds_root / "meta" / "episodes"
+    if episodes_dir.exists():
+        for episodes_parquet in sorted(episodes_dir.glob("chunk-*/file-*.parquet")):
+            for row in _read_parquet_rows(episodes_parquet):
+                text = row.get("expand_task")
+                if text not in (None, ""):
+                    texts.append(str(text))
+
+    return texts
+
+
+def _read_instruction_texts(ds_dir: str, instruction_keys: set[str]) -> list[str]:
+    texts: list[str] = []
+    if "task" in instruction_keys or "expand_task" in instruction_keys:
+        texts.extend(_read_task_texts(ds_dir))
+
+    if "expand_task" in instruction_keys:
+        expanded = _read_expand_task_texts(ds_dir)
+        if expanded:
+            texts.extend(expanded)
+
+    if not texts:
+        texts.extend(_read_task_texts(ds_dir))
+    return texts
+
+
+def _read_unique_prompts(dataset_dirs: list[str], instruction_keys: set[str]) -> list[str]:
+    prompts: list[str] = []
+    seen = set()
+    total_instruction_rows = 0
+
+    for ds_dir in dataset_dirs:
+        for task in _read_instruction_texts(ds_dir, instruction_keys):
+            prompt = DEFAULT_PROMPT.format(task=task)
+            total_instruction_rows += 1
+            if prompt not in seen:
+                seen.add(prompt)
+                prompts.append(prompt)
 
     logger.info(
-        "Loaded %d task rows from %d datasets, deduplicated to %d prompts.",
-        total_task_rows,
+        "Loaded %d instruction rows from %d datasets using keys %s, deduplicated to %d prompts.",
+        total_instruction_rows,
         len(dataset_dirs),
+        sorted(instruction_keys),
         len(prompts),
     )
     return prompts
@@ -187,7 +274,7 @@ def main(cfg: DictConfig):
     if cfg.data is None:
         raise ValueError("`cfg.data` is required.")
 
-    dataset_dirs, cache_dirs, context_lens = _collect_dataset_settings(cfg.data)
+    dataset_dirs, cache_dirs, context_lens, instruction_keys = _collect_dataset_settings(cfg.data)
     if not cache_dirs:
         raise ValueError("No `text_embedding_cache_dir` found under `cfg.data`.")
 
@@ -199,9 +286,9 @@ def main(cfg: DictConfig):
     else:
         if not dataset_dirs:
             raise ValueError("No `dataset_dirs` found under `cfg.data`.")
-        prompts = _read_unique_prompts(dataset_dirs)
+        prompts = _read_unique_prompts(dataset_dirs, instruction_keys)
     if not prompts:
-        logger.warning("No prompts found from tasks.jsonl; nothing to do.")
+        logger.warning("No prompts found from dataset metadata; nothing to do.")
         return
 
     if torch.cuda.is_available():

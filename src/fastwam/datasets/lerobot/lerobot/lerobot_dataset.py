@@ -16,9 +16,9 @@
 import contextlib
 import logging
 import shutil
+from bisect import bisect_right
 from pathlib import Path
 from typing import Callable, List, Literal
-import warnings
 
 import datasets
 import numpy as np
@@ -26,7 +26,6 @@ import packaging.version
 import PIL.Image
 import torch
 import torch.utils
-import pyarrow.parquet as pq
 from datasets import concatenate_datasets, load_dataset
 from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.constants import REPOCARD_NAME
@@ -109,15 +108,22 @@ class LeRobotDatasetMetadata:
         # TODO add new check
         # check_version_compatibility(self.repo_id, self._version, CODEBASE_VERSION)
         self.tasks, self.task_to_task_index = load_tasks(self.root)
-        if (self.root / "annotations").exists():
-            self.annotations = load_annotations(self.root)
+        annotations = load_annotations(self.root)
+        if annotations:
+            self.annotations = annotations
         self.episodes = load_episodes(self.root)
         if self._version < packaging.version.parse("v2.1"):
             self.stats = load_stats(self.root)
             self.episodes_stats = backward_compatible_episodes_stats(self.stats, self.episodes)
         else:
-            self.episodes_stats = load_episodes_stats(self.root)
-            self.stats = aggregate_stats(list(self.episodes_stats.values()))
+            try:
+                self.episodes_stats = load_episodes_stats(self.root)
+                self.stats = aggregate_stats(list(self.episodes_stats.values()))
+            except FileNotFoundError:
+                self.stats = load_stats(self.root)
+                if self.stats is None:
+                    raise
+                self.episodes_stats = backward_compatible_episodes_stats(self.stats, self.episodes)
 
     def pull_from_repo(
         self,
@@ -140,12 +146,29 @@ class LeRobotDatasetMetadata:
 
     def get_data_file_path(self, ep_index: int) -> Path:
         ep_chunk = self.get_episode_chunk(ep_index)
-        fpath = self.data_path.format(episode_chunk=ep_chunk, episode_index=ep_index)
+        episode = self.episodes.get(int(ep_index), {})
+        data_chunk = episode.get("data/chunk_index", ep_chunk)
+        data_file = episode.get("data/file_index", ep_index)
+        fpath = self.data_path.format(
+            episode_chunk=ep_chunk,
+            episode_index=ep_index,
+            chunk_index=int(data_chunk),
+            file_index=int(data_file),
+        )
         return Path(fpath)
 
     def get_video_file_path(self, ep_index: int, vid_key: str) -> Path:
         ep_chunk = self.get_episode_chunk(ep_index)
-        fpath = self.video_path.format(episode_chunk=ep_chunk, video_key=vid_key, episode_index=ep_index)
+        episode = self.episodes.get(int(ep_index), {})
+        video_chunk = episode.get(f"videos/{vid_key}/chunk_index", ep_chunk)
+        video_file = episode.get(f"videos/{vid_key}/file_index", ep_index)
+        fpath = self.video_path.format(
+            episode_chunk=ep_chunk,
+            video_key=vid_key,
+            episode_index=ep_index,
+            chunk_index=int(video_chunk),
+            file_index=int(video_file),
+        )
         return Path(fpath)
 
     def get_episode_chunk(self, ep_index: int) -> int:
@@ -219,7 +242,13 @@ class LeRobotDatasetMetadata:
     @property
     def total_chunks(self) -> int:
         """Total number of chunks (groups of episodes)."""
-        return self.info["total_chunks"]
+        if "total_chunks" in self.info:
+            return self.info["total_chunks"]
+        chunks = [
+            int(episode.get("data/chunk_index", self.get_episode_chunk(ep_idx)))
+            for ep_idx, episode in self.episodes.items()
+        ]
+        return max(chunks) + 1 if chunks else 0
 
     @property
     def chunks_size(self) -> int:
@@ -481,6 +510,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.meta = LeRobotDatasetMetadata(
             self.repo_id, self.root, self.revision, force_cache_sync=force_cache_sync
         )
+        if self.episodes is not None and self.meta._version >= packaging.version.parse("v3.0"):
+            self.episodes = sorted(int(ep_idx) for ep_idx in self.episodes)
         if self.episodes is not None and self.meta._version >= packaging.version.parse("v2.1"):
             episodes_stats = [self.meta.episodes_stats[ep_idx] for ep_idx in self.episodes]
             self.stats = aggregate_stats(episodes_stats)
@@ -606,11 +637,27 @@ class LeRobotDataset(torch.utils.data.Dataset):
             ]
             fpaths += video_files
 
-        return fpaths
+        return list(dict.fromkeys(fpaths))
 
     def load_hf_dataset(self) -> datasets.Dataset:
         """hf_dataset contains all the observations, states, actions, rewards, etc."""
-        if self.episodes is None:
+        if self.meta._version >= packaging.version.parse("v3.0"):
+            if self.episodes is not None:
+                files = [
+                    str(self.root / self.meta.get_data_file_path(ep_idx))
+                    for ep_idx in self.episodes
+                ]
+                files = list(dict.fromkeys(files))
+                hf_dataset = load_dataset("parquet", data_files=files, split="train")
+                episode_set = {int(ep_idx) for ep_idx in self.episodes}
+                hf_dataset = hf_dataset.filter(
+                    lambda episode_index: int(episode_index) in episode_set,
+                    input_columns="episode_index",
+                )
+            else:
+                path = str(self.root / "data")
+                hf_dataset = load_dataset("parquet", data_dir=path, split="train")
+        elif self.episodes is None:
             path = str(self.root / "data")
             hf_dataset = load_dataset("parquet", data_dir=path, split="train")
         else:
@@ -676,16 +723,25 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self,
         current_ts: float,
         query_indices: dict[str, list[int]] | None = None,
+        ep_idx: int | None = None,
     ) -> dict[str, list[float]]:
         query_timestamps = {}
         for key in self.meta.video_keys:
             if query_indices is not None and key in query_indices:
                 timestamps = self.hf_dataset.select(query_indices[key])["timestamp"]
-                query_timestamps[key] = torch.stack(timestamps).tolist()
+                timestamps = torch.stack(timestamps).tolist()
             else:
-                query_timestamps[key] = [current_ts]
+                timestamps = [current_ts]
+            offset = self._get_video_timestamp_offset(ep_idx, key)
+            query_timestamps[key] = [float(ts) + offset for ts in timestamps]
 
         return query_timestamps
+
+    def _get_video_timestamp_offset(self, ep_idx: int | None, vid_key: str) -> float:
+        if ep_idx is None:
+            return 0.0
+        episode = self.meta.episodes.get(int(ep_idx), {})
+        return float(episode.get(f"videos/{vid_key}/from_timestamp", 0.0))
 
     def _query_hf_dataset(self, query_indices: dict[str, list[int]]) -> dict:
         return {
@@ -719,7 +775,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         q_idx = list(range(ep_start, ep_end))
         # selected_data = self.hf_dataset.select(q_idx)
         selected_data = self.hf_dataset[q_idx]
-        res_keys = self.meta.features.keys() - set(self.meta.video_keys)
+        res_keys = set(self.hf_dataset.column_names) - set(self.meta.video_keys)
         res = {key : torch.stack(selected_data[key]) for key in res_keys}
         return res
 
@@ -760,7 +816,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         if len(self.meta.video_keys) > 0 and self.during_training:
             current_ts = item["timestamp"].item()
-            query_timestamps = self._get_query_timestamps(current_ts, query_indices)
+            query_timestamps = self._get_query_timestamps(current_ts, query_indices, ep_idx=ep_idx)
             video_frames = self._query_videos(query_timestamps, ep_idx)
             item = {**video_frames, **item}
 
@@ -780,6 +836,20 @@ class LeRobotDataset(torch.utils.data.Dataset):
             operating_hand_index = item["operating_hand_index"].item()
             item["operating_hand"] = self.meta.tasks[operating_hand_index]
         
+        if "subtask_index" in item and hasattr(self.meta, "annotations") and "subtask" in self.meta.annotations:
+            subtask_index = int(item["subtask_index"].item())
+            if subtask_index in self.meta.annotations["subtask"]:
+                item["subtask"] = self.meta.annotations["subtask"][subtask_index]
+
+        if (
+            "expand_task_index" in item
+            and hasattr(self.meta, "annotations")
+            and "expand_task" in self.meta.annotations
+        ):
+            expand_task_index = int(item["expand_task_index"].item())
+            if expand_task_index in self.meta.annotations["expand_task"]:
+                item["expand_task"] = self.meta.annotations["expand_task"][expand_task_index]
+
         if "subtask_annotation" in item and hasattr(self.meta, "annotations"):
             index = item["subtask_annotation"][0].item()
             item["subtask"] = self.meta.annotations["subtask"][index]
@@ -1149,6 +1219,11 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         # with multiple robots of different ranges. Instead we should have one normalization
         # per robot.
         self.stats = aggregate_stats([dataset.meta.stats for dataset in self._datasets])
+        self._frame_offsets = [0]
+        self._episode_offsets = [0]
+        for dataset in self._datasets:
+            self._frame_offsets.append(self._frame_offsets[-1] + dataset.num_frames)
+            self._episode_offsets.append(self._episode_offsets[-1] + dataset.num_episodes)
 
     def set_during_training(self, during_training: bool):
         for dataset in self._datasets:
@@ -1218,12 +1293,12 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
     @property
     def num_frames(self) -> int:
         """Number of samples/frames."""
-        return sum(d.num_frames for d in self._datasets)
+        return self._frame_offsets[-1]
 
     @property
     def num_episodes(self) -> int:
         """Number of episodes."""
-        return sum(d.num_episodes for d in self._datasets)
+        return self._episode_offsets[-1]
 
     @property
     def tolerance_s(self) -> float:
@@ -1235,34 +1310,11 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         return 1 / self.fps - 1e-4
     
     def get_episode_data(self, episode_idx: int) -> dict:
-        for dataset in self._datasets:
-            if episode_idx < dataset.num_episodes:
-                file = str(dataset.root / dataset.meta.get_data_file_path(dataset.episodes[episode_idx]))
-                table = pq.read_table(str(file))
-
-                result_dict = {}
-                for col_name in table.column_names:
-                    col = table[col_name]
-                    try:
-                        np_arr = col.to_numpy(zero_copy_only=True)
-                    except Exception:
-                        raw = col.to_numpy()
-                        np_arr = np.stack(raw) if raw.dtype == object else raw
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings(
-                            "ignore",
-                            message="The given NumPy array is not writable",
-                            category=UserWarning,
-                        )
-                        # deal with string in parquet file
-                        if np_arr.dtype == 'O':                        
-                            result_dict[col_name] = np_arr
-                        else:
-                            result_dict[col_name] = torch.from_numpy(np_arr)
-                return result_dict
-            else:
-                episode_idx -= dataset.num_episodes
-        raise IndexError(f"Episode index {episode_idx} out of bounds.")
+        if episode_idx < 0 or episode_idx >= self.num_episodes:
+            raise IndexError(f"Episode index {episode_idx} out of bounds.")
+        dataset_idx = bisect_right(self._episode_offsets, episode_idx) - 1
+        local_episode_idx = episode_idx - self._episode_offsets[dataset_idx]
+        return self._datasets[dataset_idx].get_episode_data(local_episode_idx)
 
     def __len__(self):
         return self.num_frames
@@ -1270,18 +1322,11 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         if idx >= len(self):
             raise IndexError(f"Index {idx} out of bounds.")
-        # Determine which dataset to get an item from based on the index.
-        start_idx = 0
-        dataset_idx = 0
-        for dataset in self._datasets:
-            if idx >= start_idx + dataset.num_frames:
-                start_idx += dataset.num_frames
-                dataset_idx += 1
-                continue
-            break
-        else:
-            raise AssertionError("We expect the loop to break out as long as the index is within bounds.")
-        item = self._datasets[dataset_idx][idx - start_idx]
+        if idx < 0:
+            raise IndexError(f"Index {idx} out of bounds.")
+        dataset_idx = bisect_right(self._frame_offsets, idx) - 1
+        local_idx = idx - self._frame_offsets[dataset_idx]
+        item = self._datasets[dataset_idx][local_idx]
         item["dataset_index"] = torch.tensor(dataset_idx)
         for data_key in self.disabled_features:
             if data_key in item:

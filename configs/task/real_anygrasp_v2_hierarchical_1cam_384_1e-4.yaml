@@ -1,0 +1,70 @@
+# @package _global_
+
+defaults:
+  - override /data: real_anygrasp_v2
+  - override /model: fastwam_hierarchical
+  - _self_
+
+# dataloading
+batch_size: 4
+num_workers: 8
+
+model:
+  mot_checkpoint_mixed_attn: false
+  hierarchical_action_horizon: 32
+  hierarchical_mask_high_predict: false
+  hierarchical_mask_low_predict: false
+  hierarchical_high_condition_mode: history
+  hierarchical_dynamic_skip: true
+
+action_horizon: ${model.hierarchical_action_horizon}
+replan_steps: ${action_horizon}
+num_inference_steps: ${eval_num_inference_steps}
+high_video_inference_steps: 10
+low_video_inference_steps: 10
+high_denoise_step: null
+low_denoise_step: null
+high_reuse_step: null
+low_reuse_step: null
+action_inference_steps: 10
+joint_denoise: true
+
+data:
+  train:
+    # Current ./data/anygrasp_v2 expands to 442 concrete task_xxx/batch_xxx
+    # LeRobot v3 datasets: 39686 episodes / 21163270 frames on this copy.
+    # Lower these for quick debug runs.
+    dataset_proportion: 1.0
+    max_datasets: 100
+    max_episodes_per_dataset: null
+    num_frames: 33
+    action_video_freq_ratio: 4
+    enable_keyframes: true
+    keyframe_history_frames: 8
+    keyframe_future_frames: 8
+    keyframe_stride: 16
+  val:
+    dataset_proportion: 1.0
+    max_datasets: 100
+    max_episodes_per_dataset: null
+    num_frames: 33
+    action_video_freq_ratio: 4
+    enable_keyframes: true
+    keyframe_history_frames: 8
+    keyframe_future_frames: 8
+    keyframe_stride: 16
+
+# scheduler
+lr_scheduler_type: "cosine"
+learning_rate: 1e-4
+num_epochs: 3
+max_steps: null
+log_every: 10
+save_every: 10000
+eval_every: 1000
+eval_num_inference_steps: 20
+
+# training
+gradient_accumulation_steps: 1
+weight_decay: 1e-2
+resume: null
