@@ -1,4 +1,5 @@
 from typing import Any, Optional, Sequence, Union
+import ast
 import copy
 
 import torch
@@ -118,8 +119,104 @@ class FastWAM_Hierarchical(torch.nn.Module):
             )
         self._hierarchical_attention_mask_cache: dict[tuple[Any, ...], torch.Tensor] = {}
         self._hierarchical_reuse_cache: dict[str, dict[str, Any]] = {}
-
         self.to(self.device)
+
+    @staticmethod
+    def _attention_viz_is_enabled(attention_viz: Optional[dict[str, Any]]) -> bool:
+        if not attention_viz:
+            return False
+        return bool(attention_viz.get("enabled", False))
+
+    @staticmethod
+    def _coerce_optional_int_list(value: Any) -> Optional[list[int]]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            if text == "" or text.lower() in {"none", "null"}:
+                return None
+            if text.startswith("["):
+                value = ast.literal_eval(text)
+            else:
+                value = [part.strip() for part in text.split(",") if part.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [int(v) for v in value]
+        return [int(value)]
+
+    @staticmethod
+    def _normalize_index_list(indices: Optional[list[int]], total: int, default: list[int]) -> set[int]:
+        raw = default if indices is None else indices
+        out: set[int] = set()
+        for idx in raw:
+            value = int(idx)
+            if value < 0:
+                value = int(total) + value
+            if 0 <= value < int(total):
+                out.add(value)
+        return out
+
+    def _build_attention_recorder(
+        self,
+        attention_viz: Optional[dict[str, Any]],
+        *,
+        token_grid_h: int,
+        token_grid_w: int,
+    ) -> Optional[dict[str, Any]]:
+        if not self._attention_viz_is_enabled(attention_viz):
+            return None
+        layers = self._coerce_optional_int_list(attention_viz.get("layers"))
+        default_layers = [int(self.mot.num_layers) - 1]
+        layer_set = self._normalize_index_list(layers, int(self.mot.num_layers), default_layers)
+        if len(layer_set) == 0:
+            layer_set = {int(self.mot.num_layers) - 1}
+        return {
+            "enabled": True,
+            "layers": layer_set,
+            "steps": self._coerce_optional_int_list(attention_viz.get("steps")),
+            "query_chunk_size": int(attention_viz.get("query_chunk_size", 256)),
+            "max_records": int(attention_viz.get("max_records", 256)),
+            "records": [],
+            "token_grid_h": int(token_grid_h),
+            "token_grid_w": int(token_grid_w),
+        }
+
+    def _step_attention_recorder(
+        self,
+        base: Optional[dict[str, Any]],
+        *,
+        step_idx: int,
+        total_steps: int,
+        phase: str,
+        high_frame_indices: Optional[list[int]] = None,
+        low_frame_indices: Optional[list[int]] = None,
+    ) -> Optional[dict[str, Any]]:
+        if base is None:
+            return None
+        total_steps = max(1, int(total_steps))
+        default_steps = [total_steps // 2]
+        step_set = self._normalize_index_list(base.get("steps"), total_steps, default_steps)
+        if int(step_idx) not in step_set:
+            return None
+        base["step_idx"] = int(step_idx)
+        base["total_steps"] = total_steps
+        base["phase"] = str(phase)
+        if high_frame_indices is not None:
+            base["high_frame_indices"] = [int(v) for v in high_frame_indices]
+        if low_frame_indices is not None:
+            base["low_frame_indices"] = [int(v) for v in low_frame_indices]
+        return base
+
+    def _add_attention_viz_payload(
+        self,
+        result: dict[str, Any],
+        *,
+        attention_recorder: Optional[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if attention_recorder is None:
+            return result
+        records = attention_recorder.get("records", [])
+        result["attention_maps"] = records
+        return result
 
     @classmethod
     def from_wan22_pretrained(
@@ -800,6 +897,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         history_high_frames: Optional[int] = None,
         visible_high_start: Optional[int] = None,
         visible_high_end: Optional[int] = None,
+        attention_recorder: Optional[dict[str, Any]] = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         high_pre = self.video_expert.pre_dit(
             x=keyframe_cond_latents,
@@ -880,6 +978,13 @@ class FastWAM_Hierarchical(torch.nn.Module):
             t_mod_all={
                 "video": merged_video_t_mod,
                 "action": action_t_mod,
+            },
+            attention_recorder=attention_recorder,
+            attention_layout={
+                "high_seq_len": int(high_pre["tokens"].shape[1]),
+                "low_seq_len": int(low_pre["tokens"].shape[1]),
+                "tokens_per_frame": tokens_per_frame,
+                "action_query_start": 1 if has_proprio else 0,
             },
         )
 
@@ -1058,6 +1163,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         history_high_frames: int,
         visible_high_start: int,
         visible_high_end: int,
+        attention_recorder: Optional[dict[str, Any]] = None,
     ) -> tuple[list[dict[str, torch.Tensor]], torch.Tensor, dict[str, torch.Tensor]]:
         low_pre = self.video_expert.pre_dit(
             x=low_latents,
@@ -1096,6 +1202,8 @@ class FastWAM_Hierarchical(torch.nn.Module):
             attention_mask=attention_mask,
             prefix_seq_len=keyframe_seq_len,
             return_tokens=True,
+            attention_recorder=attention_recorder,
+            tokens_per_frame=tokens_per_frame,
         )
         return low_cache, low_tokens, low_pre
 
@@ -1118,6 +1226,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         history_high_frames: int,
         visible_high_start: int,
         visible_high_end: int,
+        attention_recorder: Optional[dict[str, Any]] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         low_pre = self.video_expert.pre_dit(
             x=low_latents,
@@ -1173,6 +1282,9 @@ class FastWAM_Hierarchical(torch.nn.Module):
             prefix_kv_cache=keyframe_cache,
             attention_mask=attention_mask,
             prefix_seq_len=keyframe_seq_len,
+            attention_recorder=attention_recorder,
+            tokens_per_frame=tokens_per_frame,
+            action_query_start=1 if has_proprio else 0,
         )
         pred_low = self.video_expert.post_dit(low_tokens, low_pre)
         pred_action_all = self.action_expert.post_dit(action_tokens, action_pre)
@@ -1196,6 +1308,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         visible_high_start: int,
         visible_high_end: int,
         proprio_token: Optional[torch.Tensor],
+        attention_recorder: Optional[dict[str, Any]] = None,
     ) -> torch.Tensor:
         action_pre = self.action_expert.pre_dit(
             action_tokens=action_latents,
@@ -1230,6 +1343,10 @@ class FastWAM_Hierarchical(torch.nn.Module):
             video_kv_cache=video_cache,
             attention_mask=attention_mask,
             video_seq_len=video_seq_len,
+            attention_recorder=attention_recorder,
+            tokens_per_frame=tokens_per_frame,
+            high_seq_len=int(high_frames) * int(tokens_per_frame),
+            action_query_start=1 if has_proprio else 0,
         )
         pred_action = self.action_expert.post_dit(action_tokens, action_pre)
         return pred_action[:, 1:] if has_proprio else pred_action
@@ -1688,6 +1805,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         rand_device: str,
         tiled: bool,
         full_visualization: bool = False,
+        attention_viz: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         if input_image.ndim == 3:
             input_image = input_image.unsqueeze(0)
@@ -1719,6 +1837,13 @@ class FastWAM_Hierarchical(torch.nn.Module):
             raise ValueError(f"Expected encoded keyframe history to have 3 latent frames, got {key_history_latents.shape[2]}.")
         latent_h = height // self.vae.upsampling_factor
         latent_w = width // self.vae.upsampling_factor
+        patch_h = int(self.video_expert.patch_size[1])
+        patch_w = int(self.video_expert.patch_size[2])
+        attention_recorder = self._build_attention_recorder(
+            attention_viz,
+            token_grid_h=latent_h // patch_h,
+            token_grid_w=latent_w // patch_w,
+        )
         z_dim = self.vae.model.z_dim
         g_video = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
         g_action = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
@@ -1993,6 +2118,14 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     history_high_frames=downstream_history_frames,
                     visible_high_start=downstream_visible_start,
                     visible_high_end=downstream_visible_end,
+                    attention_recorder=self._step_attention_recorder(
+                        attention_recorder,
+                        step_idx=step_idx,
+                        total_steps=action_steps,
+                        phase="low_action_joint",
+                        high_frame_indices=selected_key_indices,
+                        low_frame_indices=list(range(int(low_latents.shape[2]))),
+                    ),
                 )
                 prev_low_pred = pred_low
                 joint_prev_denoise_predictions.append(pred_low[:, :, 1:].detach())
@@ -2042,6 +2175,14 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 history_high_frames=downstream_history_frames,
                 visible_high_start=downstream_visible_start,
                 visible_high_end=downstream_visible_end,
+                attention_recorder=self._step_attention_recorder(
+                    attention_recorder,
+                    step_idx=low_actual_steps,
+                    total_steps=action_steps,
+                    phase="low_cache_prefill",
+                    high_frame_indices=selected_key_indices,
+                    low_frame_indices=list(range(int(cache_low_latents.shape[2]))),
+                ),
             )
             video_cache = self._concat_video_kv_caches(keyframe_cache, low_cache)
             video_seq_len = keyframe_seq_len + int(cache_low_latents.shape[2]) * cache_tokens_per_frame
@@ -2061,14 +2202,26 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     visible_high_start=downstream_visible_start,
                     visible_high_end=downstream_visible_end,
                     proprio_token=proprio_token,
+                    attention_recorder=self._step_attention_recorder(
+                        attention_recorder,
+                        step_idx=step_idx,
+                        total_steps=action_steps,
+                        phase="action_only",
+                        high_frame_indices=selected_key_indices,
+                        low_frame_indices=list(range(int(cache_low_latents.shape[2]))),
+                    ),
                 )
                 action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
 
-        return {
+        result = {
             "action": action_latents[0].detach().to(device="cpu", dtype=torch.float32),
             "low_latents": low_latents,
             "keyframe_latents": key_latents,
         }
+        return self._add_attention_viz_payload(
+            result,
+            attention_recorder=attention_recorder,
+        )
 
     @torch.no_grad()
     def _infer_hierarchical_joint_denoise_action_horizon(
@@ -2094,6 +2247,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         seed: Optional[int],
         rand_device: str,
         tiled: bool,
+        attention_viz: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         if self.hierarchical_mask_high_predict or self.hierarchical_mask_low_predict:
             raise ValueError("Joint denoise infer_action requires both hierarchical masks to be disabled.")
@@ -2128,6 +2282,13 @@ class FastWAM_Hierarchical(torch.nn.Module):
 
         latent_h = height // self.vae.upsampling_factor
         latent_w = width // self.vae.upsampling_factor
+        patch_h = int(self.video_expert.patch_size[1])
+        patch_w = int(self.video_expert.patch_size[2])
+        attention_recorder = self._build_attention_recorder(
+            attention_viz,
+            token_grid_h=latent_h // patch_h,
+            token_grid_w=latent_w // patch_w,
+        )
         z_dim = self.vae.model.z_dim
         g_video = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
         g_action = None if seed is None else torch.Generator(device=rand_device).manual_seed(seed)
@@ -2303,6 +2464,14 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     history_high_frames=3,
                     visible_high_start=visible_high_start,
                     visible_high_end=visible_high_end,
+                    attention_recorder=self._step_attention_recorder(
+                        attention_recorder,
+                        step_idx=step_idx,
+                        total_steps=action_steps,
+                        phase="joint_high_low_action",
+                        high_frame_indices=list(range(int(key_latents.shape[2]))),
+                        low_frame_indices=list(range(int(low_latents.shape[2]))),
+                    ),
                 )
                 prev_pred_high = pred_high
                 prev_pred_low = pred_low
@@ -2408,6 +2577,14 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     history_high_frames=downstream_history_frames,
                     visible_high_start=downstream_visible_start,
                     visible_high_end=downstream_visible_end,
+                    attention_recorder=self._step_attention_recorder(
+                        attention_recorder,
+                        step_idx=step_idx,
+                        total_steps=action_steps,
+                        phase="low_action_joint",
+                        high_frame_indices=selected_key_indices,
+                        low_frame_indices=list(range(int(low_latents.shape[2]))),
+                    ),
                 )
                 prev_low_pred = pred_low
                 prev_action_pred = pred_action
@@ -2454,6 +2631,14 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 history_high_frames=downstream_history_frames,
                 visible_high_start=downstream_visible_start,
                 visible_high_end=downstream_visible_end,
+                attention_recorder=self._step_attention_recorder(
+                    attention_recorder,
+                    step_idx=low_actual_steps,
+                    total_steps=action_steps,
+                    phase="low_cache_prefill",
+                    high_frame_indices=selected_key_indices,
+                    low_frame_indices=list(range(int(low_latents.shape[2]))),
+                ),
             )
             video_cache = self._concat_video_kv_caches(keyframe_cache, low_cache)
             video_seq_len = keyframe_seq_len + int(low_latents.shape[2]) * cache_tokens_per_frame
@@ -2473,14 +2658,26 @@ class FastWAM_Hierarchical(torch.nn.Module):
                     visible_high_start=downstream_visible_start,
                     visible_high_end=downstream_visible_end,
                     proprio_token=proprio_token,
+                    attention_recorder=self._step_attention_recorder(
+                        attention_recorder,
+                        step_idx=step_idx,
+                        total_steps=action_steps,
+                        phase="action_only",
+                        high_frame_indices=selected_key_indices,
+                        low_frame_indices=list(range(int(low_latents.shape[2]))),
+                    ),
                 )
                 action_latents = self.infer_action_scheduler.step(pred_action, action_deltas[step_idx], action_latents)
 
-        return {
+        result = {
             "action": action_latents[0].detach().to(device="cpu", dtype=torch.float32),
             "low_latents": low_latents,
             "keyframe_latents": key_latents,
         }
+        return self._add_attention_viz_payload(
+            result,
+            attention_recorder=attention_recorder,
+        )
 
     @torch.no_grad()
     def infer_action(
@@ -2508,6 +2705,7 @@ class FastWAM_Hierarchical(torch.nn.Module):
         rand_device: str = "cpu",
         tiled: bool = False,
         joint_denoise: bool = False,
+        attention_viz: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         del negative_prompt, text_cfg_scale
         self.eval()
@@ -2538,8 +2736,12 @@ class FastWAM_Hierarchical(torch.nn.Module):
                 seed=seed,
                 rand_device=rand_device,
                 tiled=tiled,
+                attention_viz=attention_viz,
             )
-            return {"action": out["action"]}
+            result = {"action": out["action"]}
+            if "attention_maps" in out:
+                result["attention_maps"] = out["attention_maps"]
+            return result
         out = self._infer_hierarchical_action_horizon(
             input_image=input_image,
             context=context,
@@ -2562,8 +2764,12 @@ class FastWAM_Hierarchical(torch.nn.Module):
             rand_device=rand_device,
             tiled=tiled,
             full_visualization=False,
+            attention_viz=attention_viz,
         )
-        return {"action": out["action"]}
+        result = {"action": out["action"]}
+        if "attention_maps" in out:
+            result["attention_maps"] = out["attention_maps"]
+        return result
 
     @torch.no_grad()
     def infer_hierarchical(

@@ -35,6 +35,23 @@ resume: null
 overwrite: false
 override_instruction: null
 
+# standalone hierarchical generation test options
+test:
+  checkpoint_path: null
+  dataset_stats_path: null
+  output_dir: ./runs/hierarchical_test/${now:%Y-%m-%d}_${now:%H-%M-%S}
+  device: cuda:0
+  num_samples: 4
+  sample_indices: null
+  random_samples: true
+  seed: 42
+  high_video_inference_steps: [10,30,50]
+  low_video_inference_steps: [10,30,50]
+  num_inference_steps: 20
+  fps: 8
+  rand_device: cpu
+  tiled: false
+
 # wandb
 wandb:
   enabled: true

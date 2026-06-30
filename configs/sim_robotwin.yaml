@@ -19,7 +19,7 @@ EVALUATION:
   task_name: null
   task_config: demo_randomized
   instruction_type: unseen
-  eval_num_episodes: 50
+  eval_num_episodes: 10
   output_dir: ./evaluate_results/robotwin/${hydra:runtime.choices.task}/${now:%Y%m%d_%H%M%S}
 
   # Action inference
@@ -41,6 +41,17 @@ EVALUATION:
   tiled: false
   timing_enabled: false
   skip_get_obs_within_replan: true
+
+  # Optional attention visualization for Robotwin deploy.
+  attention_viz_enabled: false
+  attention_viz_output_dir: null
+  attention_viz_steps: null      # null => middle denoise step only; supports e.g. [0, 5, -1]
+  attention_viz_layers: [-1]     # negative indices are relative to MoT depth
+  attention_viz_max_plans: -1      # -1 => all replans/chunks in each episode
+  attention_viz_max_records: 128
+  attention_viz_query_chunk_size: 256
+  attention_viz_alpha: 0.55
+  attention_viz_video_fps: 4
 
   # Runtime inputs
   dataset_stats_path: null

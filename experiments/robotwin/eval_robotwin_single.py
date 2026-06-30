@@ -242,6 +242,15 @@ def main(cfg: DictConfig):
     _append_override(overrides, "rand_device", cfg.EVALUATION.rand_device)
     _append_override(overrides, "tiled", cfg.EVALUATION.tiled)
     _append_override(overrides, "timing_enabled", cfg.EVALUATION.timing_enabled)
+    _append_override(overrides, "attention_viz_enabled", cfg.EVALUATION.attention_viz_enabled)
+    _append_override(overrides, "attention_viz_output_dir", cfg.EVALUATION.attention_viz_output_dir)
+    _append_override(overrides, "attention_viz_steps", cfg.EVALUATION.attention_viz_steps)
+    _append_override(overrides, "attention_viz_layers", cfg.EVALUATION.attention_viz_layers)
+    _append_override(overrides, "attention_viz_max_plans", cfg.EVALUATION.attention_viz_max_plans)
+    _append_override(overrides, "attention_viz_max_records", cfg.EVALUATION.attention_viz_max_records)
+    _append_override(overrides, "attention_viz_query_chunk_size", cfg.EVALUATION.attention_viz_query_chunk_size)
+    _append_override(overrides, "attention_viz_alpha", cfg.EVALUATION.attention_viz_alpha)
+    _append_override(overrides, "attention_viz_video_fps", cfg.EVALUATION.attention_viz_video_fps)
     _append_override(
         overrides,
         "skip_get_obs_within_replan",

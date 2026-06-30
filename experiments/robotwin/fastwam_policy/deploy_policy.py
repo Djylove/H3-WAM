@@ -1,4 +1,7 @@
 import logging
+import atexit
+import ast
+import json
 import os
 import sys
 import time
@@ -13,7 +16,7 @@ from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
-from PIL import Image
+from PIL import Image, ImageDraw
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -26,6 +29,7 @@ if str(SRC_ROOT) not in sys.path:
 from fastwam.datasets.lerobot.processors.fastwam_processor import FastWAMProcessor
 from fastwam.datasets.lerobot.robot_video_dataset import DEFAULT_PROMPT
 from fastwam.datasets.lerobot.utils.normalizer import load_dataset_stats_from_json
+from fastwam.utils.video_io import save_mp4
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +64,20 @@ def _parse_optional_float(value: Any) -> Optional[float]:
     if _is_none_like(value):
         return None
     return float(value)
+
+
+def _parse_optional_int_list(value: Any) -> Optional[list[int]]:
+    if _is_none_like(value):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("["):
+            value = ast.literal_eval(text)
+        else:
+            value = [part.strip() for part in text.split(",") if part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [int(v) for v in value]
+    return [int(value)]
 
 
 def _normalize_mixed_precision(mixed_precision: str) -> str:
@@ -141,6 +159,12 @@ def _resize_rgb(image: np.ndarray, size_wh: tuple[int, int]) -> np.ndarray:
     return np.asarray(resized, dtype=np.uint8)
 
 
+def _safe_name(text: str, max_len: int = 80) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in str(text))
+    cleaned = "_".join(part for part in cleaned.split("_") if part)
+    return (cleaned or "item")[:max_len]
+
+
 class WorldActionRobotWinPolicy:
     def __init__(
         self,
@@ -169,6 +193,15 @@ class WorldActionRobotWinPolicy:
         joint_denoise: bool,
         timing_enabled: bool,
         num_video_frames: int,
+        attention_viz_enabled: bool = False,
+        attention_viz_output_dir: Optional[Path] = None,
+        attention_viz_steps: Optional[list[int]] = None,
+        attention_viz_layers: Optional[list[int]] = None,
+        attention_viz_max_plans: int = 1,
+        attention_viz_max_records: int = 128,
+        attention_viz_query_chunk_size: int = 256,
+        attention_viz_alpha: float = 0.55,
+        attention_viz_video_fps: int = 4,
     ) -> None:
         model_cfg_copy = OmegaConf.create(OmegaConf.to_container(model_cfg, resolve=True))
         model_cfg_copy.load_text_encoder = True
@@ -227,6 +260,25 @@ class WorldActionRobotWinPolicy:
         self.tiled = bool(tiled)
         self.joint_denoise = bool(joint_denoise)
         self.timing_enabled = bool(timing_enabled)
+        self.attention_viz_enabled = bool(attention_viz_enabled)
+        self.attention_viz_output_dir = attention_viz_output_dir
+        if self.attention_viz_enabled:
+            if self.attention_viz_output_dir is None:
+                self.attention_viz_output_dir = PROJECT_ROOT / "evaluate_results" / "robotwin_attention_viz"
+            self.attention_viz_output_dir.mkdir(parents=True, exist_ok=True)
+        self.attention_viz_steps = attention_viz_steps
+        self.attention_viz_layers = attention_viz_layers
+        self.attention_viz_max_plans = int(attention_viz_max_plans)
+        self.attention_viz_max_records = max(1, int(attention_viz_max_records))
+        self.attention_viz_query_chunk_size = max(1, int(attention_viz_query_chunk_size))
+        self.attention_viz_alpha = float(attention_viz_alpha)
+        self.attention_viz_video_fps = max(1, int(attention_viz_video_fps))
+        self._attention_viz_plan_count = 0
+        self._attention_rollout_frames: list[Image.Image] = []
+        self._attention_rollout_records: list[dict[str, Any]] = []
+        self._active_attention_heatmaps: dict[str, tuple[np.ndarray, dict[str, Any]]] | None = None
+        if self.attention_viz_enabled:
+            atexit.register(self._flush_attention_rollout_video)
 
         self.pending_actions: deque[np.ndarray] = deque()
         self.episode_count = 0
@@ -248,6 +300,15 @@ class WorldActionRobotWinPolicy:
             self.high_reuse_step,
             self.low_reuse_step,
         )
+        if self.attention_viz_enabled:
+            logger.info(
+                "Attention visualization enabled | output=%s | steps=%s | layers=%s | max_plans=%d | video_fps=%d",
+                self.attention_viz_output_dir,
+                self.attention_viz_steps,
+                self.attention_viz_layers,
+                self.attention_viz_max_plans,
+                self.attention_viz_video_fps,
+            )
 
     def _normalize_state(self, state: np.ndarray) -> torch.Tensor:
         state_meta = self.processor.shape_meta["state"]
@@ -275,20 +336,344 @@ class WorldActionRobotWinPolicy:
         denorm = normalizer.backward(action.to(dtype=torch.float32, device="cpu"))
         return denorm.numpy()
 
-    def _build_robotwin_image_tensor(self, observation: Dict[str, Any]) -> torch.Tensor:
+    def _build_robotwin_image_np(self, observation: Dict[str, Any]) -> np.ndarray:
         obs_data = observation["observation"]
         head = _resize_rgb(obs_data["head_camera"]["rgb"], (320, 256))
         left = _resize_rgb(obs_data["left_camera"]["rgb"], (160, 128))
         right = _resize_rgb(obs_data["right_camera"]["rgb"], (160, 128))
         bottom = np.concatenate([left, right], axis=1)
-        image = np.concatenate([head, bottom], axis=0)  # [384, 320, 3]
+        return np.concatenate([head, bottom], axis=0)  # [384, 320, 3]
 
+    def _image_np_to_tensor(self, image: np.ndarray) -> torch.Tensor:
         image_tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).to(
             device=self.model.device,
             dtype=self.model.torch_dtype,
         )
         image_tensor = image_tensor * (2.0 / 255.0) - 1.0
         return image_tensor
+
+    def _build_robotwin_image_tensor(self, observation: Dict[str, Any]) -> torch.Tensor:
+        return self._image_np_to_tensor(self._build_robotwin_image_np(observation))
+
+    @staticmethod
+    def _normalize_heatmap(heatmap: np.ndarray) -> np.ndarray:
+        heatmap = np.asarray(heatmap, dtype=np.float32)
+        heatmap = np.nan_to_num(heatmap, nan=0.0, posinf=0.0, neginf=0.0)
+        low = float(np.percentile(heatmap, 1.0))
+        high = float(np.percentile(heatmap, 99.0))
+        if high <= low:
+            high = float(heatmap.max())
+            low = float(heatmap.min())
+        if high <= low:
+            return np.zeros_like(heatmap, dtype=np.float32)
+        return np.clip((heatmap - low) / (high - low), 0.0, 1.0)
+
+    @staticmethod
+    def _attention_colormap(norm: np.ndarray) -> np.ndarray:
+        norm = np.asarray(norm, dtype=np.float32).clip(0.0, 1.0)
+        stops = np.asarray(
+            [
+                [48, 34, 121],
+                [38, 109, 157],
+                [42, 176, 127],
+                [253, 231, 37],
+                [190, 0, 38],
+            ],
+            dtype=np.float32,
+        )
+        scaled = norm * (len(stops) - 1)
+        idx = np.floor(scaled).astype(np.int32).clip(0, len(stops) - 2)
+        frac = (scaled - idx)[..., None]
+        rgb = stops[idx] * (1.0 - frac) + stops[idx + 1] * frac
+        return rgb.astype(np.uint8)
+
+    def _attention_overlay_image(
+        self,
+        *,
+        base_image: np.ndarray,
+        heatmap: np.ndarray,
+        title: str,
+    ) -> Image.Image:
+        norm = self._normalize_heatmap(heatmap)
+        rgba = np.zeros((*norm.shape, 4), dtype=np.uint8)
+        rgba[..., :3] = self._attention_colormap(norm)
+        rgba[..., 3] = ((0.18 + 0.72 * norm) * 255.0 * self.attention_viz_alpha).clip(0, 255).astype(np.uint8)
+
+        base = Image.fromarray(base_image.astype(np.uint8), mode="RGB").convert("RGBA")
+        heat = Image.fromarray(rgba, mode="RGBA").resize(base.size, resample=Image.BILINEAR)
+        out = Image.alpha_composite(base, heat)
+        draw = ImageDraw.Draw(out)
+        draw.rectangle((0, 0, out.width, 22), fill=(0, 0, 0, 160))
+        draw.text((6, 4), title, fill=(255, 255, 255, 255))
+        return out.convert("RGB")
+
+    @staticmethod
+    def _plain_image_with_title(base_image: np.ndarray, title: str) -> Image.Image:
+        out = Image.fromarray(base_image.astype(np.uint8), mode="RGB").copy()
+        draw = ImageDraw.Draw(out)
+        draw.rectangle((0, 0, out.width, 22), fill=(0, 0, 0))
+        draw.text((6, 4), title, fill=(255, 255, 255))
+        return out
+
+    @staticmethod
+    def _aggregate_attention_record(record: dict[str, Any]) -> tuple[np.ndarray, dict[str, Any]] | None:
+        attention = record.get("attention")
+        if isinstance(attention, torch.Tensor):
+            attention_np = attention.detach().float().cpu().numpy()
+        else:
+            attention_np = np.asarray(attention, dtype=np.float32)
+        if attention_np.ndim != 2:
+            return None
+        grid_h, grid_w = [int(v) for v in record.get("grid_size", (0, 0))]
+        if grid_h <= 0 or grid_w <= 0 or attention_np.shape[1] != grid_h * grid_w:
+            return None
+        heatmap = attention_np.max(axis=0).reshape(grid_h, grid_w)
+        meta = {
+            "relation": str(record.get("relation", "attention")),
+            "target_kind": str(record.get("target_kind", "")),
+            "phase": str(record.get("phase", "")),
+            "step_idx": int(record.get("step_idx", -1)),
+            "total_steps": int(record.get("total_steps", -1)),
+            "layer_idx": int(record.get("layer_idx", -1)),
+            "attention_score_sum": float(record.get("attention_score_sum", float(attention_np.sum()))),
+            "score_aggregation": str(record.get("score_aggregation", "max_over_action_queries_heads")),
+            "grid_size": [grid_h, grid_w],
+            "num_frames": int(attention_np.shape[0]),
+            "frame_indices": [int(v) for v in list(record.get("frame_indices", []))],
+            "aggregation": "max_over_target_frames",
+        }
+        return heatmap, meta
+
+    def _attention_plan_allowed(self) -> bool:
+        return self.attention_viz_max_plans < 0 or self._attention_viz_plan_count < self.attention_viz_max_plans
+
+    def _select_rollout_attention_heatmaps(
+        self,
+        records: list[dict[str, Any]],
+    ) -> dict[str, tuple[np.ndarray, dict[str, Any]]]:
+        selected: dict[str, tuple[tuple[int, int, int], np.ndarray, dict[str, Any]]] = {}
+        for record in records[: self.attention_viz_max_records]:
+            aggregated = self._aggregate_attention_record(record)
+            if aggregated is None:
+                continue
+            heatmap, meta = aggregated
+            relation = str(meta["relation"])
+            # Prefer later denoising steps and later layers for the rollout video.
+            rank = (int(meta["step_idx"]), int(meta["layer_idx"]), len(selected))
+            prev = selected.get(relation)
+            if prev is None or rank >= prev[0]:
+                selected[relation] = (rank, heatmap, meta)
+        return {relation: (heatmap, meta) for relation, (_rank, heatmap, meta) in selected.items()}
+
+    def _make_attention_rollout_frame(
+        self,
+        *,
+        base_image: np.ndarray,
+        heatmaps: dict[str, tuple[np.ndarray, dict[str, Any]]],
+        source: str,
+    ) -> Image.Image:
+        tile_specs = [
+            ("Image", None),
+            ("Action -> High", "action_to_high"),
+            ("Action -> Low", "action_to_low"),
+            ("Low -> High", "low_to_high"),
+        ]
+
+        tiles: list[Image.Image] = []
+        for label, relation in tile_specs:
+            if relation is None:
+                image = self._plain_image_with_title(base_image, f"{label} | {source}")
+            elif relation in heatmaps:
+                heatmap, meta = heatmaps[relation]
+                image = self._attention_overlay_image(
+                    base_image=base_image,
+                    heatmap=heatmap,
+                    title=f"{label} | s{int(meta['step_idx'])} l{int(meta['layer_idx'])}",
+                )
+            else:
+                image = self._plain_image_with_title(base_image, f"{label} | no map")
+            tiles.append(image)
+
+        w, h = tiles[0].size
+        panel = Image.new("RGB", (w * 2, h * 2), color=(255, 255, 255))
+        panel.paste(tiles[0], (0, 0))
+        panel.paste(tiles[1], (w, 0))
+        panel.paste(tiles[2], (0, h))
+        panel.paste(tiles[3], (w, h))
+        return panel
+
+    def _append_attention_rollout_frame(
+        self,
+        *,
+        base_image: np.ndarray,
+        source: str,
+        heatmaps: dict[str, tuple[np.ndarray, dict[str, Any]]] | None = None,
+    ) -> None:
+        if not self.attention_viz_enabled:
+            return
+        if heatmaps is None:
+            heatmaps = self._active_attention_heatmaps
+        if not heatmaps:
+            return
+        frame = self._make_attention_rollout_frame(
+            base_image=base_image,
+            heatmaps=heatmaps,
+            source=source,
+        )
+        self._attention_rollout_frames.append(frame)
+        self._attention_rollout_records.append(
+            {
+                "episode": int(self.episode_count),
+                "step": int(self.step_count),
+                "source": str(source),
+                "relations": {
+                    relation: {
+                        key: value
+                        for key, value in meta.items()
+                        if key != "attention"
+                    }
+                    for relation, (_heatmap, meta) in heatmaps.items()
+                },
+            }
+        )
+
+    def _flush_attention_rollout_video(self) -> None:
+        if not self.attention_viz_enabled or not self._attention_rollout_frames:
+            return
+        if self.attention_viz_output_dir is None:
+            return
+        episode_dir = self.attention_viz_output_dir / f"episode_{self.episode_count:03d}"
+        episode_dir.mkdir(parents=True, exist_ok=True)
+        video_path = episode_dir / "attention_rollout_2x2.mp4"
+        save_mp4(self._attention_rollout_frames, str(video_path), fps=self.attention_viz_video_fps)
+        metadata_path = episode_dir / "attention_rollout_metadata.json"
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "episode": int(self.episode_count),
+                    "fps": int(self.attention_viz_video_fps),
+                    "num_frames": len(self._attention_rollout_frames),
+                    "layout": [
+                        "Image",
+                        "Action -> High",
+                        "Action -> Low",
+                        "Low -> High",
+                    ],
+                    "records": self._attention_rollout_records,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _save_attention_panel(*, rows: list[tuple[str, Image.Image]], title: str, output_path: Path) -> None:
+        if not rows:
+            return
+        label_w = 118
+        title_h = 30
+        gap = 4
+        image_w, image_h = rows[0][1].size
+        panel_w = label_w + image_w
+        panel_h = title_h + len(rows) * image_h + (len(rows) - 1) * gap
+        panel = Image.new("RGB", (panel_w, panel_h), color=(255, 255, 255))
+        draw = ImageDraw.Draw(panel)
+        draw.rectangle((0, 0, panel_w, title_h), fill=(255, 255, 255))
+        draw.text((8, 7), title, fill=(20, 50, 90))
+        y = title_h
+        for label, image in rows:
+            draw.rectangle((0, y, label_w, y + image_h), fill=(245, 248, 252))
+            draw.text((10, y + max(8, image_h // 2 - 8)), label, fill=(20, 50, 90))
+            panel.paste(image, (label_w, y))
+            y += image_h + gap
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        panel.save(output_path)
+
+    def _save_attention_visualizations(
+        self,
+        *,
+        records: list[dict[str, Any]],
+        base_image: np.ndarray,
+        instruction: str,
+    ) -> None:
+        if not self.attention_viz_enabled or not records:
+            return
+        if not self._attention_plan_allowed():
+            return
+        if self.attention_viz_output_dir is None:
+            return
+
+        plan_dir = (
+            self.attention_viz_output_dir
+            / f"episode_{self.episode_count:03d}"
+            / f"plan_{self._attention_viz_plan_count:04d}_step_{self.step_count:05d}"
+        )
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        grouped: dict[tuple[str, int, int], dict[str, tuple[np.ndarray, dict[str, Any]]]] = {}
+        for record in records[: self.attention_viz_max_records]:
+            aggregated = self._aggregate_attention_record(record)
+            if aggregated is None:
+                continue
+            heatmap, meta = aggregated
+            key = (str(meta["phase"]), int(meta["step_idx"]), int(meta["layer_idx"]))
+            grouped.setdefault(key, {})[str(meta["relation"])] = (heatmap, meta)
+
+        metadata = []
+        relation_rows = [
+            ("action_to_high", "Action -> High"),
+            ("action_to_low", "Action -> Low"),
+            ("low_to_high", "Low -> High"),
+        ]
+        for panel_idx, ((phase, step_idx, layer_idx), relation_map) in enumerate(sorted(grouped.items())):
+            title = f"{phase} | denoise step {step_idx} | layer {layer_idx}"
+            rows: list[tuple[str, Image.Image]] = [
+                ("Image", self._plain_image_with_title(base_image, "Image")),
+            ]
+            panel_records = []
+            for relation, label in relation_rows:
+                item = relation_map.get(relation)
+                if item is None:
+                    continue
+                heatmap, meta = item
+                rows.append(
+                    (
+                        label,
+                        self._attention_overlay_image(
+                            base_image=base_image,
+                            heatmap=heatmap,
+                            title=f"{label} | score={float(meta['attention_score_sum']):.4f}",
+                        ),
+                    )
+                )
+                panel_records.append(meta)
+            if len(rows) <= 1:
+                continue
+            panel_path = plan_dir / f"panel_{panel_idx:03d}_{_safe_name(phase)}_s{step_idx:03d}_l{layer_idx:02d}.png"
+            self._save_attention_panel(rows=rows, title=title, output_path=panel_path)
+            metadata.append(
+                {
+                    "panel_path": panel_path.name,
+                    "phase": phase,
+                    "step_idx": step_idx,
+                    "layer_idx": layer_idx,
+                    "records": panel_records,
+                }
+            )
+        (plan_dir / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "instruction": instruction,
+                    "episode": self.episode_count,
+                    "step": self.step_count,
+                    "records": metadata,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        self._attention_viz_plan_count += 1
 
     def _get_padded_keyframe_history(self) -> list[torch.Tensor]:
         frames = list(self._keyframe_history[-self._max_keyframe_history:])
@@ -301,7 +686,8 @@ class WorldActionRobotWinPolicy:
         return frames
 
     def _infer_action_horizon(self, observation: Dict[str, Any], instruction: str) -> np.ndarray:
-        image_tensor = self._build_robotwin_image_tensor(observation)
+        image_np = self._build_robotwin_image_np(observation)
+        image_tensor = self._image_np_to_tensor(image_np)
         state_vector = np.asarray(observation["joint_action"]["vector"], dtype=np.float32)
         proprio = self._normalize_state(state_vector)
 
@@ -342,6 +728,18 @@ class WorldActionRobotWinPolicy:
             infer_action_kwargs["action_inference_steps"] = self.action_inference_steps
         if "joint_denoise" in infer_action_sig:
             infer_action_kwargs["joint_denoise"] = self.joint_denoise
+        if (
+            "attention_viz" in infer_action_sig
+            and self.attention_viz_enabled
+            and self._attention_plan_allowed()
+        ):
+            infer_action_kwargs["attention_viz"] = {
+                "enabled": True,
+                "steps": self.attention_viz_steps,
+                "layers": self.attention_viz_layers,
+                "max_records": self.attention_viz_max_records,
+                "query_chunk_size": self.attention_viz_query_chunk_size,
+            }
         if self._is_hierarchical_model and "observed_chunk_videos" in infer_action_sig:
             keyframe_history = self._get_padded_keyframe_history()
             if len(keyframe_history) > 0:
@@ -352,6 +750,21 @@ class WorldActionRobotWinPolicy:
             pred = infer_action_fn(**infer_action_kwargs)
         if self.timing_enabled:
             self._timing_rollout["infer_s"] += time.perf_counter() - infer_t0
+        attention_records = list(pred.get("attention_maps", []))
+        rollout_plan_idx = self._attention_viz_plan_count
+        self._save_attention_visualizations(
+            records=attention_records,
+            base_image=image_np,
+            instruction=instruction,
+        )
+        heatmaps = self._select_rollout_attention_heatmaps(attention_records)
+        if heatmaps:
+            self._active_attention_heatmaps = heatmaps
+            self._append_attention_rollout_frame(
+                base_image=image_np,
+                source=f"replan_{rollout_plan_idx:04d}",
+                heatmaps=heatmaps,
+            )
 
         # Start a new action-horizon rollout window for sparse post-action keyframes.
         self._pending_keyframes.clear()
@@ -413,8 +826,10 @@ class WorldActionRobotWinPolicy:
 
     def step(self, task_env, observation: Optional[Dict[str, Any]]) -> None:
         frame: Optional[torch.Tensor] = None
+        image_np: Optional[np.ndarray] = None
         if self._is_hierarchical_model and observation is not None:
-            frame = self._build_robotwin_image_tensor(observation)[0].detach()
+            image_np = self._build_robotwin_image_np(observation)
+            frame = self._image_np_to_tensor(image_np)[0].detach()
 
             # Observation at this step is the post-action frame of previous step.
             if self._last_action_executed:
@@ -424,6 +839,11 @@ class WorldActionRobotWinPolicy:
                 ):
                     self._pending_keyframes.append(frame)
                 self._last_action_executed = False
+            if self.pending_actions and image_np is not None:
+                self._append_attention_rollout_frame(
+                    base_image=image_np,
+                    source=f"chunk_step_{self.step_count:05d}",
+                )
 
         if not self.pending_actions:
             if observation is None:
@@ -470,6 +890,7 @@ class WorldActionRobotWinPolicy:
         }
 
     def reset(self) -> None:
+        self._flush_attention_rollout_video()
         self.pending_actions.clear()
         self._pending_keyframes.clear()
         self._keyframe_history.clear()
@@ -480,6 +901,10 @@ class WorldActionRobotWinPolicy:
         self._last_action_executed = False
         self._horizon_executed_actions = 0
         self.episode_count += 1
+        self._attention_viz_plan_count = 0
+        self._attention_rollout_frames.clear()
+        self._attention_rollout_records.clear()
+        self._active_attention_heatmaps = None
         self.step_count = 0
         self.reset_timing_rollout()
 
@@ -566,6 +991,38 @@ def get_model(usr_args: Dict[str, Any]):
     timing_enabled = _parse_bool(
         usr_args.get("timing_enabled", cfg.EVALUATION.get("timing_enabled", False))
     )
+    attention_viz_enabled = _parse_bool(
+        usr_args.get("attention_viz_enabled", cfg.EVALUATION.get("attention_viz_enabled", False))
+    )
+    eval_output_dir = usr_args.get("eval_output_dir", None)
+    attention_viz_output = usr_args.get(
+        "attention_viz_output_dir",
+        cfg.EVALUATION.get("attention_viz_output_dir", None),
+    )
+    if _is_none_like(attention_viz_output) and not _is_none_like(eval_output_dir):
+        attention_viz_output = str(Path(str(eval_output_dir)).expanduser().resolve() / "attention_viz")
+    attention_viz_output_dir = None if _is_none_like(attention_viz_output) else Path(str(attention_viz_output)).expanduser().resolve()
+    attention_viz_steps = _parse_optional_int_list(
+        usr_args.get("attention_viz_steps", cfg.EVALUATION.get("attention_viz_steps", None))
+    )
+    attention_viz_layers = _parse_optional_int_list(
+        usr_args.get("attention_viz_layers", cfg.EVALUATION.get("attention_viz_layers", [-1]))
+    )
+    attention_viz_max_plans = int(
+        usr_args.get("attention_viz_max_plans", cfg.EVALUATION.get("attention_viz_max_plans", 1))
+    )
+    attention_viz_max_records = int(
+        usr_args.get("attention_viz_max_records", cfg.EVALUATION.get("attention_viz_max_records", 128))
+    )
+    attention_viz_query_chunk_size = int(
+        usr_args.get("attention_viz_query_chunk_size", cfg.EVALUATION.get("attention_viz_query_chunk_size", 256))
+    )
+    attention_viz_alpha = float(
+        usr_args.get("attention_viz_alpha", cfg.EVALUATION.get("attention_viz_alpha", 0.55))
+    )
+    attention_viz_video_fps = int(
+        usr_args.get("attention_viz_video_fps", cfg.EVALUATION.get("attention_viz_video_fps", 4))
+    )
 
     policy = WorldActionRobotWinPolicy(
         model_cfg=cfg.model,
@@ -593,6 +1050,15 @@ def get_model(usr_args: Dict[str, Any]):
         joint_denoise=joint_denoise,
         timing_enabled=timing_enabled,
         num_video_frames=(int(cfg.data.train.num_frames) - 1) // int(cfg.data.train.action_video_freq_ratio) + 1,
+        attention_viz_enabled=attention_viz_enabled,
+        attention_viz_output_dir=attention_viz_output_dir,
+        attention_viz_steps=attention_viz_steps,
+        attention_viz_layers=attention_viz_layers,
+        attention_viz_max_plans=attention_viz_max_plans,
+        attention_viz_max_records=attention_viz_max_records,
+        attention_viz_query_chunk_size=attention_viz_query_chunk_size,
+        attention_viz_alpha=attention_viz_alpha,
+        attention_viz_video_fps=attention_viz_video_fps,
     )
     return policy
 

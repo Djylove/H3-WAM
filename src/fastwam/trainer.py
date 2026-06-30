@@ -470,12 +470,16 @@ class Wan22Trainer:
             infer_kwargs["gt_video"] = video0
             if keyframe0 is not None:
                 infer_kwargs["gt_keyframe"] = keyframe0
-            eval_action_steps = self.eval_action_inference_steps or self.eval_num_inference_steps
+            eval_low_steps = (
+                self.eval_low_video_inference_steps
+                or self.eval_action_inference_steps
+                or self.eval_num_inference_steps
+            )
             infer_kwargs["high_video_inference_steps"] = self.eval_high_video_inference_steps
-            infer_kwargs["low_video_inference_steps"] = eval_action_steps
+            infer_kwargs["low_video_inference_steps"] = eval_low_steps
             infer_kwargs["high_denoise_step"] = None
             infer_kwargs["low_denoise_step"] = None
-            infer_kwargs["action_inference_steps"] = eval_action_steps
+            infer_kwargs["action_inference_steps"] = eval_low_steps
         if "return_high_level_video" in inspect.signature(model.infer).parameters:
             infer_kwargs["return_high_level_video"] = True
 

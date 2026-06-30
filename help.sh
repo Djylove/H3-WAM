@@ -24,6 +24,21 @@ bash scripts/train_zero1_dlc_multinode.sh \
   --wandb-key b8182b57eaa10a6c93943291158ee2f086aae4eb \
   task=robotwin_hierarchical_3cam_384_1e-4
 
+python scripts/test_hierarchical_generation.py \
+  task=real_anygrasp_v2_hierarchical_1cam_384_1e-4 \
+  test.checkpoint_path=runs/real_anygrasp_v2_hierarchical_1cam_384_1e-4/2026-06-18_01-04-19/checkpoints/weights/step_218394.pt \
+  test.dataset_stats_path=runs/real_anygrasp_v2_hierarchical_1cam_384_1e-4/2026-06-18_01-04-19/dataset_stats.json 
+  
+
+python experiments/robotwin/eval_robotwin_single.py \
+  task=robotwin_hierarchical_3cam_384_1e-4 \
+  ckpt=runs/robotwin_hierarchical_3cam_384_1e-4/2026-05-18_12-06-46/checkpoints/weights/step_281793.pt \
+  EVALUATION.task_name=open_microwave \
+  EVALUATION.attention_viz_enabled=true \
+  # 'EVALUATION.attention_viz_steps=[0,5,-1]' \
+  # 'EVALUATION.attention_viz_layers=[-1]' \
+  # EVALUATION.attention_viz_max_plans=1
+
 python experiments/robotwin/run_robotwin_manager.py \
   task=robotwin_uncond_3cam_384_1e-4 \
   ckpt=./checkpoints/fastwam_release/robotwin_uncond_3cam_384.pt \

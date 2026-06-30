@@ -15,7 +15,7 @@ model:
   hierarchical_mask_high_predict: false
   hierarchical_mask_low_predict: false
   hierarchical_high_condition_mode: boundary
-  hierarchical_dynamic_skip: true
+  hierarchical_dynamic_skip: false
 
 # robotwin eval/deploy controls (consumed by sim_robotwin via EVALUATION)
 action_horizon: ${model.hierarchical_action_horizon}

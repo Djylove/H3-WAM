@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Dict, Optional
+import math
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -95,6 +96,149 @@ class MoT(nn.Module):
                 use_reentrant=False,
             )
         return _forward(q_cat, k_cat, v_cat)
+
+    @staticmethod
+    def _normalize_slice(start: int, end: int) -> tuple[int, int]:
+        start = int(max(0, start))
+        end = int(max(start, end))
+        return start, end
+
+    @staticmethod
+    def _slice_mask(attention_mask: torch.Tensor, query_start: int, query_end: int, key_len: int) -> torch.Tensor:
+        if attention_mask.ndim == 2:
+            return attention_mask[query_start:query_end, :key_len].unsqueeze(0).unsqueeze(0)
+        if attention_mask.ndim == 3:
+            return attention_mask[:, query_start:query_end, :key_len].unsqueeze(1)
+        if attention_mask.ndim == 4:
+            return attention_mask[:, :, query_start:query_end, :key_len]
+        raise ValueError(
+            f"`attention_mask` must be 2D/3D/4D for attention capture, got {tuple(attention_mask.shape)}"
+        )
+
+    def _summarize_attention_to_keys(
+        self,
+        *,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        attention_mask: torch.Tensor,
+        query_start: int,
+        query_end: int,
+        key_slices: dict[str, tuple[int, int]],
+        query_chunk_size: int,
+    ) -> dict[str, torch.Tensor]:
+        query_start, query_end = self._normalize_slice(query_start, query_end)
+        if query_end <= query_start:
+            return {}
+
+        bsz = int(q.shape[0])
+        key_len = int(k.shape[1])
+        head_dim = int(self.attn_head_dim)
+        q_heads = q.reshape(bsz, -1, self.num_heads, head_dim).permute(0, 2, 1, 3)
+        k_heads = k.reshape(bsz, -1, self.num_heads, head_dim).permute(0, 2, 1, 3)
+
+        summaries = {
+            name: torch.zeros(end - start, device=q.device, dtype=torch.float32)
+            for name, (start, end) in key_slices.items()
+            if end > start
+        }
+        chunk_size = max(1, int(query_chunk_size))
+        scale = 1.0 / math.sqrt(float(head_dim))
+        mask = attention_mask.to(device=q.device)
+
+        for chunk_start in range(query_start, query_end, chunk_size):
+            chunk_end = min(query_end, chunk_start + chunk_size)
+            logits = torch.matmul(
+                q_heads[:, :, chunk_start:chunk_end, :].float(),
+                k_heads.float().transpose(-2, -1),
+            ) * scale
+            chunk_mask = self._slice_mask(mask, chunk_start, chunk_end, key_len)
+            if chunk_mask.dtype == torch.bool:
+                logits = logits.masked_fill(~chunk_mask, torch.finfo(logits.dtype).min)
+            else:
+                logits = logits + chunk_mask.to(dtype=logits.dtype)
+            attn = torch.softmax(logits, dim=-1)
+            for name, (start, end) in key_slices.items():
+                if name not in summaries or end <= start:
+                    continue
+                key_scores = attn[..., start:end].amax(dim=(0, 1, 2)).detach()
+                summaries[name] = torch.maximum(summaries[name], key_scores)
+
+        for name in list(summaries.keys()):
+            summaries[name] = summaries[name].to(device="cpu")
+        return summaries
+
+    def _maybe_capture_attention_maps(
+        self,
+        *,
+        recorder: Optional[dict[str, Any]],
+        layer_idx: int,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        attention_mask: torch.Tensor,
+        relation_specs: list[dict[str, Any]],
+    ) -> None:
+        if not recorder or not bool(recorder.get("enabled", False)):
+            return
+        layers = recorder.get("layers")
+        if layers is not None and int(layer_idx) not in layers:
+            return
+        max_records = int(recorder.get("max_records", 256))
+        records = recorder.setdefault("records", [])
+        if len(records) >= max_records:
+            return
+
+        query_chunk_size = int(recorder.get("query_chunk_size", 256))
+        for spec in relation_specs:
+            if len(records) >= max_records:
+                break
+            key_start, key_end = spec["key_slice"]
+            query_start, query_end = spec["query_slice"]
+            if key_end <= key_start or query_end <= query_start:
+                continue
+            summaries = self._summarize_attention_to_keys(
+                q=q,
+                k=k,
+                attention_mask=attention_mask,
+                query_start=query_start,
+                query_end=query_end,
+                key_slices={"target": (key_start, key_end)},
+                query_chunk_size=query_chunk_size,
+            )
+            values = summaries.get("target")
+            if values is None:
+                continue
+            tokens_per_frame = int(spec["tokens_per_frame"])
+            if tokens_per_frame <= 0:
+                continue
+            usable = (int(values.numel()) // tokens_per_frame) * tokens_per_frame
+            if usable <= 0:
+                continue
+            values = values[:usable].reshape(-1, tokens_per_frame).contiguous()
+            relation = str(spec["relation"])
+            target_kind = spec.get("target_kind")
+            if target_kind is None:
+                target_kind = "low" if relation.endswith("_to_low") else "high"
+            frame_indices = spec.get("frame_indices")
+            if frame_indices is None:
+                frame_indices = recorder.get(f"{target_kind}_frame_indices")
+            if frame_indices is None:
+                frame_indices = list(range(values.shape[0]))
+            records.append(
+                {
+                    "relation": relation,
+                    "target_kind": str(target_kind),
+                    "phase": str(recorder.get("phase", "")),
+                    "step_idx": int(recorder.get("step_idx", -1)),
+                    "total_steps": int(recorder.get("total_steps", -1)),
+                    "layer_idx": int(layer_idx),
+                    "tokens_per_frame": tokens_per_frame,
+                    "grid_size": tuple(int(v) for v in spec["grid_size"]),
+                    "frame_indices": [int(v) for v in list(frame_indices)[: values.shape[0]]],
+                    "attention_score_sum": float(values.sum().item()),
+                    "score_aggregation": "max_over_action_queries_heads",
+                    "attention": values,
+                }
+            )
 
     @staticmethod
     def _apply_expert_post_block(
@@ -349,6 +493,10 @@ class MoT(nn.Module):
         video_kv_cache: list[dict[str, torch.Tensor]],
         attention_mask: torch.Tensor,
         video_seq_len: int,
+        attention_recorder: Optional[dict[str, Any]] = None,
+        tokens_per_frame: Optional[int] = None,
+        high_seq_len: Optional[int] = None,
+        action_query_start: int = 0,
     ) -> torch.Tensor:
         """Run action branch with cached video K/V instead of recomputing video tokens.
 
@@ -425,6 +573,40 @@ class MoT(nn.Module):
             # Mixed attention: action queries attend to cached video K/V plus current action K/V.
             k_cat = torch.cat([k_video, k_action], dim=1)
             v_cat = torch.cat([v_video, v_action], dim=1)
+            if attention_recorder is not None and tokens_per_frame is not None:
+                high_len = int(high_seq_len) if high_seq_len is not None else int(video_seq_len)
+                high_len = max(0, min(high_len, int(video_seq_len)))
+                low_len = int(video_seq_len) - high_len
+                relation_specs = [
+                    {
+                        "relation": "action_to_high",
+                        "query_slice": (int(action_query_start), action_seq_len),
+                        "key_slice": (0, high_len),
+                        "tokens_per_frame": int(tokens_per_frame),
+                        "grid_size": (
+                            int(attention_recorder.get("token_grid_h", 0)),
+                            int(attention_recorder.get("token_grid_w", 0)),
+                        ),
+                    },
+                    {
+                        "relation": "action_to_low",
+                        "query_slice": (int(action_query_start), action_seq_len),
+                        "key_slice": (high_len, high_len + low_len),
+                        "tokens_per_frame": int(tokens_per_frame),
+                        "grid_size": (
+                            int(attention_recorder.get("token_grid_h", 0)),
+                            int(attention_recorder.get("token_grid_w", 0)),
+                        ),
+                    },
+                ]
+                self._maybe_capture_attention_maps(
+                    recorder=attention_recorder,
+                    layer_idx=layer_idx,
+                    q=q_action,
+                    k=k_cat,
+                    attention_mask=action_attention_mask,
+                    relation_specs=relation_specs,
+                )
             mixed = self._mixed_attention(
                 q_cat=q_action,
                 k_cat=k_cat,
@@ -453,6 +635,8 @@ class MoT(nn.Module):
         prefix_kv_cache: list[dict[str, torch.Tensor]],
         attention_mask: torch.Tensor,
         prefix_seq_len: int,
+        attention_recorder: Optional[dict[str, Any]] = None,
+        tokens_per_frame: Optional[int] = None,
     ) -> torch.Tensor:
         """Run video branch with cached video prefix K/V.
 
@@ -514,6 +698,26 @@ class MoT(nn.Module):
 
             k_cat = torch.cat([k_prefix, k_video], dim=1)
             v_cat = torch.cat([v_prefix, v_video], dim=1)
+            if attention_recorder is not None and tokens_per_frame is not None:
+                self._maybe_capture_attention_maps(
+                    recorder=attention_recorder,
+                    layer_idx=layer_idx,
+                    q=q_video,
+                    k=k_cat,
+                    attention_mask=video_attention_mask,
+                    relation_specs=[
+                        {
+                            "relation": "low_to_high",
+                            "query_slice": (0, video_seq_len),
+                            "key_slice": (0, int(prefix_seq_len)),
+                            "tokens_per_frame": int(tokens_per_frame),
+                            "grid_size": (
+                                int(attention_recorder.get("token_grid_h", 0)),
+                                int(attention_recorder.get("token_grid_w", 0)),
+                            ),
+                        }
+                    ],
+                )
             mixed = self._mixed_attention(
                 q_cat=q_video,
                 k_cat=k_cat,
@@ -546,6 +750,9 @@ class MoT(nn.Module):
         prefix_kv_cache: list[dict[str, torch.Tensor]],
         attention_mask: torch.Tensor,
         prefix_seq_len: int,
+        attention_recorder: Optional[dict[str, Any]] = None,
+        tokens_per_frame: Optional[int] = None,
+        action_query_start: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run video and action branches jointly with cached video prefix K/V."""
         if "video" not in self.mixtures or "action" not in self.mixtures:
@@ -625,6 +832,47 @@ class MoT(nn.Module):
             q_cat = torch.cat([q_video, q_action], dim=1)
             k_cat = torch.cat([k_prefix, k_video, k_action], dim=1)
             v_cat = torch.cat([v_prefix, v_video, v_action], dim=1)
+            if attention_recorder is not None and tokens_per_frame is not None:
+                relation_specs = [
+                    {
+                        "relation": "action_to_high",
+                        "query_slice": (video_seq_len + int(action_query_start), video_seq_len + action_seq_len),
+                        "key_slice": (0, int(prefix_seq_len)),
+                        "tokens_per_frame": int(tokens_per_frame),
+                        "grid_size": (
+                            int(attention_recorder.get("token_grid_h", 0)),
+                            int(attention_recorder.get("token_grid_w", 0)),
+                        ),
+                    },
+                    {
+                        "relation": "action_to_low",
+                        "query_slice": (video_seq_len + int(action_query_start), video_seq_len + action_seq_len),
+                        "key_slice": (int(prefix_seq_len), int(prefix_seq_len) + video_seq_len),
+                        "tokens_per_frame": int(tokens_per_frame),
+                        "grid_size": (
+                            int(attention_recorder.get("token_grid_h", 0)),
+                            int(attention_recorder.get("token_grid_w", 0)),
+                        ),
+                    },
+                    {
+                        "relation": "low_to_high",
+                        "query_slice": (0, video_seq_len),
+                        "key_slice": (0, int(prefix_seq_len)),
+                        "tokens_per_frame": int(tokens_per_frame),
+                        "grid_size": (
+                            int(attention_recorder.get("token_grid_h", 0)),
+                            int(attention_recorder.get("token_grid_w", 0)),
+                        ),
+                    },
+                ]
+                self._maybe_capture_attention_maps(
+                    recorder=attention_recorder,
+                    layer_idx=layer_idx,
+                    q=q_cat,
+                    k=k_cat,
+                    attention_mask=query_attention_mask,
+                    relation_specs=relation_specs,
+                )
             mixed = self._mixed_attention(
                 q_cat=q_cat,
                 k_cat=k_cat,
@@ -666,6 +914,8 @@ class MoT(nn.Module):
         attention_mask: torch.Tensor,
         prefix_seq_len: int,
         return_tokens: bool = False,
+        attention_recorder: Optional[dict[str, Any]] = None,
+        tokens_per_frame: Optional[int] = None,
     ) -> list[dict[str, torch.Tensor]] | tuple[list[dict[str, torch.Tensor]], torch.Tensor]:
         """Prefill current video-token cache while attending to cached video prefix.
 
@@ -728,6 +978,26 @@ class MoT(nn.Module):
 
             k_cat = torch.cat([k_prefix, k_video], dim=1)
             v_cat = torch.cat([v_prefix, v_video], dim=1)
+            if attention_recorder is not None and tokens_per_frame is not None:
+                self._maybe_capture_attention_maps(
+                    recorder=attention_recorder,
+                    layer_idx=layer_idx,
+                    q=q_video,
+                    k=k_cat,
+                    attention_mask=video_attention_mask,
+                    relation_specs=[
+                        {
+                            "relation": "low_to_high",
+                            "query_slice": (0, video_seq_len),
+                            "key_slice": (0, int(prefix_seq_len)),
+                            "tokens_per_frame": int(tokens_per_frame),
+                            "grid_size": (
+                                int(attention_recorder.get("token_grid_h", 0)),
+                                int(attention_recorder.get("token_grid_w", 0)),
+                            ),
+                        }
+                    ],
+                )
             mixed = self._mixed_attention(
                 q_cat=q_video,
                 k_cat=k_cat,
@@ -757,6 +1027,8 @@ class MoT(nn.Module):
         freqs_all: Dict[str, torch.Tensor],
         context_all: Dict[str, Optional[dict]],
         t_mod_all: Dict[str, torch.Tensor],
+        attention_recorder: Optional[dict[str, Any]] = None,
+        attention_layout: Optional[dict[str, int]] = None,
     ):
         missing = [k for k in self.expert_order if k not in embeds_all]
         if missing:
@@ -852,6 +1124,53 @@ class MoT(nn.Module):
                     )
 
             mixed = self._mixed_attention(q_cat=q_cat, k_cat=k_cat, v_cat=v_cat, attention_mask=attention_mask)
+            if attention_recorder is not None and attention_layout is not None:
+                video_seq_len = int(tokens_all["video"].shape[1])
+                action_seq_len = int(tokens_all["action"].shape[1])
+                high_seq_len = int(attention_layout.get("high_seq_len", 0))
+                low_seq_len = int(attention_layout.get("low_seq_len", max(0, video_seq_len - high_seq_len)))
+                action_query_start = int(attention_layout.get("action_query_start", 0))
+                tokens_per_frame = int(attention_layout.get("tokens_per_frame", 0))
+                relation_specs = [
+                    {
+                        "relation": "action_to_high",
+                        "query_slice": (video_seq_len + action_query_start, video_seq_len + action_seq_len),
+                        "key_slice": (0, high_seq_len),
+                        "tokens_per_frame": tokens_per_frame,
+                        "grid_size": (
+                            int(attention_recorder.get("token_grid_h", 0)),
+                            int(attention_recorder.get("token_grid_w", 0)),
+                        ),
+                    },
+                    {
+                        "relation": "action_to_low",
+                        "query_slice": (video_seq_len + action_query_start, video_seq_len + action_seq_len),
+                        "key_slice": (high_seq_len, high_seq_len + low_seq_len),
+                        "tokens_per_frame": tokens_per_frame,
+                        "grid_size": (
+                            int(attention_recorder.get("token_grid_h", 0)),
+                            int(attention_recorder.get("token_grid_w", 0)),
+                        ),
+                    },
+                    {
+                        "relation": "low_to_high",
+                        "query_slice": (high_seq_len, high_seq_len + low_seq_len),
+                        "key_slice": (0, high_seq_len),
+                        "tokens_per_frame": tokens_per_frame,
+                        "grid_size": (
+                            int(attention_recorder.get("token_grid_h", 0)),
+                            int(attention_recorder.get("token_grid_w", 0)),
+                        ),
+                    },
+                ]
+                self._maybe_capture_attention_maps(
+                    recorder=attention_recorder,
+                    layer_idx=layer_idx,
+                    q=q_cat,
+                    k=k_cat,
+                    attention_mask=attention_mask,
+                    relation_specs=relation_specs,
+                )
 
             start = 0
             for name, seq_len in zip(self.expert_order, seq_lens):
