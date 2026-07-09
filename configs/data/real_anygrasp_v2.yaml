@@ -2,7 +2,7 @@ train:
   _target_: fastwam.datasets.lerobot.robot_video_dataset.RobotVideoDataset
   # This root is automatically expanded to task_xxx/batch_xxx LeRobot v3 datasets.
   dataset_dirs:
-    - ./data/anygrasp_v2
+    - ./data/grasp_new
   shape_meta:
     images:
       - key: top
@@ -28,7 +28,7 @@ train:
   dataset_proportion: 1.0
   max_datasets: null
   max_episodes_per_dataset: null
-  pretrained_norm_stats: ./runs/real_anygrasp_v2_hierarchical_1cam_384_1e-4/2026-06-17_23-18-51/dataset_stats.json
+  pretrained_norm_stats: null
   skip_padding_as_possible: false
   concat_multi_camera: null
   processor:
@@ -66,13 +66,13 @@ train:
       - _target_: fastwam.datasets.lerobot.transforms.image.ToTensor
       - _target_: torchvision.transforms.Resize
         size: [256, 384]
-  text_embedding_cache_dir: ./data/text_embeds_cache/real_anygrasp_v2_lerobot_v3_expand_task
+  text_embedding_cache_dir: ./data/text_embeds_cache/real_grasp_new_expand_task
   context_len: 128
 
 val:
   _target_: fastwam.datasets.lerobot.robot_video_dataset.RobotVideoDataset
   dataset_dirs:
-    - ./data/anygrasp_v2
+    - ./data/grasp_new
   shape_meta:
     images:
       - key: top
@@ -96,7 +96,7 @@ val:
   dataset_proportion: 1.0
   max_datasets: null
   max_episodes_per_dataset: null
-  pretrained_norm_stats: ./runs/real_anygrasp_v2_hierarchical_1cam_384_1e-4/2026-06-17_23-18-51/dataset_stats.json
+  pretrained_norm_stats: null
   skip_padding_as_possible: false
   concat_multi_camera: null
   processor:
@@ -133,5 +133,5 @@ val:
       - _target_: fastwam.datasets.lerobot.transforms.image.ToTensor
       - _target_: torchvision.transforms.Resize
         size: [256, 384]
-  text_embedding_cache_dir: ./data/text_embeds_cache/real_anygrasp_v2_lerobot_v3_expand_task
+  text_embedding_cache_dir: ./data/text_embeds_cache/real_grasp_new_expand_task
   context_len: 128

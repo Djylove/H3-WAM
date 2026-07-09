@@ -7,15 +7,15 @@ defaults:
 
 # dataloading
 batch_size: 4
-num_workers: 16
+num_workers: 8
 
 model:
   mot_checkpoint_mixed_attn: false
   hierarchical_action_horizon: 32
   hierarchical_mask_high_predict: false
-  hierarchical_mask_low_predict: false
-  hierarchical_high_condition_mode: boundary
-  hierarchical_dynamic_skip: false
+  hierarchical_mask_low_predict: true
+  hierarchical_high_condition_mode: history
+  hierarchical_dynamic_skip: true
 
 # robotwin eval/deploy controls (consumed by sim_robotwin via EVALUATION)
 action_horizon: ${model.hierarchical_action_horizon}

@@ -4,9 +4,12 @@ export PATH=/usr/local/cuda-12.8/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda-12.8/lib64:$LD_LIBRARY_PATH
 export CUDA_HOME=/usr/local/cuda-12.8
 
+export http_proxy=http://10.2.83.188:3128
+
 bash scripts/train_zero1.sh 8 task=robotwin_uncond_3cam_384_1e-4
 
 bash scripts/train_zero1.sh 8 task=real_anygrasp_v2_hierarchical_1cam_384_1e-4
+bash scripts/train_zero1.sh 8 task=robotwin_hierarchical_3cam_384_1e-4
 
 export WANDB_API_KEY=b8182b57eaa10a6c93943291158ee2f086aae4eb
 
@@ -38,6 +41,10 @@ python experiments/robotwin/eval_robotwin_single.py \
   # 'EVALUATION.attention_viz_steps=[0,5,-1]' \
   # 'EVALUATION.attention_viz_layers=[-1]' \
   # EVALUATION.attention_viz_max_plans=1
+cd /workspace/mnt/data/wxy/Hierarchical_WAM && \
+bash scripts/train_zero1_mobile_multinode.sh \
+  --wandb-key b8182b57eaa10a6c93943291158ee2f086aae4eb \
+  task=robotwin_hierarchical_3cam_384_1e-4
 
 python experiments/robotwin/run_robotwin_manager.py \
   task=robotwin_uncond_3cam_384_1e-4 \
