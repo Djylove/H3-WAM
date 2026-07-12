@@ -40,7 +40,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=Path,
         help="Output root that will contain task_00xxxx folders",
     )
-    parser.add_argument("--limit", default=100, type=int, help="Number of episodes to convert")
+    parser.add_argument("--limit", default=500, type=int, help="Number of episodes to convert")
     parser.add_argument("--start", default=0, type=int, help="Skip this many sorted episodes first")
     parser.add_argument(
         "--selection",

@@ -1482,9 +1482,11 @@ def main(argv: list[str] | None = None) -> int:
     include_depth_index = not args.no_depth_index
     episodes: list[EpisodeBuild] = []
     global_index = 0
+    skipped_episodes: list[tuple[Path, str]] = []
 
     for offset, (episode_dir, metadata) in enumerate(zip(episode_dirs, metadatas)):
-        output_episode_index = args.episode_index + offset
+        # Keep output indices contiguous even when an unreadable source episode is skipped.
+        output_episode_index = args.episode_index + len(episodes)
         task_id = str(metadata.get("task_id", "0"))
         task_index = task_index_by_id.get(task_id, args.task_index)
         task_text = task_texts_by_index.get(task_index, default_text(metadata, f"Task {task_id}"))
@@ -1493,15 +1495,20 @@ def main(argv: list[str] | None = None) -> int:
         else:
             expand_task = args.expand_task or task_text
 
-        df, top_images, depth_images = build_rows(
-            episode_dir=episode_dir,
-            episode_index=output_episode_index,
-            task_index=task_index,
-            expand_task_index=output_episode_index,
-            fps=args.fps,
-            base_state_mode=args.base_state_mode,
-            include_depth_index=include_depth_index,
-        )
+        try:
+            df, top_images, depth_images = build_rows(
+                episode_dir=episode_dir,
+                episode_index=output_episode_index,
+                task_index=task_index,
+                expand_task_index=output_episode_index,
+                fps=args.fps,
+                base_state_mode=args.base_state_mode,
+                include_depth_index=include_depth_index,
+            )
+        except Exception as exc:
+            skipped_episodes.append((episode_dir, f"{type(exc).__name__}: {exc}"))
+            print(f"Skipping unreadable episode {episode_dir}: {type(exc).__name__}: {exc}")
+            continue
         df["index"] = df["index"].astype(np.int64) + int(global_index)
         if include_depth_index:
             local_depth = df["depth_index"].astype(np.int64)
@@ -1519,6 +1526,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         global_index += len(df)
+
+    if skipped_episodes:
+        print(f"Skipped {len(skipped_episodes)} unreadable episode(s) during conversion.")
+    if not episodes:
+        raise ValueError("No readable episodes remain after conversion-time validation")
 
     all_df = pd.concat([episode.df for episode in episodes], ignore_index=True)
     batches = episode_batches(episodes, args.episodes_per_batch)

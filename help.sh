@@ -11,6 +11,8 @@ bash scripts/train_zero1.sh 8 task=robotwin_uncond_3cam_384_1e-4
 bash scripts/train_zero1.sh 8 task=real_anygrasp_v2_hierarchical_1cam_384_1e-4
 bash scripts/train_zero1.sh 8 task=robotwin_hierarchical_3cam_384_1e-4
 
+torchrun --standalone --nproc_per_node=8 scripts/precompute_text_embeds.py task=real_anygrasp_v2_hierarchical_1cam_384_1e-4
+
 export WANDB_API_KEY=b8182b57eaa10a6c93943291158ee2f086aae4eb
 
 export CUDA_VISIBLE_DEVICES=1,2
@@ -35,8 +37,8 @@ python scripts/test_hierarchical_generation.py \
 
 python experiments/robotwin/eval_robotwin_single.py \
   task=robotwin_hierarchical_3cam_384_1e-4 \
-  ckpt=runs/robotwin_hierarchical_3cam_384_1e-4/2026-05-18_12-06-46/checkpoints/weights/step_281793.pt \
-  EVALUATION.task_name=open_microwave \
+  ckpt=runs/robotwin_hierarchical_3cam_384_1e-4/2026-05-19_16-43-59/checkpoints/weights/step_140898.pt \
+  EVALUATION.task_name=blocks_ranking_rgb \
   EVALUATION.attention_viz_enabled=true \
   # 'EVALUATION.attention_viz_steps=[0,5,-1]' \
   # 'EVALUATION.attention_viz_layers=[-1]' \

@@ -56,8 +56,8 @@ data:
 
 # scheduler
 lr_scheduler_type: "cosine"
-learning_rate: 1e-5
-num_epochs: 100
+learning_rate: 1e-4
+num_epochs: 6
 max_steps: null
 log_every: 10
 save_every: 1000

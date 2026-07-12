@@ -247,6 +247,78 @@ def _model_id_to_enc_id(model_id: str) -> str:
     return enc_id or "textenc"
 
 
+def _embedding_filename(prompt: str, context_len: int, enc_id: str) -> str:
+    hashed = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    return f"{hashed}.t5_len{context_len}.{enc_id}.pt"
+
+
+def _log_prompt_cache_paths(
+    prompt: str,
+    cache_dirs: list[Path],
+    context_len: int,
+    enc_id: str,
+    action: str,
+    rank: int,
+    world_size: int,
+) -> None:
+    filename = _embedding_filename(prompt, context_len, enc_id)
+    paths = "\n".join(f"  {cache_dir / filename}" for cache_dir in cache_dirs)
+    logger.info(
+        "Text embedding action=%s rank=%d/%d\nPrompt: %r\nEmbedding file(s):\n%s",
+        action,
+        rank,
+        world_size,
+        prompt,
+        paths,
+    )
+
+
+def _log_distributed_prompt_assignments(
+    prompts: list[str],
+    cache_dirs: list[Path],
+    context_len: int,
+    enc_id: str,
+    is_distributed: bool,
+    rank: int,
+    world_size: int,
+) -> None:
+    """Print every rank's assignment from rank 0 for launchers that hide worker logs."""
+    local_assignment = [
+        {
+            "prompt": prompt,
+            "paths": [str(cache_dir / _embedding_filename(prompt, context_len, enc_id)) for cache_dir in cache_dirs],
+        }
+        for prompt in prompts
+    ]
+    assignments: list[list[dict[str, Any]]]
+    if is_distributed:
+        assignments = [None] * world_size
+        dist.all_gather_object(assignments, local_assignment)
+    else:
+        assignments = [local_assignment]
+
+    if rank != 0:
+        return
+
+    logger.info("Prompt assignments across %d rank(s):", world_size)
+    for assigned_rank, rank_prompts in enumerate(assignments):
+        if not rank_prompts:
+            logger.info("  rank %d/%d: no prompts", assigned_rank, world_size)
+            continue
+        for prompt_index, entry in enumerate(rank_prompts, start=1):
+            paths = "\n".join(f"    {path}" for path in entry["paths"])
+            logger.info(
+                "  rank %d/%d prompt %d\n"
+                "  Prompt: %r\n"
+                "  Embedding file(s):\n%s",
+                assigned_rank,
+                world_size,
+                prompt_index,
+                entry["prompt"],
+                paths,
+            )
+
+
 def _atomic_torch_save(payload: dict[str, torch.Tensor], output_path: Path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = output_path.parent / f".{output_path.name}.tmp.{uuid.uuid4().hex}"
@@ -337,13 +409,21 @@ def main(cfg: DictConfig):
     }
 
     prompts = prompts[rank::world_size] if is_distributed else prompts
+    _log_distributed_prompt_assignments(
+        prompts,
+        cache_dirs,
+        context_len,
+        enc_id,
+        is_distributed,
+        rank,
+        world_size,
+    )
 
     if not overwrite:
         fully_cached_local = 0
         prompts_to_encode: list[str] = []
         for prompt in prompts:
-            hashed = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-            filename = f"{hashed}.t5_len{context_len}.{enc_id}.pt"
+            filename = _embedding_filename(prompt, context_len, enc_id)
             fully_cached = True
             for cache_dir in cache_dirs:
                 cache_path = cache_dir / filename
@@ -354,8 +434,26 @@ def main(cfg: DictConfig):
                 fully_cached_local += 1
                 for cache_dir in cache_dirs:
                     stats[str(cache_dir)]["skip"] += 1
+                _log_prompt_cache_paths(
+                    prompt,
+                    cache_dirs,
+                    context_len,
+                    enc_id,
+                    "reuse",
+                    rank,
+                    world_size,
+                )
             else:
                 prompts_to_encode.append(prompt)
+                _log_prompt_cache_paths(
+                    prompt,
+                    cache_dirs,
+                    context_len,
+                    enc_id,
+                    "encode",
+                    rank,
+                    world_size,
+                )
 
         prompts = prompts_to_encode
 
@@ -373,6 +471,23 @@ def main(cfg: DictConfig):
                 "overwrite=false: fully cached prompts=%d, prompts to encode=%d",
                 fully_cached_global,
                 to_encode_global,
+            )
+    else:
+        for prompt in prompts:
+            filename = _embedding_filename(prompt, context_len, enc_id)
+            action = (
+                "overwrite"
+                if any((cache_dir / filename).exists() for cache_dir in cache_dirs)
+                else "new"
+            )
+            _log_prompt_cache_paths(
+                prompt,
+                cache_dirs,
+                context_len,
+                enc_id,
+                action,
+                rank,
+                world_size,
             )
 
     logger.info("Writing caches to %d directories.", len(cache_dirs))
@@ -402,7 +517,7 @@ def main(cfg: DictConfig):
                 context = text_encoder(ids, mask)
 
                 for i, prompt in enumerate(batch_prompts):
-                    hashed = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+                    filename = _embedding_filename(prompt, context_len, enc_id)
                     context_i = context[i].detach().to(device="cpu", dtype=torch.bfloat16).contiguous()
                     mask_i = mask[i].detach().to(device="cpu", dtype=torch.bool).contiguous()
                     payload = {
@@ -411,7 +526,7 @@ def main(cfg: DictConfig):
                     }
 
                     for cache_dir in cache_dirs:
-                        cache_path = cache_dir / f"{hashed}.t5_len{context_len}.{enc_id}.pt"
+                        cache_path = cache_dir / filename
                         key = str(cache_dir)
                         if cache_path.exists() and not overwrite:
                             stats[key]["skip"] += 1

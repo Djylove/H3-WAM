@@ -32,7 +32,7 @@ weight_decay: 0.0
 resume: null
 
 # text embedding precompute options
-overwrite: false
+overwrite: true
 override_instruction: null
 
 # standalone hierarchical generation test options

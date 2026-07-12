@@ -15,6 +15,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    import pyarrow.parquet as pq
+except ImportError as exc:  # pragma: no cover - converter requires pyarrow too
+    raise SystemExit(
+        "Missing dependency: pyarrow. Install it in the conversion environment with "
+        "python3 -m pip install pyarrow"
+    ) from exc
+
 
 REQUIRED_EPISODE_FILES = (
     "metadata.json",
@@ -24,6 +32,19 @@ REQUIRED_EPISODE_FILES = (
     "observation.base_state.parquet",
     "observation.images.camera_top.parquet",
 )
+
+# Reading the value columns, rather than merely checking file existence, catches
+# truncated or otherwise unreadable parquet streams before a whole task fails.
+REQUIRED_PARQUET_COLUMNS = {
+    "action.parquet": ("timestamp_utc", "action"),
+    "action.base.parquet": ("timestamp_utc", "action.base"),
+    "observation.state.parquet": ("timestamp_utc", "observation.state"),
+    "observation.base_state.parquet": ("timestamp_utc", "observation.base_state"),
+    "observation.images.camera_top.parquet": (
+        "timestamp_utc",
+        "observation.images.camera_top",
+    ),
+}
 
 TASK_TEXT = (
     "Alternate taking and putting with one hand. "
@@ -109,6 +130,28 @@ def is_episode_dir(path: Path, require_done: bool) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return True
+
+
+def episode_parquet_error(path: Path) -> str | None:
+    """Return a concise error when a required source stream cannot be read."""
+    for filename, columns in REQUIRED_PARQUET_COLUMNS.items():
+        try:
+            pq.read_table(path / filename, columns=list(columns))
+        except Exception as exc:
+            return f"{filename}: {type(exc).__name__}: {exc}"
+    return None
+
+
+def filter_readable_episodes(episode_dirs: list[Path]) -> tuple[list[Path], list[tuple[Path, str]]]:
+    readable: list[Path] = []
+    skipped: list[tuple[Path, str]] = []
+    for episode_dir in episode_dirs:
+        error = episode_parquet_error(episode_dir)
+        if error is None:
+            readable.append(episode_dir)
+        else:
+            skipped.append((episode_dir, error))
+    return readable, skipped
 
 
 def episode_index(path: Path) -> int:
@@ -502,6 +545,10 @@ def main(argv: list[str] | None = None) -> int:
     episode_dirs = discover_episode_dirs(source_root, require_done=not args.allow_unfinished)
     if not episode_dirs:
         raise FileNotFoundError(f"No usable episode_* directories found under {source_root}")
+    structurally_eligible_count = len(episode_dirs)
+    episode_dirs, unreadable = filter_readable_episodes(episode_dirs)
+    if not episode_dirs:
+        raise FileNotFoundError("No readable episode_* directories found after parquet validation")
     discovered_count = len(episode_dirs)
     exclude_task_ids = {str(task_id) for task_id in args.exclude_task_id}
     episode_dirs = filter_episodes_by_task_id(episode_dirs, exclude_task_ids)
@@ -534,11 +581,14 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     print(
-        f"Discovered {discovered_count} eligible episode(s); "
+        f"Discovered {structurally_eligible_count} structurally eligible episode(s); "
+        f"{discovered_count} readable after parquet validation; "
         f"{after_exclusions_count} remain after task_id exclusions; "
         f"{len(episode_dirs)} remain after task ordinal skips; "
         f"selected {len(selected)} for conversion."
     )
+    for episode_dir, error in unreadable:
+        print(f"  skipped unreadable episode: {episode_dir} ({error})")
     for episode_dir in skipped:
         print(
             f"  skipped: task_id={task_id_from_episode(episode_dir)} "
