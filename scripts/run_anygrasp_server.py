@@ -30,7 +30,14 @@ def _optional_float(value: str | None) -> float | None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a FastWAM AnyGrasp policy server.")
     parser.add_argument("--ckpt", required=True, help="Path to FastWAM weights checkpoint, e.g. checkpoints/weights/step_xxxxxx.pt.")
-    parser.add_argument("--task", default="real_anygrasp_v2_hierarchical_1cam_384_1e-4", help="Hydra task config name under configs/task.")
+    parser.add_argument(
+        "--task",
+        default="real_anygrasp_v2_hierarchical_1cam_384_1e-4",
+        help=(
+            "Hydra task config under configs/task. Use "
+            "real_anygrasp_v2_uncond_1cam_384_1e-4 for native FastWAM."
+        ),
+    )
     parser.add_argument("--dataset-stats-path", default=None, help="Path to dataset_stats.json. If omitted, inferred from checkpoint parents.")
     parser.add_argument("--host", default="0.0.0.0", help="ZMQ bind host.")
     parser.add_argument("--port", type=int, default=5555, help="ZMQ bind port.")
@@ -96,6 +103,7 @@ def main() -> None:
     print(f"  task: {args.task}")
     print(f"  ckpt: {ckpt}")
     print(f"  dataset_stats: {stats_path}")
+    print(f"  model_variant: {'hierarchical' if policy.is_hierarchical_model else 'native'}")
     print(f"  device: {policy.device}")
     print(f"  host: {args.host}")
     print(f"  port: {args.port}")

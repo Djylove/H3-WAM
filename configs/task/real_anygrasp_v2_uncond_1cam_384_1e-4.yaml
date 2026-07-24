@@ -1,0 +1,50 @@
+# @package _global_
+
+defaults:
+  - override /data: real_anygrasp_v2
+  - override /model: fastwam
+  - _self_
+
+# Keep the data/training setup aligned with the hierarchical AnyGrasp run so
+# that the model architecture is the main experimental difference.
+batch_size: 4
+num_workers: 8
+
+model:
+  mot_checkpoint_mixed_attn: false
+
+# Native FastWAM predicts one 32-step action chunk from the current frame.
+action_horizon: 32
+replan_steps: 24
+num_inference_steps: ${eval_num_inference_steps}
+
+data:
+  train:
+    dataset_proportion: 1.0
+    max_datasets: null
+    max_episodes_per_dataset: null
+    num_frames: 33
+    action_video_freq_ratio: 4
+    enable_keyframes: false
+  val:
+    dataset_proportion: 1.0
+    max_datasets: null
+    max_episodes_per_dataset: null
+    num_frames: 33
+    action_video_freq_ratio: 4
+    enable_keyframes: false
+
+# scheduler
+lr_scheduler_type: "cosine"
+learning_rate: 1e-4
+num_epochs: 6
+max_steps: null
+log_every: 10
+save_every: 1000
+eval_every: 500
+eval_num_inference_steps: 20
+
+# training
+gradient_accumulation_steps: 1
+weight_decay: 1e-2
+resume: null

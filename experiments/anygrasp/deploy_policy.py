@@ -147,13 +147,37 @@ class FastWAMAnyGraspPolicy:
         self.model.load_checkpoint(str(checkpoint_path))
         self.model = self.model.to(self.device).eval()
 
+        self.is_hierarchical_model = callable(getattr(self.model, "infer_hierarchical", None))
+
         self.processor: FastWAMProcessor = instantiate(cfg.data.train.processor).eval()
         dataset_stats = load_dataset_stats_from_json(str(dataset_stats_path))
         self.processor.set_normalizer_from_stats(dataset_stats)
 
-        self.action_horizon = int(action_horizon or cfg.get("action_horizon") or cfg.model.hierarchical_action_horizon)
-        self.replan_steps = int(replan_steps or cfg.get("replan_steps") or self.action_horizon)
-        self.num_inference_steps = int(num_inference_steps or cfg.get("num_inference_steps") or cfg.eval_num_inference_steps)
+        configured_horizon = _optional_int(cfg.get("action_horizon"))
+        if configured_horizon is None:
+            configured_horizon = _optional_int(cfg.model.get("hierarchical_action_horizon"))
+        if configured_horizon is None:
+            configured_horizon = int(cfg.data.train.num_frames) - 1
+        self.action_horizon = int(action_horizon if action_horizon is not None else configured_horizon)
+        if self.action_horizon <= 0:
+            raise ValueError(f"`action_horizon` must be positive, got {self.action_horizon}.")
+
+        configured_replan_steps = _optional_int(cfg.get("replan_steps"))
+        if configured_replan_steps is None:
+            configured_replan_steps = self.action_horizon
+        requested_replan_steps = int(replan_steps if replan_steps is not None else configured_replan_steps)
+        if requested_replan_steps <= 0:
+            raise ValueError(f"`replan_steps` must be positive, got {requested_replan_steps}.")
+        self.replan_steps = min(requested_replan_steps, self.action_horizon)
+
+        configured_inference_steps = _optional_int(cfg.get("num_inference_steps"))
+        if configured_inference_steps is None:
+            configured_inference_steps = int(cfg.eval_num_inference_steps)
+        self.num_inference_steps = int(
+            num_inference_steps if num_inference_steps is not None else configured_inference_steps
+        )
+        if self.num_inference_steps <= 0:
+            raise ValueError(f"`num_inference_steps` must be positive, got {self.num_inference_steps}.")
         self.high_video_inference_steps = high_video_inference_steps if high_video_inference_steps is not None else _optional_int(cfg.get("high_video_inference_steps"))
         self.low_video_inference_steps = low_video_inference_steps if low_video_inference_steps is not None else _optional_int(cfg.get("low_video_inference_steps"))
         self.high_denoise_step = high_denoise_step if high_denoise_step is not None else _optional_int(cfg.get("high_denoise_step"))
@@ -419,6 +443,7 @@ class FastWAMAnyGraspPolicy:
             "raw_action_dim": self.raw_action_dim,
             "action_horizon": int(selected.shape[0]),
             "replan_steps": self.replan_steps,
+            "model_variant": "hierarchical" if self.is_hierarchical_model else "native",
             "image_key": self.image_key,
             "state_key": self.state_key,
         }

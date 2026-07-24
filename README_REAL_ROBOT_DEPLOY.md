@@ -1,6 +1,6 @@
 # FastWAM AnyGrasp 真机部署说明
 
-本文档用于基于已经训练好的 `real_anygrasp_v2_hierarchical_1cam_384_1e-4` checkpoint 做真机推理部署。当前部署方式参考 GR00T 的 server/client 范式：GPU 机器常驻 policy server，机器人控制端通过 ZMQ client 发送观测并接收 action chunk。
+本文档用于部署 AnyGrasp 的两类 checkpoint：FastWAM 原生模型 `real_anygrasp_v2_uncond_1cam_384_1e-4` 和 hierarchical 模型 `real_anygrasp_v2_hierarchical_1cam_384_1e-4`。当前部署方式参考 GR00T 的 server/client 范式：GPU 机器常驻 policy server，机器人控制端通过 ZMQ client 发送观测并接收 action chunk。
 
 ## 1. Conda 环境
 
@@ -52,12 +52,14 @@ python scripts/preprocess_action_dit_backbone.py \
 根据从移动云下载得到的 `.pt` 权重文件和对应的 `dataset_stats.json`，新建一个 `ckpt` 文件夹并把两者放进去：
 
 ```bash
-mkdir -p ckpt/real_anygrasp_v2_hierarchical
+mkdir -p ckpt/real_anygrasp_v2_hierarchical ckpt/real_anygrasp_v2_uncond
 
 # 将移动云下载的文件放入该目录，例如：
 cp /path/to/downloaded/step_xxxxxx.pt ckpt/real_anygrasp_v2_hierarchical/
 cp /path/to/downloaded/dataset_stats.json ckpt/real_anygrasp_v2_hierarchical/
 ```
+
+原生模型同样放到 `ckpt/real_anygrasp_v2_uncond/`。两种模型的权重不能混用，启动 server 时的 `--task` 必须和 checkpoint 架构一致。
 
 推荐目录结构：
 
@@ -77,6 +79,36 @@ ckpt/real_anygrasp_v2_hierarchical/
 `dataset_stats.json` 必须和 `.pt` 权重来自同一套训练配置，用于 state/action 归一化和 action 反归一化。不要用 LeRobot 原始 `meta/stats.json` 或其他 `norm_stats.json` 替代。
 
 ## 4. 启动 AnyGrasp Policy Server
+
+### 4.1 FastWAM 原生模型
+
+原生模型只使用当前观测帧预测 action chunk，不需要 high/low video、joint denoise 或 reuse 参数：
+
+```bash
+python scripts/run_anygrasp_server.py \
+  --ckpt ckpt/real_anygrasp_v2_uncond/step_xxxxxx.pt \
+  --task real_anygrasp_v2_uncond_1cam_384_1e-4 \
+  --dataset-stats-path ckpt/real_anygrasp_v2_uncond/dataset_stats.json \
+  --host 0.0.0.0 \
+  --port 5555 \
+  --device cuda:0 \
+  --mixed-precision bf16 \
+  --action-horizon 32 \
+  --replan-steps 24 \
+  --num-inference-steps 20
+```
+
+训练原生模型及预计算文本 embedding：
+
+```bash
+torchrun --standalone --nproc_per_node=8 scripts/precompute_text_embeds.py \
+  task=real_anygrasp_v2_uncond_1cam_384_1e-4
+
+bash scripts/train_zero1.sh 8 \
+  task=real_anygrasp_v2_uncond_1cam_384_1e-4
+```
+
+### 4.2 Hierarchical 模型
 
 基础启动命令：
 
@@ -125,7 +157,7 @@ python scripts/run_anygrasp_server.py \
   --joint-denoise
 ```
 
-当前建议一直保持 `joint_denoise=true`，也就是启动时使用 `--joint-denoise`，不要使用 `--no-joint-denoise`。
+对于 hierarchical checkpoint，当前建议一直保持 `joint_denoise=true`，也就是启动时使用 `--joint-denoise`，不要使用 `--no-joint-denoise`。这些 hierarchical 专属参数不会传给 FastWAM 原生模型。
 
 ## 5. GR00T-style Server/Client 逻辑
 
@@ -197,7 +229,7 @@ actions_to_execute = action_chunk[:execute_steps]
 client.reset()
 ```
 
-`reset()` 会清空服务端历史帧缓存和 hierarchical reuse cache，避免上一次任务的预测 latent 影响当前任务。
+`reset()` 会清空服务端历史帧缓存；使用 hierarchical 模型时还会清空 reuse cache，避免上一次任务的预测 latent 影响当前任务。
 
 ## 6. Observation 与 Action 格式
 
@@ -308,7 +340,7 @@ raw_action = action["default"]  # [1, T, 37]
 
 ## 7. 推荐推理参数
 
-重点建议只调下面几个参数。
+FastWAM 原生模型主要调整 `action_horizon`、`replan_steps` 和 `num_inference_steps`。下面的 high/low denoise、reuse 和 `joint_denoise` 参数仅适用于 hierarchical 模型。
 
 ### `high_denoise_step`
 

@@ -256,6 +256,10 @@ bash scripts/train_zero1.sh 8 task=libero_uncond_2cam224_1e-4
 bash scripts/train_zero1.sh 8 task=robotwin_uncond_3cam_384_1e-4
 
 bash scripts/train_zero1.sh 8 task=robotwin_hierarchical_3cam_384_1e-4
+
+# AnyGrasp (native FastWAM / hierarchical FastWAM)
+bash scripts/train_zero1.sh 8 task=real_anygrasp_v2_uncond_1cam_384_1e-4
+bash scripts/train_zero1.sh 8 task=real_anygrasp_v2_hierarchical_1cam_384_1e-4
 ```
 ## We are currently testing based on the hierarchical model and the Robotwin environment.
 

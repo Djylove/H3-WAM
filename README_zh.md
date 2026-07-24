@@ -255,6 +255,10 @@ bash scripts/train_zero1.sh 8 task=libero_uncond_2cam224_1e-4
 
 # RoboTwin
 bash scripts/train_zero1.sh 8 task=robotwin_uncond_3cam_384_1e-4
+
+# AnyGrasp（FastWAM 原生模型 / hierarchical 模型）
+bash scripts/train_zero1.sh 8 task=real_anygrasp_v2_uncond_1cam_384_1e-4
+bash scripts/train_zero1.sh 8 task=real_anygrasp_v2_hierarchical_1cam_384_1e-4
 ```
 
 对于LIBERO，我们使用单机8卡训练。对于RoboTwin，我们使用了64卡来加速训练，你可以尝试调小卡数和训练总epoch数。
