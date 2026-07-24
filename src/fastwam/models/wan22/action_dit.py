@@ -96,9 +96,37 @@ class ActionDiT(nn.Module):
             ]
         )
         self.head = nn.Linear(hidden_dim, action_dim)
-        self.freqs = precompute_freqs_cis(attn_head_dim, end=1024)
+        self._register_rope_cache(device=torch.device("cpu"))
 
         self.use_gradient_checkpointing = use_gradient_checkpointing
+
+    def _register_rope_cache(self, device: torch.device) -> None:
+        self.register_buffer(
+            "freqs",
+            precompute_freqs_cis(self.attn_head_dim, end=1024).to(device=device),
+            persistent=False,
+        )
+        self.register_buffer(
+            "time_frequencies",
+            torch.pow(
+                10000,
+                -torch.arange(self.freq_dim // 2, dtype=torch.float64).div(self.freq_dim // 2),
+            ).to(device=device),
+            persistent=False,
+        )
+
+    def _apply(self, fn, recurse=True):
+        self._buffers.pop("freqs", None)
+        self._buffers.pop("time_frequencies", None)
+        super()._apply(fn, recurse=recurse)
+        param = next(self.parameters(), None)
+        device = param.device if param is not None else torch.device("cpu")
+        self._buffers["freqs"] = precompute_freqs_cis(self.attn_head_dim, end=1024).to(device=device)
+        self._buffers["time_frequencies"] = torch.pow(
+            10000,
+            -torch.arange(self.freq_dim // 2, dtype=torch.float64).div(self.freq_dim // 2),
+        ).to(device=device)
+        return self
 
     @classmethod
     def backbone_key_set(cls, keys) -> set[str]:
@@ -229,7 +257,37 @@ class ActionDiT(nn.Module):
         timestep: torch.Tensor,
         context: torch.Tensor,
         context_mask: Optional[torch.Tensor] = None,
+        context_embedding: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
+        tokens, t, t_mod = self.prepare_inference_tokens(action_tokens, timestep)
+        context_emb, context_attn_mask, freqs = self.prepare_inference_conditioning(
+            context,
+            context_mask,
+            batch_size=int(tokens.shape[0]),
+            seq_len=int(tokens.shape[1]),
+            device=tokens.device,
+            context_embedding=context_embedding,
+        )
+
+        return {
+            "tokens": tokens,
+            "freqs": freqs,
+            "t": t,
+            "t_mod": t_mod,
+            "context": context_emb,
+            "context_mask": context_attn_mask,
+            "meta": {
+                "batch_size": int(tokens.shape[0]),
+                "seq_len": int(tokens.shape[1]),
+            },
+        }
+
+    def prepare_inference_tokens(
+        self,
+        action_tokens: torch.Tensor,
+        timestep: torch.Tensor,
+        time_frequencies: Optional[torch.Tensor] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if action_tokens.ndim != 3:
             raise ValueError(
                 f"`action_tokens` must be 3D [B, T, action_dim], got shape {tuple(action_tokens.shape)}"
@@ -240,16 +298,8 @@ class ActionDiT(nn.Module):
             )
         if timestep.ndim != 1:
             raise ValueError(f"`timestep` must be 1D [B] or [1], got shape {tuple(timestep.shape)}")
-        if context.ndim != 3:
-            raise ValueError(
-                f"`context` must be 3D [B, L, D], got shape {tuple(context.shape)}"
-            )
 
         batch_size = action_tokens.shape[0]
-        if context.shape[0] != batch_size:
-            raise ValueError(
-                f"Batch mismatch between action tokens and text context: {batch_size} vs {context.shape[0]}"
-            )
         if timestep.shape[0] not in (1, batch_size):
             raise ValueError(
                 f"`timestep` length must be 1 or batch_size({batch_size}), got {timestep.shape[0]}"
@@ -259,44 +309,57 @@ class ActionDiT(nn.Module):
                 raise ValueError("During training, action timestep length must match batch_size.")
             timestep = timestep.expand(batch_size)
 
+        tokens = self.action_encoder(action_tokens)
+        if time_frequencies is None:
+            time_frequencies = self.time_frequencies
+        t = self.time_embedding(
+            sinusoidal_embedding_1d(self.freq_dim, timestep, time_frequencies)
+        )
+        t_mod = self.time_projection(t).unflatten(1, (6, self.hidden_dim))
+        return tokens, t, t_mod
+
+    def prepare_inference_conditioning(
+        self,
+        context: torch.Tensor,
+        context_mask: Optional[torch.Tensor],
+        *,
+        batch_size: int,
+        seq_len: int,
+        device: torch.device,
+        context_embedding: Optional[torch.Tensor] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if context.ndim != 3:
+            raise ValueError(
+                f"`context` must be 3D [B, L, D], got shape {tuple(context.shape)}"
+            )
+        if int(context.shape[0]) != int(batch_size):
+            raise ValueError(
+                f"Batch mismatch between action tokens and text context: {batch_size} vs {context.shape[0]}"
+            )
         if context_mask is None:
             context_mask = torch.ones(
                 (batch_size, context.shape[1]), dtype=torch.bool, device=context.device
             )
-        else:
-            if context_mask.ndim != 2:
-                raise ValueError(f"`context_mask` must be 2D [B, L], got shape {tuple(context_mask.shape)}")
-            if context_mask.shape[0] != batch_size or context_mask.shape[1] != context.shape[1]:
-                raise ValueError(
-                    f"`context_mask` shape must match `context` shape [B, L], got {tuple(context_mask.shape)} vs {tuple(context.shape)}"
-                )
-
-        seq_len = action_tokens.shape[1]
-        if seq_len > self.freqs.shape[0]:
+        elif context_mask.ndim != 2:
+            raise ValueError(f"`context_mask` must be 2D [B, L], got shape {tuple(context_mask.shape)}")
+        elif int(context_mask.shape[0]) != int(batch_size) or context_mask.shape[1] != context.shape[1]:
+            raise ValueError(
+                f"`context_mask` shape must match `context` shape [B, L], got {tuple(context_mask.shape)} vs {tuple(context.shape)}"
+            )
+        if int(seq_len) > int(self.freqs.shape[0]):
             raise ValueError(
                 f"Action token length {seq_len} exceeds RoPE cache {self.freqs.shape[0]}."
             )
 
-        t = self.time_embedding(sinusoidal_embedding_1d(self.freq_dim, timestep))
-        t_mod = self.time_projection(t).unflatten(1, (6, self.hidden_dim))
-
-        tokens = self.action_encoder(action_tokens)
-        context_emb = self.text_embedding(context)
+        context_emb = self.text_embedding(context) if context_embedding is None else context_embedding
+        if tuple(context_emb.shape[:2]) != tuple(context.shape[:2]) or int(context_emb.shape[2]) != self.hidden_dim:
+            raise ValueError(
+                "`context_embedding` must have shape "
+                f"[{batch_size},{context.shape[1]},{self.hidden_dim}], got {tuple(context_emb.shape)}"
+            )
         context_attn_mask = context_mask.unsqueeze(1).expand(-1, seq_len, -1)
-        freqs = self.freqs[:seq_len].view(seq_len, 1, -1).to(tokens.device)
-
-        return {
-            "tokens": tokens,
-            "freqs": freqs,
-            "t": t,
-            "t_mod": t_mod,
-            "context": context_emb,
-            "context_mask": context_attn_mask,
-            "meta": {
-                "batch_size": batch_size,
-                "seq_len": seq_len,
-            },
-        }
+        freqs = self.freqs[:seq_len].view(seq_len, 1, -1).to(device)
+        return context_emb, context_attn_mask, freqs
 
     def post_dit(self, tokens: torch.Tensor, pre_state: Dict[str, Any]) -> torch.Tensor:
         return self.head(tokens)

@@ -59,6 +59,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--rand-device", default="cpu", choices=["cpu", "cuda"])
     parser.add_argument("--tiled", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--compile-hierarchical", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--compile-cudagraphs", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--optimize-denoise-static", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--inference-backend", choices=["inductor", "tensorrt"], default="inductor")
+    parser.add_argument("--warmup", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--rtc-warmup", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
         "--config-override",
         action="append",
@@ -70,6 +76,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.inference_backend == "tensorrt" and not args.warmup:
+        raise ValueError("TensorRT requires --warmup so engine build and output validation finish before serving.")
+    if args.rtc_warmup and args.compile_cudagraphs:
+        raise ValueError("RTC warmup is incompatible with CUDA Graph capture.")
+    if args.rtc_warmup and args.inference_backend == "tensorrt":
+        raise ValueError("RTC warmup requires the inductor backend.")
+    if args.rtc_warmup and args.joint_denoise is False:
+        raise ValueError("RTC warmup requires --joint-denoise.")
     ckpt = Path(args.ckpt).expanduser().resolve()
     if not ckpt.exists():
         raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
@@ -97,6 +111,12 @@ def main() -> None:
         seed=args.seed,
         rand_device=args.rand_device,
         tiled=args.tiled,
+        compile_hierarchical=args.compile_hierarchical,
+        compile_cudagraphs=args.compile_cudagraphs,
+        optimize_denoise_static=args.optimize_denoise_static,
+        inference_backend=args.inference_backend,
+        warmup=args.warmup,
+        rtc_warmup=args.rtc_warmup,
     )
 
     print("Starting FastWAM AnyGrasp policy server...")
@@ -105,6 +125,12 @@ def main() -> None:
     print(f"  dataset_stats: {stats_path}")
     print(f"  model_variant: {'hierarchical' if policy.is_hierarchical_model else 'native'}")
     print(f"  device: {policy.device}")
+    print(f"  compile_hierarchical: {args.compile_hierarchical}")
+    print(f"  compile_cudagraphs: {args.compile_cudagraphs}")
+    print(f"  optimize_denoise_static: {args.optimize_denoise_static}")
+    print(f"  inference_backend: {args.inference_backend}")
+    print(f"  warmup: {args.warmup}")
+    print(f"  rtc_warmup: {args.rtc_warmup}")
     print(f"  host: {args.host}")
     print(f"  port: {args.port}")
     print("  observation format: {'video': {'top': uint8 HWC/THWC/BTHWC}, 'state': {'default': float32 D/TD/BTD}, 'language': {'task': [[str]]}}")

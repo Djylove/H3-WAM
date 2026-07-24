@@ -484,6 +484,110 @@ class MoT(nn.Module):
             kv_cache.append({"k": k, "v": v})
         return kv_cache
 
+    def _prefill_video_cache_inner(
+        self,
+        video_tokens: torch.Tensor,
+        video_freqs: torch.Tensor,
+        video_t_mod: torch.Tensor,
+        video_context_payload: Optional[dict],
+        video_attention_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, list[torch.Tensor], list[torch.Tensor]]:
+        """Compile-friendly prefill loop without validation or dict cache output."""
+        expert = self.mixtures["video"]
+        x = video_tokens
+        cache_k_list: list[torch.Tensor] = []
+        cache_v_list: list[torch.Tensor] = []
+        for layer_idx in range(self.num_layers):
+            block = expert.blocks[layer_idx]
+            (
+                q,
+                k,
+                v,
+                residual_x,
+                gate_msa,
+                shift_mlp,
+                scale_mlp,
+                gate_mlp,
+                _use_gradient_checkpointing,
+            ) = self._build_expert_attention_io(
+                expert=expert,
+                block=block,
+                x=x,
+                freqs=video_freqs,
+                t_mod=video_t_mod,
+            )
+            mixed = self._mixed_attention(
+                q_cat=q,
+                k_cat=k,
+                v_cat=v,
+                attention_mask=video_attention_mask,
+            )
+            x = self._apply_expert_post_block(
+                block=block,
+                residual_x=residual_x,
+                mixed_attn_out=mixed,
+                gate_msa=gate_msa,
+                shift_mlp=shift_mlp,
+                scale_mlp=scale_mlp,
+                gate_mlp=gate_mlp,
+                context_payload=video_context_payload,
+            )
+            cache_k_list.append(k)
+            cache_v_list.append(v)
+        return x, cache_k_list, cache_v_list
+
+    def _forward_action_with_video_cache_inner(
+        self,
+        action_tokens: torch.Tensor,
+        action_freqs: torch.Tensor,
+        action_t_mod: torch.Tensor,
+        action_context_payload: Optional[dict],
+        video_cache_k: list[torch.Tensor],
+        video_cache_v: list[torch.Tensor],
+        action_attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Compile-friendly action loop with flat video K/V cache inputs."""
+        expert = self.mixtures["action"]
+        x = action_tokens
+        for layer_idx in range(self.num_layers):
+            block = expert.blocks[layer_idx]
+            (
+                q_action,
+                k_action,
+                v_action,
+                residual_x,
+                gate_msa,
+                shift_mlp,
+                scale_mlp,
+                gate_mlp,
+                _use_gradient_checkpointing,
+            ) = self._build_expert_attention_io(
+                expert=expert,
+                block=block,
+                x=x,
+                freqs=action_freqs,
+                t_mod=action_t_mod,
+            )
+            k_cat = torch.cat([video_cache_k[layer_idx], k_action], dim=1)
+            v_cat = torch.cat([video_cache_v[layer_idx], v_action], dim=1)
+            mixed = self._mixed_attention(
+                q_cat=q_action,
+                k_cat=k_cat,
+                v_cat=v_cat,
+                attention_mask=action_attention_mask,
+            )
+            x = self._apply_expert_post_block(
+                block=block,
+                residual_x=residual_x,
+                mixed_attn_out=mixed,
+                gate_msa=gate_msa,
+                shift_mlp=shift_mlp,
+                scale_mlp=scale_mlp,
+                gate_mlp=gate_mlp,
+                context_payload=action_context_payload,
+            )
+        return x
+
     def forward_action_with_video_cache(
         self,
         action_tokens: torch.Tensor,

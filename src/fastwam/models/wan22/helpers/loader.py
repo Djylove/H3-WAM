@@ -148,9 +148,11 @@ def load_wan22_ti2v_5b_components(
     dit_config: dict[str, Any] | None = None,
     skip_dit_load_from_pretrain: bool = False,
     load_text_encoder: bool = True,
+    text_encoder_device: str | None = None,
 ):
     logger.info("Loading Wan2.2-TI2V-5B components...")
     start = time.time()
+    text_encoder_device = device if text_encoder_device is None else str(text_encoder_device)
 
     if dit_config is None:
         raise ValueError("`dit_config` is required for Wan2.2-TI2V-5B loading.")
@@ -193,7 +195,7 @@ def load_wan22_ti2v_5b_components(
             text_config.path,
             "wan_video_text_encoder",
             torch_dtype=torch_dtype,
-            device=device,
+            device=text_encoder_device,
         )
         tokenizer = HuggingfaceTokenizer(
             name=tokenizer_config.path,

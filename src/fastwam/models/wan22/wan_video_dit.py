@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from typing import Any, Dict, Tuple, Optional
-from einops import rearrange
 from .helpers.gradient import gradient_checkpoint_forward
 
 from fastwam.utils.logging_config import get_logger
@@ -14,9 +13,12 @@ logger = get_logger(__name__)
 def flash_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, num_heads: int, ctx_mask: Optional[torch.Tensor] = None, compatibility_mode=True):
     if compatibility_mode:
         batch_size = int(q.shape[0])
-        q = rearrange(q, "b s (n d) -> b n s d", n=num_heads)
-        k = rearrange(k, "b s (n d) -> b n s d", n=num_heads)
-        v = rearrange(v, "b s (n d) -> b n s d", n=num_heads)
+        q_len = int(q.shape[1])
+        k_len = int(k.shape[1])
+        head_dim = int(q.shape[2]) // int(num_heads)
+        q = q.view(batch_size, q_len, num_heads, head_dim).transpose(1, 2)
+        k = k.view(batch_size, k_len, num_heads, head_dim).transpose(1, 2)
+        v = v.view(batch_size, k_len, num_heads, head_dim).transpose(1, 2)
         attn_mask = ctx_mask
         if attn_mask is not None:
             attn_mask = attn_mask.to(device=q.device)
@@ -25,7 +27,7 @@ def flash_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, num_heads
             if attn_mask.ndim == 3 and int(attn_mask.shape[0]) == batch_size:
                 attn_mask = attn_mask.unsqueeze(1)
         x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
-        x = rearrange(x, "b n s d -> b s (n d)", n=num_heads)
+        x = x.transpose(1, 2).reshape(batch_size, q_len, -1)
         return x
     else:
         raise NotImplementedError("Only compatibility mode is implemented for flash attention. Please set compatibility_mode=True.")
@@ -36,9 +38,13 @@ def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor):
     return (x * (1 + scale) + shift)
 
 
-def sinusoidal_embedding_1d(dim, position):
-    sinusoid = torch.outer(position.type(torch.float64), torch.pow(
-        10000, -torch.arange(dim//2, dtype=torch.float64, device=position.device).div(dim//2)))
+def sinusoidal_embedding_1d(dim, position, frequencies=None):
+    if frequencies is None:
+        frequencies = torch.pow(
+            10000,
+            -torch.arange(dim // 2, dtype=torch.float64, device=position.device).div(dim // 2),
+        )
+    sinusoid = position.to(dtype=frequencies.dtype).unsqueeze(1) * frequencies.unsqueeze(0)
     x = torch.cat([torch.cos(sinusoid), torch.sin(sinusoid)], dim=1)
     return x.to(position.dtype)
 
@@ -56,16 +62,24 @@ def precompute_freqs_cis(dim: int, end: int = 1024, theta: float = 10000.0):
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)
                    [: (dim // 2)].double() / dim))
     freqs = torch.outer(torch.arange(end, device=freqs.device), freqs)
-    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
-    return freqs_cis
+    return torch.stack((torch.cos(freqs), torch.sin(freqs)), dim=-1).flatten(-2)
 
 
 def rope_apply(x, freqs, num_heads):
-    x = rearrange(x, "b s (n d) -> b s n d", n=num_heads)
-    x_out = torch.view_as_complex(x.to(torch.float64).reshape(
-        x.shape[0], x.shape[1], x.shape[2], -1, 2))
-    freqs = freqs.to(torch.complex64) if freqs.device.type == "npu" else freqs
-    x_out = torch.view_as_real(x_out * freqs).flatten(2)
+    batch_size, seq_len, _ = x.shape
+    x = x.view(batch_size, seq_len, num_heads, -1)
+    compute_dtype = freqs.dtype if freqs.dtype in (torch.float32, torch.float64) else torch.float32
+    x_pair = x.to(compute_dtype).reshape(x.shape[0], x.shape[1], x.shape[2], -1, 2)
+    freq_pair = freqs.reshape(freqs.shape[0], freqs.shape[1], -1, 2)
+    x_real, x_imag = x_pair.unbind(dim=-1)
+    freq_real, freq_imag = freq_pair.unbind(dim=-1)
+    x_out = torch.stack(
+        (
+            x_real * freq_real - x_imag * freq_imag,
+            x_real * freq_imag + x_imag * freq_real,
+        ),
+        dim=-1,
+    ).flatten(2)
     return x_out.to(x.dtype)
 
 
@@ -391,7 +405,7 @@ class WanVideoDiT(torch.nn.Module):
             for _ in range(num_layers)
         ])
         self.head = Head(hidden_dim, out_dim, patch_size, eps)
-        self.freqs = precompute_freqs_cis_3d(attn_head_dim)
+        self._register_rope_cache(device=torch.device("cpu"))
         if has_ref_conv:
             self.ref_conv = nn.Conv2d(16, hidden_dim, kernel_size=(2, 2), stride=(2, 2))
         self.has_image_pos_emb = has_image_pos_emb
@@ -405,7 +419,42 @@ class WanVideoDiT(torch.nn.Module):
         self.use_gradient_checkpointing = use_gradient_checkpointing
         if self.use_gradient_checkpointing:
             logger.info("Using gradient checkpointing for DiT blocks. This will save memory but use more computation.")
-            
+
+    def _register_rope_cache(self, device: torch.device) -> None:
+        freqs_f, freqs_h, freqs_w = precompute_freqs_cis_3d(self.attn_head_dim)
+        self.register_buffer("freqs_f", freqs_f.to(device=device), persistent=False)
+        self.register_buffer("freqs_h", freqs_h.to(device=device), persistent=False)
+        self.register_buffer("freqs_w", freqs_w.to(device=device), persistent=False)
+        self.register_buffer(
+            "time_frequencies",
+            torch.pow(
+                10000,
+                -torch.arange(self.freq_dim // 2, dtype=torch.float64).div(self.freq_dim // 2),
+            ).to(device=device),
+            persistent=False,
+        )
+
+    def _apply(self, fn, recurse=True):
+        self._buffers.pop("freqs_f", None)
+        self._buffers.pop("freqs_h", None)
+        self._buffers.pop("freqs_w", None)
+        self._buffers.pop("time_frequencies", None)
+        super()._apply(fn, recurse=recurse)
+        param = next(self.parameters(), None)
+        device = param.device if param is not None else torch.device("cpu")
+        freqs_f, freqs_h, freqs_w = precompute_freqs_cis_3d(self.attn_head_dim)
+        self._buffers["freqs_f"] = freqs_f.to(device=device)
+        self._buffers["freqs_h"] = freqs_h.to(device=device)
+        self._buffers["freqs_w"] = freqs_w.to(device=device)
+        self._buffers["time_frequencies"] = torch.pow(
+            10000,
+            -torch.arange(self.freq_dim // 2, dtype=torch.float64).div(self.freq_dim // 2),
+        ).to(device=device)
+        return self
+
+    @property
+    def freqs(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return self.freqs_f, self.freqs_h, self.freqs_w
 
     def patchify(self, x: torch.Tensor, control_camera_latents_input: Optional[torch.Tensor] = None):
         x = self.patch_embedding(x)
@@ -416,11 +465,13 @@ class WanVideoDiT(torch.nn.Module):
         return x
 
     def unpatchify(self, x: torch.Tensor, grid_size: torch.Tensor):
-        return rearrange(
-            x, 'b (f h w) (x y z c) -> b c (f x) (h y) (w z)',
-            f=grid_size[0], h=grid_size[1], w=grid_size[2], 
-            x=self.patch_size[0], y=self.patch_size[1], z=self.patch_size[2]
-        )
+        f, h, w = int(grid_size[0]), int(grid_size[1]), int(grid_size[2])
+        patch_f, patch_h, patch_w = self.patch_size
+        batch_size = int(x.shape[0])
+        out_channels = int(x.shape[-1]) // int(patch_f * patch_h * patch_w)
+        x = x.view(batch_size, f, h, w, patch_f, patch_h, patch_w, out_channels)
+        x = x.permute(0, 7, 1, 4, 2, 5, 3, 6).contiguous()
+        return x.view(batch_size, out_channels, f * patch_f, h * patch_h, w * patch_w)
 
     def _validate_forward_inputs(
         self,
@@ -529,6 +580,7 @@ class WanVideoDiT(torch.nn.Module):
         action: Optional[torch.Tensor] = None,
         fuse_vae_embedding_in_latents: bool = False,
         control_camera_latents_input: Optional[torch.Tensor] = None,
+        context_embedding: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
         x, timestep, context_mask = self._validate_forward_inputs(
             x=x,
@@ -563,17 +615,33 @@ class WanVideoDiT(torch.nn.Module):
             ).clone()
             token_timesteps[:, 0, :] = 0
             token_timesteps = token_timesteps.reshape(batch_size, -1)
-            token_t_emb = sinusoidal_embedding_1d(self.freq_dim, token_timesteps.reshape(-1))
+            token_t_emb = sinusoidal_embedding_1d(
+                self.freq_dim,
+                token_timesteps.reshape(-1),
+                self.time_frequencies,
+            )
             t = self.time_embedding(token_t_emb).reshape(batch_size, -1, self.hidden_dim)
             t_mod = self.time_projection(t).unflatten(2, (6, self.hidden_dim))
         else:
             raise NotImplementedError("Only support seperated_timestep with fuse_vae_embedding_in_latents for now.")
-            t = self.time_embedding(sinusoidal_embedding_1d(self.freq_dim, timestep))
+            t = self.time_embedding(
+                sinusoidal_embedding_1d(self.freq_dim, timestep, self.time_frequencies)
+            )
             t_mod = self.time_projection(t).unflatten(1, (6, self.hidden_dim))
         x = self.patchify(x, control_camera_latents_input=control_camera_latents_input)
         f, h, w = x.shape[2:]
 
-        context = self.text_embedding(context) # (B, L, dim)
+        text_context_len = int(context.shape[1])
+        context = self.text_embedding(context) if context_embedding is None else context_embedding
+        if (
+            int(context.shape[0]) != int(batch_size)
+            or int(context.shape[1]) != text_context_len
+            or int(context.shape[2]) != int(self.hidden_dim)
+        ):
+            raise ValueError(
+                "`context_embedding` must match the text batch and video hidden dimension, "
+                f"got {tuple(context.shape)} and hidden_dim={self.hidden_dim}."
+            )
         context_len = context.shape[1]
         if self.action_conditioned and action is not None:
             action_len = action.shape[1]
@@ -615,7 +683,7 @@ class WanVideoDiT(torch.nn.Module):
         else:
             context_mask = context_mask.unsqueeze(1).expand(-1, f * h * w, -1) # (B, seq_len, L)
 
-        x_tokens = rearrange(x, "b c f h w -> b (f h w) c").contiguous()
+        x_tokens = x.permute(0, 2, 3, 4, 1).reshape(x.shape[0], -1, x.shape[1]).contiguous()
 
         freqs = torch.cat([
             self.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),

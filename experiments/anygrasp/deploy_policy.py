@@ -130,6 +130,12 @@ class FastWAMAnyGraspPolicy:
         seed: Optional[int] = None,
         rand_device: str = "cpu",
         tiled: bool = False,
+        compile_hierarchical: bool = False,
+        compile_cudagraphs: bool = True,
+        optimize_denoise_static: bool = True,
+        inference_backend: str = "inductor",
+        warmup: bool = True,
+        rtc_warmup: bool = False,
     ) -> None:
         self.cfg = cfg
         self.device = str(device)
@@ -190,6 +196,13 @@ class FastWAMAnyGraspPolicy:
         self.seed = seed
         self.rand_device = str(rand_device)
         self.tiled = bool(tiled)
+        self.compile_hierarchical = bool(compile_hierarchical)
+        self.compile_cudagraphs = bool(compile_cudagraphs)
+        self.optimize_denoise_static = bool(optimize_denoise_static)
+        self.inference_backend = str(inference_backend).strip().lower()
+        self.rtc_warmup = bool(rtc_warmup)
+        if self.inference_backend not in {"inductor", "tensorrt"}:
+            raise ValueError("inference_backend must be 'inductor' or 'tensorrt'.")
 
         self.image_key = str(self.processor.shape_meta["images"][0]["key"])
         self.state_key = str(self.processor.shape_meta["state"][0]["key"])
@@ -203,15 +216,115 @@ class FastWAMAnyGraspPolicy:
         self.num_video_frames = (int(cfg.data.train.num_frames) - 1) // int(cfg.data.train.action_video_freq_ratio) + 1
 
         self._frame_history: list[torch.Tensor] = []
+        self._last_frame_action_index: Optional[int] = None
         self._max_keyframe_history = 9
+        self._cached_prompt: Optional[str] = None
+        self._cached_context: Optional[torch.Tensor] = None
+        self._cached_context_mask: Optional[torch.Tensor] = None
+        self._prompt_cache_hits = 0
+        self._prompt_cache_misses = 0
+        self._warmup_info: Optional[dict[str, Any]] = None
+
+        if warmup:
+            info = self.warmup()
+            print(f"FastWAM AnyGrasp warmup completed in {info['warmup_s']:.3f}s", flush=True)
 
     def reset(self, options: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         del options
         self._frame_history.clear()
+        self._last_frame_action_index = None
         clear_reuse_cache = getattr(self.model, "clear_hierarchical_reuse_cache", None)
         if callable(clear_reuse_cache):
             clear_reuse_cache()
         return {"status": "ok"}
+
+    def warmup(self, instruction: str = "warm up") -> dict[str, Any]:
+        observation = {
+            "image": np.zeros((self.input_h, self.input_w, 3), dtype=np.uint8),
+            "state": np.zeros((self.state_dim,), dtype=np.float32),
+            "instruction": instruction,
+        }
+        start = time.perf_counter()
+        action, inference_info = self.get_action(observation)
+        rtc_info = None
+        if self.rtc_warmup:
+            prefix_steps = min(16, self.action_horizon - 1)
+            if prefix_steps <= 0:
+                raise ValueError("RTC warmup requires action_horizon > 1.")
+            _, rtc_info = self.get_action(
+                observation,
+                options={
+                    "rtc_prev_action_chunk": action[self.action_key][0, :prefix_steps],
+                    "rtc_inference_delay": min(10, prefix_steps),
+                    "rtc_prefix_horizon": prefix_steps,
+                    "rtc_prefix_attention_schedule": "exp",
+                    "rtc_max_guidance_weight": 5.0,
+                },
+            )
+        info: dict[str, Any] = {
+            "status": "ok",
+            "warmup_s": float(time.perf_counter() - start),
+            "inference": inference_info,
+        }
+        if rtc_info is not None:
+            info["rtc_inference"] = rtc_info
+        compile_status = getattr(self.model, "_compiled_hierarchical_status", None)
+        if self.compile_hierarchical and callable(compile_status):
+            info["compile"] = compile_status()
+        if self.inference_backend == "tensorrt":
+            validation = info.get("compile", {}).get("validation", {})
+            trt_validation = [value for key, value in validation.items() if key.startswith("tensorrt:")]
+            if not trt_validation or not all(bool(value.get("passed")) for value in trt_validation):
+                raise RuntimeError(
+                    "TensorRT warmup did not complete all output validation steps: "
+                    f"{info.get('compile', {})}"
+                )
+        self.reset()
+        self._warmup_info = info
+        return info
+
+    def _resolve_prompt_inputs(
+        self,
+        *,
+        prompt: str,
+        signature: dict[str, inspect.Parameter],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        encode_prompt = getattr(self.model, "encode_prompt", None)
+        enabled = "context" in signature and "context_mask" in signature and callable(encode_prompt)
+        cache_info = {
+            "enabled": enabled,
+            "hit": False,
+            "hits": self._prompt_cache_hits,
+            "misses": self._prompt_cache_misses,
+            "encode_s": 0.0,
+        }
+        if not enabled:
+            return {"prompt": prompt}, cache_info
+
+        if (
+            self._cached_prompt == prompt
+            and self._cached_context is not None
+            and self._cached_context_mask is not None
+        ):
+            self._prompt_cache_hits += 1
+            cache_info["hit"] = True
+        else:
+            start = time.perf_counter()
+            with torch.no_grad():
+                context, context_mask = encode_prompt(prompt)
+            cache_info["encode_s"] = time.perf_counter() - start
+            self._cached_prompt = prompt
+            self._cached_context = context.detach()
+            self._cached_context_mask = context_mask.detach()
+            self._prompt_cache_misses += 1
+
+        cache_info["hits"] = self._prompt_cache_hits
+        cache_info["misses"] = self._prompt_cache_misses
+        return {
+            "prompt": None,
+            "context": self._cached_context,
+            "context_mask": self._cached_context_mask,
+        }, cache_info
 
     def get_modality_config(self) -> dict[str, Any]:
         return {
@@ -277,7 +390,7 @@ class FastWAMAnyGraspPolicy:
                 arr_f = arr_f * 255.0
             arr = np.clip(arr_f, 0.0, 255.0).astype(np.uint8)
         image_pil = Image.fromarray(arr, mode="RGB").resize((self.input_w, self.input_h), resample=Image.BILINEAR)
-        return np.asarray(image_pil, dtype=np.uint8)
+        return np.array(image_pil, dtype=np.uint8, copy=True)
 
     def _image_to_tensor(self, image: np.ndarray) -> torch.Tensor:
         tensor = torch.from_numpy(np.ascontiguousarray(image)).permute(2, 0, 1).unsqueeze(0)
@@ -353,16 +466,38 @@ class FastWAMAnyGraspPolicy:
         denorm = normalizer.backward(action.to(dtype=torch.float32, device="cpu"))
         return denorm.numpy()
 
+    def _normalize_selected_action(self, action: Any) -> torch.Tensor:
+        tensor = torch.as_tensor(action, dtype=torch.float32, device="cpu")
+        if tensor.ndim == 2:
+            tensor = tensor.unsqueeze(0)
+        if tensor.ndim != 3 or int(tensor.shape[0]) != 1:
+            raise ValueError(
+                f"RTC action prefix must have shape [K,D] or [1,K,D], got {tuple(tensor.shape)}."
+            )
+        if int(tensor.shape[-1]) != self.action_dim:
+            raise ValueError(
+                f"RTC selected action dim must be {self.action_dim}, got {tensor.shape[-1]}."
+            )
+        if not bool(torch.isfinite(tensor).all()):
+            raise ValueError("RTC action prefix contains non-finite values.")
+        normalizer = self.processor.normalizer.normalizers["action"][self.action_key]
+        return normalizer.forward(tensor).to(device=self.device, dtype=self.model_dtype)
+
     def _selected_to_raw_action(self, selected_action: np.ndarray) -> np.ndarray:
         data = {"action": {self.action_key: torch.as_tensor(selected_action, dtype=torch.float32)}}
         for transform in reversed(self.processor.action_state_transforms or []):
             data = transform.backward(data)
         return data["action"][self.action_key].numpy()
 
-    def _get_padded_frame_history(self, current_frame: torch.Tensor) -> list[torch.Tensor]:
-        if len(self._frame_history) == 0 or not torch.equal(self._frame_history[-1], current_frame):
+    def _get_padded_frame_history(
+        self,
+        current_frame: torch.Tensor,
+        action_index: Optional[int] = None,
+    ) -> list[torch.Tensor]:
+        if action_index is None or action_index != self._last_frame_action_index:
             self._frame_history.append(current_frame.detach())
             self._frame_history = self._frame_history[-self._max_keyframe_history:]
+            self._last_frame_action_index = action_index
         frames = list(self._frame_history)
         if len(frames) < self._max_keyframe_history:
             frames = [frames[0]] * (self._max_keyframe_history - len(frames)) + frames
@@ -380,11 +515,54 @@ class FastWAMAnyGraspPolicy:
         proprio = self._normalize_state(state)
         instruction = self._extract_instruction(observation, options)
         prompt = DEFAULT_PROMPT.format(task=instruction)
+        compile_hierarchical = bool(options.get("compile_hierarchical", self.compile_hierarchical))
+        compile_cudagraphs = bool(options.get("compile_cudagraphs", self.compile_cudagraphs))
+        optimize_denoise_static = bool(options.get("optimize_denoise_static", self.optimize_denoise_static))
+        inference_backend = str(options.get("inference_backend", self.inference_backend)).strip().lower()
+        rtc_prefix_raw = options.get("rtc_prev_action_chunk")
+        rtc_active = not _is_none_like(rtc_prefix_raw)
+        rtc_prefix = None
+        rtc_inference_delay = 0
+        rtc_prefix_horizon = 0
+        rtc_schedule = str(options.get("rtc_prefix_attention_schedule", "exp")).lower()
+        rtc_max_guidance_weight = float(options.get("rtc_max_guidance_weight", 5.0))
+        if rtc_active:
+            rtc_prefix = self._normalize_selected_action(rtc_prefix_raw)
+            rtc_prefix_horizon = int(
+                options.get("rtc_prefix_horizon", int(rtc_prefix.shape[1]))
+            )
+            rtc_inference_delay = int(options.get("rtc_inference_delay", 0))
+            action_horizon = int(options.get("action_horizon", self.action_horizon))
+            if not 0 < rtc_prefix_horizon <= int(rtc_prefix.shape[1]) <= action_horizon:
+                raise ValueError(
+                    "RTC requires 0 < prefix_horizon <= prefix length <= action_horizon."
+                )
+            if rtc_inference_delay < 0:
+                raise ValueError("rtc_inference_delay must be non-negative.")
+            if rtc_schedule not in {"exp", "linear", "ones", "zeros"}:
+                raise ValueError(
+                    "rtc_prefix_attention_schedule must be exp/linear/ones/zeros."
+                )
+            if rtc_max_guidance_weight < 0:
+                raise ValueError("rtc_max_guidance_weight must be non-negative.")
+            if compile_cudagraphs:
+                raise ValueError(
+                    "RTC gradient guidance is incompatible with CUDA Graph capture; "
+                    "start the server with --no-compile-cudagraphs."
+                )
+            if inference_backend == "tensorrt":
+                raise ValueError(
+                    "RTC gradient guidance requires autograd and cannot use TensorRT."
+                )
 
         infer_action = getattr(self.model, "infer_action")
         signature = inspect.signature(infer_action).parameters
+        prompt_kwargs, cache_info = self._resolve_prompt_inputs(
+            prompt=prompt,
+            signature=signature,
+        )
         infer_kwargs: dict[str, Any] = {
-            "prompt": prompt,
+            **prompt_kwargs,
             "input_image": image_tensor,
             "action_horizon": int(options.get("action_horizon", self.action_horizon)),
             "proprio": proprio,
@@ -406,12 +584,27 @@ class FastWAMAnyGraspPolicy:
             "low_reuse_step": options.get("low_reuse_step", self.low_reuse_step),
             "action_inference_steps": options.get("action_inference_steps", self.action_inference_steps),
             "joint_denoise": bool(options.get("joint_denoise", self.joint_denoise)),
+            "compile_hierarchical": compile_hierarchical,
+            "compile_cudagraphs": compile_cudagraphs,
+            "optimize_denoise_static": optimize_denoise_static,
+            "inference_backend": inference_backend,
+            "rtc_prev_action_chunk": rtc_prefix,
+            "rtc_inference_delay": rtc_inference_delay,
+            "rtc_prefix_horizon": rtc_prefix_horizon,
+            "rtc_prefix_attention_schedule": rtc_schedule,
+            "rtc_max_guidance_weight": rtc_max_guidance_weight,
         }
         for key, value in optional_kwargs.items():
             if key in signature:
                 infer_kwargs[key] = value
         if "observed_chunk_videos" in signature:
-            infer_kwargs["observed_chunk_videos"] = self._get_padded_frame_history(image_tensor[0])
+            observation_action_index = options.get("observation_action_index")
+            infer_kwargs["observed_chunk_videos"] = self._get_padded_frame_history(
+                image_tensor[0],
+                None
+                if _is_none_like(observation_action_index)
+                else int(observation_action_index),
+            )
 
         start = time.perf_counter()
         with torch.no_grad():
@@ -446,5 +639,22 @@ class FastWAMAnyGraspPolicy:
             "model_variant": "hierarchical" if self.is_hierarchical_model else "native",
             "image_key": self.image_key,
             "state_key": self.state_key,
+            "prompt_cache": cache_info,
+            "compile_hierarchical": compile_hierarchical,
+            "compile_cudagraphs": compile_cudagraphs,
+            "optimize_denoise_static": optimize_denoise_static,
+            "inference_backend": inference_backend,
+            "rtc": {
+                "enabled": rtc_active,
+                "prefix_steps": 0 if rtc_prefix is None else int(rtc_prefix.shape[1]),
+                "inference_delay_steps": rtc_inference_delay,
+                "prefix_horizon": rtc_prefix_horizon,
+                "prefix_attention_schedule": rtc_schedule,
+                "max_guidance_weight": rtc_max_guidance_weight,
+                "guidance_phase": "action_only",
+            },
         }
+        compile_status = getattr(self.model, "_compiled_hierarchical_status", None)
+        if compile_hierarchical and callable(compile_status):
+            info["compile"] = compile_status()
         return action_dict, info

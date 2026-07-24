@@ -2,6 +2,274 @@
 
 本文档用于部署 AnyGrasp 的两类 checkpoint：FastWAM 原生模型 `real_anygrasp_v2_uncond_1cam_384_1e-4` 和 hierarchical 模型 `real_anygrasp_v2_hierarchical_1cam_384_1e-4`。当前部署方式参考 GR00T 的 server/client 范式：GPU 机器常驻 policy server，机器人控制端通过 ZMQ client 发送观测并接收 action chunk。
 
+## 0. 当前 GR3 一体化部署启动流程
+
+以下流程是当前实验室 GR3 + FastWAM + Dagger + QNexo 外骨骼链路的日常启动方式。模型工程位于：
+
+```text
+/home/fourier/xingyu/Hierarchical_WAM
+```
+
+真机控制工程位于：
+
+```text
+/home/fourier/dagger-gr3
+```
+
+### 0.1 启动前检查
+
+1. 机器人已经上电。
+2. 已经 SSH 进入机器人并启动机器人侧 Aurora/控制服务。
+3. 主机能够连接 `ROBOT_ID=115`。
+4. OAK 相机、QNexo 外骨骼和脚踏已经连接。
+5. GPU 上没有另一个进程占用 FastWAM 服务端口 `5555`。
+
+机器人侧服务不属于这两个仓库，启动命令以机器人系统当前配置为准，不在本文档中虚构命令。
+
+主机设备检查：
+
+```bash
+ls -l /dev/qnbot
+ls -l /dev/input/by-id/usb-PCsensor_FootSwitch-event-kbd
+ss -ltnp | grep ':5555' || true
+nvidia-smi
+```
+
+如果 `5555` 已经由正确的 FastWAM 进程监听，不要重复启动模型服务。
+
+### 0.2 首次安装或依赖更新
+
+FastWAM 模型服务使用 Python 3.10 Conda 环境 `fastwam`：
+
+```bash
+source /home/fourier/miniconda3/etc/profile.d/conda.sh
+conda activate fastwam
+cd /home/fourier/xingyu/Hierarchical_WAM
+python --version
+which python
+```
+
+期望解释器为：
+
+```text
+/home/fourier/miniconda3/envs/fastwam/bin/python
+```
+
+如果环境尚未安装，按本文档第 1 节完成安装。
+
+Dora 真机控制链路使用 `/home/fourier/dagger-gr3/.venv`，首次安装或代码依赖更新后执行：
+
+```bash
+cd /home/fourier/dagger-gr3
+./scripts/setup_local.sh
+./scripts/check.sh
+```
+
+日常上电测试不需要重复运行 `setup_local.sh` 和 `check.sh`。
+
+### 0.3 终端一：启动 FastWAM 模型服务
+
+先激活模型 Conda 环境：
+
+```bash
+source /home/fourier/miniconda3/etc/profile.d/conda.sh
+conda activate fastwam
+cd /home/fourier/xingyu/Hierarchical_WAM
+```
+
+推荐通过真机工程中固化的启动脚本启动。脚本内部使用 `fastwam` 环境的绝对 Python 路径，因此不会误用 Dora 的 Python 3.13 环境：
+
+```bash
+cd /home/fourier/dagger-gr3
+./scripts/start_fastwam_server.sh
+```
+
+默认配置：
+
+```text
+checkpoint: /home/fourier/xingyu/checkpoints/checkpoints_wan_710/step_020650.pt
+dataset stats: /home/fourier/xingyu/checkpoints/checkpoints_wan_710/dataset_stats.json
+task config: real_anygrasp_v2_hierarchical_1cam_384_1e-4
+endpoint: tcp://127.0.0.1:5555
+device: cuda:0
+precision: bf16
+high denoise step: 5
+low denoise step: 5
+joint denoise: enabled
+torch.compile: enabled
+CUDA Graph: disabled (RTC 需要 autograd)
+inference backend: inductor
+text encoder offload: enabled
+RTC warmup: enabled
+```
+
+第一次启动需要完成模型加载、`torch.compile`、普通推理和 RTC VJP 预热。必须等待：
+
+```text
+FastWAM AnyGrasp server is ready on tcp://127.0.0.1:5555
+```
+
+后台启动方式：
+
+```bash
+cd /home/fourier/dagger-gr3
+./scripts/start_fastwam_server.sh --background
+tail -f logs/fastwam-server.log
+```
+
+如需直接从模型仓库调试服务端，等价命令为：
+
+```bash
+source /home/fourier/miniconda3/etc/profile.d/conda.sh
+conda activate fastwam
+cd /home/fourier/xingyu/Hierarchical_WAM
+
+python scripts/run_anygrasp_server.py \
+  --ckpt /home/fourier/xingyu/checkpoints/checkpoints_wan_710/step_020650.pt \
+  --task real_anygrasp_v2_hierarchical_1cam_384_1e-4 \
+  --dataset-stats-path /home/fourier/xingyu/checkpoints/checkpoints_wan_710/dataset_stats.json \
+  --host 127.0.0.1 \
+  --port 5555 \
+  --device cuda:0 \
+  --mixed-precision bf16 \
+  --high-denoise-step 5 \
+  --low-denoise-step 5 \
+  --joint-denoise \
+  --compile-hierarchical \
+  --no-compile-cudagraphs \
+  --optimize-denoise-static \
+  --inference-backend inductor \
+  --rtc-warmup \
+  --config-override +model.offload_text_encoder=true
+```
+
+三种编译模式：
+
+```bash
+# RTC 默认：torch.compile + Inductor，保留 autograd
+./scripts/start_fastwam_server.sh
+
+# 关闭 RTC 后使用 torch.compile + CUDA Graph
+FASTWAM_RTC_ENABLED=0 FASTWAM_COMPILE_CUDAGRAPHS=1 \
+./scripts/start_fastwam_server.sh
+
+# 完全使用 eager
+./scripts/start_fastwam_server.sh \
+  --no-compile-hierarchical \
+  --no-compile-cudagraphs
+
+# 实验性 TensorRT：joint/video 阶段仍使用 Inductor，固定 video cache 后的 action-only 阶段使用 TensorRT
+FASTWAM_INFERENCE_BACKEND=tensorrt \
+FASTWAM_RTC_ENABLED=0 \
+./scripts/start_fastwam_server.sh
+```
+
+TensorRT 模式不会改变 checkpoint、采样步数或 action scheduler。它只替换 action-only 热路径；编译失败时自动回退到 Inductor。第一次启动会在 warmup 中构建引擎，并用 5 个不同去噪步逐步比对 eager 输出，误差超限会禁用 TensorRT，因此该模式不允许关闭 warmup。必须等到 server ready 后再启动 Dora；真机启用前仍应完成限速单步测试。
+
+RTC 的 VJP 需要 autograd，因此不能同时启用 CUDA Graph 或 TensorRT。当前 24 GB GPU 部署只在 action-only refinement（默认去噪第 6-10 步）执行精确 VJP；前 5 个 joint video/action 步保持原模型前向，避免为 5B 视频分支保留反向激活导致显存不足。
+
+RTC 的 prefix schedule、VJP correction 和异步队列替换语义分别对齐 [Physical Intelligence 官方实现](https://github.com/Physical-Intelligence/real-time-chunking-kinetix) 与 [LeRobot RTC](https://huggingface.co/docs/lerobot/en/rtc)。FastWAM 适配在模型归一化后的 31 维 selected action 空间内计算 guidance，client 最终仍下发反归一化后的 GR3 绝对关节角。
+
+### 0.4 终端二：启动完整 Dora 真机链路
+
+模型服务显示 ready 后再启动：
+
+```bash
+cd /home/fourier/dagger-gr3
+
+ROBOT_ID=115 \
+ACTION_CHUNK_SIZE=32 \
+ENABLE_DAGGER_RECORDING=0 \
+TASK='Pick the tomato from the table and place it inside the basket on the left.' \
+./scripts/run_fastwam_dagger.sh
+```
+
+`run_fastwam_dagger.sh` 会检查模型端口、脚踏、Python 节点和 recorder，然后一次性启动：
+
+- OAK 相机，原始画面旋转 180 度；
+- 相机可视化窗口；
+- FastWAM policy client；
+- Dagger router；
+- QNexo 外骨骼；
+- 脚踏接管；
+- Teleop 真机控制；
+- 数据记录器。
+
+这些节点不需要分别启动。Dora 使用项目自己的 `.venv`，不依赖终端当前激活的 Conda 环境。
+
+常用参数：
+
+```text
+ROBOT_ID=115                    机器人 Aurora domain ID
+ACTION_CHUNK_SIZE=32            每次实际执行的 action chunk 长度，必须为正整数
+FASTWAM_RTC_ENABLED=1           1 启用异步 RTC，0 使用原队列耗尽后再推理
+FASTWAM_RTC_PREFIX_STEPS=16     剩余 16 步时请求；也是 prefix/keyframe 周期
+FASTWAM_RTC_INFERENCE_DELAY_STEPS=10  首次 guidance 的预计推理延迟
+FASTWAM_RTC_MAX_GUIDANCE_WEIGHT=5.0   官方 RTC guidance 权重上限
+ENABLE_DAGGER_RECORDING=0       0 不保存，1 在首次脚踏接管后开始保存
+DAGGER_RECORD_DIR=...           数据保存根目录
+TASK=...                        模型 prompt
+FOOTSWITCH_DEVICE=...           脚踏 event 设备
+MAX_JOINT_STEP_RAD=0.15         每周期关节变化保护阈值
+```
+
+需要保存接管到 episode 结尾的数据时：
+
+```bash
+cd /home/fourier/dagger-gr3
+
+ROBOT_ID=115 \
+ACTION_CHUNK_SIZE=32 \
+ENABLE_DAGGER_RECORDING=1 \
+DAGGER_RECORD_DIR=/home/fourier/dagger-gr3/data \
+TASK='Pick the tomato from the table and place it inside the basket on the left.' \
+./scripts/run_fastwam_dagger.sh
+```
+
+模型启动不会立即保存。当前 episode 第一次踩下脚踏时才开始记录，松开脚踏后继续保存模型恢复阶段，结束 episode 时完成落盘。
+
+### 0.5 真机操作顺序
+
+1. 启动 Dora 后，机器人不会自动开始模型控制。
+2. 单击右手白键：机器人回到初始位置并进入准备状态。
+3. 单击右手蓝键：开始连续模型控制。
+4. 踩下脚踏：QNexo 外骨骼接管。
+5. 松开脚踏：恢复模型控制。
+6. 单击左手蓝键：执行一个 `ACTION_CHUNK_SIZE` 长度的单步 chunk，完成后进入 HOLD。
+7. 单击右手红键：停止 episode，进入 `disengaged / PdStand`。
+8. 下一次测试必须再次单击右手白键准备，然后再按蓝键。
+9. 左手红键用于正常结束：平滑回到初始位置后进入 `disengaged / PdStand`。
+
+按钮均为单击，不需要长按。
+
+### 0.6 正确停止顺序
+
+1. 先按右手红键或左手红键结束 episode。
+2. 确认机器人已经进入 `disengaged / PdStand`。
+3. 在 Dora 终端按 `Ctrl-C`，等待所有节点退出。
+4. 最后在前台模型服务终端按 `Ctrl-C`。
+
+后台模型服务停止前先核对 PID：
+
+```bash
+fastwam_server_pid="$(cat /home/fourier/dagger-gr3/logs/fastwam-server.pid)"
+ps -fp "${fastwam_server_pid}"
+kill -TERM "${fastwam_server_pid}"
+```
+
+不要在机器人仍由模型或外骨骼控制时直接杀死 Dora。
+
+### 0.7 最短日常启动清单
+
+```text
+1. 机器人上电，SSH 启动机器人侧服务。
+2. 主机终端一激活 conda fastwam。
+3. 运行 dagger-gr3/scripts/start_fastwam_server.sh。
+4. 等待 FastWAM server ready。
+5. 主机终端二运行 dagger-gr3/scripts/run_fastwam_dagger.sh。
+6. 右白准备，右蓝连续模型控制，脚踏接管，红键结束。
+```
+
 ## 1. Conda 环境
 
 按照主 README 配置 FastWAM 环境：
@@ -15,6 +283,14 @@ pip install -e .
 ```
 
 `pip install -e .` 会安装 server/client 需要的 `pyzmq`、`msgpack`、`msgpack-numpy` 等依赖。
+
+需要实验性 TensorRT action 后端时，在已有 PyTorch 2.7.1 环境中额外执行：
+
+```bash
+pip install --no-cache-dir -e '.[tensorrt]'
+```
+
+当前固定组合为 Torch-TensorRT 2.7.0 + TensorRT 10.9.0.34；不要单独升级 TensorRT 或 PyTorch 后继续沿用旧引擎。
 
 如果机器人控制端只运行轻量 client，可以只安装：
 

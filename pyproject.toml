@@ -43,6 +43,12 @@ dependencies = [
   "wandb==0.23.1",
 ]
 
+[project.optional-dependencies]
+tensorrt = [
+  "torch-tensorrt==2.7.0",
+  "tensorrt==10.9.0.34",
+]
+
 [tool.setuptools.package-dir]
 "" = "src"
 
