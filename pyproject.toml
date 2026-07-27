@@ -49,6 +49,26 @@ tensorrt = [
   "tensorrt==10.9.0.34",
 ]
 
+[tool.uv.sources]
+tensorrt-cu12-libs = { index = "nvidia-pypi" }
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "nvidia-pypi"
+url = "https://pypi.nvidia.com"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.dependency-metadata]]
+name = "tensorrt-cu12-libs"
+version = "10.9.0.34"
+requires-dist = ["nvidia-cuda-runtime-cu12"]
+
 [tool.setuptools.package-dir]
 "" = "src"
 
