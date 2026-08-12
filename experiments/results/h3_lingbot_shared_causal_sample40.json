@@ -22,7 +22,14 @@
     "action_improvement_percent": 0.2698878443310161,
     "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt"
   },
+  "adapter_only_step100": {
+    "video_reconstruction_mse": 0.7023414164781571,
+    "action_reconstruction_mse": 1.258166605234146,
+    "video_change_vs_initialization_percent": -0.974505620852262,
+    "action_improvement_percent": 0.05348488158838895,
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/adapter_only_s100.pt"
+  },
   "decision": "GO_CLOSED_LOOP_ENGINEERING_CANARY",
-  "rationale": "Both generated modalities improve over identical initialization without clean-future leakage. Action gain is small, so only a minimal LIBERO rollout and sampler/server validation are authorized; GO_LONG remains false.",
+  "rationale": "Both generated modalities improve over identical initialization without clean-future leakage, while adapter-only is effectively flat. H3 tail updates are therefore important for generated video and weakly positive for generated action. Action gain is small, so only a minimal LIBERO rollout and sampler/server validation are authorized; GO_LONG remains false.",
   "claim_limit": "Open-loop reconstruction on held-out demonstrations; not a closed-loop success result."
 }

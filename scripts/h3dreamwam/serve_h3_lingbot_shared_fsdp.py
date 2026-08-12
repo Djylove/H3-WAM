@@ -36,6 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--actions-per-chunk", type=int, default=4)
     parser.add_argument("--target-latent-frames", type=int, default=12)
     parser.add_argument("--sample-steps", type=int, default=4)
+    parser.add_argument("--video-sample-steps", type=int, default=0)
+    parser.add_argument("--action-sample-steps", type=int, default=0)
     parser.add_argument("--last-trainable-layers", type=int, default=2)
     parser.add_argument("--binarize-gripper", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--clip-normalized-actions", action=argparse.BooleanOptionalAction, default=True)
@@ -148,8 +150,13 @@ def main() -> None:
     language_to_context = task_contexts(args.manifest.resolve())
     context_cache = {}
     patch_size = tuple(model.module.h3.config.patch_size)
-    schedule = build_h3dream_inference_schedule(
-        args.sample_steps, device=device, video_shift=12.0, action_shift=0.05
+    video_schedule = build_h3dream_inference_schedule(
+        args.video_sample_steps or args.sample_steps,
+        device=device, video_shift=12.0, action_shift=0.05
+    )
+    action_schedule = build_h3dream_inference_schedule(
+        args.action_sample_steps or args.sample_steps,
+        device=device, video_shift=12.0, action_shift=0.05
     )
     vae = None
     if rank == 0:
@@ -192,7 +199,11 @@ def main() -> None:
             }),
             stats["state_min"], stats["state_max"],
         ).clamp(-1, 1)
-        return first.float(), state.to(device).float(), time.perf_counter() - encode_started
+        return (
+            first.to(device=device, dtype=torch.float32),
+            state.to(device=device, dtype=torch.float32),
+            time.perf_counter() - encode_started,
+        )
 
     def policy_forward(task: str, first: torch.Tensor, state: torch.Tensor, seed: int):
         context_id, conditioning = load_context(task)
@@ -252,7 +263,9 @@ def main() -> None:
             predict_velocity=predict, initial_video_rows=initial_video,
             observed_video_mask=observed, video_chunk_ids=video_chunks,
             initial_actions=torch.randn((1, args.action_horizon, 7), generator=generator, device=device),
-            action_chunk_ids=action_chunks, video_schedule=schedule, action_schedule=schedule,
+            action_chunk_ids=action_chunks,
+            video_schedule=video_schedule,
+            action_schedule=action_schedule,
         )
         torch.cuda.synchronize(device)
         return sampled.actions[0], context_id, time.perf_counter() - inference_started
@@ -265,6 +278,8 @@ def main() -> None:
             args.ready_file.resolve().write_text(json.dumps({
                 "ready": True, "policy": "h3_lingbot_shared_fsdp",
                 "world_size": world_size, "sample_steps": args.sample_steps,
+                "video_sample_steps": args.video_sample_steps or args.sample_steps,
+                "action_sample_steps": args.action_sample_steps or args.sample_steps,
                 "action_horizon": args.action_horizon, "load_seconds": load_seconds,
                 "stage": str(args.stage.resolve()),
             }, indent=2))

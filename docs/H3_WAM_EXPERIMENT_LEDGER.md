@@ -43,6 +43,7 @@
 | E18 | shared-H3 s100→s200 扩展门 | 续训100 steps、下一批800 windows、其余协议固定 | val40 action `1.245850`（较初始化改善 `0.856%`）；video `0.160928`（改善 `5.076%`） | 尚未放行 | 通过预注册 `0.75%` offline 门；仍是 teacher-forced，不是部署证据 |
 | E19 | adapter-only 配对消融 | 与 E17 同 seed/首800 windows/100 steps；冻结全部 H3 block 与 video output | val40 action `1.252830`（改善 `0.301%`）；video `0.169371`（改善 `0.096%`） | 不适用 | tail-2 比 adapter-only 仅多改善 `0.152` 个百分点，未达预注册 `0.25`；不能声称尾层更新是主要贡献 |
 | E20 | shared-H3 无泄漏逐 chunk sample40 | 8 chunks；每 chunk video 4步→提交→action 4步→提交；未来 clean key 完全屏蔽 | 生成 video MSE `0.695563 → 0.627430`（改善 `9.795%`）；action `1.258840 → 1.255442`（改善 `0.270%`） | 尚未放行 | 双模态生成信号为正，放行最小闭环工程 canary；动作增益小，仍非 `GO_LONG` |
+| E21 | shared-H3 首次闭环工程门 | s200、goal task3/trial0、sample4、replan32、max80 | 3次 replan；动作有限、零饱和；平均推理 `71.90s` | `0/1`；物体最大位移约 `1e-16` | 服务/FSDP/VAE/仿真链路通过，但未产生有效物体交互；`NO_GO_LONG` |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -85,6 +86,14 @@ E20 已补齐这一缺口。采样器显式维护 clean stream validity mask，�
 s200 对生成 video/action MSE 均优于未训练初始化，说明 teacher-forced 改善没有在自由生成时完全消失。
 不过 action 改善仅 `0.270%`，因此只允许接通服务端和跑最小 LIBERO 闭环工程 canary，不允许据此
 增加训练步数、宣称泛化或启动全量微调。
+
+adapter-only 的相同无泄漏 sample40 为 video/action `0.702341/1.258167`，基本等于初始化，故
+tail-2 更新对生成式 world 分支的贡献已得到比 teacher-forced MSE 更清晰的支持。E21 随后首次
+打通 shared-H3 闭环服务：模型 READY 后在真实 LIBERO 环境完成 3 次 replan 和 80 steps，动作均
+finite，归一化动作无饱和，平均环境动作幅度 `0.405`；但 task3 `0/1`，所有物体 joint 位移都在
+`1e-16` 量级。非 KV-cache 的完整历史重算耗时 `71.90s/replan`。因此 E21 只通过工程链路门，
+没有通过策略效果门。下一对照固定 checkpoint，改用官方 LIBERO 配置的 video/action denoise
+steps `20/50`，判断 sample4 是否是动作质量瓶颈；同时仅保留再 100 steps 的 s300 bounded canary。
 
 ## 2026-08-12 活跃长线
 

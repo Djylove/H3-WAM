@@ -46,6 +46,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--replan-steps", type=int, default=10)
     parser.add_argument("--action-horizon", type=int, default=32)
     parser.add_argument("--sample-steps", type=int, default=10)
+    parser.add_argument("--video-sample-steps", type=int, default=0)
+    parser.add_argument("--action-sample-steps", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--save-video", action="store_true")
@@ -86,6 +88,8 @@ def server_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
             "--ready-file", str(ready_file),
             "--action-horizon", str(args.action_horizon),
             "--sample-steps", str(args.sample_steps),
+            "--video-sample-steps", str(args.video_sample_steps),
+            "--action-sample-steps", str(args.action_sample_steps),
             "--binarize-gripper" if args.binarize_gripper else "--no-binarize-gripper",
             "--clip-normalized-actions" if args.clip_normalized_actions else "--no-clip-normalized-actions",
         ]
@@ -243,6 +247,8 @@ def main() -> None:
         "replan_steps": args.replan_steps,
         "action_horizon": args.action_horizon,
         "sample_steps": args.sample_steps,
+        "video_sample_steps": args.video_sample_steps or args.sample_steps,
+        "action_sample_steps": args.action_sample_steps or args.sample_steps,
         "clip_normalized_actions": args.clip_normalized_actions,
         "fixed_noise_seed": args.fixed_noise_seed,
         "tasks": [],

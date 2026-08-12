@@ -1,0 +1,216 @@
+{
+  "policy": "h3_lingbot_shared_fsdp",
+  "model": "/mnt/h3-wam/models/MiniMax-H3",
+  "action_stage": null,
+  "lingbot_shared_stage": "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt",
+  "h3_joint_stage": null,
+  "manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl",
+  "suite": "libero_goal",
+  "task_ids": [
+    3
+  ],
+  "trial_indices": [
+    0
+  ],
+  "max_steps": 80,
+  "wait_steps": 30,
+  "env_resolution": 256,
+  "replan_steps": 32,
+  "action_horizon": 32,
+  "sample_steps": 4,
+  "clip_normalized_actions": true,
+  "fixed_noise_seed": null,
+  "tasks": [
+    {
+      "task_id": 3,
+      "task": "open the top drawer and put the bowl inside",
+      "episodes": [
+        {
+          "success": false,
+          "steps": 80,
+          "replans": 3,
+          "context_id": "task_7bfd2c16634155c7",
+          "first_environment_action": null,
+          "first_environment_action_chunk": null,
+          "replan_first_actions": [
+            null,
+            null,
+            null
+          ],
+          "selected_action_modes": [
+            null,
+            null,
+            null
+          ],
+          "selected_action_mode_sources": [
+            null,
+            null,
+            null
+          ],
+          "action_mode_probabilities": [
+            null,
+            null,
+            null
+          ],
+          "action_head_selected_indices": [
+            null,
+            null,
+            null
+          ],
+          "action_head_motion_disagreements": [
+            null,
+            null,
+            null
+          ],
+          "action_head_gripper_disagreements": [
+            null,
+            null,
+            null
+          ],
+          "action_head_switch_gate_probabilities": [
+            null,
+            null,
+            null
+          ],
+          "mean_policy_roundtrip_seconds": 72.10616095565881,
+          "mean_model_inference_seconds": 71.89626999308045,
+          "mean_vae_encode_seconds": 0.15790877964658043,
+          "total_context_encode_seconds": 0.0,
+          "peak_allocated_gib": 0.0,
+          "action_saturation_fraction": 0.0,
+          "mean_action_magnitude": 0.404617836078008,
+          "use_action_ensembler": false,
+          "mean_temporal_ensemble_predictions": 0.0,
+          "initial_object_joints": {
+            "akita_black_bowl_1_joint0": [
+              -0.08038765935249238,
+              0.014455817695702143,
+              0.898404150188853,
+              0.7071067829265477,
+              -2.7755353462557652e-05,
+              3.3351593355933972e-06,
+              0.7071067788939557
+            ],
+            "cream_cheese_1_joint0": [
+              -0.048813758346758634,
+              0.1478809019857227,
+              0.9089069548372153,
+              1.925131471481338e-33,
+              -4.183893177916749e-18,
+              2.102703774955889e-17,
+              1.0
+            ],
+            "wine_bottle_1_joint0": [
+              -0.21052296092700717,
+              -0.03542588388936447,
+              0.8988609548408878,
+              1.111174216964887e-08,
+              -1.2452378421676712e-05,
+              7.784437494246644e-07,
+              0.9999999999221666
+            ],
+            "plate_1_joint0": [
+              0.03524216437252749,
+              -0.011965910598425425,
+              0.9024998346667837,
+              0.7071068091221641,
+              -2.6609958600369963e-05,
+              1.2067212470616604e-05,
+              0.7071067526472675
+            ],
+            "wooden_cabinet_1_top_level": [
+              0.0
+            ],
+            "wooden_cabinet_1_middle_level": [
+              0.0
+            ],
+            "wooden_cabinet_1_bottom_level": [
+              0.0
+            ],
+            "flat_stove_1_button": [
+              0.0
+            ]
+          },
+          "final_object_joints": {
+            "akita_black_bowl_1_joint0": [
+              -0.08038765935249238,
+              0.014455817695702143,
+              0.898404150188853,
+              0.7071067829265477,
+              -2.7755353462574555e-05,
+              3.3351593355754672e-06,
+              0.7071067788939557
+            ],
+            "cream_cheese_1_joint0": [
+              -0.048813758346758634,
+              0.1478809019857227,
+              0.9089069548372153,
+              1.3813878606893615e-31,
+              5.964185980124337e-17,
+              -1.635407944754468e-17,
+              1.0
+            ],
+            "wine_bottle_1_joint0": [
+              -0.21052296092700717,
+              -0.03542588388936447,
+              0.8988609548408878,
+              1.1111742169256535e-08,
+              -1.2452378421678842e-05,
+              7.784437494258446e-07,
+              0.9999999999221666
+            ],
+            "plate_1_joint0": [
+              0.03524216437252749,
+              -0.011965910598425425,
+              0.9024998346667837,
+              0.7071068091221641,
+              -2.660995860051189e-05,
+              1.20672124707539e-05,
+              0.7071067526472675
+            ],
+            "wooden_cabinet_1_top_level": [
+              0.0
+            ],
+            "wooden_cabinet_1_middle_level": [
+              0.0
+            ],
+            "wooden_cabinet_1_bottom_level": [
+              0.0
+            ],
+            "flat_stove_1_button": [
+              0.0
+            ]
+          },
+          "max_object_joint_delta": {
+            "akita_black_bowl_1_joint0": 8.2135090829355e-17,
+            "cream_cheese_1_joint0": 7.74316165122922e-17,
+            "wine_bottle_1_joint0": 5.031375706690544e-18,
+            "plate_1_joint0": 1.4592683615297086e-16,
+            "wooden_cabinet_1_top_level": 0.0,
+            "wooden_cabinet_1_middle_level": 0.0,
+            "wooden_cabinet_1_bottom_level": 0.0,
+            "flat_stove_1_button": 0.0
+          },
+          "trial": 0,
+          "trajectory": "/mnt/h3-wam/outputs/eval-lingbot-shared/s200_goal_task3_trial0/task03_trial00_trajectory.npz",
+          "video": "/mnt/h3-wam/outputs/eval-lingbot-shared/s200_goal_task3_trial0/task03_trial00_success0.mp4"
+        }
+      ],
+      "successes": 0,
+      "success_rate": 0.0
+    }
+  ],
+  "server": {
+    "ready": true,
+    "policy": "h3_lingbot_shared_fsdp",
+    "world_size": 8,
+    "sample_steps": 4,
+    "action_horizon": 32,
+    "load_seconds": 20.99187872908078,
+    "stage": "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt"
+  },
+  "successes": 0,
+  "episodes": 1,
+  "success_rate": 0.0,
+  "duration_seconds": 312.5597493040841
+}

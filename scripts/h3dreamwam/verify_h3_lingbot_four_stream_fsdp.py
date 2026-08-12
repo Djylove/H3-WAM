@@ -46,6 +46,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mask-clean-future", action="store_true")
     parser.add_argument("--sample-eval", action="store_true")
     parser.add_argument("--sample-steps", type=int, default=4)
+    parser.add_argument("--video-sample-steps", type=int, default=0)
+    parser.add_argument("--action-sample-steps", type=int, default=0)
     parser.add_argument("--eval-limit", type=int, default=0)
     parser.add_argument(
         "--shared-backbone",
@@ -238,8 +240,13 @@ def main() -> None:
         raise ValueError("mask-clean-future is an evaluation-only intervention")
     if args.sample_eval and (not args.eval_only or not args.shared_backbone):
         raise ValueError("sample-eval requires eval-only and shared-backbone")
-    if args.sample_steps <= 0 or args.eval_limit < 0:
-        raise ValueError("sample-steps must be positive and eval-limit non-negative")
+    if (
+        args.sample_steps <= 0
+        or args.video_sample_steps < 0
+        or args.action_sample_steps < 0
+        or args.eval_limit < 0
+    ):
+        raise ValueError("sample step counts must be positive/default-zero and eval-limit non-negative")
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
@@ -637,8 +644,14 @@ def main() -> None:
                 clean_action_timestep=torch.ones_like(sigma),
             )
         if args.sample_eval:
-            schedule = build_h3dream_inference_schedule(
-                args.sample_steps,
+            video_schedule = build_h3dream_inference_schedule(
+                args.video_sample_steps or args.sample_steps,
+                device=device,
+                video_shift=12.0,
+                action_shift=0.05,
+            )
+            action_schedule = build_h3dream_inference_schedule(
+                args.action_sample_steps or args.sample_steps,
                 device=device,
                 video_shift=12.0,
                 action_shift=0.05,
@@ -687,8 +700,8 @@ def main() -> None:
                 video_chunk_ids=video_chunks,
                 initial_actions=batch["initial_action"],
                 action_chunk_ids=action_chunks,
-                video_schedule=schedule,
-                action_schedule=schedule,
+                video_schedule=video_schedule,
+                action_schedule=action_schedule,
             )
             video_loss = F.mse_loss(
                 sampled.video_rows[:, future].float(),
@@ -871,6 +884,8 @@ def main() -> None:
             "mask_clean_future": args.mask_clean_future,
             "sample_eval": args.sample_eval,
             "sample_steps": args.sample_steps,
+            "video_sample_steps": args.video_sample_steps or args.sample_steps,
+            "action_sample_steps": args.action_sample_steps or args.sample_steps,
             "eval_limit": args.eval_limit,
             "initialization": initialization,
         }
