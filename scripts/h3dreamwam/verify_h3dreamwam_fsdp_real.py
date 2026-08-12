@@ -87,6 +87,22 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--bidirectional-action-video",
+        action="store_true",
+        help=(
+            "Enable the LingBot-VA-style action-to-future-video attention route. "
+            "Observation rows remain isolated from action K/V."
+        ),
+    )
+    parser.add_argument(
+        "--train-action-to-video-gates",
+        action="store_true",
+        help=(
+            "Optimize zero-initialized action-to-future-video gates in the "
+            "selected ActionDiT tail."
+        ),
+    )
+    parser.add_argument(
         "--train-video-residual-adapters",
         action="store_true",
         help="Train zero-output low-rank video adapters in the selected ActionDiT tail.",
@@ -244,6 +260,7 @@ def gradient_norm_groups(model: torch.nn.Module, device: torch.device) -> dict[s
     names = (
         "h3",
         "video_gate",
+        "action_to_video_gate",
         "modulation",
         "action_time",
         "action_output",
@@ -258,6 +275,8 @@ def gradient_norm_groups(model: torch.nn.Module, device: torch.device) -> dict[s
             group = "h3"
         elif name.endswith(".action_block.video_residual_gate"):
             group = "video_gate"
+        elif name.endswith(".action_block.action_to_video_gate"):
+            group = "action_to_video_gate"
         elif ".modulation" in name:
             group = "modulation"
         elif any(
@@ -291,17 +310,18 @@ def global_parameter_count(
     return int(count)
 
 
-def video_gate_summary(
+def gate_summary(
     model: torch.nn.Module,
     device: torch.device,
+    suffix: str,
 ) -> dict[str, float]:
-    """Summarize sharded MiniWorld-style gates without gathering the model."""
+    """Summarize sharded stream gates without gathering the model."""
 
     total_abs = torch.zeros((), device=device, dtype=torch.float64)
     maximum = torch.zeros((), device=device, dtype=torch.float64)
     count = torch.zeros((), device=device, dtype=torch.float64)
     for name, parameter in model.named_parameters():
-        if not name.endswith(".action_block.video_residual_gate"):
+        if not name.endswith(suffix):
             continue
         values = parameter.detach().double().abs()
         total_abs += values.sum()
@@ -363,6 +383,15 @@ def main() -> None:
         and args.action_train_stage != "tail_sharded"
     ):
         raise ValueError("train-video-residual-gates requires tail_sharded")
+    if args.train_action_to_video_gates and not args.bidirectional_action_video:
+        raise ValueError(
+            "train-action-to-video-gates requires bidirectional-action-video"
+        )
+    if (
+        args.train_action_to_video_gates
+        and args.action_train_stage != "tail_sharded"
+    ):
+        raise ValueError("train-action-to-video-gates requires tail_sharded")
     if (
         args.train_video_residual_adapters
         and args.action_train_stage != "tail_sharded"
@@ -489,6 +518,7 @@ def main() -> None:
             "full_width_rmsnorm": args.dreamwam_exact_action_norm,
             "alpha_scaling": args.action_init_alpha_scaling,
             "video_residual_gate": True,
+            "action_to_video_gate": True,
             "video_residual_adapter_rank": 16,
         }
         for key, value in stage_architecture.items():
@@ -645,6 +675,7 @@ def main() -> None:
     new_layer_parameters: list[torch.nn.Parameter] = []
     tail_parameters: list[torch.nn.Parameter] = []
     gate_parameters: list[torch.nn.Parameter] = []
+    reverse_gate_parameters: list[torch.nn.Parameter] = []
     adapter_parameters: list[torch.nn.Parameter] = []
     cross_attention_parameters: list[torch.nn.Parameter] = []
     h3_parameters: list[torch.nn.Parameter] = []
@@ -698,6 +729,9 @@ def main() -> None:
                 None,
             )
             is_video_gate = name.endswith(".action_block.video_residual_gate")
+            is_action_to_video_gate = name.endswith(
+                ".action_block.action_to_video_gate"
+            )
             is_video_adapter = ".action_block.video_residual_adapter." in name
             is_cross_attention_output = (
                 ".action_block.cross_attn.to_out." in name
@@ -713,6 +747,12 @@ def main() -> None:
                 )
             ):
                 gate_parameters.append(parameter)
+            elif (
+                is_action_to_video_gate
+                and tail_index is not None
+                and args.train_action_to_video_gates
+            ):
+                reverse_gate_parameters.append(parameter)
             elif (
                 is_video_adapter
                 and tail_index is not None
@@ -750,6 +790,7 @@ def main() -> None:
                 new_layer_parameters,
                 tail_parameters,
                 gate_parameters,
+                reverse_gate_parameters,
                 adapter_parameters,
                 cross_attention_parameters,
                 h3_parameters,
@@ -795,6 +836,18 @@ def main() -> None:
         parameter_groups.append(
             {
                 "params": gate_parameters,
+                "lr": (
+                    args.gate_learning_rate
+                    if args.gate_learning_rate is not None
+                    else args.learning_rate
+                ),
+                "weight_decay": 0.0,
+            }
+        )
+    if reverse_gate_parameters:
+        parameter_groups.append(
+            {
+                "params": reverse_gate_parameters,
                 "lr": (
                     args.gate_learning_rate
                     if args.gate_learning_rate is not None
@@ -855,6 +908,9 @@ def main() -> None:
     )
     global_tail_parameter_count = global_parameter_count(tail_parameters, device)
     global_gate_parameter_count = global_parameter_count(gate_parameters, device)
+    global_reverse_gate_parameter_count = global_parameter_count(
+        reverse_gate_parameters, device
+    )
     global_adapter_parameter_count = global_parameter_count(
         adapter_parameters, device
     )
@@ -1146,6 +1202,11 @@ def main() -> None:
                     context_mask=batch["context_mask"],
                     action_video_indices=batch["video_indices"],
                     h3_attention_mask=batch["h3_mask"],
+                    action_to_video_indices=(
+                        batch["video_indices"][int(batch["num_condition_video_rows"]):]
+                        if args.bidirectional_action_video
+                        else None
+                    ),
                 )
                 return output.rgb_velocity_rows, output.action_velocity
 
@@ -1187,6 +1248,11 @@ def main() -> None:
                     context_mask=batch["context_mask"],
                     action_video_indices=batch["video_indices"],
                     h3_attention_mask=batch["h3_mask"],
+                    action_to_video_indices=(
+                        batch["video_indices"][int(batch["num_condition_video_rows"]):]
+                        if args.bidirectional_action_video
+                        else None
+                    ),
                 )
             predicted_rgb = output.rgb_velocity_rows[
                 :, int(batch["num_condition_video_rows"]):
@@ -1249,6 +1315,7 @@ def main() -> None:
                     "action_new": new_layer_parameters,
                     "action_tail": tail_parameters,
                     "video_gate": gate_parameters,
+                    "action_to_video_gate": reverse_gate_parameters,
                     "video_adapter": adapter_parameters,
                     "cross_attention": cross_attention_parameters,
                 }
@@ -1329,7 +1396,12 @@ def main() -> None:
         if rank == 0:
             print(json.dumps({"event": "optimization_step", **row}), flush=True)
     torch.cuda.synchronize(device)
-    final_video_gates = video_gate_summary(model, device)
+    final_video_gates = gate_summary(
+        model, device, ".action_block.video_residual_gate"
+    )
+    final_action_to_video_gates = gate_summary(
+        model, device, ".action_block.action_to_video_gate"
+    )
     report = {
         "event": "h3dreamwam_real_fsdp_smoke",
         "eval_only": args.eval_only,
@@ -1370,6 +1442,8 @@ def main() -> None:
         "freeze_shared_state": args.freeze_shared_state,
         "freeze_action_output": args.freeze_action_output,
         "train_video_residual_gates": args.train_video_residual_gates,
+        "bidirectional_action_video": args.bidirectional_action_video,
+        "train_action_to_video_gates": args.train_action_to_video_gates,
         "train_video_residual_adapters": args.train_video_residual_adapters,
         "train_cross_attention_output": args.train_cross_attention_output,
         "separate_expert_clipping": args.separate_expert_clipping,
@@ -1379,6 +1453,7 @@ def main() -> None:
         "new_layer_parameters": global_new_layer_parameter_count,
         "tail_parameters": global_tail_parameter_count,
         "video_gate_parameters": global_gate_parameter_count,
+        "action_to_video_gate_parameters": global_reverse_gate_parameter_count,
         "video_adapter_parameters": global_adapter_parameter_count,
         "cross_attention_parameters": global_cross_attention_parameter_count,
         "h3_optimized_parameters": global_h3_parameter_count,
@@ -1395,6 +1470,7 @@ def main() -> None:
         "initialization_seconds": initialization_seconds,
         "migrated_legacy_action_blocks": migrated_legacy_action_blocks,
         "final_video_gates": final_video_gates,
+        "final_action_to_video_gates": final_action_to_video_gates,
         "steps": args.steps,
         "loss": history[-1]["loss"],
         "video_loss": history[-1]["video_loss"],
@@ -1479,6 +1555,7 @@ def main() -> None:
         elif args.action_train_stage in ("tail", "tail_sharded") and (
             not args.freeze_action_body
             or args.train_video_residual_gates
+            or args.train_action_to_video_gates
             or args.train_video_residual_adapters
             or args.train_cross_attention_output
         ):
@@ -1515,6 +1592,7 @@ def main() -> None:
                         "full_width_rmsnorm": args.dreamwam_exact_action_norm,
                         "alpha_scaling": args.action_init_alpha_scaling,
                         "video_residual_gate": True,
+                        "action_to_video_gate": True,
                         "video_residual_adapter_rank": 16,
                     },
                     "io": stage_io,

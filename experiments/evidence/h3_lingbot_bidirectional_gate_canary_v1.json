@@ -1,0 +1,130 @@
+{
+  "experiment_id": "h3_lingbot_bidirectional_gate_canary_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Allowing only future-video queries to read ActionDiT K/V will produce a nonzero finite reverse-stream gradient while preserving observation causality and the inherited function at zero initialization.",
+  "single_variable": "Enable zero-initialized action-to-future-video attention gates in the last two paired H3/ActionDiT layers.",
+  "parent_baseline": "H3-DreamWAM single-direction paired attention at local commit a6fc11f; identical cached dense window and loss otherwise.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "Causal World Modeling for Robot Control",
+      "locator": "https://arxiv.org/abs/2601.21998",
+      "revision": "v1",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Robbyant/lingbot-va",
+      "locator": "https://github.com/Robbyant/lingbot-va",
+      "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "fastwam_deploy H3 bidirectional gate",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "parent a6fc11f plus current working-tree canary diff",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "bidirectional video/action same-layer attention",
+        "paper": "shared latent space with video/action MoT",
+        "upstream_code": "four packed streams with block-causal attention",
+        "local": "paired H3/ActionDiT with a zero-initialized action-to-future-video residual",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["src/fastwam/models/h3dreamwam/joint_attention.py", "tests/test_h3dreamwam_joint_attention.py"],
+        "rationale": "Minimal single-variable canary before replacing the entire H3 packed layout."
+      }
+    ],
+    "data": [
+      {
+        "field": "cached dense window",
+        "paper": "streaming frame/action chunks",
+        "upstream_code": "frame_chunk_size=4 and action_per_frame=4",
+        "local": "existing 32-action LIBERO dense window and first-frame-conditioned H3 latents",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["scripts/h3dreamwam/verify_h3dreamwam_fsdp_real.py", "docs/H3_WAM_EXPERIMENT_LEDGER.md"],
+        "rationale": "This canary tests the docking mechanism, not a full LingBot-VA reproduction."
+      }
+    ],
+    "action": [
+      {
+        "field": "LIBERO action representation",
+        "paper": "embodiment-specific masked action channels",
+        "upstream_code": "30D masked action tensor",
+        "local": "7D normalized LIBERO actions with horizon 32",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["scripts/h3dreamwam/verify_h3dreamwam_fsdp_real.py:prepare_training_batch", "tests/test_h3wam_action_adapter.py"],
+        "rationale": "The parent and canary share the same verified LIBERO action contract."
+      }
+    ],
+    "objective": [
+      {
+        "field": "joint video/action flow loss and gradient path",
+        "paper": "joint future video and action diffusion",
+        "upstream_code": "latent_loss + action_loss",
+        "local": "RGB velocity loss + action velocity loss with reverse gate restricted to future rows",
+        "status": "EQUIVALENT",
+        "evidence": ["scripts/h3dreamwam/verify_h3dreamwam_fsdp_real.py", "tests/test_h3dreamwam_joint_attention.py::test_video_loss_trains_reverse_gate_without_observation_leakage"],
+        "rationale": "Both objectives jointly optimize future visual dynamics and action flow; the canary isolates routing rather than scheduler parity."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "canary budget",
+        "paper": "full upstream training budget",
+        "upstream_code": "5000 optimizer steps on 8 GPUs",
+        "local": "2 optimizer steps on 8 GPUs; global batch 8",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["planned launch command in decision.launch_command"],
+        "rationale": "Two-step real-H3 run validates memory, finite gradients and gate updates only."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "canary evaluation",
+        "paper": "closed-loop robot evaluation",
+        "upstream_code": "LIBERO/RoboTwin clients with observation feedback",
+        "local": "real-H3 gradient report followed by fixed LIBERO canary only after engineering pass",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["scripts/h3dreamwam/verify_h3dreamwam_fsdp_real.py", "docs/H3_WAM_CODE_FIRST_AUDIT_2026-08-12.md"],
+        "rationale": "Engineering canary precedes policy-quality training and rollout."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["docs/UPSTREAM_SOURCES.lock.json"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["19 related unit tests passed on 2026-08-12"]},
+    "data_contract": {"status": "PASS", "evidence": ["existing v7 dense cache and manifest contract"]},
+    "action_contract": {"status": "PASS", "evidence": ["tests/test_h3wam_action_adapter.py"]},
+    "objective_contract": {"status": "PASS", "evidence": ["future-only routing unit gradient test"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit two-step global-batch-8 command"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["fixed real-H3 smoke report schema"]},
+    "gradient_path": {"status": "PASS", "evidence": ["reverse gate receives nonzero gradient; observation rows unchanged"]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["pending cloud run"]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["pending canary checkpoint"]},
+    "parent_baseline": {"status": "FAIL", "evidence": ["not needed for engineering canary"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["pending real-H3 gradient report"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not permitted before training canary"]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 2,
+    "training_samples": 16,
+    "unique_windows": 16,
+    "effective_epochs": 0.00007969,
+    "gpu_count": 8,
+    "estimated_hours": 0.5
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Source, causal routing, data/action contract and unit gradient paths pass; run only a two-step real-H3 engineering canary.",
+    "launch_command": "python -m torch.distributed.run --standalone --nproc_per_node=8 scripts/h3dreamwam/verify_h3dreamwam_fsdp_real.py --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --rotate-manifest --output /mnt/h3-wam/outputs/h3-lingbot-port/bidir_gate_smoke_s2.json --steps 2 --action-horizon 32 --last-h3-blocks 0 --action-train-stage tail_sharded --last-action-blocks 2 --freeze-action-body --freeze-shared-state --freeze-action-output --bidirectional-action-video --train-action-to-video-gates --gate-learning-rate 1e-4 --separate-expert-clipping --require-text-only-context --dreamwam-exact-action-norm --action-init-alpha-scaling"
+  }
+}

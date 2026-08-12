@@ -1,0 +1,37 @@
+{
+  "experiment_id": "h3_lingbot_bidirectional_ab_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "On identical dense LIBERO windows, adding tail-2 action-to-future-video gates to an output-head-trained H3/ActionDiT parent reduces held-out action error beyond the output-only control without harming video loss.",
+  "single_variable": "The bidirectional arm adds only 112 trainable action-to-future-video gate scalars; initialization, seed, data order, action output training and losses are shared.",
+  "parent_baseline": "A-arm: official H3-to-ActionDiT initialization with action output head only, 100 steps, seed 2026, v7 dense manifest.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy paired H3/ActionDiT", "locator": "/home/ubuntu/fastwam_deploy", "revision": "a6fc11f plus controlled bidirectional canary diff", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "future-video/action paired routing", "paper": "causal video-action MoT", "upstream_code": "block-causal four-stream attention", "local": "future-video-only reverse residual in tail-2 paired layers", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/joint_attention.py", "real H3 2-step smoke report"], "rationale": "Single-variable port canary before full block-causal H3 layout."}],
+    "data": [{"field": "training population/order", "paper": "robot video/action chunks", "upstream_code": "frame_chunk_size=4/action_per_frame=4", "local": "both arms use the same first 800 examples of the 200,779-window v7 dense manifest", "status": "EQUIVALENT", "evidence": ["scripts/h3dreamwam/launch_h3_lingbot_ab_canary.sh"], "rationale": "A/B data, ordering and seed are identical, making routing attribution valid."}],
+    "action": [{"field": "action tensor", "paper": "masked embodiment channels", "upstream_code": "30D masked action stream", "local": "7D normalized LIBERO horizon32 in both arms", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3dreamwam/verify_h3dreamwam_fsdp_real.py", "tests/test_h3wam_action_adapter.py"], "rationale": "Embodiment adaptation is fixed across A/B."}],
+    "objective": [{"field": "joint world/action flow", "paper": "joint future video and action diffusion", "upstream_code": "latent_loss + action_loss", "local": "RGB velocity + action velocity loss", "status": "EQUIVALENT", "evidence": ["scripts/h3dreamwam/verify_h3dreamwam_fsdp_real.py", "2-step smoke has finite video/action loss"], "rationale": "Both streams have flow targets; routing is the only A/B variable."}],
+    "optimization": [{"field": "A/B budget", "paper": "full training", "upstream_code": "5000 steps", "local": "100 steps, global batch8, 800 samples each", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3dreamwam/launch_h3_lingbot_ab_canary.sh"], "rationale": "Short capacity canary only; no efficacy claim before held-out and rollout tests."}],
+    "evaluation": [{"field": "promotion protocol", "paper": "closed-loop evaluation", "upstream_code": "LIBERO client with observation/action KV feedback", "local": "paired held-out loss first; fixed LIBERO rollout only if B beats A", "status": "INTENTIONAL_DEVIATION", "evidence": ["docs/H3_WAM_CODE_FIRST_AUDIT_2026-08-12.md"], "rationale": "Avoids spending rollout time on an inactive mechanism."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["docs/UPSTREAM_SOURCES.lock.json"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["future-only reverse route and zero-init parity tests"]},
+    "data_contract": {"status": "PASS", "evidence": ["v7 manifest has 200,779 dense windows"]},
+    "action_contract": {"status": "PASS", "evidence": ["H3 action adapter regression tests"]},
+    "objective_contract": {"status": "PASS", "evidence": ["real-H3 finite RGB/action flow losses"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["paired launcher with fixed seed and 100 steps"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered A/B then rollout promotion"]},
+    "gradient_path": {"status": "PASS", "evidence": ["real-H3 reverse gate gradient norm 46.4479"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["2-step smoke loss 35.8310 then 31.4696"]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["pending 100-step stage"]},
+    "parent_baseline": {"status": "FAIL", "evidence": ["A-arm will produce paired parent"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["reverse gates updated from zero to max abs 2.0002e-4"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["deferred until B beats A offline"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.00398408, "gpu_count": 8, "estimated_hours": 0.6},
+  "decision": {"status": "GO_CANARY", "rationale": "The real-H3 engineering smoke passed; run paired 100-step A/B only and stop if B lacks held-out improvement.", "launch_command": "VARIANT=baseline STEPS=100 bash scripts/h3dreamwam/launch_h3_lingbot_ab_canary.sh; on a separate idle node: VARIANT=bidirectional STEPS=100 bash scripts/h3dreamwam/launch_h3_lingbot_ab_canary.sh"}
+}

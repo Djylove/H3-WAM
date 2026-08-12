@@ -87,8 +87,16 @@ def paired_h3_action_layer(
     action_context: torch.Tensor,
     action_context_mask: torch.Tensor | None,
     h3_attention_mask: torch.Tensor | None = None,
+    action_to_video_indices: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Advance one H3 and ActionDiT layer with strictly one-way coupling."""
+    """Advance one paired H3/ActionDiT layer.
+
+    The inherited path is video-to-action only.  Supplying
+    ``action_to_video_indices`` enables a zero-initialized reverse route for
+    explicitly selected future-video rows.  Observation/text/audio rows stay
+    isolated from action targets, which is the minimum causal contract needed
+    before testing LingBot-VA-style bidirectional stream training.
+    """
 
     h3_io = h3_attention_input(
         h3_block,
@@ -99,6 +107,43 @@ def paired_h3_action_layer(
         apply_rotary=h3_apply_rotary,
     )
     h3_attended = _attention(h3_io[0], h3_io[1], h3_io[2], h3_attention_mask)
+
+    video_indices = video_indices.to(device=h3_hidden.device, dtype=torch.long).reshape(-1)
+    if video_indices.numel() == 0:
+        raise ValueError("ActionDiT requires at least one H3 video row")
+    if int(video_indices.min()) < 0 or int(video_indices.max()) >= h3_hidden.shape[1]:
+        raise ValueError("video index is outside the packed H3 sequence")
+    action_io = action_block.attention_input(action_hidden, action_time_modulation)
+    if action_to_video_indices is not None:
+        action_to_video_indices = action_to_video_indices.to(
+            device=h3_hidden.device, dtype=torch.long
+        ).reshape(-1)
+        if action_to_video_indices.numel() == 0:
+            raise ValueError("bidirectional fusion requires future-video rows")
+        if (
+            int(action_to_video_indices.min()) < 0
+            or int(action_to_video_indices.max()) >= h3_hidden.shape[1]
+        ):
+            raise ValueError("action-to-video index is outside the packed H3 sequence")
+        if h3_io[0].shape[2:] != action_io[1].shape[2:]:
+            raise ValueError(
+                "bidirectional fusion requires matching video/action attention geometry"
+            )
+        reverse_attended = _attention(
+            h3_io[0].index_select(1, action_to_video_indices),
+            action_io[1],
+            action_io[2],
+        )
+        reverse_gate = torch.tanh(action_block.action_to_video_gate).to(
+            dtype=reverse_attended.dtype,
+            device=reverse_attended.device,
+        )
+        h3_attended = h3_attended.index_add(
+            1,
+            action_to_video_indices,
+            reverse_gate * reverse_attended,
+        )
+
     next_h3 = h3_post_attention(
         h3_block,
         attended=h3_attended,
@@ -109,13 +154,6 @@ def paired_h3_action_layer(
         gate_ffn=h3_io[7],
         adaln_indices=h3_adaln_indices,
     )
-
-    video_indices = video_indices.to(device=h3_hidden.device, dtype=torch.long).reshape(-1)
-    if video_indices.numel() == 0:
-        raise ValueError("ActionDiT requires at least one H3 video row")
-    if int(video_indices.min()) < 0 or int(video_indices.max()) >= h3_hidden.shape[1]:
-        raise ValueError("video index is outside the packed H3 sequence")
-    action_io = action_block.attention_input(action_hidden, action_time_modulation)
     video_key = h3_io[1].index_select(1, video_indices)
     video_value = h3_io[2].index_select(1, video_indices)
     action_key = torch.cat((video_key, action_io[1]), dim=1)

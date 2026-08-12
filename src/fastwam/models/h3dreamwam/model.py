@@ -56,6 +56,7 @@ class H3DreamPairedLayer(nn.Module):
         action_context: torch.Tensor,
         action_context_mask: torch.Tensor | None,
         h3_attention_mask: torch.Tensor | None,
+        action_to_video_indices: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         return paired_h3_action_layer(
             h3_block=self.h3_block,
@@ -71,6 +72,7 @@ class H3DreamPairedLayer(nn.Module):
             action_context=action_context,
             action_context_mask=action_context_mask,
             h3_attention_mask=h3_attention_mask,
+            action_to_video_indices=action_to_video_indices,
         )
 
 
@@ -156,6 +158,7 @@ class H3DreamWAM(nn.Module):
         context_mask: torch.Tensor | None = None,
         action_video_indices: torch.Tensor | None = None,
         h3_attention_mask: torch.Tensor | None = None,
+        action_to_video_indices: torch.Tensor | None = None,
     ) -> H3DreamWAMOutput:
         if position_ids.ndim != 2 or position_ids.shape[-1] != 3:
             raise ValueError("position_ids must be [packed_sequence,3]")
@@ -242,6 +245,7 @@ class H3DreamWAM(nn.Module):
                     action_context=action_state["context"],
                     action_context_mask=action_state["context_mask"],
                     h3_attention_mask=h3_attention_mask,
+                    action_to_video_indices=action_to_video_indices,
                 )
 
             if self.training and self.use_gradient_checkpointing:

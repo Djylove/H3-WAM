@@ -114,6 +114,7 @@ class PairedAttentionTest(unittest.TestCase):
         h3_hidden: torch.Tensor,
         action_hidden: torch.Tensor,
         h3_attention_mask: torch.Tensor | None = None,
+        action_to_video_indices: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         return paired_h3_action_layer(
             h3_block=self.h3,
@@ -129,6 +130,7 @@ class PairedAttentionTest(unittest.TestCase):
             action_context=self.context,
             action_context_mask=self.context_mask,
             h3_attention_mask=h3_attention_mask,
+            action_to_video_indices=action_to_video_indices,
         )
 
     def test_video_matches_standalone_h3_and_ignores_action(self) -> None:
@@ -220,6 +222,7 @@ class PairedAttentionTest(unittest.TestCase):
             key: value.detach().clone()
             for key, value in self.action.state_dict().items()
             if key != "video_residual_gate"
+            and key != "action_to_video_gate"
             and not key.startswith("video_residual_adapter.")
         }
         with torch.no_grad():
@@ -233,6 +236,46 @@ class PairedAttentionTest(unittest.TestCase):
         self.assertEqual(
             torch.count_nonzero(self.action.video_residual_adapter[-1].weight),
             0,
+        )
+
+    def test_bidirectional_route_is_function_preserving_at_zero(self) -> None:
+        baseline_h3, baseline_action = self.paired(
+            self.h3_hidden, self.action_hidden
+        )
+        routed_h3, routed_action = self.paired(
+            self.h3_hidden,
+            self.action_hidden,
+            action_to_video_indices=torch.tensor([2, 3, 4, 5]),
+        )
+        torch.testing.assert_close(routed_h3, baseline_h3, rtol=0, atol=0)
+        torch.testing.assert_close(routed_action, baseline_action, rtol=0, atol=0)
+
+    def test_video_loss_trains_reverse_gate_without_observation_leakage(self) -> None:
+        target_indices = torch.tensor([2, 3, 4, 5])
+        routed_h3, _ = self.paired(
+            self.h3_hidden,
+            self.action_hidden,
+            action_to_video_indices=target_indices,
+        )
+        routed_h3.index_select(1, target_indices).square().mean().backward()
+        gate_grad = self.action.action_to_video_gate.grad
+        self.assertIsNotNone(gate_grad)
+        self.assertGreater(float(gate_grad.abs().sum()), 0.0)
+
+        self.action.zero_grad(set_to_none=True)
+        with torch.no_grad():
+            self.action.action_to_video_gate.fill_(0.5)
+        baseline_h3, _ = self.paired(self.h3_hidden, self.action_hidden)
+        routed_h3, _ = self.paired(
+            self.h3_hidden,
+            self.action_hidden + 3.0,
+            action_to_video_indices=target_indices,
+        )
+        torch.testing.assert_close(
+            routed_h3[:, :2], baseline_h3[:, :2], rtol=0, atol=0
+        )
+        self.assertGreater(
+            float((routed_h3[:, 2:] - baseline_h3[:, 2:]).abs().max()), 0.0
         )
 
 

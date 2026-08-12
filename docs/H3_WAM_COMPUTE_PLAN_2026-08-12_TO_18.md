@@ -19,6 +19,7 @@
 | M11 frame-indexed，step200 | val40 `0.151389` | task3 trials0–9 `0/10` | 只给 step400 最后一次门槛 |
 | M14 tail-2 H3 canary，40 steps | val40 `0.119368` | 正在跑 task3 trials0–2 | 离线比父模型改善约 `2.4%`，等待闭环后决定扩训 |
 | M13 step400 controller sweep | — | replan 1/2/5、scale0.5 均 `0/1` | 不再消耗大算力调 replan/scale |
+| M13 dense frozen-H3，step800 | val40 `0.114559`（比 step400 改善约6.34%） | Goal 4 tasks `0/4` | 长线继续；不再把训练时长视为唯一瓶颈 |
 
 现有证据说明：数据密度不足曾经是问题，但把 dense 数据继续堆给冻结 H3 仍没有产生成功；
 当前更可能的瓶颈是语言/目标绑定、接触阶段被平均损失稀释，以及离线分布到闭环状态的偏移。

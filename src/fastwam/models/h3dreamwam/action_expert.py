@@ -188,6 +188,13 @@ class H3DreamActionBlock(nn.Module):
         self.video_residual_gate = nn.Parameter(
             torch.zeros(1, 1, self.attn.num_heads, 1)
         )
+        # LingBot-VA-style reverse stream route used by the bidirectional
+        # canary.  Only explicitly selected future-video queries may consume
+        # action K/V.  Zero initialization makes enabling the route exactly
+        # function preserving for existing H3-DreamWAM checkpoints.
+        self.action_to_video_gate = nn.Parameter(
+            torch.zeros(1, 1, self.attn.num_heads, 1)
+        )
         # MiniWorld-style low-rank conditioning route. The output projection
         # is zero-initialized, so adding this capacity cannot perturb an
         # inherited ActionDiT function before optimization.
@@ -261,15 +268,15 @@ def load_action_block_state(
         "video_residual_adapter.0.weight",
         "video_residual_adapter.2.weight",
     )
-    migrated = "video_residual_gate" not in state_dict or any(
-        key not in state_dict for key in adapter_keys
-    )
+    gate_keys = ("video_residual_gate", "action_to_video_gate")
+    migrated = any(key not in state_dict for key in gate_keys + adapter_keys)
     compatible = dict(state_dict)
-    if "video_residual_gate" not in compatible:
-        compatible["video_residual_gate"] = torch.zeros_like(
-            block.video_residual_gate,
-            device="cpu",
-        )
+    for key in gate_keys:
+        if key not in compatible:
+            compatible[key] = torch.zeros_like(
+                getattr(block, key),
+                device="cpu",
+            )
     current = block.state_dict()
     for key in adapter_keys:
         if key not in compatible:
