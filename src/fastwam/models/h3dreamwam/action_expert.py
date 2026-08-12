@@ -372,11 +372,15 @@ class H3DreamActionExpert(nn.Module):
         )
         time_hidden = self.time_embedding(time_features)
         return {
-            "tokens": self.action_embedding(noisy_actions),
+            "tokens": self.action_embedding(
+                noisy_actions.to(self.action_embedding.weight.dtype)
+            ),
             "time_modulation": self.time_projection(time_hidden).reshape(
                 batch, 6, self.hidden_dim
             ),
-            "context": self.context_embedding(context),
+            "context": self.context_embedding(
+                context.to(self.context_embedding[0].weight.dtype)
+            ),
             "context_mask": context_mask,
         }
 
@@ -404,4 +408,4 @@ class H3DreamActionExpert(nn.Module):
         )
 
     def decode(self, tokens: torch.Tensor) -> torch.Tensor:
-        return self.output(tokens)
+        return self.output(tokens.to(self.output.weight.dtype))
