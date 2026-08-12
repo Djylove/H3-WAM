@@ -772,6 +772,7 @@ def main() -> None:
                 patchify_video_latents=patchify_video_latents,
                 layout_builder=MiniMaxH3PrepareLayoutStep,
                 align_chunk_ids=align_h3_action_chunk_ids,
+                action_time_builder=h3_action_temporal_positions,
                 deterministic_noise=args.eval_only,
             )
         else:
