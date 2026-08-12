@@ -159,14 +159,16 @@ chunk mask 与 action RoPE。33 项云端测试、真实 2-step 反向和 checkp
 预注册 `0.926%` action 门，所以不做 no-leak sampling/闭环，也不扩训。该实验
 再次确认当前修正主要转化为 world/video 改善，action 学习仍是独立瓶颈。
 
-## 2026-08-12 活跃长线
+## 2026-08-13 长线实时状态
 
 | 线路 | 节点 | 训练规模 | 最后观测进度 | 保留原因 |
 |---|---|---|---:|---|
-| M13 dense | `117.50.181.177:30907` | 1569 steps / 1 epoch | step920 | 回答更长训练是否能突破闭环零成功 |
-| M11 frame-indexed | `117.50.181.177:30234` | 2170 steps / 1 epoch | step590 | 与 dense-uniform 采样形成长期对照 |
+| M13 dense | `117.50.181.177:30907` | 1569 steps / 1 epoch | 已完成 step1569；final + 200-step ladder | 长训完成，作为历史基线保留；30907 当前空闲 |
+| M11 frame-indexed | `117.50.181.177:30234` | 2170 steps / 1 epoch | step1441；最新已保存 step1400 | 仍在 8×A800 上 100% 运行；与 dense-uniform 形成长期对照 |
 
-进度是快照而不是实时状态。恢复研究时必须先从日志和 checkpoint manifest 重新确认。
+上述状态于 2026-08-13 05:34（Asia/Shanghai）用进程、GPU 和日志三重核对：32611、32409、
+30907 均空闲，只有 30234 的 M11 每卡约 `18.35 GiB`、利用率 `100%`。恢复研究时
+仍必须先从日志和 checkpoint manifest 重新确认。
 
 ## 云端资产位置
 
@@ -176,7 +178,9 @@ chunk mask 与 action RoPE。33 项云端测试、真实 2-step 反向和 checkp
 - 数据/缓存：`downloads`、`libero_fastwam_extracted`、`v2_full_cache`、
   `v7_dense_*`、`v8_frameindexed_*`；
 - 输出：`outputs/h3dotwam*` 与对应 rollout/eval JSON；
-- 当前 checkpoint：M13 至少有 step200/400/600，M11 至少有 step200/400。
+- 当前 checkpoint：M13 有 final step1569 及 step200–1400 ladder；M11 已有 step200–1400 ladder，
+  并继续训练至 step2170。shared-H3 E24–E28 的 s100 stage 也均保留在
+  `/mnt/h3-wam/outputs/h3-lingbot-shared/`。
 
 这些大文件不进入 Git。Git 保存配置、manifest、评测 JSON、锁定 commit 和恢复说明；选出的最终
 checkpoint 应另存对象存储，并记录 hash。任何删除前先保留 parent、best、latest 三类 checkpoint。
@@ -219,7 +223,8 @@ steps 或 gate 数量来追逐噪声。E12 的正面价值是排除了“只补�
 ## 下一次恢复顺序
 
 1. 读取本账本和 `UPSTREAM_SOURCES.lock.json`，恢复固定上游 commit。
-2. 核验 M11/M13 的最新 checkpoint、日志、resolved config 与数据 manifest hash。
+2. 等 M11 到 step2170 后核验 final checkpoint、日志、resolved config 与数据 manifest hash；
+   M13 已完成，不再重跑。
 3. 固定 E24 作为当前 quantile 动作基线；E25–E28 均不扩步数，也不重复 causal
    sample/闭环。E28 的物理时间实现保留为已验证合约，但不视为有效策略改进。
 4. 下一证据审计转向动作专用建模：比较 LingBot/MiniWorld/DiT4DiT 的 action carrier 宽度、
