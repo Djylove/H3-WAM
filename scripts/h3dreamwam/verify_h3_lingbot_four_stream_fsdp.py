@@ -34,6 +34,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--actions-per-chunk", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=1.0e-6)
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--save-stage", type=Path)
+    parser.add_argument("--load-stage", type=Path)
+    parser.add_argument("--eval-only", action="store_true")
     return parser.parse_args()
 
 
@@ -151,6 +154,29 @@ def main() -> None:
             cast_forward_inputs=True,
         ),
     )
+    # Stable low-LR updates require FP32 optimizer storage after FSDP has
+    # sharded the 33B/ActionDiT blocks. Forward compute remains BF16 through
+    # MixedPrecision, matching the proven H3-DreamWAM training path.
+    model.float()
+    if args.load_stage is not None:
+        payload = torch.load(
+            args.load_stage.resolve(), map_location="cpu", weights_only=True
+        )
+        if payload.get("format") != "h3_lingbot_four_stream_tail_v1":
+            raise ValueError("four-stream stage checkpoint format mismatch")
+        if payload.get("last_trainable_layers") != args.last_trainable_layers:
+            raise ValueError("four-stream stage layer count mismatch")
+        for index_text, layer_state in payload["layers"].items():
+            paired = model.module.paired_layers[int(index_text)]
+            with FSDP.summon_full_params(paired, recurse=False, writeback=True):
+                paired.module.load_state_dict(layer_state, strict=True)
+        with FSDP.summon_full_params(model, recurse=False, writeback=True):
+            model.module.h3.proj_out.load_state_dict(
+                payload["h3_proj_out"], strict=True
+            )
+            model.module.action_expert.output.load_state_dict(
+                payload["action_output"], strict=True
+            )
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
     optimizer = torch.optim.AdamW(
         trainable,
@@ -358,16 +384,25 @@ def main() -> None:
             output.action_velocity.float(), action_target.float()
         )
         loss = video_loss + action_loss
-        loss.backward()
+        if not args.eval_only:
+            loss.backward()
         named = list(model.named_parameters())
-        h3_gradient = global_grad_norm(named, ".h3_block.", device)
-        action_gradient = global_grad_norm(named, ".action_block.", device)
-        if not all(
+        h3_gradient = (
+            0.0 if args.eval_only else global_grad_norm(named, ".h3_block.", device)
+        )
+        action_gradient = (
+            0.0
+            if args.eval_only
+            else global_grad_norm(named, ".action_block.", device)
+        )
+        if not math.isfinite(float(loss.detach())) or (
+            not args.eval_only
+            and not all(
             math.isfinite(value) and value > 0
             for value in (
-                float(loss.detach()),
                 h3_gradient,
                 action_gradient,
+            )
             )
         ):
             raise RuntimeError("full FSDP smoke produced non-finite/zero signal")
@@ -396,10 +431,13 @@ def main() -> None:
             ]
             for parameter, _ in hidden:
                 parameter.grad = None
-            expert_clip_norms[expert] = float(model.clip_grad_norm_(1.0))
+            expert_clip_norms[expert] = (
+                0.0 if args.eval_only else float(model.clip_grad_norm_(1.0))
+            )
             for parameter, gradient in hidden:
                 parameter.grad = gradient
-        optimizer.step()
+        if not args.eval_only:
+            optimizer.step()
         item = {
             "step": step,
             "loss": float(loss.detach()),
@@ -413,6 +451,34 @@ def main() -> None:
         if rank == 0:
             print(json.dumps(item), flush=True)
 
+    if args.save_stage is not None and not args.eval_only:
+        stage = {
+            "format": "h3_lingbot_four_stream_tail_v1",
+            "last_trainable_layers": args.last_trainable_layers,
+            "layers": {},
+        }
+        for index in range(50 - args.last_trainable_layers, 50):
+            paired = model.module.paired_layers[index]
+            with FSDP.summon_full_params(paired, recurse=False, writeback=False):
+                if rank == 0:
+                    stage["layers"][str(index)] = {
+                        key: value.detach().cpu().clone()
+                        for key, value in paired.module.state_dict().items()
+                    }
+        with FSDP.summon_full_params(model, recurse=False, writeback=False):
+            if rank == 0:
+                stage["h3_proj_out"] = {
+                    key: value.detach().cpu().clone()
+                    for key, value in model.module.h3.proj_out.state_dict().items()
+                }
+                stage["action_output"] = {
+                    key: value.detach().cpu().clone()
+                    for key, value in model.module.action_expert.output.state_dict().items()
+                }
+        if rank == 0:
+            args.save_stage.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(stage, args.save_stage)
+
     if rank == 0:
         report = {
             "event": "h3_lingbot_four_stream_full_fsdp_smoke",
@@ -423,6 +489,9 @@ def main() -> None:
             "video_tokens": video_tokens,
             "sample": sample_id,
             "real_data": args.data_root is not None,
+            "eval_only": args.eval_only,
+            "loaded_stage": None if args.load_stage is None else str(args.load_stage),
+            "saved_stage": None if args.save_stage is None else str(args.save_stage),
             "action_horizon": args.action_horizon,
             "history": history,
             "peak_allocated_gib": torch.cuda.max_memory_allocated(device) / 2**30,

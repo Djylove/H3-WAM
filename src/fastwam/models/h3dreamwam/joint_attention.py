@@ -93,7 +93,7 @@ def align_h3_action_chunk_ids(
     chunks.  Every spatial token from one latent frame receives the same id.
     """
 
-    video_frame_ids = video_frame_ids.reshape(-1)
+    video_frame_ids = video_frame_ids.reshape(-1).contiguous()
     if video_frame_ids.numel() == 0:
         raise ValueError("video frame ids cannot be empty")
     if action_horizon <= 0 or actions_per_chunk <= 0:
