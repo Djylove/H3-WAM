@@ -47,6 +47,7 @@
 | E22 | shared-H3 s300 bounded continuation | s200再训100 steps、下一批800个不重复 window；累计2400 windows | teacher-forced val40 action/video `1.240105/0.158307`；无泄漏 sample40 action/video `1.254009/0.607254` | 按门控不重跑 | 生成 video 较初始化改善 `12.696%`，action 仅改善 `0.384%`，未过 `0.5%` 动作门；停止纯续训 |
 | E23 | 官方 20/50 denoise-step 消融 | 固定 s200、固定 val8/seed；4/4 改为 video20/action50 | action `1.207244 → 1.202721`（改善 `0.375%`）；video `0.585749 → 0.671369`（退化 `14.617%`） | 不重跑 | 未过预注册 `1%` 动作门且耗时 `665s`；高采样步数不是当前主瓶颈 |
 | E24 | LingBot quantile normalization s100 | 与 E17 同初始化/seed/800 windows；仅将 min/max `[-1,1]` 改为 q01/q99 `[-1.5,1.5]` | val40 action `1.304397 → 1.295573`（改善 `0.676%`）；video 改善 `2.165%` | 按门控不重跑 | 比 E17 action 多改善 `0.224` 个百分点，略低于预注册 `0.25`；方向有效但单独不足以晋级 |
+| E25 | per-chunk action timestep s100 | E24 合约；每4个动作独立采样 timestep，其余固定 | val40 action `1.304397 → 1.295933`（改善 `0.649%`）；video 改善 `2.195%` | 按门控不重跑 | 低于 E24 的 `0.676%` 且未过 `0.926%` 门；噪声粒度单独不是瓶颈 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -113,6 +114,13 @@ quantile 将三个小幅旋转维的标准差放大约 `1.31–2.12×`，但 val
 作为下一次完整代码对齐实验的默认动作合约，但不为 E24 单独做无泄漏采样或闭环。进一步核对
 发现更关键的训练偏差：LingBot 为每个 latent/action frame 独立采样 timestep，而当前 H3 端为
 整段 action 使用单一 timestep；下一 canary 必须先补齐 per-chunk action diffusion forcing。
+
+E25 已完成这一可控修正：36 项相关测试和真实 2-step 反向 smoke 均通过，100-step 训练峰值
+与 E24 相同，证明多 timestep 的 AdaLN 与 final norm 路径实现正确。但 val40 action 改善为
+`0.649%`，不仅未达预注册 `0.926%`，还略低于 E24 的 `0.676%`，因此不做无泄漏采样或闭环。
+逐行代码对齐还发现 LingBot 训练的 `noisy_cond_prob=0.5`：一半 batch 会给 clean video stream
+加入高噪声，而 action clean stream 保持干净。这比 action timestep 粒度更直接作用于
+teacher-forcing/exposure-bias；下一 canary 应固定 E24，其唯一变量为 noisy clean-video condition。
 
 ## 2026-08-12 活跃长线
 

@@ -1,0 +1,26 @@
+{
+  "event": "h3_lingbot_shared_perchunk_s100_val40",
+  "protocol": {
+    "paired_samples": 40,
+    "episode_disjoint": true,
+    "fixed_noise_by_sample": true,
+    "training_steps": 100,
+    "training_unique_windows": 800,
+    "single_variable_vs_e24": "eight independently sampled action timesteps, one per four-action chunk"
+  },
+  "quantile_initialization": {
+    "video_mse": 0.17002603001892566,
+    "action_mse": 1.3043972849845886
+  },
+  "per_chunk_step100": {
+    "video_mse": 0.1662934709340334,
+    "action_mse": 1.295932525396347,
+    "video_improvement_percent": 2.195296,
+    "action_improvement_percent": 0.648940,
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_perchunk_tail2_s100.pt"
+  },
+  "e24_single_timestep_action_improvement_percent": 0.676471,
+  "preregistered_required_action_improvement_percent": 0.926471,
+  "decision": "NO_GO_NEXT_GATE",
+  "rationale": "Per-chunk action timestep sampling is stable but does not improve the held-out action signal over E24. Stop without causal sampling or rollout."
+}
