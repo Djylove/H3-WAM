@@ -38,6 +38,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-stage", type=Path)
     parser.add_argument("--load-stage", type=Path)
     parser.add_argument("--eval-only", action="store_true")
+    parser.add_argument("--rotate-windows", action="store_true")
+    parser.add_argument("--eval-all", action="store_true")
+    parser.add_argument("--sample-offset", type=int, default=0)
+    parser.add_argument("--random-timesteps", action="store_true")
+    parser.add_argument("--freeze-shared-blocks", action="store_true")
     parser.add_argument(
         "--shared-backbone",
         action="store_true",
@@ -57,6 +62,167 @@ def global_grad_norm(
             total += parameter.grad.detach().float().square().sum()
     dist.all_reduce(total)
     return float(total.sqrt())
+
+
+def shifted_noise_sigma(uniform: torch.Tensor, shift: float) -> torch.Tensor:
+    """FlowMatch shifted noise sigma used by H3/LingBot schedulers."""
+
+    return float(shift) * uniform / (1.0 + (float(shift) - 1.0) * uniform)
+
+
+def prepare_real_batch(
+    *,
+    args: argparse.Namespace,
+    row: dict,
+    row_index: int,
+    device: torch.device,
+    generator: torch.Generator,
+    model_root: torch.nn.Module,
+    stats: dict,
+    patchify_video_latents,
+    layout_builder,
+    align_chunk_ids,
+    deterministic_noise: bool,
+) -> dict:
+    sample_id = str(row["id"])
+    context_id = str(row.get("context_id", sample_id))
+    data_root = args.data_root.resolve()
+    window = torch.load(
+        data_root / "windows" / f"{sample_id}.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    conditioning = torch.load(
+        data_root / "contexts" / f"{context_id}.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    sample_generator = generator
+    if deterministic_noise:
+        sample_generator = torch.Generator(device=device).manual_seed(
+            args.seed + 1000003 * int(row_index)
+        )
+    future_latents = window["video_latents"].to(
+        device=device, dtype=torch.float32
+    )
+    first_latent = window["first_frame_latents"].to(
+        device=device, dtype=torch.float32
+    )
+    _, _, latent_frames, latent_height, latent_width = future_latents.shape
+    text_tags = torch.cat(
+        (conditioning["token_tags"].long(), torch.ones(1, dtype=torch.long))
+    )
+    layout = layout_builder.build_packed_sequence(
+        text_token_tags=text_tags,
+        num_latent_frames=latent_frames,
+        latent_height=latent_height,
+        latent_width=latent_width,
+        num_audio_latents=10,
+        patch_size=tuple(model_root.h3.config.patch_size),
+        audio_channels=8,
+        audio_tag=2,
+        video_tag=0,
+        keyframe_anchors=("first",),
+    )
+    position_ids, _, video_indices, _, text_indices, condition_rows, _ = layout
+    video_position_ids = position_ids.index_select(0, video_indices).to(device)
+    context_position_ids = position_ids.index_select(0, text_indices).to(device)
+    first_rows = patchify_video_latents(
+        first_latent, tuple(model_root.h3.config.patch_size)
+    )[None]
+    future_rows = patchify_video_latents(
+        future_latents, tuple(model_root.h3.config.patch_size)
+    )[None]
+    clean_video = torch.cat((first_rows, future_rows), dim=1)
+    video_noise = torch.randn(
+        clean_video.shape, generator=sample_generator, device=device
+    )
+    if args.random_timesteps and not deterministic_noise:
+        video_uniform = torch.rand(1, generator=sample_generator, device=device)
+        action_uniform = torch.rand(1, generator=sample_generator, device=device)
+        video_noise_sigma = shifted_noise_sigma(video_uniform, 12.0)
+        action_noise_sigma = shifted_noise_sigma(action_uniform, 0.05)
+    else:
+        video_noise_sigma = torch.tensor([0.5], device=device)
+        action_noise_sigma = torch.tensor([0.5], device=device)
+    video_time = 1.0 - video_noise_sigma
+    action_time = 1.0 - action_noise_sigma
+    noisy_future = video_time[:, None, None] * future_rows
+    noisy_future += (1.0 - video_time[:, None, None]) * video_noise[:, condition_rows:]
+    noisy_video = torch.cat((first_rows, noisy_future), dim=1)
+
+    clean_action = window["actions"][: args.action_horizon].float()
+    action_scale = (
+        stats["action_max"].float() - stats["action_min"].float()
+    ).clamp_min(1e-6)
+    clean_action = (
+        (clean_action - stats["action_min"].float()) / action_scale * 2.0 - 1.0
+    ).clamp(-1.0, 1.0)[None].to(device)
+    action_noise = torch.randn(
+        clean_action.shape, generator=sample_generator, device=device
+    )
+    noisy_action = (1.0 - action_noise_sigma[:, None, None]) * clean_action
+    noisy_action += action_noise_sigma[:, None, None] * action_noise
+    context = conditioning["context"].to(device=device, dtype=torch.bfloat16)
+    state_scale = (
+        stats["state_max"].float() - stats["state_min"].float()
+    ).clamp_min(1e-6)
+    state = (
+        (window["state"].float() - stats["state_min"].float())
+        / state_scale
+        * 2.0
+        - 1.0
+    ).clamp(-1.0, 1.0)[None].to(device)
+    context_mask = torch.ones(context.shape[:2], device=device, dtype=torch.bool)
+    video_chunks, action_chunks = align_chunk_ids(
+        video_frame_ids=video_position_ids[:, 0],
+        action_horizon=args.action_horizon,
+        actions_per_chunk=args.actions_per_chunk,
+    )
+    video_tokens = clean_video.shape[1]
+    noisy_video_timestep_indices = torch.ones(
+        video_tokens, device=device, dtype=torch.long
+    )
+    noisy_video_timestep_indices[:condition_rows] = 0
+    future = torch.ones(video_tokens, device=device, dtype=torch.bool)
+    future[:condition_rows] = False
+    action_position_ids = torch.stack(
+        (
+            torch.arange(args.action_horizon, device=device).float()
+            / args.actions_per_chunk,
+            torch.full((args.action_horizon,), -1.0, device=device),
+            torch.full((args.action_horizon,), -1.0, device=device),
+        ),
+        dim=-1,
+    )
+    return {
+        "sample_id": sample_id,
+        "video_tokens": video_tokens,
+        "noisy_video": noisy_video,
+        "clean_video": clean_video,
+        "video_position_ids": video_position_ids,
+        "video_chunks": video_chunks,
+        "noisy_video_timesteps": torch.cat(
+            (torch.tensor([0.9], device=device), video_time)
+        ),
+        "clean_video_timesteps": torch.ones(1, device=device),
+        "noisy_video_timestep_indices": noisy_video_timestep_indices,
+        "clean_video_timestep_indices": torch.zeros(
+            video_tokens, device=device, dtype=torch.long
+        ),
+        "noisy_action": noisy_action,
+        "clean_action": clean_action,
+        "action_position_ids": action_position_ids,
+        "action_chunks": action_chunks,
+        "action_time": action_time,
+        "context": context,
+        "context_position_ids": context_position_ids,
+        "state": state,
+        "context_mask": context_mask,
+        "video_target": clean_video - video_noise,
+        "action_target": action_noise - clean_action,
+        "future": future,
+    }
 
 
 def main() -> None:
@@ -158,6 +324,12 @@ def main() -> None:
         )
         ignored_modules = [*model.h3.children(), *model.action_expert.children()]
         wrap_class = H3LingBotPairedLayer
+    if args.freeze_shared_blocks:
+        if not args.shared_backbone:
+            raise ValueError("freeze-shared-blocks requires shared-backbone")
+        for layer in model.shared_layers:
+            layer.requires_grad_(False)
+        model.h3.proj_out.requires_grad_(False)
     ignored_modules = [
         module for module in ignored_modules if len(list(module.parameters())) > 0
     ]
@@ -244,6 +416,8 @@ def main() -> None:
 
     sigma = torch.tensor([0.5], device=device)
     sample_id = "synthetic"
+    rows = []
+    stats = None
     if args.data_root is None:
         video_tokens = args.video_frames * args.tokens_per_frame
         input_width = model.module.h3.proj_in.in_features
@@ -307,121 +481,103 @@ def main() -> None:
         ]
         if not rows:
             raise ValueError("manifest contains no rows")
-        row = rows[rank % len(rows)]
-        sample_id = str(row["id"])
-        context_id = str(row.get("context_id", sample_id))
-        data_root = args.data_root.resolve()
-        window = torch.load(
-            data_root / "windows" / f"{sample_id}.pt",
-            map_location="cpu",
-            weights_only=False,
-        )
-        conditioning = torch.load(
-            data_root / "contexts" / f"{context_id}.pt",
-            map_location="cpu",
-            weights_only=False,
-        )
         stats = torch.load(
-            data_root / "stats.pt", map_location="cpu", weights_only=False
+            args.data_root.resolve() / "stats.pt",
+            map_location="cpu",
+            weights_only=False,
         )
-        future_latents = window["video_latents"].to(device=device, dtype=torch.float32)
-        first_latent = window["first_frame_latents"].to(
-            device=device, dtype=torch.float32
+        batch = prepare_real_batch(
+            args=args,
+            row=rows[(args.sample_offset * world_size + rank) % len(rows)],
+            row_index=(args.sample_offset * world_size + rank) % len(rows),
+            device=device,
+            generator=generator,
+            model_root=model.module,
+            stats=stats,
+            patchify_video_latents=patchify_video_latents,
+            layout_builder=MiniMaxH3PrepareLayoutStep,
+            align_chunk_ids=align_h3_action_chunk_ids,
+            deterministic_noise=args.eval_only,
         )
-        _, _, latent_frames, latent_height, latent_width = future_latents.shape
-        text_tags = torch.cat(
-            (
-                conditioning["token_tags"].long(),
-                torch.ones(1, dtype=torch.long),
-            )
-        )
-        layout = MiniMaxH3PrepareLayoutStep.build_packed_sequence(
-            text_token_tags=text_tags,
-            num_latent_frames=latent_frames,
-            latent_height=latent_height,
-            latent_width=latent_width,
-            num_audio_latents=10,
-            patch_size=tuple(model.module.h3.config.patch_size),
-            audio_channels=8,
-            audio_tag=2,
-            video_tag=0,
-            keyframe_anchors=("first",),
-        )
-        position_ids, _, video_indices, _, text_indices, condition_rows, _ = layout
-        video_position_ids = position_ids.index_select(0, video_indices).to(device)
-        context_position_ids = position_ids.index_select(0, text_indices).to(device)
-        first_rows = patchify_video_latents(
-            first_latent, tuple(model.module.h3.config.patch_size)
-        )[None]
-        future_rows = patchify_video_latents(
-            future_latents, tuple(model.module.h3.config.patch_size)
-        )[None]
-        clean_video = torch.cat((first_rows, future_rows), dim=1)
-        video_tokens = clean_video.shape[1]
-        video_noise = torch.randn(
-            clean_video.shape, generator=generator, device=device
-        )
-        noisy_future = sigma[:, None, None] * future_rows
-        noisy_future += (1.0 - sigma[:, None, None]) * video_noise[:, condition_rows:]
-        noisy_video = torch.cat((first_rows, noisy_future), dim=1)
-        clean_action = window["actions"][: args.action_horizon].float()
-        scale = (stats["action_max"].float() - stats["action_min"].float()).clamp_min(1e-6)
-        clean_action = (
-            (clean_action - stats["action_min"].float()) / scale * 2.0 - 1.0
-        ).clamp(-1.0, 1.0)[None].to(device)
-        action_noise = torch.randn(
-            clean_action.shape, generator=generator, device=device
-        )
-        context = conditioning["context"].to(
-            device=device, dtype=torch.bfloat16
-        )
-        state_scale = (
-            stats["state_max"].float() - stats["state_min"].float()
-        ).clamp_min(1e-6)
-        state = (
-            (window["state"].float() - stats["state_min"].float())
-            / state_scale
-            * 2.0
-            - 1.0
-        ).clamp(-1.0, 1.0)[None].to(device)
-        context_mask = torch.ones(
-            context.shape[:2], device=device, dtype=torch.bool
-        )
-        frame_ids = video_position_ids[:, 0]
-        video_chunks, action_chunks = align_h3_action_chunk_ids(
-            video_frame_ids=frame_ids,
-            action_horizon=args.action_horizon,
-            actions_per_chunk=args.actions_per_chunk,
-        )
-        noisy_video_timesteps = torch.tensor([0.9, float(sigma)], device=device)
-        noisy_video_timestep_indices = torch.ones(
-            video_tokens, device=device, dtype=torch.long
-        )
-        noisy_video_timestep_indices[:condition_rows] = 0
-        clean_video_timesteps = torch.ones(1, device=device)
-        clean_video_timestep_indices = torch.zeros(
-            video_tokens, device=device, dtype=torch.long
-        )
-        future = torch.ones(video_tokens, device=device, dtype=torch.bool)
-        future[:condition_rows] = False
 
-    noisy_action = (1.0 - sigma[:, None, None]) * clean_action
-    noisy_action += sigma[:, None, None] * action_noise
-    video_target = clean_video - video_noise
-    action_target = action_noise - clean_action
-    action_position_ids = torch.stack(
-        (
-            torch.arange(args.action_horizon, device=device).float()
-            / args.actions_per_chunk,
-            torch.full((args.action_horizon,), -1.0, device=device),
-            torch.full((args.action_horizon,), -1.0, device=device),
-        ),
-        dim=-1,
-    )
+    if args.data_root is None:
+        noisy_action = (1.0 - sigma[:, None, None]) * clean_action
+        noisy_action += sigma[:, None, None] * action_noise
+        video_target = clean_video - video_noise
+        action_target = action_noise - clean_action
+        action_position_ids = torch.stack(
+            (
+                torch.arange(args.action_horizon, device=device).float()
+                / args.actions_per_chunk,
+                torch.full((args.action_horizon,), -1.0, device=device),
+                torch.full((args.action_horizon,), -1.0, device=device),
+            ),
+            dim=-1,
+        )
 
     torch.cuda.reset_peak_memory_stats(device)
     history = []
-    for step in range(1, args.steps + 1):
+    iterations = (
+        math.ceil(len(rows) / world_size)
+        if args.eval_only and args.eval_all and rows
+        else args.steps
+    )
+    evaluated_samples = 0
+    loss_sums = torch.zeros(3, device=device, dtype=torch.float64)
+    for step in range(1, iterations + 1):
+        if args.data_root is not None and (
+            args.rotate_windows or args.eval_all or step > 1
+        ):
+            row_index = (
+                args.sample_offset * world_size
+                + (step - 1) * world_size
+                + rank
+            )
+            has_sample = row_index < len(rows) if args.eval_all else True
+            batch = prepare_real_batch(
+                args=args,
+                row=rows[row_index % len(rows)],
+                row_index=row_index % len(rows),
+                device=device,
+                generator=generator,
+                model_root=model.module,
+                stats=stats,
+                patchify_video_latents=patchify_video_latents,
+                layout_builder=MiniMaxH3PrepareLayoutStep,
+                align_chunk_ids=align_h3_action_chunk_ids,
+                deterministic_noise=args.eval_only,
+            )
+        else:
+            has_sample = True
+        if args.data_root is not None:
+            sample_id = batch["sample_id"]
+            video_tokens = batch["video_tokens"]
+            noisy_video = batch["noisy_video"]
+            clean_video = batch["clean_video"]
+            video_position_ids = batch["video_position_ids"]
+            video_chunks = batch["video_chunks"]
+            noisy_video_timesteps = batch["noisy_video_timesteps"]
+            clean_video_timesteps = batch["clean_video_timesteps"]
+            noisy_video_timestep_indices = batch[
+                "noisy_video_timestep_indices"
+            ]
+            clean_video_timestep_indices = batch[
+                "clean_video_timestep_indices"
+            ]
+            noisy_action = batch["noisy_action"]
+            clean_action = batch["clean_action"]
+            action_position_ids = batch["action_position_ids"]
+            action_chunks = batch["action_chunks"]
+            action_time = batch["action_time"]
+            context = batch["context"]
+            context_position_ids = batch["context_position_ids"]
+            state = batch["state"]
+            context_mask = batch["context_mask"]
+            video_target = batch["video_target"]
+            action_target = batch["action_target"]
+            future = batch["future"]
+        else:
+            action_time = sigma
         optimizer.zero_grad(set_to_none=True)
         forward_arguments = dict(
             noisy_video_rows=noisy_video,
@@ -435,7 +591,11 @@ def main() -> None:
             noisy_actions=noisy_action,
             clean_actions=clean_action,
             action_chunk_ids=action_chunks,
-            noisy_action_timestep=(sigma if args.shared_backbone else sigma * 1000.0),
+            noisy_action_timestep=(
+                action_time
+                if args.shared_backbone
+                else (1.0 - action_time) * 1000.0
+            ),
             context=context,
             context_position_ids=context_position_ids,
             state=state,
@@ -455,6 +615,13 @@ def main() -> None:
             output.action_velocity.float(), action_target.float()
         )
         loss = video_loss + action_loss
+        valid_weight = float(has_sample)
+        loss_sums += torch.tensor(
+            [float(loss.detach()), float(video_loss.detach()), float(action_loss.detach())],
+            device=device,
+            dtype=torch.float64,
+        ) * valid_weight
+        evaluated_samples += int(has_sample)
         if not args.eval_only:
             loss.backward()
         named = list(model.named_parameters())
@@ -466,14 +633,14 @@ def main() -> None:
             ".action_adapters." if args.shared_backbone else ".action_block.",
             device,
         )
+        required_gradients = (action_gradient,)
+        if not args.freeze_shared_blocks:
+            required_gradients = (h3_gradient, action_gradient)
         if not math.isfinite(float(loss.detach())) or (
             not args.eval_only
             and not all(
             math.isfinite(value) and value > 0
-            for value in (
-                h3_gradient,
-                action_gradient,
-            )
+            for value in required_gradients
             )
         ):
             raise RuntimeError("full FSDP smoke produced non-finite/zero signal")
@@ -526,10 +693,20 @@ def main() -> None:
             "action_gradient_norm": action_gradient,
             "expert_clip_norms": expert_clip_norms,
             "learning_rate": float(scheduler.get_last_lr()[0]),
+            "sample": sample_id,
         }
         history.append(item)
         if rank == 0:
             print(json.dumps(item), flush=True)
+
+    dist.all_reduce(loss_sums)
+    evaluated_tensor = torch.tensor(evaluated_samples, device=device, dtype=torch.long)
+    dist.all_reduce(evaluated_tensor)
+    mean_losses = (
+        (loss_sums / evaluated_tensor.clamp_min(1)).tolist()
+        if int(evaluated_tensor) > 0
+        else [float("nan")] * 3
+    )
 
     if args.save_stage is not None and not args.eval_only:
         stage = {
@@ -589,11 +766,16 @@ def main() -> None:
             "saved_stage": None if args.save_stage is None else str(args.save_stage),
             "action_horizon": args.action_horizon,
             "history": history,
+            "evaluated_samples": int(evaluated_tensor),
+            "mean_loss": mean_losses[0],
+            "mean_video_loss": mean_losses[1],
+            "mean_action_loss": mean_losses[2],
             "peak_allocated_gib": torch.cuda.max_memory_allocated(device) / 2**30,
             "peak_reserved_gib": torch.cuda.max_memory_reserved(device) / 2**30,
             "load_seconds": load_seconds,
             "elapsed_seconds": time.perf_counter() - started,
             "shared_backbone": args.shared_backbone,
+            "freeze_shared_blocks": args.freeze_shared_blocks,
             "initialization": initialization,
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)

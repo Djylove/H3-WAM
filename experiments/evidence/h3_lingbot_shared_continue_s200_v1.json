@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_continue_s200_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "A second 100-step pass over 800 previously unseen dense LIBERO windows will increase the fixed val40 action-loss improvement from 0.453% to at least 0.75% while keeping video loss below the untrained initialization.",
+  "single_variable": "Continue the E17 shared-H3 tail-2 checkpoint for exactly 100 optimizer steps on the next 800 manifest windows; architecture, loss, optimizer, noise schedule and validation stay fixed.",
+  "parent_baseline": "E17 /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s100.pt; fixed val40 video/action losses 0.165861607/1.250916818 versus initialization 0.169533810/1.256608519.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy shared-H3 four-stream port", "locator": "/home/ubuntu/fastwam_deploy", "revision": "4d91562993e66ba295025864c75db564cb6f3dfc plus recorded multi-window diff", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared four-stream Transformer body", "paper": "video and action streams are jointly modeled", "upstream_code": "noisy/clean video/action use the same Wan block stack", "local": "all four streams use the same 50 H3 blocks; only H3 tail-2 and action adapters are trainable", "status": "INTENTIONAL_DEVIATION", "evidence": ["third_party/code_audit/lingbot-va/wan_va/modules/model.py:705", "src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "This is an H3 backbone port; H3 replaces Wan while preserving shared-block ownership and causal stream masking."}],
+    "data": [{"field": "dense episode-disjoint windows", "paper": "streamed observation/action chunks", "upstream_code": "LeRobot action segments paired with video latent segments", "local": "next 800 unique rows from 200779-window train manifest; fixed episode-disjoint val40", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl", "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl", "experiments/results/h3_lingbot_shared_multiwindow_s100_val40.json"], "rationale": "Dense windows and the validation split are unchanged from the positive parent; the offset prevents replay of its first 800 rows."}],
+    "action": [{"field": "LIBERO action contract", "paper": "embodiment-specific active action channels", "upstream_code": "seven active normalized LIBERO dimensions in a masked carrier", "local": "seven min-max-normalized dimensions, horizon 32", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/configs/va_libero_cfg.py:27", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "Inactive carrier dimensions have no loss or policy content."}],
+    "objective": [{"field": "joint flow objective", "paper": "joint video/action diffusion", "upstream_code": "video latent velocity MSE plus masked action velocity MSE", "local": "future-video and action velocity MSE with independent shifted timesteps", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/train.py:254", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py:615"], "rationale": "Both train noise-minus-clean velocity targets under linear interpolation."}],
+    "optimization": [{"field": "incremental canary budget", "paper": "long training", "upstream_code": "AdamW, global batch 10, 5000 steps", "local": "AdamW, lr 1e-6, global batch 8, exactly 100 additional steps, no restart warmup", "status": "INTENTIONAL_DEVIATION", "evidence": ["experiments/results/h3_lingbot_shared_multiwindow_s100_val40.json", "decision.launch_command"], "rationale": "The parent completed warmup; evidence rules cap this incremental canary at 100 steps before another held-out decision."}],
+    "evaluation": [{"field": "promotion metric", "paper": "closed-loop LIBERO success", "upstream_code": "LIBERO rollout", "local": "same-noise episode-disjoint val40 before any rollout", "status": "INTENTIONAL_DEVIATION", "evidence": ["experiments/results/h3_lingbot_shared_multiwindow_s100_val40.json", "decision.rationale"], "rationale": "This canary only tests whether the weak offline signal scales; it cannot establish policy success."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["official repository fixed at 7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["E16 shared-H3 engineering gate and 34 related tests"]},
+    "data_contract": {"status": "PASS", "evidence": ["E17 used 800 unique dense windows and fixed episode-disjoint val40"]},
+    "action_contract": {"status": "PASS", "evidence": ["seven active LIBERO dimensions aligned to official carrier mask"]},
+    "objective_contract": {"status": "PASS", "evidence": ["E17 random shifted timestep run completed with finite dual losses"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit 100-step, global-batch-8 command and sample offset"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered fixed val40 threshold and stop rule"]},
+    "gradient_path": {"status": "PASS", "evidence": ["E16/E17 nonzero stable H3 and action-adapter gradients"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["E17 completed 100 steps without nonfinite loss or gradient"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["E16 independent restore and E17 fixed-val evaluation succeeded"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E17 fixed val40 metrics recorded in experiments/results"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["0.453% action-loss improvement is promising but not a causal mechanism metric"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["shared-H3 inference sampler and LIBERO rollout are not yet validated"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.15},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Run one bounded continuation. Promote to sampler implementation only if cumulative step200 improves val40 action loss by at least 0.75% over initialization without losing the parent's positive video result; otherwise stop this optimization branch.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --output /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200_train.json --load-stage /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s100.pt --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt --steps 100 --sample-offset 100 --rotate-windows --random-timesteps --warmup-steps 0 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
+  }
+}

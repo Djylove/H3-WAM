@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_adapter_only_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Training H3 tail-2 contributes at least 0.25 percentage points more fixed-val40 action-loss improvement than training only the action input/time/state/output adapters under the identical E17 budget.",
+  "single_variable": "Freeze every shared H3 block and H3 video output projection; all data, initialization seed, action adapters, objectives, noise, optimizer, steps and validation remain identical to E17.",
+  "parent_baseline": "E17 shared-H3 tail-2 s100: fixed val40 action improvement 0.453% and video improvement 2.166% over the same initialization.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy shared-H3 four-stream port", "locator": "/home/ubuntu/fastwam_deploy", "revision": "4d91562993e66ba295025864c75db564cb6f3dfc plus freeze-shared-blocks diff", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "freeze boundary", "paper": "joint video/action model is optimized", "upstream_code": "shared Wan blocks are trainable", "local": "shared H3 blocks and video output projection frozen; action adapters trainable", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py:327", "src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "This deliberately isolates whether adapting pretrained H3 blocks causes the parent improvement."}],
+    "data": [{"field": "paired canary samples", "paper": "streaming observation/action chunks", "upstream_code": "dense paired LeRobot segments", "local": "the exact first 800 rows used by E17 and the same episode-disjoint val40", "status": "EQUIVALENT", "evidence": ["experiments/results/h3_lingbot_shared_multiwindow_s100_val40.json", "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"], "rationale": "Seed, order, sample count and manifests are controlled."}],
+    "action": [{"field": "action representation", "paper": "embodiment-specific channels", "upstream_code": "seven active normalized LIBERO dimensions", "local": "seven min-max-normalized dimensions, horizon 32", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/configs/va_libero_cfg.py:27", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "No action-contract variable changes between arms."}],
+    "objective": [{"field": "paired joint objective", "paper": "video/action flow objective", "upstream_code": "video and action velocity MSE", "local": "identical E17 future-video/action velocity MSE, although frozen video parameters receive no update", "status": "EQUIVALENT", "evidence": ["scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py:615", "experiments/results/h3_lingbot_shared_multiwindow_s100_val40.json"], "rationale": "Keeping video loss in the graph controls forward context and exposes expected zero shared-H3 gradient."}],
+    "optimization": [{"field": "paired 100-step budget", "paper": "long training", "upstream_code": "AdamW long run", "local": "same seed, global batch 8, lr 1e-6, warmup 10 and 100 steps as E17", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command", "experiments/results/h3_lingbot_shared_multiwindow_s100_val40.json"], "rationale": "A short paired ablation is sufficient to reject or retain the tail-update mechanism before longer training."}],
+    "evaluation": [{"field": "paired held-out comparison", "paper": "closed-loop LIBERO", "upstream_code": "LIBERO rollout", "local": "fixed-noise episode-disjoint val40 against E17", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale", "experiments/results/h3_lingbot_shared_multiwindow_s100_val40.json"], "rationale": "This experiment selects a mechanism and makes no closed-loop claim."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["official repository fixed at 7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["explicit requires_grad freeze after shared model construction"]},
+    "data_contract": {"status": "PASS", "evidence": ["same manifests, seed and order as E17"]},
+    "action_contract": {"status": "PASS", "evidence": ["unchanged seven-channel normalization and horizon"]},
+    "objective_contract": {"status": "PASS", "evidence": ["unchanged E17 velocity targets and shifted timesteps"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit matched 100-step launch command"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered 0.25 percentage-point paired margin"]},
+    "gradient_path": {"status": "PASS", "evidence": ["E16 proves action loss reaches adapters; runtime asserts positive adapter gradient and zero shared gradient is expected"]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["the bounded run itself is the freeze-boundary canary"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["shared model save/restore validated independently in E16"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E17 metrics and checkpoint are fixed"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["pending paired comparison"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not required or claimed for mechanism ablation"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.15},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Run the strict paired ablation once. Retain H3 tail updates only if E17 beats adapter-only by at least 0.25 percentage points on fixed val40 action loss; otherwise prefer the cheaper adapter path and investigate conditioning before scaling.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --freeze-shared-blocks --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --output /mnt/h3-wam/outputs/h3-lingbot-shared/adapter_only_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/adapter_only_s100.pt --steps 100 --sample-offset 0 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
+  }
+}

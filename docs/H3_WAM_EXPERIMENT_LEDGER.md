@@ -39,6 +39,7 @@
 | E14 | four-stream full50 FSDP smoke | 8×A800、50层、尾2层可训练、1 step | loss `26.0150`；H3/action grad `70.23/10131.99`；reserved `21.16 GiB` | 不适用 | 全层/FSDP门通过；等待真实 dense window smoke |
 | E15 | 独立 ActionDiT 真实 dense 更新 | 8×A800、1274 video tokens、32 actions、tail-2、LR `1e-6`、无 warmup | step1 `33.3022`；step2 `7505.1816`；action grad `5.87e5 → 3.81e7` | 不适用 | `NO_GO`；checkpoint 只作诊断，不得续训 |
 | E16 | shared-H3 four-stream 工程门 | 官方共享 block 结构；真实 H3 单层2步 + full50真实dense 10步；tail-2；10步warmup | 单层 action `2.3449 → 2.3432`；full50 action `1.07875 → 1.07266`；H3/action grad稳定 | 不适用 | 数值、FSDP、save/restore 均通过；只晋级 multi-window canary，不构成泛化证据 |
+| E17 | shared-H3 multi-window canary | 100 steps、global batch8、800 train windows、随机 H3/LingBot timestep、tail-2 | val40 action `1.256609 → 1.250917`（改善 `0.453%`）；video `0.169534 → 0.165862`（改善 `2.166%`） | 尚未放行 | 首个 episode-disjoint 双目标正向信号；晋级扩展 canary，不是 `GO_LONG` |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -61,6 +62,12 @@ loss `0.182335 → 0.182341`，H3/action gradient norm 始终约 `0.21–0.25/8.
 `42.01 GiB reserved`。独立进程加载保存的 stage 后得到 action loss `1.072317`，证明 checkpoint
 restore 成功。该实验重复同一窗口，故只回答数值稳定性；下一门必须轮换 train windows，并在
 episode-disjoint val40 上与未训练 shared-H3 初始化做同噪声对照。
+
+E17 已完成上述对照。训练每个 rank/step 轮换不同 window，累计 800 samples；video 使用 H3 原生
+shift `12.0`，action 使用 LingBot 配方的 shift `0.05`，val40 则按 sample 固定噪声。held-out
+action/video 均改善，但 action 幅度仍只有 `0.453%`，故只放行到累计 3200 samples 的扩展 canary。
+同时用空闲节点跑相同数据、噪声、LR 的 adapter-only 对照，隔离 H3 tail-2 更新是否必要；在两者
+val40 结果出来前不做闭环、不增加服务器。
 
 ## 2026-08-12 活跃长线
 

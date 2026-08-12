@@ -1,0 +1,31 @@
+{
+  "event": "h3_lingbot_shared_multiwindow_s100_val40",
+  "train": {
+    "optimizer_steps": 100,
+    "global_batch": 8,
+    "training_samples": 800,
+    "manifest": "v7_multisuite_dense_candidate/manifest_train_uniform.jsonl",
+    "random_timesteps": true,
+    "video_noise_shift": 12.0,
+    "action_noise_shift": 0.05,
+    "last_trainable_h3_layers": 2,
+    "learning_rate": 1e-6,
+    "warmup_steps": 10,
+    "mean_video_loss": 0.23409910395741462,
+    "mean_action_loss": 1.2374877217411995,
+    "elapsed_seconds": 460.9497434122022
+  },
+  "validation": {
+    "manifest": "v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl",
+    "episode_disjoint": true,
+    "samples": 40,
+    "fixed_noise_by_sample": true,
+    "initialization": {"video_loss": 0.16953381039202214, "action_loss": 1.2566085189580918},
+    "step100": {"video_loss": 0.16586160697042943, "action_loss": 1.2509168177843093},
+    "video_improvement_percent": 2.1660596273399886,
+    "action_improvement_percent": 0.45294147603755835
+  },
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s100.pt",
+  "status": "GO_EXTENDED_CANARY",
+  "claim_limit": "Positive held-out offline signal only; no closed-loop or GO_LONG claim."
+}
