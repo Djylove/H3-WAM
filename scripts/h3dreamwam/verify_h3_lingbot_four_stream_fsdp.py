@@ -24,6 +24,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--data-root", type=Path)
+    parser.add_argument("--manifest", type=Path)
     parser.add_argument("--steps", type=int, default=1)
     parser.add_argument("--last-trainable-layers", type=int, default=2)
     parser.add_argument("--video-frames", type=int, default=2)
@@ -64,6 +66,10 @@ def main() -> None:
     generator = torch.Generator(device=device).manual_seed(args.seed + rank)
 
     from diffusers import MiniMaxH3Transformer3DModel
+    from diffusers.modular_pipelines.minimax_h3.before_denoise import (
+        MiniMaxH3PrepareLayoutStep,
+        patchify_video_latents,
+    )
     from fastwam.models.h3dreamwam import (
         H3DreamActionExpert,
         H3LingBotPairedLayer,
@@ -74,6 +80,9 @@ def main() -> None:
     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
     from torch.distributed.fsdp import MixedPrecision
     from torch.distributed.fsdp.wrap import ModuleWrapPolicy
+
+    if (args.data_root is None) != (args.manifest is None):
+        raise ValueError("data-root and manifest must be supplied together")
 
     started = time.perf_counter()
     h3 = MiniMaxH3Transformer3DModel.from_pretrained(
@@ -151,54 +160,171 @@ def main() -> None:
     )
     load_seconds = time.perf_counter() - started
 
-    video_tokens = args.video_frames * args.tokens_per_frame
-    input_width = model.module.h3.proj_in.in_features
-    frame_ids = torch.arange(args.video_frames, device=device).repeat_interleave(
-        args.tokens_per_frame
-    )
-    video_chunks, action_chunks = align_h3_action_chunk_ids(
-        video_frame_ids=frame_ids,
-        action_horizon=args.action_horizon,
-        actions_per_chunk=args.actions_per_chunk,
-    )
-    side = max(1, int(math.sqrt(args.tokens_per_frame)))
-    spatial = torch.arange(args.tokens_per_frame, device=device)
-    positions = []
-    for frame in range(args.video_frames):
-        positions.append(
-            torch.stack(
-                (
-                    torch.full_like(spatial, frame),
-                    torch.div(spatial, side, rounding_mode="floor"),
-                    spatial % side,
-                ),
-                dim=-1,
-            ).float()
-        )
-    video_position_ids = torch.cat(positions, dim=0)
-    context_position_ids = torch.zeros(3, 3, device=device)
-    clean_video = torch.randn(
-        1, video_tokens, input_width, generator=generator, device=device
-    )
-    video_noise = torch.randn(
-        clean_video.shape, generator=generator, device=device
-    )
     sigma = torch.tensor([0.5], device=device)
-    noisy_video = (1.0 - sigma[:, None, None]) * clean_video
-    noisy_video += sigma[:, None, None] * video_noise
-    clean_action = torch.randn(
-        1, args.action_horizon, 7, generator=generator, device=device
-    )
-    action_noise = torch.randn(
-        clean_action.shape, generator=generator, device=device
-    )
+    sample_id = "synthetic"
+    if args.data_root is None:
+        video_tokens = args.video_frames * args.tokens_per_frame
+        input_width = model.module.h3.proj_in.in_features
+        frame_ids = torch.arange(args.video_frames, device=device).repeat_interleave(
+            args.tokens_per_frame
+        )
+        video_chunks, action_chunks = align_h3_action_chunk_ids(
+            video_frame_ids=frame_ids,
+            action_horizon=args.action_horizon,
+            actions_per_chunk=args.actions_per_chunk,
+        )
+        side = max(1, int(math.sqrt(args.tokens_per_frame)))
+        spatial = torch.arange(args.tokens_per_frame, device=device)
+        positions = []
+        for frame in range(args.video_frames):
+            positions.append(
+                torch.stack(
+                    (
+                        torch.full_like(spatial, frame),
+                        torch.div(spatial, side, rounding_mode="floor"),
+                        spatial % side,
+                    ),
+                    dim=-1,
+                ).float()
+            )
+        video_position_ids = torch.cat(positions, dim=0)
+        context_position_ids = torch.zeros(3, 3, device=device)
+        clean_video = torch.randn(
+            1, video_tokens, input_width, generator=generator, device=device
+        )
+        video_noise = torch.randn(
+            clean_video.shape, generator=generator, device=device
+        )
+        noisy_video = (1.0 - sigma[:, None, None]) * clean_video
+        noisy_video += sigma[:, None, None] * video_noise
+        clean_action = torch.randn(
+            1, args.action_horizon, 7, generator=generator, device=device
+        )
+        action_noise = torch.randn(
+            clean_action.shape, generator=generator, device=device
+        )
+        context = torch.randn(
+            1, 2, 5120, generator=generator, device=device, dtype=torch.bfloat16
+        )
+        state = torch.randn(1, 8, generator=generator, device=device)
+        context_mask = torch.ones(1, 2, device=device, dtype=torch.bool)
+        noisy_video_timesteps = sigma
+        noisy_video_timestep_indices = torch.zeros(
+            video_tokens, device=device, dtype=torch.long
+        )
+        clean_video_timesteps = torch.ones(1, device=device)
+        clean_video_timestep_indices = torch.zeros(
+            video_tokens, device=device, dtype=torch.long
+        )
+        future = video_chunks > video_chunks.min()
+    else:
+        rows = [
+            json.loads(line)
+            for line in args.manifest.resolve().read_text().splitlines()
+            if line.strip()
+        ]
+        if not rows:
+            raise ValueError("manifest contains no rows")
+        row = rows[rank % len(rows)]
+        sample_id = str(row["id"])
+        context_id = str(row.get("context_id", sample_id))
+        data_root = args.data_root.resolve()
+        window = torch.load(
+            data_root / "windows" / f"{sample_id}.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        conditioning = torch.load(
+            data_root / "contexts" / f"{context_id}.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        stats = torch.load(
+            data_root / "stats.pt", map_location="cpu", weights_only=False
+        )
+        future_latents = window["video_latents"].to(device=device, dtype=torch.float32)
+        first_latent = window["first_frame_latents"].to(
+            device=device, dtype=torch.float32
+        )
+        _, _, latent_frames, latent_height, latent_width = future_latents.shape
+        text_tags = torch.cat(
+            (
+                conditioning["token_tags"].long(),
+                torch.ones(1, dtype=torch.long),
+            )
+        )
+        layout = MiniMaxH3PrepareLayoutStep.build_packed_sequence(
+            text_token_tags=text_tags,
+            num_latent_frames=latent_frames,
+            latent_height=latent_height,
+            latent_width=latent_width,
+            num_audio_latents=10,
+            patch_size=tuple(model.module.h3.config.patch_size),
+            audio_channels=8,
+            audio_tag=2,
+            video_tag=0,
+            keyframe_anchors=("first",),
+        )
+        position_ids, _, video_indices, _, text_indices, condition_rows, _ = layout
+        video_position_ids = position_ids.index_select(0, video_indices).to(device)
+        context_position_ids = position_ids.index_select(0, text_indices).to(device)
+        first_rows = patchify_video_latents(
+            first_latent, tuple(model.module.h3.config.patch_size)
+        )[None]
+        future_rows = patchify_video_latents(
+            future_latents, tuple(model.module.h3.config.patch_size)
+        )[None]
+        clean_video = torch.cat((first_rows, future_rows), dim=1)
+        video_tokens = clean_video.shape[1]
+        video_noise = torch.randn(
+            clean_video.shape, generator=generator, device=device
+        )
+        noisy_future = sigma[:, None, None] * future_rows
+        noisy_future += (1.0 - sigma[:, None, None]) * video_noise[:, condition_rows:]
+        noisy_video = torch.cat((first_rows, noisy_future), dim=1)
+        clean_action = window["actions"][: args.action_horizon].float()
+        scale = (stats["action_max"].float() - stats["action_min"].float()).clamp_min(1e-6)
+        clean_action = (
+            (clean_action - stats["action_min"].float()) / scale * 2.0 - 1.0
+        ).clamp(-1.0, 1.0)[None].to(device)
+        action_noise = torch.randn(
+            clean_action.shape, generator=generator, device=device
+        )
+        context = conditioning["context"].to(
+            device=device, dtype=torch.bfloat16
+        )
+        state_scale = (
+            stats["state_max"].float() - stats["state_min"].float()
+        ).clamp_min(1e-6)
+        state = (
+            (window["state"].float() - stats["state_min"].float())
+            / state_scale
+            * 2.0
+            - 1.0
+        ).clamp(-1.0, 1.0)[None].to(device)
+        context_mask = torch.ones(
+            context.shape[:2], device=device, dtype=torch.bool
+        )
+        frame_ids = video_position_ids[:, 0]
+        video_chunks, action_chunks = align_h3_action_chunk_ids(
+            video_frame_ids=frame_ids,
+            action_horizon=args.action_horizon,
+            actions_per_chunk=args.actions_per_chunk,
+        )
+        noisy_video_timesteps = torch.tensor([0.9, float(sigma)], device=device)
+        noisy_video_timestep_indices = torch.ones(
+            video_tokens, device=device, dtype=torch.long
+        )
+        noisy_video_timestep_indices[:condition_rows] = 0
+        clean_video_timesteps = torch.ones(1, device=device)
+        clean_video_timestep_indices = torch.zeros(
+            video_tokens, device=device, dtype=torch.long
+        )
+        future = torch.ones(video_tokens, device=device, dtype=torch.bool)
+        future[:condition_rows] = False
+
     noisy_action = (1.0 - sigma[:, None, None]) * clean_action
     noisy_action += sigma[:, None, None] * action_noise
-    context = torch.randn(
-        1, 2, 5120, generator=generator, device=device, dtype=torch.bfloat16
-    )
-    state = torch.randn(1, 8, generator=generator, device=device)
-    context_mask = torch.ones(1, 2, device=device, dtype=torch.bool)
     video_target = clean_video - video_noise
     action_target = action_noise - clean_action
 
@@ -211,8 +337,10 @@ def main() -> None:
             clean_video_rows=clean_video,
             video_position_ids=video_position_ids,
             video_chunk_ids=video_chunks,
-            noisy_video_timestep=sigma,
-            clean_video_timestep=torch.zeros_like(sigma),
+            noisy_video_timestep=noisy_video_timesteps,
+            clean_video_timestep=clean_video_timesteps,
+            noisy_video_timestep_indices=noisy_video_timestep_indices,
+            clean_video_timestep_indices=clean_video_timestep_indices,
             noisy_actions=noisy_action,
             clean_actions=clean_action,
             action_chunk_ids=action_chunks,
@@ -222,7 +350,6 @@ def main() -> None:
             state=state,
             context_mask=context_mask,
         )
-        future = video_chunks > video_chunks.min()
         video_loss = F.mse_loss(
             output.video_velocity_rows[:, future].float(),
             video_target[:, future].float(),
@@ -294,6 +421,8 @@ def main() -> None:
             "layers": 50,
             "last_trainable_layers": args.last_trainable_layers,
             "video_tokens": video_tokens,
+            "sample": sample_id,
+            "real_data": args.data_root is not None,
             "action_horizon": args.action_horizon,
             "history": history,
             "peak_allocated_gib": torch.cuda.max_memory_allocated(device) / 2**30,

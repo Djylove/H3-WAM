@@ -73,8 +73,8 @@ class H3LingBotWAM(nn.Module):
         )
 
     def _time_embedding(self, timestep: torch.Tensor) -> torch.Tensor:
-        if timestep.shape != (1,):
-            raise ValueError("the packed H3 port currently requires one timestep")
+        if timestep.ndim != 1 or timestep.numel() == 0:
+            raise ValueError("H3 timesteps must be a non-empty 1D tensor")
         projected = self.h3.time_proj(timestep)
         return self.h3.time_embedder(
             projected.to(self.h3.time_embedder.linear_1.weight.dtype)
@@ -89,6 +89,8 @@ class H3LingBotWAM(nn.Module):
         video_chunk_ids: torch.Tensor,
         noisy_video_timestep: torch.Tensor,
         clean_video_timestep: torch.Tensor,
+        noisy_video_timestep_indices: torch.Tensor | None = None,
+        clean_video_timestep_indices: torch.Tensor | None = None,
         noisy_actions: torch.Tensor,
         clean_actions: torch.Tensor,
         action_chunk_ids: torch.Tensor,
@@ -139,9 +141,33 @@ class H3LingBotWAM(nn.Module):
         context_hidden = self.h3.token_refiner(context_hidden)
         noisy_video_temb = self._time_embedding(noisy_video_timestep)
         clean_video_temb = self._time_embedding(clean_video_timestep)
-        video_adaln_indices = torch.zeros(
-            noisy_video.shape[1], device=noisy_video.device, dtype=torch.long
-        )
+        if noisy_video_timestep_indices is None:
+            noisy_video_timestep_indices = torch.zeros(
+                noisy_video.shape[1], device=noisy_video.device, dtype=torch.long
+            )
+        if clean_video_timestep_indices is None:
+            clean_video_timestep_indices = torch.zeros(
+                clean_video.shape[1], device=clean_video.device, dtype=torch.long
+            )
+        noisy_video_timestep_indices = noisy_video_timestep_indices.to(
+            device=noisy_video.device, dtype=torch.long
+        ).reshape(-1)
+        clean_video_timestep_indices = clean_video_timestep_indices.to(
+            device=clean_video.device, dtype=torch.long
+        ).reshape(-1)
+        if noisy_video_timestep_indices.shape != (noisy_video.shape[1],):
+            raise ValueError("noisy video timestep indices must cover every row")
+        if clean_video_timestep_indices.shape != (clean_video.shape[1],):
+            raise ValueError("clean video timestep indices must cover every row")
+        if (
+            int(noisy_video_timestep_indices.min()) < 0
+            or int(noisy_video_timestep_indices.max()) >= noisy_video_temb.shape[0]
+            or int(clean_video_timestep_indices.min()) < 0
+            or int(clean_video_timestep_indices.max()) >= clean_video_temb.shape[0]
+        ):
+            raise ValueError("video timestep index is outside its embedding table")
+        noisy_video_adaln_indices = noisy_video_timestep_indices * 3
+        clean_video_adaln_indices = clean_video_timestep_indices * 3
         # H3 modality id 1 is text; both language and appended proprio use the
         # pretrained text modulation row.
         context_adaln_indices = torch.ones(
@@ -190,8 +216,8 @@ class H3LingBotWAM(nn.Module):
                     clean_action_hidden=ca,
                     noisy_h3_temb=noisy_video_temb,
                     clean_h3_temb=clean_video_temb,
-                    noisy_h3_adaln_indices=video_adaln_indices,
-                    clean_h3_adaln_indices=video_adaln_indices,
+                    noisy_h3_adaln_indices=noisy_video_adaln_indices,
+                    clean_h3_adaln_indices=clean_video_adaln_indices,
                     h3_rotary_emb=video_rotary,
                     h3_apply_rotary=apply_h3_rotary,
                     noisy_action_time_modulation=noisy_action_state[
@@ -234,7 +260,7 @@ class H3LingBotWAM(nn.Module):
             )
 
         video_hidden = self.h3.norm_out(
-            noisy_video, noisy_video_temb, video_adaln_indices
+            noisy_video, noisy_video_temb, noisy_video_timestep_indices
         )
         video_velocity = self.h3.proj_out(
             video_hidden.to(self.h3.proj_out.weight.dtype)

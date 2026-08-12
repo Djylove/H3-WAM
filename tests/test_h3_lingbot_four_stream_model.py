@@ -44,11 +44,16 @@ class TinyH3(nn.Module):
         self.proj_out = nn.Linear(8, 6)
         self.context_embedder = nn.Linear(6, 8)
         self.token_refiner = nn.Identity()
-        self.time_proj = nn.Linear(1, 4)
+        self.time_proj = TinyTimeProjection()
         self.time_embedder = TinyTimeEmbedding()
         self.rope = TinyRoPE()
         self.norm_out = TinyNormOut()
         self.transformer_blocks = nn.ModuleList([TinyH3Block()])
+
+
+class TinyTimeProjection(nn.Module):
+    def forward(self, timestep: torch.Tensor) -> torch.Tensor:
+        return timestep[:, None].expand(-1, 4)
 
 
 class H3LingBotWAMTest(unittest.TestCase):
@@ -113,6 +118,19 @@ class H3LingBotWAMTest(unittest.TestCase):
         arguments = dict(self.arguments)
         arguments["context_position_ids"] = torch.zeros(2, 3)
         with self.assertRaisesRegex(ValueError, "reserve one proprio"):
+            self.model(**arguments)
+
+    def test_condition_and_future_can_use_distinct_h3_timesteps(self) -> None:
+        arguments = dict(self.arguments)
+        arguments["noisy_video_timestep"] = torch.tensor([1.0, 0.5])
+        arguments["noisy_video_timestep_indices"] = torch.tensor([0, 0, 1, 1])
+        output = self.model(**arguments)
+        self.assertEqual(output.video_velocity_rows.shape, (1, 4, 6))
+
+    def test_out_of_range_h3_timestep_index_is_rejected(self) -> None:
+        arguments = dict(self.arguments)
+        arguments["noisy_video_timestep_indices"] = torch.tensor([0, 0, 0, 1])
+        with self.assertRaisesRegex(ValueError, "outside its embedding table"):
             self.model(**arguments)
 
 
