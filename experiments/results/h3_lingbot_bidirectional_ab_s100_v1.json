@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "experiment_id": "h3_lingbot_bidirectional_ab_s100_v1",
+  "completed_at": "2026-08-12T23:14:00+08:00",
+  "shared_contract": {
+    "seed": 2026,
+    "optimizer_steps": 100,
+    "global_batch": 8,
+    "training_windows": 800,
+    "validation_windows": 40,
+    "manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl",
+    "validation_manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl",
+    "fsdp_layout": "tail_sharded",
+    "last_action_blocks": 2
+  },
+  "baseline": {
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-port/ab_s100_output_only.pt",
+    "train_mean_action_loss": 26.697083431482316,
+    "train_mean_video_loss": 0.40182357851415873,
+    "val40_mean_action_loss": 24.207276821136475,
+    "val40_mean_video_loss": 0.3635722668841481,
+    "peak_allocated_gib": 41.44999,
+    "peak_reserved_gib": 58.40625
+  },
+  "bidirectional_tail2": {
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-port/ab_s100_output_plus_bidir_tail2.pt",
+    "train_mean_action_loss": 26.692795099020003,
+    "train_mean_video_loss": 0.40186326469294725,
+    "val40_mean_action_loss": 24.203841042518615,
+    "val40_mean_video_loss": 0.363587841950357,
+    "action_to_video_gate_parameters": 112,
+    "final_gate_max_abs": 0.009643699042499065,
+    "final_gate_mean_abs": 0.0001936371546824895,
+    "first_reverse_gate_gradient_norm": 62.5214,
+    "peak_allocated_gib": 41.44999,
+    "peak_reserved_gib": 58.40625
+  },
+  "relative_improvement_percent": {
+    "train_action": 0.016062924900836387,
+    "val40_action": 0.014193164490355488,
+    "val40_video": -0.004283898313350891
+  },
+  "decision": "NO_GO_LONG",
+  "rollout": "SKIPPED_BY_PREREGISTRATION",
+  "next": "Implement the official-style chunk-level block-causal video/action stream contract before another long run."
+}

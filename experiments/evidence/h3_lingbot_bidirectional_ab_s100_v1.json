@@ -27,11 +27,20 @@
     "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered A/B then rollout promotion"]},
     "gradient_path": {"status": "PASS", "evidence": ["real-H3 reverse gate gradient norm 46.4479"]},
     "smoke_finite": {"status": "PASS", "evidence": ["2-step smoke loss 35.8310 then 31.4696"]},
-    "checkpoint_restore": {"status": "FAIL", "evidence": ["pending 100-step stage"]},
-    "parent_baseline": {"status": "FAIL", "evidence": ["A-arm will produce paired parent"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["both 100-step stages restored for val40"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["paired A-arm output-only checkpoint and val40 report"]},
     "mechanism_signal": {"status": "PASS", "evidence": ["reverse gates updated from zero to max abs 2.0002e-4"]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["deferred until B beats A offline"]}
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.00398408, "gpu_count": 8, "estimated_hours": 0.6},
-  "decision": {"status": "GO_CANARY", "rationale": "The real-H3 engineering smoke passed; run paired 100-step A/B only and stop if B lacks held-out improvement.", "launch_command": "VARIANT=baseline STEPS=100 bash scripts/h3dreamwam/launch_h3_lingbot_ab_canary.sh; on a separate idle node: VARIANT=bidirectional STEPS=100 bash scripts/h3dreamwam/launch_h3_lingbot_ab_canary.sh"}
+  "decision": {"status": "GO_CANARY", "rationale": "The real-H3 engineering smoke passed; run paired 100-step A/B only and stop if B lacks held-out improvement.", "launch_command": "VARIANT=baseline STEPS=100 bash scripts/h3dreamwam/launch_h3_lingbot_ab_canary.sh; on a separate idle node: VARIANT=bidirectional STEPS=100 bash scripts/h3dreamwam/launch_h3_lingbot_ab_canary.sh"},
+  "outcome": {
+    "status": "NO_GO_LONG",
+    "reason": "The bidirectional arm improved held-out action loss by only 0.0142% and slightly worsened video loss; this is not a material mechanism signal.",
+    "baseline": {"train_mean_action_loss": 26.697083431482316, "val40_mean_action_loss": 24.207276821136475, "val40_mean_video_loss": 0.3635722668841481},
+    "bidirectional": {"train_mean_action_loss": 26.692795099020003, "val40_mean_action_loss": 24.203841042518615, "val40_mean_video_loss": 0.363587841950357, "final_gate_max_abs": 0.009643699042499065},
+    "relative_improvement_percent": {"train_action": 0.016062924900836387, "val40_action": 0.014193164490355488, "val40_video": -0.004283898313350891},
+    "rollout": "SKIPPED_BY_PREREGISTRATION",
+    "next": "Port full chunk-level block-causal video/action streams and streaming feedback; do not extend the gate-only arm."
+  }
 }

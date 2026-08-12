@@ -9,6 +9,11 @@
 当前首选是 LingBot-VA/FastWAM 风格的可训练双流路径；DiT4DiT 作为更受控、成本更低的并行替代。
 M11/M13 继续完成，身份明确标为 legacy baseline。
 
+2026-08-12 已完成第一轮最小反向门控消融：真实 H3 的梯度、FSDP、checkpoint restore 均通过，
+但配对 val40 action loss 仅改善 `0.0142%`，因此该 canary 的结果是 `NO_GO_LONG`。这不是
+LingBot-VA 完整架构的否定结论；被否定的是“在现有 one-way 模型尾部增加少量 gate 即可获得
+策略收益”的简化假设。
+
 ## 代码事实对齐
 
 | 项目 | 开源等级 | 实际代码中的关键设计 | 对 H3-WAM 的用途 |
@@ -56,6 +61,32 @@ Wan video backbone 替换为 H3，并实现对应 token shape、RoPE、cross-str
 
 100-step 只决定是否继续，不证明效果。只有相对 M13 父基线 val 不退化超过5%、语言反事实差异
 扩大且出现 `>=1/10` 固定闭环成功，才进入长训练。
+
+### A1. 已完成的最小反向门控 canary
+
+- action 只能写入 future-video rows，observation rows 受测试保护；
+- 2-step 真实 H3 smoke 的反向 gate gradient norm 为 `46.4479`，保存/恢复链路通过；
+- 100-step A/B 严格共享初始化、数据、seed、loss 和 FSDP 布局；
+- B 相对 A 的 val40 action loss 仅改善 `0.0142%`，video loss 退化 `0.0043%`；
+- 结论：不晋级 rollout、不扩 step、不增加卡，保留为工程基件。
+
+### A2. 下一轮完整 block-causal 双流整改
+
+下一轮不只是放大 gate，而是逐项移植官方代码中的因果信息结构：
+
+1. 把 observation-video、future-video、noisy-action、executed-action/observation feedback
+   声明为显式 stream，而不是把 action 仅作为 H3 尾层附加 K/V；
+2. 按时间 chunk 构造 block-causal mask：动作只能读取当前及过去观测，future-video 可以读取
+   对应动作，禁止 future observation 泄漏；
+3. 训练时同时计算 video/action flow matching，逐层记录两个 loss 到 H3、video expert、action
+   expert 和 fusion 的梯度覆盖；
+4. 推理端增加与训练一致的 observation/action KV 更新，并用单元测试验证 train/inference mask
+   等价；
+5. 先跑参数量受控的 2-step restore/gradient smoke，再跑固定 100-step A/B；只有达到预注册
+   held-out、语言反事实和 `>=1/10` 闭环门槛才申请长训卡。
+
+在 A2 的 mask、stream contract 和 gradient coverage 测试完成前，空闲 A800 用于 smoke 和评测，
+不启动未经证据门禁的长任务。
 
 ### B. DiT4DiT → H3 受控线
 

@@ -14,6 +14,9 @@
 - controller replan/action-scale 扫描没有修复失败，主要矛盾已经从“部署参数”转到目标绑定、
   接触阶段学习和 offline-to-online 分布偏移。
 - DreamWAM 的极短 motion canary 只是未对齐的探索，不能据此否定其官方完整训练方法。
+- H3/ActionDiT 的 action→future-video 反向梯度链路已在真实 33B H3、8×A800 上跑通；但
+  严格配对的 100-step 消融仅带来 `0.0142%` held-out action-loss 改善，低于实验噪声量级，
+  因此停止 gate-only 长训，转向 LingBot-VA 的完整 block-causal 双流接口。
 
 ## 稳定实验记录
 
@@ -30,13 +33,15 @@
 | E08 | M11 full frame-indexed long | 277,713 windows，global batch128 | step200 `0.151389` | task3 `0/10` | 保留至预定终点 |
 | E09 | M14 tail-2 | M13 step400 父模型，40 steps | `0.119368`，比父模型约好2.4% | task3 `0/3` | 小幅离线增益不足以晋级 |
 | E10 | controller sweep | replan 1/2/5、action scale0.5 | 不适用 | 每项 `0/1` | 停止调部署超参 |
+| E11 | H3 bidirectional engineering smoke | 真实 H3 33B、8×A800、tail-2、2 steps | loss `35.8310 → 31.4696`；反向 gate grad norm `46.4479` | 不适用 | 工程/梯度链路通过，不构成效果证据 |
+| E12 | LingBot-inspired gate-only A/B | 同初始化/seed/800 dense windows；A 输出头，B 额外112个反向 gate scalars | train action：A `26.697083`，B `26.692795`；val40：A `24.207277`，B `24.203841` | 按预注册规则不晋级 rollout | held-out 仅改善 `0.0142%`，`NO_GO_LONG`；停止 gate-only 放大 |
 
 ## 2026-08-12 活跃长线
 
 | 线路 | 节点 | 训练规模 | 最后观测进度 | 保留原因 |
 |---|---|---|---:|---|
-| M13 dense | `117.50.181.177:30907` | 1569 steps / 1 epoch | step783 | 回答更长训练是否能突破闭环零成功 |
-| M11 frame-indexed | `117.50.181.177:30234` | 2170 steps / 1 epoch | step454 | 与 dense-uniform 采样形成长期对照 |
+| M13 dense | `117.50.181.177:30907` | 1569 steps / 1 epoch | step920 | 回答更长训练是否能突破闭环零成功 |
+| M11 frame-indexed | `117.50.181.177:30234` | 2170 steps / 1 epoch | step590 | 与 dense-uniform 采样形成长期对照 |
 
 进度是快照而不是实时状态。恢复研究时必须先从日志和 checkpoint manifest 重新确认。
 
@@ -52,6 +57,30 @@
 
 这些大文件不进入 Git。Git 保存配置、manifest、评测 JSON、锁定 commit 和恢复说明；选出的最终
 checkpoint 应另存对象存储，并记录 hash。任何删除前先保留 parent、best、latest 三类 checkpoint。
+2026-08-12 检查共享盘为 `49T` 总量、`22T` 已用、`28T` 可用（44%）；当前无需因空间删除
+checkpoint ladder。
+
+## E12 严格 A/B 结果
+
+A、B 都从同一份 H3→ActionDiT 初始化开始，使用 seed `2026`、相同 800 个 v7 dense
+window、100 optimizer steps、global batch `8`、相同 loss/学习率和 `tail_sharded` FSDP 布局。
+B 的唯一变量是在最后两层加入 112 个 action→future-video gate scalars。
+
+| 指标 | A：output-only | B：output + bidirectional tail-2 | B 相对变化 |
+|---|---:|---:|---:|
+| train mean action loss | 26.697083 | 26.692795 | 改善 0.0161% |
+| val40 mean action loss | 24.207277 | 24.203841 | 改善 0.0142% |
+| val40 mean video loss | 0.363572 | 0.363588 | 退化 0.0043% |
+
+两个 arm 的首步 total/video/action loss 完全相同，证明数据顺序和初始化可比；B 的 gate 从零
+更新到 `max_abs=0.009644`，证明机制确实被优化。A 最初用 `head` FSDP 布局反向时因单卡
+峰值约 `77.9 GiB` OOM，随后改为与 B 完全相同的 `tail_sharded + frozen body/shared state`
+布局后重跑；该修正消除了内存布局这一混杂变量。最终两边峰值均约
+`41.45/58.41 GiB allocated/reserved`。
+
+按预注册规则，B 没有获得有意义的 held-out 优势，因此不做选择性闭环试验，也不通过增加
+steps 或 gate 数量来追逐噪声。E12 的正面价值是排除了“只补一个尾部反向残差就足够”这一
+假设，并验证 H3 双向流的保存、恢复、梯度和多卡链路可复用。
 
 ## 数据采样教训
 
@@ -69,5 +98,6 @@ checkpoint 应另存对象存储，并记录 hash。任何删除前先保留 par
 1. 读取本账本和 `UPSTREAM_SOURCES.lock.json`，恢复固定上游 commit。
 2. 核验 M11/M13 的最新 checkpoint、日志、resolved config 与数据 manifest hash。
 3. 先完成固定闭环评测，不以离线 MSE 自动晋级。
-4. 新主线按 `H3_WAM_CODE_FIRST_AUDIT_2026-08-12.md`，优先移植完整可训练代码路径。
+4. 新主线按 `H3_WAM_CODE_FIRST_AUDIT_2026-08-12.md`，实现完整 chunk-level block-causal
+   video/action 双流；不得把 E12 gate-only 版本直接扩成长训。
 5. 每个新实验只改一个变量，并在启动前记录父基线、预算、晋级门槛和停止条件。
