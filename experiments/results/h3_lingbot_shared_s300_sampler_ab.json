@@ -1,0 +1,49 @@
+{
+  "event": "h3_lingbot_shared_s300_and_sampler_ablation",
+  "protocol": {
+    "manifest": "v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl",
+    "episode_disjoint": true,
+    "fixed_noise_by_sample": true,
+    "future_ground_truth_visible_in_sample_eval": false,
+    "default_schedule": "4 video Euler steps / 4 action Euler steps per chunk"
+  },
+  "shared_tail2_step300": {
+    "training": {
+      "parent": "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt",
+      "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s300.pt",
+      "additional_optimizer_steps": 100,
+      "additional_unique_windows": 800,
+      "cumulative_unique_windows": 2400
+    },
+    "teacher_forced_val40": {
+      "video_mse": 0.15830674730241298,
+      "action_mse": 1.240104654431343
+    },
+    "causal_sample40": {
+      "video_mse": 0.6072542428970337,
+      "action_mse": 1.2540090471506118,
+      "video_improvement_vs_initialization_percent": 12.696033242,
+      "action_improvement_vs_initialization_percent": 0.383752642,
+      "video_improvement_vs_s200_percent": 3.215621478,
+      "action_improvement_vs_s200_percent": 0.114172936
+    }
+  },
+  "official_step_sampler_ablation": {
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt",
+    "samples": 8,
+    "baseline_4_video_4_action": {
+      "video_mse": 0.5857491679489613,
+      "action_mse": 1.2072441279888153
+    },
+    "official_20_video_50_action": {
+      "video_mse": 0.6713691167533398,
+      "action_mse": 1.2027208507061005,
+      "video_change_percent": -14.617166,
+      "action_improvement_percent": 0.374674,
+      "elapsed_seconds": 665.2447850129101
+    }
+  },
+  "decision": "NO_GO_PURE_CONTINUATION_AND_HIGH_STEP_SAMPLER",
+  "rationale": "Step300 retains and enlarges the generated-video gain, but generated-action improvement remains below the preregistered 0.5% gate. The released 20/50 inference budget improves paired sample8 action MSE by less than the preregistered 1% while degrading video and increasing latency. Stop adding training or denoise steps without changing the action-side mechanism.",
+  "next_gate": "Audit and isolate an upstream-supported action-side difference before launching one bounded canary."
+}

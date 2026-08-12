@@ -380,7 +380,7 @@ def main() -> None:
     # sharded the 33B/ActionDiT blocks. Forward compute remains BF16 through
     # MixedPrecision, matching the proven H3-DreamWAM training path.
     model.float()
-    if args.eval_only:
+    if args.sample_eval:
         model.eval()
     # FSDP establishes root/non-root ownership lazily. Checkpoint restore may
     # summon nested layer parameters before the first real forward, so force

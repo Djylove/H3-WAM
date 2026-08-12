@@ -44,6 +44,8 @@
 | E19 | adapter-only 配对消融 | 与 E17 同 seed/首800 windows/100 steps；冻结全部 H3 block 与 video output | val40 action `1.252830`（改善 `0.301%`）；video `0.169371`（改善 `0.096%`） | 不适用 | tail-2 比 adapter-only 仅多改善 `0.152` 个百分点，未达预注册 `0.25`；不能声称尾层更新是主要贡献 |
 | E20 | shared-H3 无泄漏逐 chunk sample40 | 8 chunks；每 chunk video 4步→提交→action 4步→提交；未来 clean key 完全屏蔽 | 生成 video MSE `0.695563 → 0.627430`（改善 `9.795%`）；action `1.258840 → 1.255442`（改善 `0.270%`） | 尚未放行 | 双模态生成信号为正，放行最小闭环工程 canary；动作增益小，仍非 `GO_LONG` |
 | E21 | shared-H3 首次闭环工程门 | s200、goal task3/trial0、sample4、replan32、max80 | 3次 replan；动作有限、零饱和；平均推理 `71.90s` | `0/1`；物体最大位移约 `1e-16` | 服务/FSDP/VAE/仿真链路通过，但未产生有效物体交互；`NO_GO_LONG` |
+| E22 | shared-H3 s300 bounded continuation | s200再训100 steps、下一批800个不重复 window；累计2400 windows | teacher-forced val40 action/video `1.240105/0.158307`；无泄漏 sample40 action/video `1.254009/0.607254` | 按门控不重跑 | 生成 video 较初始化改善 `12.696%`，action 仅改善 `0.384%`，未过 `0.5%` 动作门；停止纯续训 |
+| E23 | 官方 20/50 denoise-step 消融 | 固定 s200、固定 val8/seed；4/4 改为 video20/action50 | action `1.207244 → 1.202721`（改善 `0.375%`）；video `0.585749 → 0.671369`（退化 `14.617%`） | 不重跑 | 未过预注册 `1%` 动作门且耗时 `665s`；高采样步数不是当前主瓶颈 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -94,6 +96,13 @@ finite，归一化动作无饱和，平均环境动作幅度 `0.405`；但 task3
 `1e-16` 量级。非 KV-cache 的完整历史重算耗时 `71.90s/replan`。因此 E21 只通过工程链路门，
 没有通过策略效果门。下一对照固定 checkpoint，改用官方 LIBERO 配置的 video/action denoise
 steps `20/50`，判断 sample4 是否是动作质量瓶颈；同时仅保留再 100 steps 的 s300 bounded canary。
+
+E22/E23 已完成并同时否定“再堆训练步数”和“只堆采样步数”两个捷径。s300 的 teacher-forced
+action 继续下降到 `1.240105`，但严格无泄漏 action 只从初始化的 `1.258840` 降到 `1.254009`
+（`0.384%`）；同期生成 video 已改善 `12.696%`。这说明当前优化主要被 world/video 分支吸收，
+并没有等比例转化为可执行动作。固定 s200 的官方 `20/50` 采样在 val8 上只改善 action
+`0.375%`，同时 video 退化 `14.617%`，推理耗时达到 `665s`，故不得进入闭环。后续只允许从作者
+开源代码中选择一个动作侧不一致项做 canary；在动作无泄漏门通过前，不再增加 steps 或服务器。
 
 ## 2026-08-12 活跃长线
 
