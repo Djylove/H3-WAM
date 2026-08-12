@@ -112,6 +112,11 @@ unnormalized hidden state 做平方导致约 `1.04e9` loss，已作为无效目�
 velocity heads 后数值有限。单层工程门通过，但 action 梯度仍偏大，整模实验必须启用分专家
 gradient clipping，并在 full packed/FSDP smoke 前保持 `NO_GO_LONG`。
 
+H3 与 Wan 的语言路径不同：Wan-VA 使用独立 cross-attention，H3 原生把 text/proprio rows 放进
+self-attention。四流核心现已支持只读 H3 context K/V：所有 video/action query 都可读取
+text/proprio，context 本身不进入预测 stream、不能读取 future target。该 contract 与 23 项模块
+测试一起通过，避免移植 LingBot 时意外绕开 H3 的预训练语言接口。
+
 ### B. DiT4DiT → H3 受控线
 
 保留官方 detached feature 边界，用真实 future-video loss 更新 H3，用独立 ActionDiT 学动作。这个

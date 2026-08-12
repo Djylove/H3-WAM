@@ -126,6 +126,7 @@ def lingbot_four_stream_attention(
     noisy_action_qkv: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
     clean_action_qkv: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
     attention_mask: torch.Tensor,
+    context_key_value: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run one official-order four-stream attention operation.
 
@@ -153,11 +154,28 @@ def lingbot_four_stream_attention(
 
     lengths = [stream[0].shape[1] for stream in streams]
     total_length = sum(lengths)
+    context_length = 0
+    if context_key_value is not None:
+        context_key, context_value = context_key_value
+        if context_key.ndim != 4 or context_key.shape != context_value.shape:
+            raise ValueError("context K/V must have matching [B,S,H,D] shapes")
+        if (context_key.shape[0], context_key.shape[2:]) != batch_head_geometry:
+            raise ValueError("context must share four-stream batch/head geometry")
+        context_length = context_key.shape[1]
     if attention_mask.shape[-2:] != (total_length, total_length):
         raise ValueError("attention mask does not match the four-stream sequence")
     query = torch.cat([stream[0] for stream in streams], dim=1)
     key = torch.cat([stream[1] for stream in streams], dim=1)
     value = torch.cat([stream[2] for stream in streams], dim=1)
+    if context_key_value is not None:
+        key = torch.cat((context_key, key), dim=1)
+        value = torch.cat((context_value, value), dim=1)
+        context_columns = torch.ones(
+            (*attention_mask.shape[:-1], context_length),
+            device=attention_mask.device,
+            dtype=torch.bool,
+        )
+        attention_mask = torch.cat((context_columns, attention_mask.bool()), dim=-1)
     attended = _attention(query, key, value, attention_mask)
     return tuple(attended.split(lengths, dim=1))
 
@@ -185,6 +203,10 @@ def four_stream_h3_action_layer(
     video_chunk_ids: torch.Tensor,
     action_chunk_ids: torch.Tensor,
     window_size: int | None = None,
+    h3_context_hidden: torch.Tensor | None = None,
+    h3_context_temb: torch.Tensor | None = None,
+    h3_context_adaln_indices: torch.Tensor | None = None,
+    h3_context_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Advance one H3/action MoT layer with LingBot-VA's four streams.
 
@@ -226,6 +248,27 @@ def four_stream_h3_action_layer(
     clean_action_io = action_block.attention_input(
         clean_action_hidden, clean_action_time_modulation
     )
+    context_key_value = None
+    context_arguments = (
+        h3_context_temb,
+        h3_context_adaln_indices,
+        h3_context_rotary_emb,
+    )
+    if h3_context_hidden is None:
+        if any(argument is not None for argument in context_arguments):
+            raise ValueError("context metadata requires h3_context_hidden")
+    else:
+        if any(argument is None for argument in context_arguments):
+            raise ValueError("H3 context requires temb, AdaLN indices and RoPE")
+        context_io = h3_attention_input(
+            h3_block,
+            h3_context_hidden,
+            temb=h3_context_temb,
+            adaln_indices=h3_context_adaln_indices,
+            rotary_emb=h3_context_rotary_emb,
+            apply_rotary=h3_apply_rotary,
+        )
+        context_key_value = context_io[1:3]
     mask = build_lingbot_block_causal_mask(
         video_chunk_ids=video_chunk_ids.to(noisy_video_hidden.device),
         action_chunk_ids=action_chunk_ids.to(noisy_video_hidden.device),
@@ -237,6 +280,7 @@ def four_stream_h3_action_layer(
         noisy_action_qkv=noisy_action_io[:3],
         clean_action_qkv=clean_action_io[:3],
         attention_mask=mask,
+        context_key_value=context_key_value,
     )
 
     def finish_video(io: tuple[torch.Tensor, ...], value: torch.Tensor) -> torch.Tensor:

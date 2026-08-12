@@ -410,6 +410,25 @@ class LingBotBlockCausalMaskTest(unittest.TestCase):
                 attention_mask=torch.ones(1, 1, 8, 8, dtype=torch.bool),
             )
 
+    def test_read_only_context_is_visible_to_every_query(self) -> None:
+        def qkv(values: list[float]) -> tuple[torch.Tensor, ...]:
+            value = torch.tensor(values).reshape(1, -1, 1, 1)
+            return torch.zeros_like(value), torch.zeros_like(value), value
+
+        zero = qkv([0.0, 0.0])
+        outputs = lingbot_four_stream_attention(
+            noisy_video_qkv=zero,
+            clean_video_qkv=zero,
+            noisy_action_qkv=zero,
+            clean_action_qkv=zero,
+            attention_mask=self.mask[None, None],
+            context_key_value=(
+                torch.zeros(1, 1, 1, 1),
+                torch.full((1, 1, 1, 1), 9.0),
+            ),
+        )
+        self.assertTrue(all(torch.all(output > 0) for output in outputs))
+
 
 class FourStreamLayerTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -474,6 +493,30 @@ class FourStreamLayerTest(unittest.TestCase):
         grad = self.h3.attn.to_v.weight.grad
         self.assertIsNotNone(grad)
         self.assertGreater(float(grad.abs().sum()), 0.0)
+
+    def test_h3_context_metadata_contract(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires temb"):
+            four_stream_h3_action_layer(
+                h3_block=self.h3,
+                action_block=self.action,
+                noisy_video_hidden=self.noisy_video,
+                clean_video_hidden=self.clean_video,
+                noisy_action_hidden=self.noisy_action,
+                clean_action_hidden=self.clean_action,
+                noisy_h3_temb=self.temb,
+                clean_h3_temb=self.temb,
+                noisy_h3_adaln_indices=self.indices,
+                clean_h3_adaln_indices=self.indices,
+                h3_rotary_emb=(torch.empty(0), torch.empty(0)),
+                h3_apply_rotary=identity_rotary,
+                noisy_action_time_modulation=self.action_time,
+                clean_action_time_modulation=self.action_time,
+                action_context=self.context,
+                action_context_mask=self.context_mask,
+                video_chunk_ids=self.video_chunks,
+                action_chunk_ids=self.action_chunks,
+                h3_context_hidden=torch.randn(1, 2, 8),
+            )
 
 
 if __name__ == "__main__":
