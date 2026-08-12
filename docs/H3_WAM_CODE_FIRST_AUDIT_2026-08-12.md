@@ -104,6 +104,14 @@ H3 video Q/K/V 与 ActionDiT action Q/K/V 的四流联合注意力核心。当�
 这一阶段仍不是可训练整模：下一步必须接入 H3 的 packed video rows、每 token timestep/RoPE、
 clean/noisy stream embeddings 与 FSDP checkpoint，完成真实 H3 smoke 后才能升为 `GO_CANARY`。
 
+真实 H3 单层 smoke 已随后完成：使用 H3 最后一层、H3 `norm_out/proj_out` video velocity head
+和 ActionDiT output head 跑 2 steps，total loss `9.8255 → 8.0418`，video loss
+`1.1740/1.1935`，H3 gradient norm `49.68/49.86`，action gradient norm
+`2143.24 → 1519.63`，显存峰值 `7.48/10.37 GiB allocated/reserved`。首次 smoke 直接对
+unnormalized hidden state 做平方导致约 `1.04e9` loss，已作为无效目标废弃；第二次使用真实
+velocity heads 后数值有限。单层工程门通过，但 action 梯度仍偏大，整模实验必须启用分专家
+gradient clipping，并在 full packed/FSDP smoke 前保持 `NO_GO_LONG`。
+
 ### B. DiT4DiT → H3 受控线
 
 保留官方 detached feature 边界，用真实 future-video loss 更新 H3，用独立 ActionDiT 学动作。这个

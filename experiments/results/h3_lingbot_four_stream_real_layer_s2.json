@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "experiment_id": "h3_lingbot_four_stream_real_layer_s2",
+  "completed_at": "2026-08-12T23:47:00+08:00",
+  "model": "/mnt/h3-wam/models/MiniMax-H3",
+  "architecture": "one real H3 block plus one H3-initialized action block with direct four-stream block-causal joint attention",
+  "steps": 2,
+  "video_frames": 2,
+  "tokens_per_frame": 98,
+  "video_tokens": 196,
+  "action_horizon": 8,
+  "actions_per_chunk": 4,
+  "history": [
+    {"step": 1, "loss": 9.825460433959961, "video_loss": 1.1740258932113647, "action_loss": 8.651434898376465, "h3_gradient_norm": 49.67610168457031, "action_gradient_norm": 2143.244140625},
+    {"step": 2, "loss": 8.041812896728516, "video_loss": 1.1935163736343384, "action_loss": 6.848296165466309, "h3_gradient_norm": 49.85845184326172, "action_gradient_norm": 1519.6297607421875}
+  ],
+  "peak_allocated_gib": 7.476645469665527,
+  "peak_reserved_gib": 10.3671875,
+  "initialization": {"layers": 50, "copied_tensors": 703, "resized_tensors": 703, "zeroed_biases": 505, "residual_gate_init": 1.0, "residual_output_scale": 0.01},
+  "engineering_gate": "PASS",
+  "training_gate": "NO_GO_LONG",
+  "next": "Integrate full packed H3 rows, all layers, FSDP save/restore, expert-specific clipping, and real dense windows."
+}
