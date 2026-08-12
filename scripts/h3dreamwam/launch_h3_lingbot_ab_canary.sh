@@ -29,7 +29,15 @@ COMMON=(
 case "${VARIANT}" in
   baseline)
     NAME="ab_s${STEPS}_output_only"
-    EXTRA=(--action-train-stage head)
+    # Match the B arm's FSDP layout so memory behavior is comparable.  The
+    # frozen body stays in zero-LR shards; only the shared action output head
+    # enters the optimizer, and no reverse-stream gate is enabled.
+    EXTRA=(
+      --action-train-stage tail_sharded
+      --freeze-action-body
+      --freeze-shared-state
+      --separate-expert-clipping
+    )
     ;;
   bidirectional)
     NAME="ab_s${STEPS}_output_plus_bidir_tail2"

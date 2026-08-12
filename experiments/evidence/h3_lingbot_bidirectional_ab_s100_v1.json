@@ -3,7 +3,7 @@
   "classification": "controlled_ablation",
   "hypothesis": "On identical dense LIBERO windows, adding tail-2 action-to-future-video gates to an output-head-trained H3/ActionDiT parent reduces held-out action error beyond the output-only control without harming video loss.",
   "single_variable": "The bidirectional arm adds only 112 trainable action-to-future-video gate scalars; initialization, seed, data order, action output training and losses are shared.",
-  "parent_baseline": "A-arm: official H3-to-ActionDiT initialization with action output head only, 100 steps, seed 2026, v7 dense manifest.",
+  "parent_baseline": "A-arm: official H3-to-ActionDiT initialization with action output head only, 100 steps, seed 2026, v7 dense manifest; tail_sharded frozen-body layout matches B for memory parity.",
   "references": [
     {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
     {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
