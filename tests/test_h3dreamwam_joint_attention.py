@@ -6,6 +6,7 @@ from torch import nn
 
 from fastwam.models.h3dreamwam import (
     H3DreamActionBlock,
+    align_h3_action_chunk_ids,
     build_lingbot_block_causal_mask,
     four_stream_h3_action_layer,
     lingbot_four_stream_attention,
@@ -338,6 +339,37 @@ class LingBotBlockCausalMaskTest(unittest.TestCase):
                 video_chunk_ids=torch.tensor([-1]),
                 action_chunk_ids=torch.tensor([0]),
             )
+
+    def test_h3_latent_frames_align_to_32_action_time_axis(self) -> None:
+        # Mirror the cached H3 layout: 12 latent frames, 98 spatial tokens per
+        # frame, versus 32 LIBERO actions. This cannot be represented by a
+        # fixed integer actions-per-latent-frame reshape.
+        frame_ids = torch.arange(12).repeat_interleave(98).float()
+        video_chunks, action_chunks = align_h3_action_chunk_ids(
+            video_frame_ids=frame_ids,
+            action_horizon=32,
+            actions_per_chunk=4,
+        )
+        self.assertEqual(video_chunks.shape, (12 * 98,))
+        self.assertEqual(action_chunks.shape, (32,))
+        self.assertEqual(torch.unique(video_chunks).tolist(), list(range(8)))
+        self.assertEqual(torch.unique(action_chunks).tolist(), list(range(8)))
+        for frame in range(12):
+            self.assertEqual(
+                torch.unique(video_chunks[frame * 98 : (frame + 1) * 98]).numel(),
+                1,
+            )
+        self.assertTrue(torch.all(video_chunks[1:] >= video_chunks[:-1]))
+        self.assertTrue(torch.all(action_chunks[1:] >= action_chunks[:-1]))
+
+    def test_chunk_alignment_handles_non_divisible_horizon(self) -> None:
+        video_chunks, action_chunks = align_h3_action_chunk_ids(
+            video_frame_ids=torch.tensor([10.0, 20.0, 30.0]),
+            action_horizon=10,
+            actions_per_chunk=4,
+        )
+        self.assertEqual(video_chunks.tolist(), [0, 1, 2])
+        self.assertEqual(action_chunks.tolist(), [0, 0, 0, 0, 1, 1, 1, 1, 2, 2])
 
     def test_four_stream_attention_respects_teacher_forcing_boundary(self) -> None:
         def qkv(values: list[float]) -> tuple[torch.Tensor, ...]:

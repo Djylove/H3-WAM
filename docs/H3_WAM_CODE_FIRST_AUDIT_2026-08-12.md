@@ -97,7 +97,9 @@ H3 video Q/K/V 与 ActionDiT action Q/K/V 的四流联合注意力核心。当�
 - noisy future-video chunk 只可读取更早的 clean action，不能读取同 chunk action target；
 - noisy stream 同 slot 自注意、clean stream 因果注意及 window 限制与上游布尔条件一致；
 - video objective 对 action expert、action objective 对 H3 均产生有限非零直接梯度；
-- 19 项模块测试通过。
+- H3 当前 cache 的 12 个 latent frames 与 32 个动作不使用 Wan 的固定 reshape，而按共同
+  动作时间轴映射成 8 个 chunk；每个 latent frame 的全部 spatial tokens 共享 chunk id；
+- 21 项模块测试通过。
 
 这一阶段仍不是可训练整模：下一步必须接入 H3 的 packed video rows、每 token timestep/RoPE、
 clean/noisy stream embeddings 与 FSDP checkpoint，完成真实 H3 smoke 后才能升为 `GO_CANARY`。

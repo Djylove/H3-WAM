@@ -10,6 +10,7 @@ from .action_expert import (
     load_action_block_state,
 )
 from .joint_attention import (
+    align_h3_action_chunk_ids,
     build_lingbot_block_causal_mask,
     four_stream_h3_action_layer,
     lingbot_four_stream_attention,
@@ -60,6 +61,7 @@ __all__ = [
     "H3DreamJointSample",
     "apply_h3_rotary",
     "action_rope_at_positions",
+    "align_h3_action_chunk_ids",
     "build_h3dream_inference_schedule",
     "build_lingbot_block_causal_mask",
     "four_stream_h3_action_layer",

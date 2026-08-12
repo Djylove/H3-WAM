@@ -77,6 +77,48 @@ def build_lingbot_block_causal_mask(
     return allowed[None, None]
 
 
+def align_h3_action_chunk_ids(
+    *,
+    video_frame_ids: torch.Tensor,
+    action_horizon: int,
+    actions_per_chunk: int = 4,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Align H3 latent-frame tokens and robot actions on shared time chunks.
+
+    LingBot-VA can reshape actions to a fixed number per Wan latent frame. H3
+    has a different temporal VAE geometry (the current LIBERO cache contains
+    12 latent frames for 32 actions), so copying that reshape would silently
+    misalign supervision.  This function instead assigns monotonically
+    ordered H3 latent frames and actions to the same fixed-duration action
+    chunks.  Every spatial token from one latent frame receives the same id.
+    """
+
+    video_frame_ids = video_frame_ids.reshape(-1)
+    if video_frame_ids.numel() == 0:
+        raise ValueError("video frame ids cannot be empty")
+    if action_horizon <= 0 or actions_per_chunk <= 0:
+        raise ValueError("action horizon and actions_per_chunk must be positive")
+    # H3 positions are floating point and may repeat for every spatial token.
+    # sorted_unique plus searchsorted gives a stable ordinal without assuming
+    # a particular positional scaling used by Diffusers.
+    unique_frames = torch.unique(video_frame_ids, sorted=True)
+    frame_ordinals = torch.searchsorted(unique_frames, video_frame_ids)
+    num_chunks = (int(action_horizon) + int(actions_per_chunk) - 1) // int(
+        actions_per_chunk
+    )
+    video_chunks = torch.div(
+        frame_ordinals * num_chunks,
+        unique_frames.numel(),
+        rounding_mode="floor",
+    ).clamp_max(num_chunks - 1)
+    action_chunks = torch.div(
+        torch.arange(action_horizon, device=video_frame_ids.device),
+        int(actions_per_chunk),
+        rounding_mode="floor",
+    )
+    return video_chunks.long(), action_chunks.long()
+
+
 def lingbot_four_stream_attention(
     *,
     noisy_video_qkv: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
