@@ -22,6 +22,11 @@ from .model import (
     H3DreamWAMOutput,
     apply_h3_rotary,
 )
+from .four_stream_model import (
+    H3LingBotPairedLayer,
+    H3LingBotWAM,
+    H3LingBotWAMOutput,
+)
 from .docking import (
     H3DoTActionHead,
     H3DoTActionLayer,
@@ -56,6 +61,9 @@ __all__ = [
     "H3DoTHubLayer",
     "H3DoTWAM",
     "H3DoTWAMOutput",
+    "H3LingBotPairedLayer",
+    "H3LingBotWAM",
+    "H3LingBotWAMOutput",
     "H3ActionInitializationReport",
     "H3DreamInferenceSchedule",
     "H3DreamJointSample",

@@ -117,6 +117,12 @@ self-attention。四流核心现已支持只读 H3 context K/V：所有 video/ac
 text/proprio，context 本身不进入预测 stream、不能读取 future target。该 contract 与 23 项模块
 测试一起通过，避免移植 LingBot 时意外绕开 H3 的预训练语言接口。
 
+上述组件已封装为 `H3LingBotWAM`：50 个 FSDP wrapping units 分别拥有一个 H3 block 与一个
+ActionDiT block，forward 显式维护 noisy/clean video、noisy/clean action 和 H3 context 五个
+layer states，最终只从 noisy streams 输出 video/action velocity。tiny full-model 的 shape、block
+ownership、双向 objective gradient 和 proprio layout 测试通过；相关 H3-DreamWAM 回归合计
+40 项通过。
+
 ### B. DiT4DiT → H3 受控线
 
 保留官方 detached feature 边界，用真实 future-video loss 更新 H3，用独立 ActionDiT 学动作。这个
