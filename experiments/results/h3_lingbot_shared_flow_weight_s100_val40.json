@@ -1,0 +1,33 @@
+{
+  "event": "h3_lingbot_shared_flow_weight_s100_val40",
+  "protocol": {
+    "paired_samples": 40,
+    "episode_disjoint": true,
+    "fixed_noise_by_sample": true,
+    "training_steps": 100,
+    "training_unique_windows": 800,
+    "single_variable_vs_e24": "LingBot/DreamWAM scheduler training_weight on video rows and action tokens during training only"
+  },
+  "initialization": {
+    "video_mse": 0.17002603001892566,
+    "action_mse": 1.3043972849845886
+  },
+  "step100": {
+    "video_mse": 0.16572422422468663,
+    "action_mse": 1.2974360585212708,
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_tail2_s100.pt"
+  },
+  "relative_improvement_percent": {
+    "video": 2.530086595,
+    "action": 0.533673793
+  },
+  "comparison_to_e24": {
+    "e24_action_improvement_percent": 0.676471019,
+    "flow_weight_action_improvement_percent": 0.533673793,
+    "incremental_percentage_points": -0.142797226,
+    "preregistered_required_action_improvement_percent": 0.926471,
+    "required_action_mse_at_most": 1.2923124224144191
+  },
+  "decision": "NO_GO_NEXT_GATE",
+  "rationale": "Official flow weighting improves held-out video loss but action improves only 0.534%, misses the 0.926% gate, and is 0.143 percentage points weaker than E24. Stop without causal sampling or rollout."
+}

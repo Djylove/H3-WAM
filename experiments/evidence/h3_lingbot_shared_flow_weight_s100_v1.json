@@ -8,7 +8,7 @@
     {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
     {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
     {"kind": "upstream_code", "title": "DreamWAM", "locator": "https://github.com/bytedance/DreamWAM", "revision": "6e989facc0c452fd3488d75f60bc36411005558c", "official": true, "clean": true},
-    {"kind": "local_implementation", "title": "fastwam_deploy flow-match loss weighting", "locator": "/home/ubuntu/fastwam_deploy", "revision": "working tree after 9876147", "official": false, "clean": false}
+    {"kind": "local_implementation", "title": "fastwam_deploy flow-match loss weighting", "locator": "/home/ubuntu/fastwam_deploy", "revision": "a2f9f5d", "official": false, "clean": true}
   ],
   "alignment": {
     "architecture": [{"field": "shared four-stream H3", "paper": "causal shared video/action model", "upstream_code": "LingBot shared Wan blocks", "local": "same E24 shared H3 tail-2", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "The H3 backbone port is fixed across parent and canary."}],
@@ -31,12 +31,12 @@
     "checkpoint_restore": {"status": "PASS", "evidence": ["weighted-contract stage restored; raw val8 video/action 0.170515/1.246185"]},
     "parent_baseline": {"status": "PASS", "evidence": ["E24 val40 paired baseline"]},
     "mechanism_signal": {"status": "PASS", "evidence": ["weight mean is one; action shift0.05 weight range 0..3.84"]},
-    "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1"]}
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Not run: offline promotion gate failed"]}
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Real weighted-gradient, finite-smoke and checkpoint-restore gates pass. Train s100 and require action improvement versus initialization of at least 0.926% and positive video improvement before causal sampling.",
+    "status": "NO_GO_NEXT_GATE",
+    "rationale": "The s100 checkpoint improves fixed val40 video MSE by 2.530% but action MSE by only 0.534%, below the preregistered 0.926% threshold and 0.143 percentage points weaker than E24. Stop without causal sampling or rollout; retain weighting only as an upstream-aligned implementation option.",
     "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
   }
 }

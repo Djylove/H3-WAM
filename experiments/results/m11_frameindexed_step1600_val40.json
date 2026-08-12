@@ -1,0 +1,19 @@
+{
+  "event": "m11_frameindexed_step1600_val40",
+  "protocol": {
+    "checkpoint": "/mnt/h3-wam/outputs/h3dotwam-frameindexed/m11_frameindexed_head_gb128_s2170_step001600.pt",
+    "manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl",
+    "samples": 40,
+    "world_size": 8,
+    "eval_only": true
+  },
+  "step200_action_mse": 0.151389,
+  "step1600_action_mse": 0.10853167180903256,
+  "relative_improvement_vs_step200_percent": 28.309407,
+  "closed_loop": {
+    "step200_task3_trials": "0/10",
+    "step1600": "pending final watcher after step2170"
+  },
+  "decision": "KEEP_RUNNING_TO_PREREGISTERED_ENDPOINT",
+  "rationale": "The long-run offline curve remains positive, but no later closed-loop success has been established. Preserve the pre-registered endpoint and evaluate checkpoints without equating MSE with policy success."
+}

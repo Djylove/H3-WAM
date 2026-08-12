@@ -18,7 +18,7 @@
   严格配对的 100-step 消融仅带来 `0.0142%` held-out action-loss 改善，低于实验噪声量级，
   因此停止 gate-only 长训，转向 LingBot-VA 的完整 block-causal 双流接口。
 - shared-H3 已证明生成 video 可学（E22 严格无泄漏 video 改善 `12.696%`），但 action
-  仅改善 `0.384%`。E24–E27 四个作者代码驱动的小型 canary 均未过动作门；主瓶颈是
+  仅改善 `0.384%`。E24–E29 六个作者代码驱动的小型 canary 均未过动作门；主瓶颈是
   video/action 时序合约与动作建模，而不是 GPU 数量、采样步数或简单扩大训练步数。
 
 ## 稳定实验记录
@@ -33,7 +33,7 @@
 | E05 | DreamWAM motion | RAFT motion，修正初始化后60 steps | flow约 `1.7995` | `0 success` | 仅可作重新对齐后的 canary 参考 |
 | E06 | dense sampling correction | 40 tasks、逐帧 windows | canary `0.240706 → 0.212337` | `0/4` | dense sampling 有效但不充分 |
 | E07 | M13 dense long | 200,779 train windows，global batch128 | step200 `0.140886`；step400 `0.122312`；step800 `0.114559` | 各 checkpoint 固定四任务均 `0/4` | 保留为长线基线；离线继续改善但闭环未突破 |
-| E08 | M11 full frame-indexed long | 277,713 windows，global batch128 | step200 `0.151389` | task3 `0/10` | 保留至预定终点 |
+| E08 | M11 full frame-indexed long | 277,713 windows，global batch128 | step200 `0.151389`；step1600 `0.108532`（改善28.31%） | step200 task3 `0/10`；step1600待最终门禁 | 保留至预定终点；离线不能替代闭环 |
 | E09 | M14 tail-2 | M13 step400 父模型，40 steps | `0.119368`，比父模型约好2.4% | task3 `0/3` | 小幅离线增益不足以晋级 |
 | E10 | controller sweep | replan 1/2/5、action scale0.5 | 不适用 | 每项 `0/1` | 停止调部署超参 |
 | E11 | H3 bidirectional engineering smoke | 真实 H3 33B、8×A800、tail-2、2 steps | loss `35.8310 → 31.4696`；反向 gate grad norm `46.4479` | 不适用 | 工程/梯度链路通过，不构成效果证据 |
@@ -54,6 +54,7 @@
 | E26 | LingBot noisy clean-video s100 | E24 合约；训练时以0.5概率给 clean-video stream 加高噪声 | clean val40 action `1.297608`（较初始化改善 `0.520%`）；masked action `1.299689` | 按门控不重跑 | masked action 与 E24 `1.299678` 持平且略差；未缩小训推偏移，停止该线 |
 | E27 | detached generated-video conditioning s100 | E24 合约；action 训练改为消费模型首次 forward 的 detached one-step `x0` | clean action `1.295345`（较初始化改善 `0.694%`）；masked action `1.299328` | 按门控不重跑 | masked action 较 E24 仅改善 `0.027%`，远低于预注册 `0.5%`；不晋级 causal sample/闭环 |
 | E28 | H3 physical-time alignment s100 | E24 合约；将 video chunk mask 和 action RoPE 对齐 H3 非均匀 VAE 物理时间 | val40 video/action `0.146827/1.298060`；改善 `1.867%/0.067%` | 按门控不重跑 | action 远低于预注册 `0.926%`；不晋级 no-leak sample40/闭环 |
+| E29 | 官方 flow loss weighting s100 | E24 合约；训练时逐 video row/action token 使用 LingBot/DreamWAM scheduler `training_weight` | val40 video/action `0.165724/1.297436`；改善 `2.530%/0.534%` | 按门控不重跑 | action 未过 `0.926%` 门且比 E24 弱 `0.143` 个百分点；不晋级 sample/闭环 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -159,15 +160,23 @@ chunk mask 与 action RoPE。33 项云端测试、真实 2-step 反向和 checkp
 预注册 `0.926%` action 门，所以不做 no-leak sampling/闭环，也不扩训。该实验
 再次确认当前修正主要转化为 world/video 改善，action 学习仍是独立瓶颈。
 
+E29 补齐了 LingBot-VA 与 DreamWAM 训练代码共同使用、而本地 E17–E28 漏掉的
+timestep-dependent flow loss weighting。解析实现由调度器等价单测锁定，并分别按 video row
+和 action token 归约；35 项云端测试、真实 2-step 反向、stage 重载均通过。s100 用时约
+`479s`，峰值 `42.02 GiB reserved`。固定 val40 的 video/action 为
+`0.165724/1.297436`，相对同构初始化改善 `2.530%/0.534%`；动作改善反而比未加权 E24 少
+`0.143` 个百分点，也未达到预注册 `0.926%`。因此不做 causal sample/闭环，不靠增加步数
+追逐该失败点。权重实现保留为上游对齐选项，但它不是当前动作瓶颈的解法。
+
 ## 2026-08-13 长线实时状态
 
 | 线路 | 节点 | 训练规模 | 最后观测进度 | 保留原因 |
 |---|---|---|---:|---|
 | M13 dense | `117.50.181.177:30907` | 1569 steps / 1 epoch | 已完成 step1569；final + 200-step ladder | 长训完成，作为历史基线保留；30907 当前空闲 |
-| M11 frame-indexed | `117.50.181.177:30234` | 2170 steps / 1 epoch | step1441；最新已保存 step1400 | 仍在 8×A800 上 100% 运行；与 dense-uniform 形成长期对照 |
+| M11 frame-indexed | `117.50.181.177:30234` | 2170 steps / 1 epoch | step1747；最新已保存 step1600 | 仍在 8×A800 上 100% 运行；step1600 val40 `0.108532`，终点后跑闭环 |
 
-上述状态于 2026-08-13 05:34（Asia/Shanghai）用进程、GPU 和日志三重核对：32611、32409、
-30907 均空闲，只有 30234 的 M11 每卡约 `18.35 GiB`、利用率 `100%`。恢复研究时
+上述状态于 2026-08-13 07:49（Asia/Shanghai）用进程、GPU 和日志三重核对：32611、32409、
+30907 在 E29 门禁完成后空闲，只有 30234 的 M11 每卡约 `18.35 GiB`、利用率 `100%`。恢复研究时
 仍必须先从日志和 checkpoint manifest 重新确认。
 
 ## 云端资产位置
@@ -178,8 +187,8 @@ chunk mask 与 action RoPE。33 项云端测试、真实 2-step 反向和 checkp
 - 数据/缓存：`downloads`、`libero_fastwam_extracted`、`v2_full_cache`、
   `v7_dense_*`、`v8_frameindexed_*`；
 - 输出：`outputs/h3dotwam*` 与对应 rollout/eval JSON；
-- 当前 checkpoint：M13 有 final step1569 及 step200–1400 ladder；M11 已有 step200–1400 ladder，
-  并继续训练至 step2170。shared-H3 E24–E28 的 s100 stage 也均保留在
+- 当前 checkpoint：M13 有 final step1569 及 step200–1400 ladder；M11 已有 step200–1600 ladder，
+  并继续训练至 step2170。shared-H3 E24–E29 的 s100 stage 也均保留在
   `/mnt/h3-wam/outputs/h3-lingbot-shared/`。
 
 这些大文件不进入 Git。Git 保存配置、manifest、评测 JSON、锁定 commit 和恢复说明；选出的最终
@@ -225,8 +234,8 @@ steps 或 gate 数量来追逐噪声。E12 的正面价值是排除了“只补�
 1. 读取本账本和 `UPSTREAM_SOURCES.lock.json`，恢复固定上游 commit。
 2. 等 M11 到 step2170 后核验 final checkpoint、日志、resolved config 与数据 manifest hash；
    M13 已完成，不再重跑。
-3. 固定 E24 作为当前 quantile 动作基线；E25–E28 均不扩步数，也不重复 causal
-   sample/闭环。E28 的物理时间实现保留为已验证合约，但不视为有效策略改进。
+3. 固定 E24 作为当前 quantile 动作基线；E25–E29 均不扩步数，也不重复 causal
+   sample/闭环。E28 的物理时间与 E29 的 flow weighting 实现保留为已验证合约，但不视为有效策略改进。
 4. 下一证据审计转向动作专用建模：比较 LingBot/MiniWorld/DiT4DiT 的 action carrier 宽度、
    action loss weighting/调度、state 注入位置和 chunk 目标，不再从 video condition 侧做小修补。
 5. 新实验必须由作者开源代码中的明确差异驱动，且先交付配对基线、单变量门和
