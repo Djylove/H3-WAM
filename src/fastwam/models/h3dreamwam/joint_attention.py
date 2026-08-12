@@ -207,7 +207,13 @@ def four_stream_h3_action_layer(
     h3_context_temb: torch.Tensor | None = None,
     h3_context_adaln_indices: torch.Tensor | None = None,
     h3_context_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor | None,
+]:
     """Advance one H3/action MoT layer with LingBot-VA's four streams.
 
     Unlike :func:`paired_h3_action_layer`, this is a direct joint attention
@@ -249,6 +255,7 @@ def four_stream_h3_action_layer(
         clean_action_hidden, clean_action_time_modulation
     )
     context_key_value = None
+    context_io = None
     context_arguments = (
         h3_context_temb,
         h3_context_adaln_indices,
@@ -310,11 +317,29 @@ def four_stream_h3_action_layer(
             context_mask=action_context_mask,
         )
 
+    next_context = None
+    if context_io is not None:
+        # Preserve H3's layer-by-layer text refinement without exposing the
+        # context queries to any predicted or teacher-forcing target stream.
+        context_attended = _attention(
+            context_io[0], context_io[1], context_io[2]
+        )
+        next_context = h3_post_attention(
+            h3_block,
+            attended=context_attended,
+            residual=context_io[3],
+            gate_attn=context_io[4],
+            shift_ffn=context_io[5],
+            scale_ffn=context_io[6],
+            gate_ffn=context_io[7],
+            adaln_indices=h3_context_adaln_indices,
+        )
     return (
         finish_video(noisy_video_io, attended[0]),
         finish_video(clean_video_io, attended[1]),
         finish_action(noisy_action_io, attended[2]),
         finish_action(clean_action_io, attended[3]),
+        next_context,
     )
 
 

@@ -474,12 +474,13 @@ class FourStreamLayerTest(unittest.TestCase):
     def test_layer_preserves_stream_shapes(self) -> None:
         outputs = self.run_layer()
         self.assertEqual(
-            [tuple(output.shape) for output in outputs],
+            [tuple(output.shape) for output in outputs[:4]],
             [(1, 4, 8)] * 4,
         )
+        self.assertIsNone(outputs[4])
 
     def test_video_objective_has_direct_action_expert_gradient(self) -> None:
-        noisy_video, _, _, _ = self.run_layer()
+        noisy_video, _, _, _, _ = self.run_layer()
         # Chunk 1 video reads chunk 0 clean-action tokens through the official
         # strict-causal teacher-forcing route.
         noisy_video[:, 2:].square().mean().backward()
@@ -488,7 +489,7 @@ class FourStreamLayerTest(unittest.TestCase):
         self.assertGreater(float(grad.abs().sum()), 0.0)
 
     def test_action_objective_has_direct_h3_gradient(self) -> None:
-        _, _, noisy_action, _ = self.run_layer()
+        _, _, noisy_action, _, _ = self.run_layer()
         noisy_action.square().mean().backward()
         grad = self.h3.attn.to_v.weight.grad
         self.assertIsNotNone(grad)
@@ -517,6 +518,39 @@ class FourStreamLayerTest(unittest.TestCase):
                 action_chunk_ids=self.action_chunks,
                 h3_context_hidden=torch.randn(1, 2, 8),
             )
+
+    def test_context_progresses_without_target_gradient(self) -> None:
+        context_hidden = torch.randn(1, 2, 8, requires_grad=True)
+        outputs = four_stream_h3_action_layer(
+            h3_block=self.h3,
+            action_block=self.action,
+            noisy_video_hidden=self.noisy_video,
+            clean_video_hidden=self.clean_video,
+            noisy_action_hidden=self.noisy_action,
+            clean_action_hidden=self.clean_action,
+            noisy_h3_temb=self.temb,
+            clean_h3_temb=self.temb,
+            noisy_h3_adaln_indices=self.indices,
+            clean_h3_adaln_indices=self.indices,
+            h3_rotary_emb=(torch.empty(0), torch.empty(0)),
+            h3_apply_rotary=identity_rotary,
+            noisy_action_time_modulation=self.action_time,
+            clean_action_time_modulation=self.action_time,
+            action_context=self.context,
+            action_context_mask=self.context_mask,
+            video_chunk_ids=self.video_chunks,
+            action_chunk_ids=self.action_chunks,
+            h3_context_hidden=context_hidden,
+            h3_context_temb=self.temb,
+            h3_context_adaln_indices=torch.zeros(2, dtype=torch.long),
+            h3_context_rotary_emb=(torch.empty(0), torch.empty(0)),
+        )
+        self.assertEqual(outputs[4].shape, context_hidden.shape)
+        outputs[4].square().mean().backward()
+        self.assertGreater(float(context_hidden.grad.abs().sum()), 0.0)
+        # Context updates are self-only: its loss must not reach target inputs.
+        self.assertIsNone(self.noisy_video.grad)
+        self.assertIsNone(self.noisy_action.grad)
 
 
 if __name__ == "__main__":
