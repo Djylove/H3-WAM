@@ -26,17 +26,17 @@
     "objective_contract": {"status": "PASS", "evidence": ["35 unit tests including analytic scheduler equivalence"]},
     "optimization_contract": {"status": "PASS", "evidence": ["same E24 budget and optimizer"]},
     "evaluation_contract": {"status": "PASS", "evidence": ["evaluation bypasses weighting and reports raw MSE"]},
-    "gradient_path": {"status": "FAIL", "evidence": ["pending real 2-step smoke"]},
-    "smoke_finite": {"status": "FAIL", "evidence": ["pending real 2-step smoke"]},
-    "checkpoint_restore": {"status": "FAIL", "evidence": ["pending stage restore"]},
+    "gradient_path": {"status": "PASS", "evidence": ["2-step H3 gradient 0.236/0.224; action 9.812/17.198"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["2-step weighted losses finite; peak 41.04 GiB reserved"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["weighted-contract stage restored; raw val8 video/action 0.170515/1.246185"]},
     "parent_baseline": {"status": "PASS", "evidence": ["E24 val40 paired baseline"]},
     "mechanism_signal": {"status": "PASS", "evidence": ["weight mean is one; action shift0.05 weight range 0..3.84"]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1"]}
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
   "decision": {
-    "status": "NO_GO",
-    "rationale": "Do not launch s100 until real weighted-gradient and checkpoint-restore gates pass. If they pass, require action improvement versus initialization of at least 0.926% and positive video improvement before causal sampling.",
-    "launch_command": null
+    "status": "GO_CANARY",
+    "rationale": "Real weighted-gradient, finite-smoke and checkpoint-restore gates pass. Train s100 and require action improvement versus initialization of at least 0.926% and positive video improvement before causal sampling.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
   }
 }
