@@ -48,6 +48,7 @@
 | E23 | 官方 20/50 denoise-step 消融 | 固定 s200、固定 val8/seed；4/4 改为 video20/action50 | action `1.207244 → 1.202721`（改善 `0.375%`）；video `0.585749 → 0.671369`（退化 `14.617%`） | 不重跑 | 未过预注册 `1%` 动作门且耗时 `665s`；高采样步数不是当前主瓶颈 |
 | E24 | LingBot quantile normalization s100 | 与 E17 同初始化/seed/800 windows；仅将 min/max `[-1,1]` 改为 q01/q99 `[-1.5,1.5]` | val40 action `1.304397 → 1.295573`（改善 `0.676%`）；video 改善 `2.165%` | 按门控不重跑 | 比 E17 action 多改善 `0.224` 个百分点，略低于预注册 `0.25`；方向有效但单独不足以晋级 |
 | E25 | per-chunk action timestep s100 | E24 合约；每4个动作独立采样 timestep，其余固定 | val40 action `1.304397 → 1.295933`（改善 `0.649%`）；video 改善 `2.195%` | 按门控不重跑 | 低于 E24 的 `0.676%` 且未过 `0.926%` 门；噪声粒度单独不是瓶颈 |
+| E26 | LingBot noisy clean-video s100 | E24 合约；训练时以0.5概率给 clean-video stream 加高噪声 | clean val40 action `1.297608`（较初始化改善 `0.520%`）；masked action `1.299689` | 按门控不重跑 | masked action 与 E24 `1.299678` 持平且略差；未缩小训推偏移，停止该线 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -121,6 +122,15 @@ E25 已完成这一可控修正：36 项相关测试和真实 2-step 反向 smok
 逐行代码对齐还发现 LingBot 训练的 `noisy_cond_prob=0.5`：一半 batch 会给 clean video stream
 加入高噪声，而 action clean stream 保持干净。这比 action timestep 粒度更直接作用于
 teacher-forcing/exposure-bias；下一 canary 应固定 E24，其唯一变量为 noisy clean-video condition。
+
+E26 复现了该官方机制，并在强制 corruption 的真实 2-step smoke 后按概率 `0.5` 训练 100 steps。
+clean val40 action/video 为 `1.297608/0.167225`，action 相对 quantile 初始化改善 `0.520%`，保住了
+最低 clean 门，但弱于 E24。更关键的 masked-clean-future 配对结果为：初始化
+`action/video=1.304024/0.421788`，E24 `1.299678/0.420131`，E26 `1.299689/0.420463`；E26 对
+E24 没有动作优势，video 也略差。因此 noisy condition 没有在当前预算下缩小暴露偏移，不晋级
+causal sampling 或闭环。E24 的 quantile normalization 保留为当前动作合约；下一结构性候选应
+训练 action 直接消费 detached generated-video latent（或等价 scheduled sampling），而不是继续
+调 noise granularity、condition corruption、denoise steps 或纯训练步数。
 
 ## 2026-08-12 活跃长线
 

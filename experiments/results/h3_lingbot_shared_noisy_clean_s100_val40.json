@@ -1,0 +1,27 @@
+{
+  "event": "h3_lingbot_shared_noisy_clean_s100_val40",
+  "protocol": {
+    "training_steps": 100,
+    "training_unique_windows": 800,
+    "noisy_clean_video_probability": 0.5,
+    "clean_and_masked_eval_samples": 40,
+    "episode_disjoint": true,
+    "fixed_noise_by_sample": true
+  },
+  "clean_val40": {
+    "quantile_initialization": {"video_mse": 0.17002603001892566, "action_mse": 1.3043972849845886},
+    "e24_quantile_s100": {"video_mse": 0.16634543389081954, "action_mse": 1.2955734133720398},
+    "noisy_clean_s100": {"video_mse": 0.1672254789620638, "action_mse": 1.2976081162691115},
+    "noisy_clean_action_improvement_vs_initialization_percent": 0.520485
+  },
+  "masked_clean_future_val40": {
+    "quantile_initialization": {"video_mse": 0.421787915378809, "action_mse": 1.3040243893861772},
+    "e24_quantile_s100": {"video_mse": 0.4201313242316246, "action_mse": 1.299678459763527},
+    "noisy_clean_s100": {"video_mse": 0.42046290561556815, "action_mse": 1.2996894538402557},
+    "noisy_clean_action_change_vs_e24_percent": -0.000846,
+    "noisy_clean_video_change_vs_e24_percent": -0.078923
+  },
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_noisyclean_tail2_s100.pt",
+  "decision": "NO_GO_NEXT_GATE",
+  "rationale": "The official noisy-conditioning mechanism preserves a small clean-val action gain but provides no masked-clean-future advantage over E24. It fails the preregistered 0.5% masked-action gain and is not promoted to causal sampling or rollout."
+}
