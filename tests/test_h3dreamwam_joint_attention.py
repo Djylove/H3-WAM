@@ -6,6 +6,9 @@ from torch import nn
 
 from fastwam.models.h3dreamwam import (
     H3DreamActionBlock,
+    build_lingbot_block_causal_mask,
+    four_stream_h3_action_layer,
+    lingbot_four_stream_attention,
     load_action_block_state,
     paired_h3_action_layer,
 )
@@ -277,6 +280,168 @@ class PairedAttentionTest(unittest.TestCase):
         self.assertGreater(
             float((routed_h3[:, 2:] - baseline_h3[:, 2:]).abs().max()), 0.0
         )
+
+
+class LingBotBlockCausalMaskTest(unittest.TestCase):
+    def setUp(self) -> None:
+        # One token per stream/chunk makes the upstream four-stream contract
+        # directly inspectable. Order: NV0,NV1,CV0,CV1,NA0,NA1,CA0,CA1.
+        self.mask = build_lingbot_block_causal_mask(
+            video_chunk_ids=torch.tensor([0, 1]),
+            action_chunk_ids=torch.tensor([0, 1]),
+        )[0, 0]
+
+    def test_noisy_action_reads_same_chunk_clean_video_not_future(self) -> None:
+        noisy_action_0 = 4
+        clean_video_0 = 2
+        clean_video_1 = 3
+        self.assertTrue(self.mask[noisy_action_0, clean_video_0])
+        self.assertFalse(self.mask[noisy_action_0, clean_video_1])
+
+    def test_noisy_future_video_reads_previous_clean_action(self) -> None:
+        noisy_video_1 = 1
+        clean_action_0 = 6
+        clean_action_1 = 7
+        noisy_action_0 = 4
+        self.assertTrue(self.mask[noisy_video_1, clean_action_0])
+        self.assertFalse(self.mask[noisy_video_1, clean_action_1])
+        self.assertFalse(self.mask[noisy_video_1, noisy_action_0])
+
+    def test_noisy_streams_only_self_attend_inside_their_slot(self) -> None:
+        self.assertTrue(self.mask[0, 0])
+        self.assertFalse(self.mask[0, 1])
+        self.assertTrue(self.mask[4, 4])
+        self.assertFalse(self.mask[4, 5])
+
+    def test_clean_stream_is_causal_and_window_is_in_slot_units(self) -> None:
+        clean_action_1 = 7
+        clean_video_0 = 2
+        clean_video_1 = 3
+        self.assertTrue(self.mask[clean_action_1, clean_video_0])
+        self.assertTrue(self.mask[clean_action_1, clean_video_1])
+        windowed = build_lingbot_block_causal_mask(
+            video_chunk_ids=torch.tensor([0, 1]),
+            action_chunk_ids=torch.tensor([0, 1]),
+            window_size=1,
+        )[0, 0]
+        self.assertFalse(windowed[clean_action_1, clean_video_0])
+        self.assertTrue(windowed[clean_action_1, clean_video_1])
+
+    def test_invalid_contract_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "cannot be empty"):
+            build_lingbot_block_causal_mask(
+                video_chunk_ids=torch.tensor([]),
+                action_chunk_ids=torch.tensor([0]),
+            )
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            build_lingbot_block_causal_mask(
+                video_chunk_ids=torch.tensor([-1]),
+                action_chunk_ids=torch.tensor([0]),
+            )
+
+    def test_four_stream_attention_respects_teacher_forcing_boundary(self) -> None:
+        def qkv(values: list[float]) -> tuple[torch.Tensor, ...]:
+            value = torch.tensor(values).reshape(1, -1, 1, 1)
+            query = torch.zeros_like(value)
+            key = torch.zeros_like(value)
+            return query, key, value
+
+        streams = {
+            "noisy_video_qkv": qkv([10.0, 11.0]),
+            "clean_video_qkv": qkv([20.0, 21.0]),
+            "noisy_action_qkv": qkv([30.0, 31.0]),
+            "clean_action_qkv": qkv([40.0, 41.0]),
+        }
+        noisy_video, _, noisy_action, _ = lingbot_four_stream_attention(
+            **streams, attention_mask=self.mask[None, None]
+        )
+        # NV1 sees its same-slot noisy peer (11) and the earlier clean
+        # streams CV0 (20) + CA0 (40), never current/future clean rows.
+        torch.testing.assert_close(
+            noisy_video[0, 1, 0, 0], torch.tensor((11.0 + 20.0 + 40.0) / 3)
+        )
+        # NA0 sees itself (30) and current-chunk CV0 (20); CA0 is the target
+        # for that noisy action and is intentionally hidden.
+        torch.testing.assert_close(
+            noisy_action[0, 0, 0, 0], torch.tensor((30.0 + 20.0) / 2)
+        )
+
+    def test_four_stream_geometry_mismatch_is_rejected(self) -> None:
+        good = torch.zeros(1, 2, 1, 1)
+        bad = torch.zeros(1, 2, 2, 1)
+        with self.assertRaisesRegex(ValueError, "batch/head geometry"):
+            lingbot_four_stream_attention(
+                noisy_video_qkv=(good, good, good),
+                clean_video_qkv=(good, good, good),
+                noisy_action_qkv=(bad, bad, bad),
+                clean_action_qkv=(good, good, good),
+                attention_mask=torch.ones(1, 1, 8, 8, dtype=torch.bool),
+            )
+
+
+class FourStreamLayerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        torch.manual_seed(23)
+        self.h3 = TinyH3Block()
+        self.action = H3DreamActionBlock(
+            hidden_dim=8, ffn_dim=16, num_heads=2, head_dim=4
+        )
+        self.noisy_video = torch.randn(1, 4, 8)
+        self.clean_video = torch.randn(1, 4, 8)
+        self.noisy_action = torch.randn(1, 4, 8)
+        self.clean_action = torch.randn(1, 4, 8)
+        self.video_chunks = torch.tensor([0, 0, 1, 1])
+        self.action_chunks = torch.tensor([0, 0, 1, 1])
+        self.temb = torch.randn(1, 4)
+        self.indices = torch.zeros(4, dtype=torch.long)
+        self.action_time = torch.randn(1, 6, 8)
+        self.context = torch.randn(1, 2, 8)
+        self.context_mask = torch.ones(1, 2, dtype=torch.bool)
+
+    def run_layer(self) -> tuple[torch.Tensor, ...]:
+        return four_stream_h3_action_layer(
+            h3_block=self.h3,
+            action_block=self.action,
+            noisy_video_hidden=self.noisy_video,
+            clean_video_hidden=self.clean_video,
+            noisy_action_hidden=self.noisy_action,
+            clean_action_hidden=self.clean_action,
+            noisy_h3_temb=self.temb,
+            clean_h3_temb=self.temb,
+            noisy_h3_adaln_indices=self.indices,
+            clean_h3_adaln_indices=self.indices,
+            h3_rotary_emb=(torch.empty(0), torch.empty(0)),
+            h3_apply_rotary=identity_rotary,
+            noisy_action_time_modulation=self.action_time,
+            clean_action_time_modulation=self.action_time,
+            action_context=self.context,
+            action_context_mask=self.context_mask,
+            video_chunk_ids=self.video_chunks,
+            action_chunk_ids=self.action_chunks,
+        )
+
+    def test_layer_preserves_stream_shapes(self) -> None:
+        outputs = self.run_layer()
+        self.assertEqual(
+            [tuple(output.shape) for output in outputs],
+            [(1, 4, 8)] * 4,
+        )
+
+    def test_video_objective_has_direct_action_expert_gradient(self) -> None:
+        noisy_video, _, _, _ = self.run_layer()
+        # Chunk 1 video reads chunk 0 clean-action tokens through the official
+        # strict-causal teacher-forcing route.
+        noisy_video[:, 2:].square().mean().backward()
+        grad = self.action.attn.to_v.weight.grad
+        self.assertIsNotNone(grad)
+        self.assertGreater(float(grad.abs().sum()), 0.0)
+
+    def test_action_objective_has_direct_h3_gradient(self) -> None:
+        _, _, noisy_action, _ = self.run_layer()
+        noisy_action.square().mean().backward()
+        grad = self.h3.attn.to_v.weight.grad
+        self.assertIsNotNone(grad)
+        self.assertGreater(float(grad.abs().sum()), 0.0)
 
 
 if __name__ == "__main__":

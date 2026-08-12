@@ -88,6 +88,20 @@ Wan video backbone 替换为 H3，并实现对应 token shape、RoPE、cross-str
 在 A2 的 mask、stream contract 和 gradient coverage 测试完成前，空闲 A800 用于 smoke 和评测，
 不启动未经证据门禁的长任务。
 
+#### A2 phase 1 实施状态
+
+已按官方 `wan_va/modules/model.py::_get_mask_mod` 实现可广播的 dense SDPA 参考 mask，并实现
+H3 video Q/K/V 与 ActionDiT action Q/K/V 的四流联合注意力核心。当前已验证：
+
+- noisy action chunk 可读取同 chunk clean video，但不能读取未来 video；
+- noisy future-video chunk 只可读取更早的 clean action，不能读取同 chunk action target；
+- noisy stream 同 slot 自注意、clean stream 因果注意及 window 限制与上游布尔条件一致；
+- video objective 对 action expert、action objective 对 H3 均产生有限非零直接梯度；
+- 19 项模块测试通过。
+
+这一阶段仍不是可训练整模：下一步必须接入 H3 的 packed video rows、每 token timestep/RoPE、
+clean/noisy stream embeddings 与 FSDP checkpoint，完成真实 H3 smoke 后才能升为 `GO_CANARY`。
+
 ### B. DiT4DiT → H3 受控线
 
 保留官方 detached feature 边界，用真实 future-video loss 更新 H3，用独立 ActionDiT 学动作。这个

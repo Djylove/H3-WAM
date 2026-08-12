@@ -9,7 +9,12 @@ from .action_expert import (
     H3DreamActionExpert,
     load_action_block_state,
 )
-from .joint_attention import paired_h3_action_layer
+from .joint_attention import (
+    build_lingbot_block_causal_mask,
+    four_stream_h3_action_layer,
+    lingbot_four_stream_attention,
+    paired_h3_action_layer,
+)
 from .model import (
     H3DreamPairedLayer,
     H3DreamWAM,
@@ -56,6 +61,9 @@ __all__ = [
     "apply_h3_rotary",
     "action_rope_at_positions",
     "build_h3dream_inference_schedule",
+    "build_lingbot_block_causal_mask",
+    "four_stream_h3_action_layer",
+    "lingbot_four_stream_attention",
     "expand_h3_rgb_flow_projections",
     "initialize_action_expert_from_h3",
     "inverse_h3_rotary",

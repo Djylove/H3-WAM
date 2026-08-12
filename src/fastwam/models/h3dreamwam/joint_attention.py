@@ -11,6 +11,227 @@ from torch import nn
 from .action_expert import H3DreamActionBlock, _attention
 
 
+def build_lingbot_block_causal_mask(
+    *,
+    video_chunk_ids: torch.Tensor,
+    action_chunk_ids: torch.Tensor,
+    window_size: int | None = None,
+) -> torch.Tensor:
+    """Build the four-stream training mask used by LingBot-VA.
+
+    Rows and columns are ordered as ``[noisy_video, clean_video,
+    noisy_action, clean_action]``.  Video chunk ``c`` occupies causal slot
+    ``2*c`` and action chunk ``c`` occupies slot ``2*c+1``.  Consequently a
+    noisy action chunk may read the clean video from the same chunk, while a
+    noisy video chunk may read only clean actions from earlier chunks.  This
+    is the key teacher-forced action-to-future-video route; it deliberately
+    excludes same-chunk noisy-action leakage.
+
+    The returned boolean mask has SDPA shape ``[1,1,Q,K]`` where ``True``
+    means that the key is visible.  ``window_size`` uses LingBot-VA's
+    interleaved video/action slot units, not raw frame units.
+    """
+
+    video_chunk_ids = video_chunk_ids.reshape(-1).long()
+    action_chunk_ids = action_chunk_ids.reshape(-1).long()
+    if video_chunk_ids.numel() == 0 or action_chunk_ids.numel() == 0:
+        raise ValueError("video/action chunk ids cannot be empty")
+    if int(video_chunk_ids.min()) < 0 or int(action_chunk_ids.min()) < 0:
+        raise ValueError("chunk ids must be non-negative")
+    if window_size is not None and window_size < 0:
+        raise ValueError("window_size must be non-negative")
+    if action_chunk_ids.device != video_chunk_ids.device:
+        action_chunk_ids = action_chunk_ids.to(video_chunk_ids.device)
+
+    video_slots = video_chunk_ids * 2
+    action_slots = action_chunk_ids * 2 + 1
+    frame_ids = torch.cat(
+        (video_slots, video_slots, action_slots, action_slots), dim=0
+    )
+    # This naming follows the upstream code: 0 is a noisy/predicted stream
+    # and 1 is a clean teacher-forcing stream.
+    noise_ids = torch.cat(
+        (
+            torch.zeros_like(video_slots),
+            torch.ones_like(video_slots),
+            torch.zeros_like(action_slots),
+            torch.ones_like(action_slots),
+        ),
+        dim=0,
+    )
+    query_frames = frame_ids[:, None]
+    key_frames = frame_ids[None, :]
+    query_is_clean = noise_ids[:, None] == 1
+    key_is_clean = noise_ids[None, :] == 1
+
+    clean_to_clean = query_is_clean & key_is_clean & (key_frames <= query_frames)
+    noisy_to_clean = (~query_is_clean) & key_is_clean & (
+        key_frames < query_frames
+    )
+    noisy_to_noisy = (~query_is_clean) & (~key_is_clean) & (
+        key_frames == query_frames
+    )
+    allowed = clean_to_clean | noisy_to_clean | noisy_to_noisy
+    if window_size is not None:
+        allowed &= (query_frames - key_frames).abs() <= int(window_size)
+    return allowed[None, None]
+
+
+def lingbot_four_stream_attention(
+    *,
+    noisy_video_qkv: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    clean_video_qkv: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    noisy_action_qkv: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    clean_action_qkv: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    attention_mask: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Run one official-order four-stream attention operation.
+
+    Video tensors may be projected by H3 while action tensors are projected by
+    the action expert; only their ``[heads, head_dim]`` geometry must agree.
+    Keeping the projections modality-specific while concatenating attention is
+    the mixture-of-transformers boundary needed for an H3 backbone port.
+    """
+
+    streams = (
+        noisy_video_qkv,
+        clean_video_qkv,
+        noisy_action_qkv,
+        clean_action_qkv,
+    )
+    for stream in streams:
+        if len(stream) != 3 or any(tensor.ndim != 4 for tensor in stream):
+            raise ValueError("every stream must contain Q/K/V tensors [B,S,H,D]")
+    batch_head_geometry = streams[0][0].shape[0], streams[0][0].shape[2:]
+    for query, key, value in streams:
+        if query.shape != key.shape or query.shape != value.shape:
+            raise ValueError("Q/K/V shapes must match within each stream")
+        if (query.shape[0], query.shape[2:]) != batch_head_geometry:
+            raise ValueError("all streams must share batch/head geometry")
+
+    lengths = [stream[0].shape[1] for stream in streams]
+    total_length = sum(lengths)
+    if attention_mask.shape[-2:] != (total_length, total_length):
+        raise ValueError("attention mask does not match the four-stream sequence")
+    query = torch.cat([stream[0] for stream in streams], dim=1)
+    key = torch.cat([stream[1] for stream in streams], dim=1)
+    value = torch.cat([stream[2] for stream in streams], dim=1)
+    attended = _attention(query, key, value, attention_mask)
+    return tuple(attended.split(lengths, dim=1))
+
+
+def four_stream_h3_action_layer(
+    *,
+    h3_block: nn.Module,
+    action_block: H3DreamActionBlock,
+    noisy_video_hidden: torch.Tensor,
+    clean_video_hidden: torch.Tensor,
+    noisy_action_hidden: torch.Tensor,
+    clean_action_hidden: torch.Tensor,
+    noisy_h3_temb: torch.Tensor,
+    clean_h3_temb: torch.Tensor,
+    noisy_h3_adaln_indices: torch.Tensor,
+    clean_h3_adaln_indices: torch.Tensor,
+    h3_rotary_emb: tuple[torch.Tensor, torch.Tensor],
+    h3_apply_rotary: Callable[
+        [torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor
+    ],
+    noisy_action_time_modulation: torch.Tensor,
+    clean_action_time_modulation: torch.Tensor,
+    action_context: torch.Tensor,
+    action_context_mask: torch.Tensor | None,
+    video_chunk_ids: torch.Tensor,
+    action_chunk_ids: torch.Tensor,
+    window_size: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Advance one H3/action MoT layer with LingBot-VA's four streams.
+
+    Unlike :func:`paired_h3_action_layer`, this is a direct joint attention
+    operation rather than a gated residual.  H3 owns both video streams and
+    ActionDiT owns both action streams; Q/K/V share attention geometry and are
+    concatenated only inside attention.  The clean streams provide causal
+    teacher forcing and are not prediction outputs.
+    """
+
+    if noisy_video_hidden.shape != clean_video_hidden.shape:
+        raise ValueError("noisy/clean video hidden shapes must match")
+    if noisy_action_hidden.shape != clean_action_hidden.shape:
+        raise ValueError("noisy/clean action hidden shapes must match")
+    if noisy_video_hidden.shape[1] != video_chunk_ids.numel():
+        raise ValueError("video chunk ids must cover every video token")
+    if noisy_action_hidden.shape[1] != action_chunk_ids.numel():
+        raise ValueError("action chunk ids must cover every action token")
+
+    noisy_video_io = h3_attention_input(
+        h3_block,
+        noisy_video_hidden,
+        temb=noisy_h3_temb,
+        adaln_indices=noisy_h3_adaln_indices,
+        rotary_emb=h3_rotary_emb,
+        apply_rotary=h3_apply_rotary,
+    )
+    clean_video_io = h3_attention_input(
+        h3_block,
+        clean_video_hidden,
+        temb=clean_h3_temb,
+        adaln_indices=clean_h3_adaln_indices,
+        rotary_emb=h3_rotary_emb,
+        apply_rotary=h3_apply_rotary,
+    )
+    noisy_action_io = action_block.attention_input(
+        noisy_action_hidden, noisy_action_time_modulation
+    )
+    clean_action_io = action_block.attention_input(
+        clean_action_hidden, clean_action_time_modulation
+    )
+    mask = build_lingbot_block_causal_mask(
+        video_chunk_ids=video_chunk_ids.to(noisy_video_hidden.device),
+        action_chunk_ids=action_chunk_ids.to(noisy_video_hidden.device),
+        window_size=window_size,
+    )
+    attended = lingbot_four_stream_attention(
+        noisy_video_qkv=noisy_video_io[:3],
+        clean_video_qkv=clean_video_io[:3],
+        noisy_action_qkv=noisy_action_io[:3],
+        clean_action_qkv=clean_action_io[:3],
+        attention_mask=mask,
+    )
+
+    def finish_video(io: tuple[torch.Tensor, ...], value: torch.Tensor) -> torch.Tensor:
+        return h3_post_attention(
+            h3_block,
+            attended=value,
+            residual=io[3],
+            gate_attn=io[4],
+            shift_ffn=io[5],
+            scale_ffn=io[6],
+            gate_ffn=io[7],
+            adaln_indices=(
+                noisy_h3_adaln_indices if io is noisy_video_io
+                else clean_h3_adaln_indices
+            ),
+        )
+
+    def finish_action(io: tuple[torch.Tensor, ...], value: torch.Tensor) -> torch.Tensor:
+        return action_block.post_attention(
+            residual=io[3],
+            attended=value,
+            gate_attn=io[4],
+            shift_ffn=io[5],
+            scale_ffn=io[6],
+            gate_ffn=io[7],
+            context=action_context,
+            context_mask=action_context_mask,
+        )
+
+    return (
+        finish_video(noisy_video_io, attended[0]),
+        finish_video(clean_video_io, attended[1]),
+        finish_action(noisy_action_io, attended[2]),
+        finish_action(clean_action_io, attended[3]),
+    )
+
+
 def h3_attention_input(
     block: nn.Module,
     hidden: torch.Tensor,
