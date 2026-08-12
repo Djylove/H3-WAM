@@ -101,6 +101,8 @@ def main() -> None:
     action_block.requires_grad_(True)
     for module in (
         h3.proj_in,
+        h3.norm_out,
+        h3.proj_out,
         h3.time_proj,
         h3.time_embedder,
         h3.rope,
@@ -109,6 +111,7 @@ def main() -> None:
         action_expert.context_embedding,
         action_expert.time_embedding,
         action_expert.time_projection,
+        action_expert.output,
     ):
         module.to(device)
 
@@ -229,15 +232,40 @@ def main() -> None:
             action_chunk_ids=action_chunks,
         )
         future_rows = video_chunks > video_chunks.min()
-        video_loss = outputs[0][:, future_rows].float().square().mean()
-        action_loss = outputs[2].float().square().mean()
+        video_velocity = h3.proj_out(
+            h3.norm_out(outputs[0], noisy_time, adaln_indices).to(
+                h3.proj_out.weight.dtype
+            )
+        )
+        action_velocity = action_expert.output(
+            outputs[2].to(action_expert.output.weight.dtype)
+        )
+        video_target = torch.randn(
+            video_velocity.shape,
+            generator=generator,
+            device=device,
+            dtype=torch.float32,
+        )
+        action_target = torch.randn(
+            action_velocity.shape,
+            generator=generator,
+            device=device,
+            dtype=torch.float32,
+        )
+        video_loss = torch.nn.functional.mse_loss(
+            video_velocity[:, future_rows].float(),
+            video_target[:, future_rows],
+        )
+        action_loss = torch.nn.functional.mse_loss(
+            action_velocity.float(), action_target
+        )
         loss = video_loss + action_loss
         loss.backward()
         h3_gradient = grad_norm(list(h3_block.parameters()))
         action_gradient = grad_norm(list(action_block.parameters()))
         if not all(
             math.isfinite(value) and value > 0
-            for value in (float(loss), h3_gradient, action_gradient)
+            for value in (float(loss.detach()), h3_gradient, action_gradient)
         ):
             raise RuntimeError("four-stream smoke produced non-finite/zero signal")
         optimizer.step()
