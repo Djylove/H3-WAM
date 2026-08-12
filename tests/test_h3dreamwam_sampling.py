@@ -5,6 +5,7 @@ import torch
 from fastwam.models.h3dreamwam import (
     build_h3dream_inference_schedule,
     h3dream_flow_training_weight,
+    sample_h3_lingbot_chunk_causal,
     sample_h3dream_joint_rows,
 )
 
@@ -54,6 +55,68 @@ class H3DreamSamplingTest(unittest.TestCase):
         torch.testing.assert_close(sample.video_rows[:, :2], condition)
         torch.testing.assert_close(sample.video_rows[:, 2:], clean_future)
         torch.testing.assert_close(sample.actions, clean_actions)
+
+    def test_lingbot_sampler_commits_only_generated_chunk_history(self) -> None:
+        condition = torch.tensor([[[9.0]]])
+        clean_video = torch.tensor([[[9.0], [2.0], [3.0]]])
+        video_noise = torch.tensor([[[9.0], [12.0], [13.0]]])
+        clean_actions = torch.tensor([[[4.0], [5.0]]])
+        action_noise = torch.tensor([[[14.0], [15.0]]])
+        calls = []
+
+        def oracle(
+            video,
+            video_history,
+            actions,
+            action_history,
+            video_time,
+            action_sigma,
+            clean_video_valid,
+            clean_action_valid,
+        ):
+            calls.append(
+                (
+                    video_history.clone(),
+                    action_history.clone(),
+                    float(video_time),
+                    float(action_sigma),
+                    clean_video_valid.clone(),
+                    clean_action_valid.clone(),
+                )
+            )
+            return clean_video - video_noise, action_noise - clean_actions
+
+        two_steps = build_h3dream_inference_schedule(
+            2, device="cpu", action_shift=0.05
+        )
+        sample = sample_h3_lingbot_chunk_causal(
+            oracle,
+            initial_video_rows=torch.cat((condition, video_noise[:, 1:]), dim=1),
+            observed_video_mask=torch.tensor([True, False, False]),
+            video_chunk_ids=torch.tensor([0, 0, 1]),
+            initial_actions=action_noise,
+            action_chunk_ids=torch.tensor([0, 1]),
+            video_schedule=two_steps,
+            action_schedule=two_steps,
+        )
+        torch.testing.assert_close(sample.video_rows, clean_video)
+        torch.testing.assert_close(sample.actions, clean_actions)
+        torch.testing.assert_close(sample.clean_video_rows, clean_video)
+        torch.testing.assert_close(sample.clean_actions, clean_actions)
+        # Before chunk 0 video is generated, no future clean row is exposed.
+        torch.testing.assert_close(calls[0][0], torch.tensor([[[9.0], [0.0], [0.0]]]))
+        torch.testing.assert_close(calls[0][1], torch.zeros_like(clean_actions))
+        # The first action call sees generated chunk-0 video but no clean action.
+        first_action_call = next(call for call in calls if call[2] == 1.0)
+        torch.testing.assert_close(
+            first_action_call[0], torch.tensor([[[9.0], [2.0], [0.0]]])
+        )
+        torch.testing.assert_close(first_action_call[1], torch.zeros_like(clean_actions))
+        # The last chunk may see committed prior action, never the future one.
+        self.assertAlmostEqual(float(calls[-1][1][0, 0, 0]), 4.0, places=5)
+        self.assertEqual(float(calls[-1][1][0, 1, 0]), 0.0)
+        torch.testing.assert_close(calls[0][4], torch.tensor([True, False, False]))
+        torch.testing.assert_close(calls[0][5], torch.tensor([False, False]))
 
 
 if __name__ == "__main__":

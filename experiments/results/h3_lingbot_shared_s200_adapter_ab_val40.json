@@ -1,0 +1,43 @@
+{
+  "event": "h3_lingbot_shared_s200_adapter_ab_val40",
+  "initialization": {
+    "samples": 40,
+    "video_loss": 0.16953381039202214,
+    "action_loss": 1.2566085189580918
+  },
+  "shared_tail2_step100": {
+    "training_samples": 800,
+    "video_loss": 0.16586160697042943,
+    "action_loss": 1.2509168177843093,
+    "video_improvement_percent": 2.1660596273399886,
+    "action_improvement_percent": 0.45294147603755835
+  },
+  "shared_tail2_step200": {
+    "additional_training_samples": 800,
+    "cumulative_training_samples": 1600,
+    "train_mean_video_loss": 0.21597461647354066,
+    "train_mean_action_loss": 1.2253376246988774,
+    "video_loss": 0.16092837899923323,
+    "action_loss": 1.2458495676517487,
+    "video_improvement_percent": 5.075938170026443,
+    "action_improvement_percent": 0.8561895884060844,
+    "action_improvement_from_step100_percent": 0.40508290083876086,
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt"
+  },
+  "adapter_only_step100": {
+    "training_samples": 800,
+    "train_mean_video_loss": 0.23811609629541636,
+    "train_mean_action_loss": 1.2391539087891579,
+    "video_loss": 0.1693713016808033,
+    "action_loss": 1.252830058336258,
+    "video_improvement_percent": 0.09585622528217931,
+    "action_improvement_percent": 0.3006871722441234,
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/adapter_only_s100.pt"
+  },
+  "pre_registered_decisions": {
+    "continue_s200": "PASS: 0.856% action improvement exceeds the 0.75% gate and video remains better than initialization.",
+    "tail2_vs_adapter": "FAIL: shared-tail2 step100 exceeds adapter-only by 0.152 percentage points, below the required 0.25 percentage points."
+  },
+  "interpretation": "The shared four-stream line has a repeatable teacher-forced held-out signal, but this ablation does not establish that H3 tail-2 updates are the dominant cause. The next gate must remove clean-future teacher forcing during action generation before any closed-loop effectiveness claim.",
+  "claim_limit": "Offline episode-disjoint, fixed-noise, teacher-forced losses only; not policy success and not GO_LONG."
+}

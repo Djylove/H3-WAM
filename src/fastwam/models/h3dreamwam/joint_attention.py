@@ -16,6 +16,8 @@ def build_lingbot_block_causal_mask(
     video_chunk_ids: torch.Tensor,
     action_chunk_ids: torch.Tensor,
     window_size: int | None = None,
+    clean_video_valid: torch.Tensor | None = None,
+    clean_action_valid: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Build the four-stream training mask used by LingBot-VA.
 
@@ -72,6 +74,28 @@ def build_lingbot_block_causal_mask(
         key_frames == query_frames
     )
     allowed = clean_to_clean | noisy_to_clean | noisy_to_noisy
+    if clean_video_valid is not None or clean_action_valid is not None:
+        if clean_video_valid is None or clean_action_valid is None:
+            raise ValueError("both clean-stream validity masks are required")
+        clean_video_valid = clean_video_valid.to(
+            device=allowed.device, dtype=torch.bool
+        ).reshape(-1)
+        clean_action_valid = clean_action_valid.to(
+            device=allowed.device, dtype=torch.bool
+        ).reshape(-1)
+        if clean_video_valid.shape != video_slots.shape:
+            raise ValueError("clean video validity must cover every video token")
+        if clean_action_valid.shape != action_slots.shape:
+            raise ValueError("clean action validity must cover every action token")
+        key_valid = torch.cat(
+            (
+                torch.ones_like(video_slots, dtype=torch.bool),
+                clean_video_valid,
+                torch.ones_like(action_slots, dtype=torch.bool),
+                clean_action_valid,
+            )
+        )
+        allowed &= key_valid[None, :]
     if window_size is not None:
         allowed &= (query_frames - key_frames).abs() <= int(window_size)
     return allowed[None, None]
@@ -370,6 +394,8 @@ def shared_h3_four_stream_layer(
     context_temb: torch.Tensor | None = None,
     context_adaln_indices: torch.Tensor | None = None,
     context_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
+    clean_video_valid: torch.Tensor | None = None,
+    clean_action_valid: torch.Tensor | None = None,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -462,6 +488,8 @@ def shared_h3_four_stream_layer(
         video_chunk_ids=video_chunk_ids.to(noisy_video_hidden.device),
         action_chunk_ids=action_chunk_ids.to(noisy_video_hidden.device),
         window_size=window_size,
+        clean_video_valid=clean_video_valid,
+        clean_action_valid=clean_action_valid,
     )
     attended = lingbot_four_stream_attention(
         noisy_video_qkv=stream_io[0][:3],

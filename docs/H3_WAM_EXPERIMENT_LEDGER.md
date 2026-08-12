@@ -40,6 +40,9 @@
 | E15 | 独立 ActionDiT 真实 dense 更新 | 8×A800、1274 video tokens、32 actions、tail-2、LR `1e-6`、无 warmup | step1 `33.3022`；step2 `7505.1816`；action grad `5.87e5 → 3.81e7` | 不适用 | `NO_GO`；checkpoint 只作诊断，不得续训 |
 | E16 | shared-H3 four-stream 工程门 | 官方共享 block 结构；真实 H3 单层2步 + full50真实dense 10步；tail-2；10步warmup | 单层 action `2.3449 → 2.3432`；full50 action `1.07875 → 1.07266`；H3/action grad稳定 | 不适用 | 数值、FSDP、save/restore 均通过；只晋级 multi-window canary，不构成泛化证据 |
 | E17 | shared-H3 multi-window canary | 100 steps、global batch8、800 train windows、随机 H3/LingBot timestep、tail-2 | val40 action `1.256609 → 1.250917`（改善 `0.453%`）；video `0.169534 → 0.165862`（改善 `2.166%`） | 尚未放行 | 首个 episode-disjoint 双目标正向信号；晋级扩展 canary，不是 `GO_LONG` |
+| E18 | shared-H3 s100→s200 扩展门 | 续训100 steps、下一批800 windows、其余协议固定 | val40 action `1.245850`（较初始化改善 `0.856%`）；video `0.160928`（改善 `5.076%`） | 尚未放行 | 通过预注册 `0.75%` offline 门；仍是 teacher-forced，不是部署证据 |
+| E19 | adapter-only 配对消融 | 与 E17 同 seed/首800 windows/100 steps；冻结全部 H3 block 与 video output | val40 action `1.252830`（改善 `0.301%`）；video `0.169371`（改善 `0.096%`） | 不适用 | tail-2 比 adapter-only 仅多改善 `0.152` 个百分点，未达预注册 `0.25`；不能声称尾层更新是主要贡献 |
+| E20 | shared-H3 无泄漏逐 chunk sample40 | 8 chunks；每 chunk video 4步→提交→action 4步→提交；未来 clean key 完全屏蔽 | 生成 video MSE `0.695563 → 0.627430`（改善 `9.795%`）；action `1.258840 → 1.255442`（改善 `0.270%`） | 尚未放行 | 双模态生成信号为正，放行最小闭环工程 canary；动作增益小，仍非 `GO_LONG` |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -68,6 +71,20 @@ shift `12.0`，action 使用 LingBot 配方的 shift `0.05`，val40 则按 sampl
 action/video 均改善，但 action 幅度仍只有 `0.453%`，故只放行到累计 3200 samples 的扩展 canary。
 同时用空闲节点跑相同数据、噪声、LR 的 adapter-only 对照，隔离 H3 tail-2 更新是否必要；在两者
 val40 结果出来前不做闭环、不增加服务器。
+
+E18/E19 将扩展预算收紧为各 100 steps 后完成。shared-H3 累计 1600 个 train samples 后，固定
+val40 action/video 相对初始化分别改善 `0.856%/5.076%`，说明第一轮很小的正向信号可重复扩大；
+但同预算 adapter-only 的 action 也改善 `0.301%`，而 E17 tail-2 只比它多 `0.152` 个百分点，未过
+`0.25` 个百分点的机制门。更重要的是，这些 val loss 使用官方训练式 clean future stream，属于
+teacher-forced 指标；动作预测能读取同 chunk 的 clean video。下一步不得直接称闭环或 `GO_LONG`，
+必须先实现官方式 chunk-causal 推理：当前 video chunk 从噪声生成并固化后，当前 action chunk 才
+能读取该生成结果，任何时候都不得把数据集的未来 video/action 作为 clean stream 输入。
+
+E20 已补齐这一缺口。采样器显式维护 clean stream validity mask，未观察/未生成 token 不只是置零，
+而是从 attention key 中完全屏蔽；34 项采样、mask、梯度相关测试通过。相同 seed 的 val40 配对中，
+s200 对生成 video/action MSE 均优于未训练初始化，说明 teacher-forced 改善没有在自由生成时完全消失。
+不过 action 改善仅 `0.270%`，因此只允许接通服务端和跑最小 LIBERO 闭环工程 canary，不允许据此
+增加训练步数、宣称泛化或启动全量微调。
 
 ## 2026-08-12 活跃长线
 

@@ -1,0 +1,28 @@
+{
+  "event": "h3_lingbot_shared_causal_sample40",
+  "protocol": {
+    "manifest": "v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl",
+    "episode_disjoint": true,
+    "samples": 40,
+    "fixed_noise_by_sample": true,
+    "euler_steps_per_modality_chunk": 4,
+    "chunks": 8,
+    "future_ground_truth_visible": false,
+    "generation_order": "for each chunk: denoise video, commit generated video, denoise action, commit generated action",
+    "clean_stream_mask": "only observed or previously generated clean tokens are visible as attention keys"
+  },
+  "initialization": {
+    "video_reconstruction_mse": 0.6955631747841835,
+    "action_reconstruction_mse": 1.2588398784399033
+  },
+  "shared_tail2_step200": {
+    "video_reconstruction_mse": 0.6274300172924996,
+    "action_reconstruction_mse": 1.2554424226284027,
+    "video_improvement_percent": 9.795394575456642,
+    "action_improvement_percent": 0.2698878443310161,
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt"
+  },
+  "decision": "GO_CLOSED_LOOP_ENGINEERING_CANARY",
+  "rationale": "Both generated modalities improve over identical initialization without clean-future leakage. Action gain is small, so only a minimal LIBERO rollout and sampler/server validation are authorized; GO_LONG remains false.",
+  "claim_limit": "Open-loop reconstruction on held-out demonstrations; not a closed-loop success result."
+}

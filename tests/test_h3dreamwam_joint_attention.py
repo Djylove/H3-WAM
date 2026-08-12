@@ -340,6 +340,17 @@ class LingBotBlockCausalMaskTest(unittest.TestCase):
                 action_chunk_ids=torch.tensor([0]),
             )
 
+    def test_uncommitted_clean_stream_keys_are_invisible(self) -> None:
+        masked = build_lingbot_block_causal_mask(
+            video_chunk_ids=torch.tensor([0, 1]),
+            action_chunk_ids=torch.tensor([0, 1]),
+            clean_video_valid=torch.tensor([True, False]),
+            clean_action_valid=torch.tensor([True, False]),
+        )[0, 0]
+        self.assertTrue(masked[4, 2])
+        self.assertFalse(masked[:, 3].any())
+        self.assertFalse(masked[:, 7].any())
+
     def test_h3_latent_frames_align_to_32_action_time_axis(self) -> None:
         # Mirror the cached H3 layout: 12 latent frames, 98 spatial tokens per
         # frame, versus 32 LIBERO actions. This cannot be represented by a

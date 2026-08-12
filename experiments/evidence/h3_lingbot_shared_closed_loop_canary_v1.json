@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_closed_loop_canary_v1",
+  "classification": "backbone_port",
+  "hypothesis": "The s200 shared-H3 checkpoint can complete the observation-to-action server path and produce finite, non-constant, in-support actions for one fixed LIBERO episode without clean-future leakage.",
+  "single_variable": "Replace the legacy H3-DreamWAM policy server with the shared-H3 chunk-causal sampler and its s200 checkpoint; keep the established LIBERO camera/state/action conversion and rollout harness.",
+  "parent_baseline": "E20 fixed val40 chunk-causal generation: video/action MSE 0.627430/1.255442, improving 9.795%/0.270% over identical initialization.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy shared-H3 chunk-causal server", "locator": "/home/ubuntu/fastwam_deploy", "revision": "047ecec plus uncommitted E20 sampler/server diff", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "streaming inference order", "paper": "autoregressive video-action chunks", "upstream_code": "generate video chunk, cache it, generate action chunk, then advance", "local": "per chunk denoise video, commit clean video, denoise action, commit clean action", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/wan_va_server.py:464", "src/fastwam/models/h3dreamwam/sampling.py"], "rationale": "The local implementation recomputes full history instead of KV caching but exposes the same causal information."}],
+    "data": [{"field": "rollout observation", "paper": "online robot observation", "upstream_code": "LIBERO agent and wrist cameras plus proprioception", "local": "established two-camera preprocess, H3 VAE first-frame encode and 8D state", "status": "EQUIVALENT", "evidence": ["scripts/h3dreamwam/serve_h3_lingbot_shared_fsdp.py", "scripts/h3dreamwam/rollout_h3dreamwam_fsdp.py"], "rationale": "The rollout reuses the previously exercised LIBERO conversion path."}],
+    "action": [{"field": "action decode", "paper": "embodiment action chunk", "upstream_code": "seven active normalized LIBERO dimensions decoded to environment convention", "local": "seven min-max decoded dimensions with gripper convention inversion and clipping", "status": "EQUIVALENT", "evidence": ["src/fastwam/models/h3wam/deployment.py:132", "scripts/h3dreamwam/serve_h3_lingbot_shared_fsdp.py"], "rationale": "Round-trip conversion is unchanged from prior H3 rollout tests."}],
+    "objective": [{"field": "canary purpose", "paper": "closed-loop task success", "upstream_code": "full benchmark rollout", "local": "one bounded engineering episode records success plus action/latency diagnostics", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command", "decision.rationale"], "rationale": "The first server integration is deliberately too small for an effectiveness claim."}],
+    "optimization": [{"field": "checkpoint", "paper": "full post-training", "upstream_code": "5000-step Wan post-training", "local": "shared H3 tail-2 s200 after 1600 samples", "status": "INTENTIONAL_DEVIATION", "evidence": ["experiments/results/h3_lingbot_shared_causal_sample40.json", "/mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt"], "rationale": "This tests deployment feasibility before any request for longer training."}],
+    "evaluation": [{"field": "LIBERO canary", "paper": "multi-task success rate", "upstream_code": "LIBERO server/client", "local": "libero_goal task3 trial0, max80, wait30, replan32, sample steps4", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "A single fixed trial can validate the closed-loop path but cannot measure generalization."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["official code fixed at 7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["shared H3 four-stream port plus explicit clean-key validity mask"]},
+    "data_contract": {"status": "PASS", "evidence": ["v7 dense stats/context and existing LIBERO runtime"]},
+    "action_contract": {"status": "PASS", "evidence": ["existing minmax and gripper round-trip implementation"]},
+    "objective_contract": {"status": "PASS", "evidence": ["E20 evaluates generated samples rather than teacher-forced velocity"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["checkpoint identity and s200 budget recorded"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["fixed task/trial/max/replan/sample command"]},
+    "gradient_path": {"status": "PASS", "evidence": ["E16-E19 finite nonzero training gradients"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["E20 sample40 completed with finite generated outputs"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["s200 restored for teacher-forced, masked and sample40 evaluation"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E20 paired initialization baseline"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["no-leak sample40 improves video 9.795% and action 0.270%"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["this experiment is the first shared-H3 closed-loop canary"]}
+  },
+  "budget": {"global_batch": 1, "optimizer_steps": 1, "training_samples": 1, "unique_windows": 1, "effective_epochs": 1.0, "gpu_count": 8, "estimated_hours": 0.2},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Authorize exactly one bounded engineering rollout. Pass means the service becomes ready and returns finite, nonconstant actions through at least one replan; task success is recorded but not required for the engineering gate. Any nonfinite action, server error, observation leak or action-contract failure is an immediate stop.",
+    "launch_command": "SIM_SITE_PACKAGES=/tmp/h3-wam-libero-site bash scripts/h3wam/run_cloud_libero.sh /mnt/h3-wam/runtime/conda-py311/bin/python scripts/h3dreamwam/rollout_h3dreamwam_fsdp.py --lingbot-shared --lingbot-shared-stage /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt --model /mnt/h3-wam/models/MiniMax-H3 --cache-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --torchrun scripts/h3dreamwam/torchrun_shared.sh --suite libero_goal --task-ids 3 --trial-indices 0 --max-steps 80 --wait-steps 30 --replan-steps 32 --action-horizon 32 --sample-steps 4 --output-dir /mnt/h3-wam/outputs/eval-lingbot-shared/s200_goal_task3_trial0 --save-video --save-trajectories"
+  }
+}

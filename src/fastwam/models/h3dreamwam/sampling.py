@@ -23,6 +23,16 @@ class H3DreamJointSample:
     actions: torch.Tensor
 
 
+@dataclass(frozen=True)
+class H3LingBotCausalSample:
+    """Generated streams plus the clean history exposed to later chunks."""
+
+    video_rows: torch.Tensor
+    actions: torch.Tensor
+    clean_video_rows: torch.Tensor
+    clean_actions: torch.Tensor
+
+
 def _shift(value: torch.Tensor, shift: float) -> torch.Tensor:
     if shift <= 0:
         raise ValueError("flow shift must be positive")
@@ -135,3 +145,132 @@ def sample_h3dream_joint_rows(
         video_rows[:, :condition_video_rows] = condition
         actions += action_velocity * action_delta.to(actions.dtype)
     return H3DreamJointSample(video_rows=video_rows, actions=actions)
+
+
+@torch.inference_mode()
+def sample_h3_lingbot_chunk_causal(
+    predict_velocity: Callable[
+        [
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+            torch.Tensor,
+        ],
+        tuple[torch.Tensor, torch.Tensor],
+    ],
+    *,
+    initial_video_rows: torch.Tensor,
+    observed_video_mask: torch.Tensor,
+    video_chunk_ids: torch.Tensor,
+    initial_actions: torch.Tensor,
+    action_chunk_ids: torch.Tensor,
+    video_schedule: H3DreamInferenceSchedule,
+    action_schedule: H3DreamInferenceSchedule,
+) -> H3LingBotCausalSample:
+    """Generate interleaved video/action chunks without clean-future leakage.
+
+    LingBot training contains noisy and clean copies of both modalities. At
+    inference, the clean stream may contain only observed or already generated
+    rows. For each chunk this routine first denoises video, commits it to clean
+    history, then denoises action and commits that action. Unreached clean rows
+    stay zero and are invisible through the block-causal attention mask.
+    """
+
+    if initial_video_rows.ndim != 3 or initial_actions.ndim != 3:
+        raise ValueError("video/actions must be [B,length,width]")
+    if initial_video_rows.shape[0] != initial_actions.shape[0]:
+        raise ValueError("video/action batch sizes must match")
+    video_length = initial_video_rows.shape[1]
+    action_length = initial_actions.shape[1]
+    observed_video_mask = observed_video_mask.reshape(-1).bool()
+    video_chunk_ids = video_chunk_ids.reshape(-1).long()
+    action_chunk_ids = action_chunk_ids.reshape(-1).long()
+    if observed_video_mask.shape != (video_length,):
+        raise ValueError("observed video mask must cover every video row")
+    if video_chunk_ids.shape != (video_length,):
+        raise ValueError("video chunk ids must cover every video row")
+    if action_chunk_ids.shape != (action_length,):
+        raise ValueError("action chunk ids must cover every action row")
+    if not bool(observed_video_mask.any()):
+        raise ValueError("at least one observed video row is required")
+    if int(video_chunk_ids.min()) < 0 or int(action_chunk_ids.min()) < 0:
+        raise ValueError("chunk ids must be non-negative")
+
+    video_rows = initial_video_rows.clone()
+    actions = initial_actions.clone()
+    clean_video = torch.zeros_like(video_rows)
+    clean_video[:, observed_video_mask] = video_rows[:, observed_video_mask]
+    clean_actions = torch.zeros_like(actions)
+    clean_video_valid = observed_video_mask.clone()
+    clean_action_valid = torch.zeros_like(action_chunk_ids, dtype=torch.bool)
+    chunks = torch.unique(
+        torch.cat((video_chunk_ids, action_chunk_ids)), sorted=True
+    ).tolist()
+    one = torch.ones((), device=video_rows.device, dtype=torch.float32)
+
+    for chunk in chunks:
+        video_selection = (video_chunk_ids == int(chunk)) & ~observed_video_mask
+        if bool(video_selection.any()):
+            for video_time, video_delta in zip(
+                video_schedule.video_clean_times,
+                video_schedule.video_clean_deltas,
+                strict=True,
+            ):
+                video_velocity, _ = predict_velocity(
+                    video_rows,
+                    clean_video,
+                    actions,
+                    clean_actions,
+                    video_time,
+                    one,
+                    clean_video_valid,
+                    clean_action_valid,
+                )
+                if video_velocity.shape != video_rows.shape:
+                    raise ValueError("video velocity shape does not match video rows")
+                video_rows[:, video_selection] += (
+                    video_velocity[:, video_selection]
+                    * video_delta.to(video_rows.dtype)
+                )
+                video_rows[:, observed_video_mask] = clean_video[
+                    :, observed_video_mask
+                ]
+            clean_video[:, video_selection] = video_rows[:, video_selection]
+            clean_video_valid[video_selection] = True
+
+        action_selection = action_chunk_ids == int(chunk)
+        if bool(action_selection.any()):
+            for action_sigma, action_delta in zip(
+                action_schedule.action_sigmas,
+                action_schedule.action_sigma_deltas,
+                strict=True,
+            ):
+                _, action_velocity = predict_velocity(
+                    video_rows,
+                    clean_video,
+                    actions,
+                    clean_actions,
+                    one,
+                    action_sigma,
+                    clean_video_valid,
+                    clean_action_valid,
+                )
+                if action_velocity.shape != actions.shape:
+                    raise ValueError("action velocity shape does not match actions")
+                actions[:, action_selection] += (
+                    action_velocity[:, action_selection]
+                    * action_delta.to(actions.dtype)
+                )
+            clean_actions[:, action_selection] = actions[:, action_selection]
+            clean_action_valid[action_selection] = True
+
+    return H3LingBotCausalSample(
+        video_rows=video_rows,
+        actions=actions,
+        clean_video_rows=clean_video,
+        clean_actions=clean_actions,
+    )

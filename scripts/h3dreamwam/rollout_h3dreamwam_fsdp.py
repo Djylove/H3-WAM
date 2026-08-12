@@ -26,7 +26,9 @@ from rollout_libero import free_local_port, run_episode, wait_for_server  # noqa
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=Path, required=True)
-    parser.add_argument("--action-stage", type=Path, required=True)
+    parser.add_argument("--action-stage", type=Path)
+    parser.add_argument("--lingbot-shared-stage", type=Path)
+    parser.add_argument("--lingbot-shared", action="store_true")
     parser.add_argument("--h3-joint-stage", type=Path)
     parser.add_argument("--dot", action="store_true")
     parser.add_argument("--cache-root", type=Path, required=True)
@@ -70,6 +72,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def server_command(args: argparse.Namespace, port: int, ready_file: Path) -> list[str]:
+    if args.lingbot_shared:
+        return [
+            str(args.torchrun.absolute()),
+            "--standalone",
+            f"--nproc-per-node={args.nproc_per_node}",
+            str(Path(__file__).with_name("serve_h3_lingbot_shared_fsdp.py")),
+            "--model", str(args.model.resolve()),
+            "--stage", str(args.lingbot_shared_stage.resolve()),
+            "--cache-root", str(args.cache_root.resolve()),
+            "--manifest", str(args.manifest.resolve()),
+            "--port", str(port),
+            "--ready-file", str(ready_file),
+            "--action-horizon", str(args.action_horizon),
+            "--sample-steps", str(args.sample_steps),
+            "--binarize-gripper" if args.binarize_gripper else "--no-binarize-gripper",
+            "--clip-normalized-actions" if args.clip_normalized_actions else "--no-clip-normalized-actions",
+        ]
     return [
         str(args.torchrun.absolute()),
         "--standalone",
@@ -130,6 +149,11 @@ def write_results(path: Path, payload: dict) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.lingbot_shared:
+        if args.lingbot_shared_stage is None:
+            raise ValueError("lingbot-shared requires --lingbot-shared-stage")
+    elif args.action_stage is None:
+        raise ValueError("non-LingBot rollout requires --action-stage")
     if min(
         args.nproc_per_node,
         args.trials,
@@ -190,9 +214,20 @@ def main() -> None:
     )
     connection = None
     results = {
-        "policy": "h3dotwam_fsdp" if args.dot else "h3dreamwam_fsdp",
+        "policy": (
+            "h3_lingbot_shared_fsdp"
+            if args.lingbot_shared
+            else ("h3dotwam_fsdp" if args.dot else "h3dreamwam_fsdp")
+        ),
         "model": str(args.model.resolve()),
-        "action_stage": str(args.action_stage.resolve()),
+        "action_stage": (
+            None if args.action_stage is None else str(args.action_stage.resolve())
+        ),
+        "lingbot_shared_stage": (
+            None
+            if args.lingbot_shared_stage is None
+            else str(args.lingbot_shared_stage.resolve())
+        ),
         "h3_joint_stage": (
             None
             if args.h3_joint_stage is None

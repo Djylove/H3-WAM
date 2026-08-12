@@ -43,6 +43,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-offset", type=int, default=0)
     parser.add_argument("--random-timesteps", action="store_true")
     parser.add_argument("--freeze-shared-blocks", action="store_true")
+    parser.add_argument("--mask-clean-future", action="store_true")
+    parser.add_argument("--sample-eval", action="store_true")
+    parser.add_argument("--sample-steps", type=int, default=4)
+    parser.add_argument("--eval-limit", type=int, default=0)
     parser.add_argument(
         "--shared-backbone",
         action="store_true",
@@ -150,6 +154,7 @@ def prepare_real_batch(
     noisy_future = video_time[:, None, None] * future_rows
     noisy_future += (1.0 - video_time[:, None, None]) * video_noise[:, condition_rows:]
     noisy_video = torch.cat((first_rows, noisy_future), dim=1)
+    initial_video = torch.cat((first_rows, video_noise[:, condition_rows:]), dim=1)
 
     clean_action = window["actions"][: args.action_horizon].float()
     action_scale = (
@@ -199,6 +204,7 @@ def prepare_real_batch(
         "sample_id": sample_id,
         "video_tokens": video_tokens,
         "noisy_video": noisy_video,
+        "initial_video": initial_video,
         "clean_video": clean_video,
         "video_position_ids": video_position_ids,
         "video_chunks": video_chunks,
@@ -211,6 +217,7 @@ def prepare_real_batch(
             video_tokens, device=device, dtype=torch.long
         ),
         "noisy_action": noisy_action,
+        "initial_action": action_noise,
         "clean_action": clean_action,
         "action_position_ids": action_position_ids,
         "action_chunks": action_chunks,
@@ -227,6 +234,12 @@ def prepare_real_batch(
 
 def main() -> None:
     args = parse_args()
+    if args.mask_clean_future and not args.eval_only:
+        raise ValueError("mask-clean-future is an evaluation-only intervention")
+    if args.sample_eval and (not args.eval_only or not args.shared_backbone):
+        raise ValueError("sample-eval requires eval-only and shared-backbone")
+    if args.sample_steps <= 0 or args.eval_limit < 0:
+        raise ValueError("sample-steps must be positive and eval-limit non-negative")
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
@@ -252,7 +265,9 @@ def main() -> None:
         H3LingBotSharedWAM,
         H3LingBotWAM,
         align_h3_action_chunk_ids,
+        build_h3dream_inference_schedule,
         initialize_action_expert_from_h3,
+        sample_h3_lingbot_chunk_causal,
     )
     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
     from torch.distributed.fsdp import MixedPrecision
@@ -358,6 +373,8 @@ def main() -> None:
     # sharded the 33B/ActionDiT blocks. Forward compute remains BF16 through
     # MixedPrecision, matching the proven H3-DreamWAM training path.
     model.float()
+    if args.eval_only:
+        model.eval()
     # FSDP establishes root/non-root ownership lazily. Checkpoint restore may
     # summon nested layer parameters before the first real forward, so force
     # hierarchy initialization from the true root after the final storage
@@ -518,7 +535,10 @@ def main() -> None:
     torch.cuda.reset_peak_memory_stats(device)
     history = []
     iterations = (
-        math.ceil(len(rows) / world_size)
+        math.ceil(
+            (min(len(rows), args.eval_limit) if args.eval_limit else len(rows))
+            / world_size
+        )
         if args.eval_only and args.eval_all and rows
         else args.steps
     )
@@ -533,7 +553,10 @@ def main() -> None:
                 + (step - 1) * world_size
                 + rank
             )
-            has_sample = row_index < len(rows) if args.eval_all else True
+            eval_size = (
+                min(len(rows), args.eval_limit) if args.eval_limit else len(rows)
+            )
+            has_sample = row_index < eval_size if args.eval_all else True
             batch = prepare_real_batch(
                 args=args,
                 row=rows[row_index % len(rows)],
@@ -576,6 +599,13 @@ def main() -> None:
             video_target = batch["video_target"]
             action_target = batch["action_target"]
             future = batch["future"]
+            if args.mask_clean_future:
+                # Cold-start deployment proxy: only the observed keyframe may
+                # enter the clean video stream and no ground-truth action may
+                # enter the clean action stream. Targets stay unchanged.
+                clean_video = clean_video.clone()
+                clean_video[:, future] = 0.0
+                clean_action = torch.zeros_like(clean_action)
         else:
             action_time = sigma
         optimizer.zero_grad(set_to_none=True)
@@ -606,14 +636,76 @@ def main() -> None:
                 action_position_ids=action_position_ids,
                 clean_action_timestep=torch.ones_like(sigma),
             )
-        output = model(**forward_arguments)
-        video_loss = F.mse_loss(
-            output.video_velocity_rows[:, future].float(),
-            video_target[:, future].float(),
-        )
-        action_loss = F.mse_loss(
-            output.action_velocity.float(), action_target.float()
-        )
+        if args.sample_eval:
+            schedule = build_h3dream_inference_schedule(
+                args.sample_steps,
+                device=device,
+                video_shift=12.0,
+                action_shift=0.05,
+            )
+
+            def predict_velocity(
+                sampled_video,
+                clean_video_history,
+                sampled_actions,
+                clean_action_history,
+                video_time,
+                action_sigma,
+                clean_video_valid,
+                clean_action_valid,
+            ):
+                sampled_video_times = torch.stack(
+                    (
+                        torch.tensor(0.9, device=device),
+                        video_time.to(device),
+                    )
+                )
+                sampled_output = model(
+                    **{
+                        **forward_arguments,
+                        "noisy_video_rows": sampled_video,
+                        "clean_video_rows": clean_video_history,
+                        "noisy_video_timestep": sampled_video_times,
+                        "clean_video_timestep": torch.ones(1, device=device),
+                        "noisy_actions": sampled_actions,
+                        "clean_actions": clean_action_history,
+                        "noisy_action_timestep": (1.0 - action_sigma).reshape(1),
+                        "clean_action_timestep": torch.ones(1, device=device),
+                        "clean_video_valid": clean_video_valid,
+                        "clean_action_valid": clean_action_valid,
+                    }
+                )
+                return (
+                    sampled_output.video_velocity_rows.float(),
+                    sampled_output.action_velocity.float(),
+                )
+
+            sampled = sample_h3_lingbot_chunk_causal(
+                predict_velocity,
+                initial_video_rows=batch["initial_video"],
+                observed_video_mask=~future,
+                video_chunk_ids=video_chunks,
+                initial_actions=batch["initial_action"],
+                action_chunk_ids=action_chunks,
+                video_schedule=schedule,
+                action_schedule=schedule,
+            )
+            video_loss = F.mse_loss(
+                sampled.video_rows[:, future].float(),
+                clean_video[:, future].float(),
+            )
+            action_loss = F.mse_loss(
+                sampled.actions.float(), clean_action.float()
+            )
+        else:
+            output = model(**forward_arguments)
+            video_loss = F.mse_loss(
+                output.video_velocity_rows[:, future].float(),
+                video_target[:, future].float(),
+            )
+            action_loss = F.mse_loss(
+                output.action_velocity.float(), action_target.float()
+            )
         loss = video_loss + action_loss
         valid_weight = float(has_sample)
         loss_sums += torch.tensor(
@@ -776,6 +868,10 @@ def main() -> None:
             "elapsed_seconds": time.perf_counter() - started,
             "shared_backbone": args.shared_backbone,
             "freeze_shared_blocks": args.freeze_shared_blocks,
+            "mask_clean_future": args.mask_clean_future,
+            "sample_eval": args.sample_eval,
+            "sample_steps": args.sample_steps,
+            "eval_limit": args.eval_limit,
             "initialization": initialization,
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)

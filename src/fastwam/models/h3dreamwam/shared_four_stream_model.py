@@ -171,6 +171,8 @@ class H3LingBotSharedWAM(nn.Module):
         state: torch.Tensor,
         context_mask: torch.Tensor | None = None,
         window_size: int | None = None,
+        clean_video_valid: torch.Tensor | None = None,
+        clean_action_valid: torch.Tensor | None = None,
     ) -> H3LingBotSharedOutput:
         if noisy_video_rows.shape != clean_video_rows.shape:
             raise ValueError("noisy/clean video row shapes must match")
@@ -317,6 +319,8 @@ class H3LingBotSharedWAM(nn.Module):
                     video_chunk_ids=video_chunk_ids,
                     action_chunk_ids=action_chunk_ids,
                     window_size=window_size,
+                    clean_video_valid=clean_video_valid,
+                    clean_action_valid=clean_action_valid,
                     context_hidden=ctx,
                     context_temb=cvt,
                     context_adaln_indices=context_indices,

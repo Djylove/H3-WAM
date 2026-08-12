@@ -50,8 +50,10 @@ from .initialization import (
 from .sampling import (
     H3DreamInferenceSchedule,
     H3DreamJointSample,
+    H3LingBotCausalSample,
     build_h3dream_inference_schedule,
     h3dream_flow_training_weight,
+    sample_h3_lingbot_chunk_causal,
     sample_h3dream_joint_rows,
 )
 
@@ -78,6 +80,7 @@ __all__ = [
     "H3ActionInitializationReport",
     "H3DreamInferenceSchedule",
     "H3DreamJointSample",
+    "H3LingBotCausalSample",
     "apply_h3_rotary",
     "action_rope_at_positions",
     "align_h3_action_chunk_ids",
@@ -94,4 +97,5 @@ __all__ = [
     "paired_h3_action_layer",
     "resize_tensor",
     "sample_h3dream_joint_rows",
+    "sample_h3_lingbot_chunk_causal",
 ]
