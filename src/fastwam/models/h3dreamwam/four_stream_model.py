@@ -203,36 +203,50 @@ class H3LingBotWAM(nn.Module):
                 ctx: torch.Tensor,
                 paired_layer: nn.Module = paired_layer,
             ) -> tuple[torch.Tensor, ...]:
+                noisy_temb = noisy_video_temb
+                clean_temb = clean_video_temb
+                noisy_action_modulation = noisy_action_state["time_modulation"]
+                clean_action_modulation = clean_action_state["time_modulation"]
+                action_context = noisy_action_state["context"]
                 if self.compute_dtype is not None:
                     nv = nv.to(self.compute_dtype)
                     cv = cv.to(self.compute_dtype)
                     na = na.to(self.compute_dtype)
                     ca = ca.to(self.compute_dtype)
                     ctx = ctx.to(self.compute_dtype)
+                    # These tensors are captured by the checkpoint closure,
+                    # so FSDP's cast_forward_inputs does not reliably revisit
+                    # them during backward recomputation. Cast explicitly to
+                    # keep first forward and recompute numerically identical.
+                    noisy_temb = noisy_temb.to(self.compute_dtype)
+                    clean_temb = clean_temb.to(self.compute_dtype)
+                    noisy_action_modulation = noisy_action_modulation.to(
+                        self.compute_dtype
+                    )
+                    clean_action_modulation = clean_action_modulation.to(
+                        self.compute_dtype
+                    )
+                    action_context = action_context.to(self.compute_dtype)
                 return paired_layer(
                     noisy_video_hidden=nv,
                     clean_video_hidden=cv,
                     noisy_action_hidden=na,
                     clean_action_hidden=ca,
-                    noisy_h3_temb=noisy_video_temb,
-                    clean_h3_temb=clean_video_temb,
+                    noisy_h3_temb=noisy_temb,
+                    clean_h3_temb=clean_temb,
                     noisy_h3_adaln_indices=noisy_video_adaln_indices,
                     clean_h3_adaln_indices=clean_video_adaln_indices,
                     h3_rotary_emb=video_rotary,
                     h3_apply_rotary=apply_h3_rotary,
-                    noisy_action_time_modulation=noisy_action_state[
-                        "time_modulation"
-                    ],
-                    clean_action_time_modulation=clean_action_state[
-                        "time_modulation"
-                    ],
-                    action_context=noisy_action_state["context"],
+                    noisy_action_time_modulation=noisy_action_modulation,
+                    clean_action_time_modulation=clean_action_modulation,
+                    action_context=action_context,
                     action_context_mask=noisy_action_state["context_mask"],
                     video_chunk_ids=video_chunk_ids,
                     action_chunk_ids=action_chunk_ids,
                     window_size=window_size,
                     h3_context_hidden=ctx,
-                    h3_context_temb=clean_video_temb,
+                    h3_context_temb=clean_temb,
                     h3_context_adaln_indices=context_adaln_indices,
                     h3_context_rotary_emb=context_rotary,
                 )
