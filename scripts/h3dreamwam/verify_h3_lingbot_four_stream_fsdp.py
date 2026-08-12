@@ -72,6 +72,11 @@ def parse_args() -> argparse.Namespace:
         help="Probability of LingBot-style noise on the clean video stream.",
     )
     parser.add_argument(
+        "--detached-generated-video-conditioning",
+        action="store_true",
+        help="Train action on a detached one-step video x0 prediction.",
+    )
+    parser.add_argument(
         "--shared-backbone",
         action="store_true",
         help="Use LingBot's code-aligned shared H3 block stack instead of ActionDiT.",
@@ -96,6 +101,17 @@ def shifted_noise_sigma(uniform: torch.Tensor, shift: float) -> torch.Tensor:
     """FlowMatch shifted noise sigma used by H3/LingBot schedulers."""
 
     return float(shift) * uniform / (1.0 + (float(shift) - 1.0) * uniform)
+
+
+def video_clean_from_velocity(
+    noisy_video: torch.Tensor,
+    clean_time_per_token: torch.Tensor,
+    clean_minus_noise_velocity: torch.Tensor,
+) -> torch.Tensor:
+    """Recover x0 from H3's clean-time, clean-minus-noise convention."""
+
+    sigma = 1.0 - clean_time_per_token
+    return noisy_video + sigma[None, :, None] * clean_minus_noise_velocity
 
 
 def normalize_action(
@@ -518,6 +534,18 @@ def main() -> None:
                 "stage action timestep contract mismatch: "
                 f"{checkpoint_per_chunk} != {args.per_chunk_action_timesteps}"
             )
+        checkpoint_generated_video = payload.get(
+            "detached_generated_video_conditioning", False
+        )
+        if (
+            checkpoint_generated_video
+            != args.detached_generated_video_conditioning
+        ):
+            raise ValueError(
+                "stage generated-video conditioning contract mismatch: "
+                f"{checkpoint_generated_video} != "
+                f"{args.detached_generated_video_conditioning}"
+            )
         for index_text, layer_state in payload["layers"].items():
             layer = (
                 model.module.shared_layers[int(index_text)]
@@ -786,7 +814,48 @@ def main() -> None:
                     action_timestep_indices
                 ),
             )
-        if args.sample_eval:
+        split_backward = False
+        if args.detached_generated_video_conditioning and not args.eval_only:
+            if not args.shared_backbone:
+                raise ValueError(
+                    "generated-video conditioning requires shared-backbone"
+                )
+            first_output = model(**forward_arguments)
+            video_loss = F.mse_loss(
+                first_output.video_velocity_rows[:, future].float(),
+                video_target[:, future].float(),
+            )
+            # x_t = x_0 + sigma * (noise - x_0), while this H3 branch predicts
+            # clean-minus-noise velocity, hence x_0 = x_t + sigma * velocity.
+            # The first observed keyframe is committed exactly, matching the
+            # chunk-causal sampler.
+            video_time_per_token = noisy_video_timesteps.index_select(
+                0, noisy_video_timestep_indices
+            )
+            generated_clean_video = video_clean_from_velocity(
+                noisy_video,
+                video_time_per_token,
+                first_output.video_velocity_rows,
+            ).detach()
+            generated_clean_video[:, ~future] = clean_video[:, ~future]
+            video_loss.backward()
+            del first_output
+            second_output = model(
+                **{
+                    **forward_arguments,
+                    "clean_video_rows": generated_clean_video,
+                    "clean_video_timestep": torch.ones(1, device=device),
+                    "clean_video_timestep_indices": torch.zeros_like(
+                        clean_video_timestep_indices
+                    ),
+                }
+            )
+            action_loss = F.mse_loss(
+                second_output.action_velocity.float(), action_target.float()
+            )
+            action_loss.backward()
+            split_backward = True
+        elif args.sample_eval:
             video_schedule = build_h3dream_inference_schedule(
                 args.video_sample_steps or args.sample_steps,
                 device=device,
@@ -870,7 +939,7 @@ def main() -> None:
             dtype=torch.float64,
         ) * valid_weight
         evaluated_samples += int(has_sample)
-        if not args.eval_only:
+        if not args.eval_only and not split_backward:
             loss.backward()
         named = list(model.named_parameters())
         h3_gradient = 0.0 if args.eval_only else global_grad_norm(
@@ -969,6 +1038,9 @@ def main() -> None:
             "action_quantile_stats": quantile_stats,
             "per_chunk_action_timesteps": args.per_chunk_action_timesteps,
             "noisy_clean_video_prob": args.noisy_clean_video_prob,
+            "detached_generated_video_conditioning": (
+                args.detached_generated_video_conditioning
+            ),
             "layers": {},
         }
         for index in range(50 - args.last_trainable_layers, 50):
@@ -1025,6 +1097,9 @@ def main() -> None:
             ),
             "per_chunk_action_timesteps": args.per_chunk_action_timesteps,
             "noisy_clean_video_prob": args.noisy_clean_video_prob,
+            "detached_generated_video_conditioning": (
+                args.detached_generated_video_conditioning
+            ),
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],

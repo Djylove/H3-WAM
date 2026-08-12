@@ -1,0 +1,42 @@
+{
+  "experiment_id": "h3_lingbot_shared_generated_video_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Training action on a detached one-step generated-video estimate improves masked-clean-future action loss by at least 0.5% over E24 while retaining a positive clean-val action gain.",
+  "single_variable": "For action loss only, replace ground-truth clean-video stream with detached x0 reconstructed from the model's first video forward. Video loss is unchanged and backpropagated before a second action forward. All E24 normalization, timestep, data and optimizer settings remain fixed.",
+  "parent_baseline": "E24 clean val40 action/video 1.295573/0.166345 and masked-clean-future action/video 1.299678/0.420131.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "zhao-yian/MiniWorld", "locator": "https://github.com/zhao-yian/MiniWorld", "revision": "local audited checkout", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy detached generated-video conditioning", "locator": "/home/ubuntu/fastwam_deploy", "revision": "working tree after b79d184", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared H3 four streams", "paper": "interleaved causal world/action model", "upstream_code": "shared Wan blocks", "local": "shared H3 blocks; tail-2", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "Backbone port is fixed across arms."}],
+    "data": [{"field": "paired windows", "paper": "LIBERO demonstrations", "upstream_code": "dense latent segments", "local": "same first 800 windows as E24", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"], "rationale": "No data variable changes."}],
+    "action": [{"field": "action contract", "paper": "chunked action generation", "upstream_code": "quantile-normalized seven active channels", "local": "same E24 quantile-normalized seven channels", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json"], "rationale": "No action representation change."}],
+    "objective": [{"field": "inference-aligned video condition", "paper": "video then action causal generation", "upstream_code": "at inference action reads committed generated video", "local": "during action training, read detached one-step x0 estimate; video loss remains exact flow loss", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/sampling.py", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "LingBot release uses teacher forcing plus noisy conditions; E26 showed that alone does not close the local gap. Detached scheduled sampling explicitly matches the released inference information source."}],
+    "optimization": [{"field": "two-pass bounded canary", "paper": "post-training", "upstream_code": "single joint forward", "local": "video backward then action backward, 100 steps, global batch8, lr1e-6", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Two sequential graphs keep memory at 43.03 GiB while accumulating both objectives."}],
+    "evaluation": [{"field": "promotion", "paper": "closed-loop LIBERO", "upstream_code": "closed-loop benchmark", "local": "clean and masked val40, then causal sample40 only after threshold", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "The masked proxy directly tests the intended exposure-bias mechanism before expensive generation."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed LingBot commit and audited MiniWorld checkout"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["mask rechecked against upstream"]},
+    "data_contract": {"status": "PASS", "evidence": ["same E24 windows"]},
+    "action_contract": {"status": "PASS", "evidence": ["same E24 quantiles"]},
+    "objective_contract": {"status": "PASS", "evidence": ["x0 sign convention locked by analytic unit test"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["split-backward implementation"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered masked threshold"]},
+    "gradient_path": {"status": "PASS", "evidence": ["2-step gradients H3 0.328/0.316, action 12.19/17.14"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["2-step losses 1.4529/1.7003; peak 43.03 GiB"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["stage stores and validates generated-video conditioning identity"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E24 clean and masked val40"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["37 tests and real 2-step smoke"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.35},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Train s100. Promote to causal sample40 only if clean action is at least 0.3% better than initialization, masked action improves at least 0.5% over E24, and masked video regresses no more than 2%. Otherwise stop without rollout.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --detached-generated-video-conditioning --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_generated_video_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_generated_video_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
+  }
+}
