@@ -1,0 +1,37 @@
+{
+  "experiment_id": "h3_lingbot_shared_continue_s300_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "A third 800-window training tranche increases leak-free generated-action improvement beyond 0.5% over initialization while retaining at least 8% generated-video improvement.",
+  "single_variable": "Continue s200 for 100 steps on the next 800 unique train windows; all architecture, objective, noise and optimizer settings remain fixed.",
+  "parent_baseline": "E20 s200 sample40: video/action reconstruction MSE 0.627430/1.255442 versus initialization 0.695563/1.258840.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy shared-H3", "locator": "/home/ubuntu/fastwam_deploy", "revision": "004208c", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared four-stream H3", "paper": "shared video/action causal world model", "upstream_code": "four streams share all Wan blocks", "local": "four streams share all H3 blocks; tail-2 trainable", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py", "third_party/code_audit/lingbot-va/wan_va/modules/model.py:705"], "rationale": "This is an H3 backbone port preserving block ownership."}],
+    "data": [{"field": "new dense windows", "paper": "streaming segments", "upstream_code": "dense LeRobot video/action segments", "local": "manifest rows 1600-2399, disjoint from prior canaries", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"], "rationale": "Only the sample offset changes to prevent replay."}],
+    "action": [{"field": "LIBERO action chunk", "paper": "embodiment action", "upstream_code": "seven active normalized dimensions", "local": "seven min-max normalized dimensions, horizon32", "status": "EQUIVALENT", "evidence": ["scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "Inactive upstream carrier dimensions convey no policy content."}],
+    "objective": [{"field": "joint flow loss", "paper": "video/action diffusion", "upstream_code": "dual velocity MSE", "local": "future-video and action velocity MSE", "status": "EQUIVALENT", "evidence": ["scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "Targets retain noise-minus-clean flow convention."}],
+    "optimization": [{"field": "bounded continuation", "paper": "long post-training", "upstream_code": "5000 steps", "local": "100 additional steps, global batch8, lr1e-6", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Closed-loop is still 0/1; only a bounded canary is justified."}],
+    "evaluation": [{"field": "promotion", "paper": "LIBERO success", "upstream_code": "closed-loop benchmark", "local": "teacher-forced val40 then leak-free sample40; no extra rollout unless sample action gate passes", "status": "INTENTIONAL_DEVIATION", "evidence": ["experiments/results/h3_lingbot_shared_causal_sample40.json", "decision.rationale"], "rationale": "The action generation gate prevents repeated zero-value rollouts."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["official fixed commit"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["shared-H3 implementation and 34 tests"]},
+    "data_contract": {"status": "PASS", "evidence": ["200779 dense windows and explicit offset"]},
+    "action_contract": {"status": "PASS", "evidence": ["unchanged verified action conversion"]},
+    "objective_contract": {"status": "PASS", "evidence": ["E17-E20 finite dual objectives"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["100-step fixed launch"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered generated-action/video thresholds"]},
+    "gradient_path": {"status": "PASS", "evidence": ["stable H3/action gradients through s200"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["s200 and sample40 finite"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["s200 restored in open- and closed-loop"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E20 fixed sample40"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["tail2 beats adapter-only on leak-free video/action"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1 with no object interaction"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.15},
+  "decision": {"status": "GO_CANARY", "rationale": "Run exactly 100 more steps. Continue toward rollout only if leak-free sample40 action improves by at least 0.5% over initialization and video retains at least 8% improvement; otherwise stop scale-up and redesign action conditioning.", "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --output /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s300_train.json --load-stage /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s300.pt --steps 100 --sample-offset 200 --rotate-windows --random-timesteps --warmup-steps 0 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"}
+}

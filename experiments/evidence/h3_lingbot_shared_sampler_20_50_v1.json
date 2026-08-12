@@ -1,0 +1,37 @@
+{
+  "experiment_id": "h3_lingbot_shared_sampler_20_50_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Using LingBot's released LIBERO inference budgets of 20 video and 50 action denoise steps reduces s200 leak-free action reconstruction MSE by at least 1% relative to the 4/4-step sampler.",
+  "single_variable": "For fixed s200 weights, samples, seeds and chunk-causal mask, change video/action Euler steps from 4/4 to 20/50.",
+  "parent_baseline": "E20 s200 sample40 with 4/4 steps: video/action MSE 0.627430/1.255442; sample8 0.585749/1.207244.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy split sampler schedules", "locator": "/home/ubuntu/fastwam_deploy", "revision": "working tree after 004208c", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "chunk-causal sampler", "paper": "autoregressive video-action", "upstream_code": "video then action per chunk with cached history", "local": "video then action per chunk with recomputed masked history", "status": "EQUIVALENT", "evidence": ["src/fastwam/models/h3dreamwam/sampling.py", "third_party/code_audit/lingbot-va/wan_va/wan_va_server.py:464"], "rationale": "Information flow matches despite no KV cache."}],
+    "data": [{"field": "paired samples", "paper": "held-out robot trajectories", "upstream_code": "LIBERO", "local": "same first eight episode-disjoint val rows and fixed noise", "status": "EQUIVALENT", "evidence": ["experiments/results/h3_lingbot_shared_causal_sample40.json"], "rationale": "Only denoise steps change."}],
+    "action": [{"field": "action output", "paper": "action chunks", "upstream_code": "50 action inference steps", "local": "horizon32 with 50 action Euler steps", "status": "EXACT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/configs/va_libero_cfg.py:28", "decision.launch_command"], "rationale": "exact released inference-step count"}],
+    "objective": [{"field": "ODE integration", "paper": "flow denoising", "upstream_code": "FlowMatch scheduler", "local": "Euler integration of trained velocity", "status": "EQUIVALENT", "evidence": ["src/fastwam/models/h3dreamwam/sampling.py"], "rationale": "Both integrate the learned flow from noise to sample."}],
+    "optimization": [{"field": "fixed checkpoint", "paper": "not applicable", "upstream_code": "inference only", "local": "no parameter update", "status": "EXACT", "evidence": ["decision.launch_command"], "rationale": "controlled inference ablation"}],
+    "evaluation": [{"field": "step ablation", "paper": "LIBERO evaluation", "upstream_code": "20 video/50 action", "local": "paired sample8 before any expensive rerollout", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "Sample8 is sufficient to reject a 1% gain before spending about 6x more on rollout."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["official fixed config"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["E20 causal sampler"]},
+    "data_contract": {"status": "PASS", "evidence": ["fixed val8 subset"]},
+    "action_contract": {"status": "PASS", "evidence": ["unchanged action decode"]},
+    "objective_contract": {"status": "PASS", "evidence": ["unchanged flow ODE"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["no optimizer"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered 1% action threshold"]},
+    "gradient_path": {"status": "PASS", "evidence": ["not changed; s200 mechanism established"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["4/4 sample40 finite"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["s200 restored in E20/E21"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E20 sample8 and sample40"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["official step-count difference is directly tested"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 1, "training_samples": 8, "unique_windows": 8, "effective_epochs": 1.0, "gpu_count": 8, "estimated_hours": 0.25},
+  "decision": {"status": "GO_CANARY", "rationale": "Run sample8 only. If action MSE does not improve at least 1% versus the paired 4/4 sample8, do not spend closed-loop time on 20/50 and prioritize training/conditioning instead.", "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --sample-eval --video-sample-steps 20 --action-sample-steps 50 --eval-limit 8 --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl --output /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200_sample8_v20_a50.json --load-stage /mnt/h3-wam/outputs/h3-lingbot-shared/multiwindow_tail2_s200.pt --steps 1 --eval-only --eval-all --last-trainable-layers 2 --action-horizon 32"}
+}
