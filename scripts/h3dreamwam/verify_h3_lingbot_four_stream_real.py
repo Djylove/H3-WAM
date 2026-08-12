@@ -149,6 +149,12 @@ def main() -> None:
     )
     clean_video = h3.proj_in(clean_rows.to(h3.proj_in.weight.dtype))
     noisy_video = h3.proj_in(noisy_rows.to(h3.proj_in.weight.dtype))
+    # H3 intentionally keeps some I/O modules in FP32 while its transformer
+    # blocks are BF16. The production paired model casts at every FSDP block
+    # boundary; mirror that contract in this isolated layer smoke.
+    block_dtype = h3_block.attn.to_q.weight.dtype
+    clean_video = clean_video.to(block_dtype)
+    noisy_video = noisy_video.to(block_dtype)
 
     context = torch.randn(
         1, 2, 5120, generator=generator, device=device, dtype=torch.bfloat16
