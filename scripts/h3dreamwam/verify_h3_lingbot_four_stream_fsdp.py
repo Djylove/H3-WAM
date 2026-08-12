@@ -155,6 +155,7 @@ def prepare_real_batch(
     patchify_video_latents,
     layout_builder,
     align_chunk_ids,
+    action_time_builder,
     deterministic_noise: bool,
 ) -> dict:
     sample_id = str(row["id"])
@@ -319,10 +320,20 @@ def prepare_real_batch(
     noisy_video_timestep_indices[:condition_rows] = 0
     future = torch.ones(video_tokens, device=device, dtype=torch.bool)
     future[:condition_rows] = False
+    action_temporal_positions = (
+        action_time_builder(
+            video_frame_ids=video_position_ids[:, 0],
+            action_horizon=args.action_horizon,
+            actions_per_chunk=args.actions_per_chunk,
+            h3_frame_count=int(window["h3_frame_count"]),
+        )
+        if args.h3_physical_time_alignment
+        else torch.arange(args.action_horizon, device=device).float()
+        / args.actions_per_chunk
+    )
     action_position_ids = torch.stack(
         (
-            torch.arange(args.action_horizon, device=device).float()
-            / args.actions_per_chunk,
+            action_temporal_positions,
             torch.full((args.action_horizon,), -1.0, device=device),
             torch.full((args.action_horizon,), -1.0, device=device),
         ),
@@ -705,6 +716,7 @@ def main() -> None:
             patchify_video_latents=patchify_video_latents,
             layout_builder=MiniMaxH3PrepareLayoutStep,
             align_chunk_ids=align_h3_action_chunk_ids,
+            action_time_builder=h3_action_temporal_positions,
             deterministic_noise=args.eval_only,
         )
 
@@ -713,21 +725,11 @@ def main() -> None:
         noisy_action += sigma[:, None, None] * action_noise
         video_target = clean_video - video_noise
         action_target = action_noise - clean_action
-    action_temporal_positions = (
-        h3_action_temporal_positions(
-            video_frame_ids=video_position_ids[:, 0],
-            action_horizon=args.action_horizon,
-            actions_per_chunk=args.actions_per_chunk,
-            h3_frame_count=int(window["h3_frame_count"]),
-        )
-        if args.h3_physical_time_alignment
-        else torch.arange(args.action_horizon, device=device).float()
-        / args.actions_per_chunk
-    )
-    action_position_ids = torch.stack(
-        (
-            action_temporal_positions,
-            torch.full((args.action_horizon,), -1.0, device=device),
+        action_position_ids = torch.stack(
+            (
+                torch.arange(args.action_horizon, device=device).float()
+                / args.actions_per_chunk,
+                torch.full((args.action_horizon,), -1.0, device=device),
                 torch.full((args.action_horizon,), -1.0, device=device),
             ),
             dim=-1,
