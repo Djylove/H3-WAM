@@ -1,0 +1,42 @@
+{
+  "experiment_id": "h3_lingbot_shared_perchunk_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Per-chunk action diffusion timesteps improve paired val40 action loss by at least 0.25 percentage points beyond the quantile single-timestep E24 arm while preserving positive video improvement.",
+  "single_variable": "Sample eight independent action noise timesteps per training window, one for each four-action chunk, instead of one timestep shared by all 32 actions. Quantile normalization, initialization, seed, windows, architecture and optimizer remain fixed.",
+  "parent_baseline": "E24 quantile single-timestep s100: val40 action improvement 0.676% and video improvement 2.165% from the same quantile initialization.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "zhao-yian/MiniWorld", "locator": "https://github.com/zhao-yian/MiniWorld", "revision": "local audited checkout", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy per-chunk H3 action timing", "locator": "/home/ubuntu/fastwam_deploy", "revision": "d7e32af", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared four-stream H3", "paper": "causal video/action world model", "upstream_code": "LingBot four streams share Wan blocks", "local": "four streams share H3 blocks, tail-2 trainable", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "Backbone port is fixed across E24/E25."}],
+    "data": [{"field": "paired training windows", "paper": "multi-task LIBERO", "upstream_code": "dense trajectory segments", "local": "same first 800 v7 windows as E24", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"], "rationale": "No data variable changes."}],
+    "action": [{"field": "action chunks and normalization", "paper": "chunked actions", "upstream_code": "four actions per latent frame; q01/q99", "local": "four actions per causal chunk; q01/q99", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/configs/va_libero_cfg.py", "experiments/data/libero_v7_action_quantiles.json"], "rationale": "H3 VAE geometry prevents an exact Wan latent-frame reshape, so shared causal chunk identity is used."}],
+    "objective": [{"field": "per-frame/chunk noise time", "paper": "joint video/action diffusion", "upstream_code": "LingBot samples a timestep for every action frame; MiniWorld samples non-decreasing chunk timesteps", "local": "one independent shifted timestep per four-action chunk", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/train.py:171", "third_party/MiniWorld/miniworld/denoiser.py:356", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "This removes the shared-window timestep shortcut while respecting H3's eight action chunks."}],
+    "optimization": [{"field": "bounded paired canary", "paper": "post-training", "upstream_code": "long training", "local": "100 steps, global batch8, lr1e-6, warmup10", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Mechanism evidence is required before scale."}],
+    "evaluation": [{"field": "promotion", "paper": "LIBERO success", "upstream_code": "closed-loop benchmark", "local": "paired val40, then causal sample40 only if threshold passes", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "A cheap leak-free gate prevents repeated zero-success rollouts."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed LingBot commit and local MiniWorld checkout"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["shared-H3 four streams"]},
+    "data_contract": {"status": "PASS", "evidence": ["same E24 windows"]},
+    "action_contract": {"status": "PASS", "evidence": ["quantile statistics and four-action chunks"]},
+    "objective_contract": {"status": "PASS", "evidence": ["per-chunk time embedding and final norm implemented"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["fixed 100-step command"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered 0.25-point incremental threshold"]},
+    "gradient_path": {"status": "PASS", "evidence": ["real 2-step H3/action gradients finite"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["2-step losses 1.4595/1.7191; peak 41.53 GiB"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["checkpoint contract stores per_chunk_action_timesteps"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E24"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["36 tests plus real backward smoke"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.2},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Train s100 and compare to the same quantile initialization. Run causal sample40 only if action improvement reaches at least 0.926% and video improvement remains positive; otherwise stop without rollout.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --per-chunk-action-timesteps --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_perchunk_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_perchunk_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
+  }
+}
