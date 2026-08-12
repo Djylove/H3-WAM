@@ -1,0 +1,42 @@
+{
+  "experiment_id": "h3_lingbot_shared_physical_time_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Putting H3 video latents and LIBERO actions on one physical temporal contract improves clean val40 action loss by at least 0.25 percentage points beyond E24 while preserving positive video improvement.",
+  "single_variable": "Replace ordinal 12-video-frame to 8-action-chunk mapping and action RoPE 0..7.75 with H3 physical-time mapping derived from the released non-uniform 5/3*(1,4,4,4,4) rotary grid and the cache's 33-to-39 nearest-neighbour resampling. E24 data, q01/q99 normalization, initialization, seed, optimizer and single action timestep remain fixed.",
+  "parent_baseline": "E24 quantile s100: clean val40 action/video 1.295573/0.166345, action improvement 0.676% from identical initialization.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Hugging Face Diffusers MiniMax-H3 port", "locator": "/mnt/h3-wam/project/third_party/diffusers_h3", "revision": "deployed audited checkout", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy H3 physical-time action alignment", "locator": "/home/ubuntu/fastwam_deploy", "revision": "working tree after ea60f24", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared four-stream backbone", "paper": "interleaved causal video/action model", "upstream_code": "shared Wan blocks", "local": "shared H3 blocks, tail-2", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "Backbone port is fixed across E24 and E28."}],
+    "data": [{"field": "paired time window", "paper": "video and action trajectory", "upstream_code": "latent_frame_ids determine action span", "local": "33 source observations and 32 actions resampled to 39 H3 target frames / 12 latents", "status": "EQUIVALENT", "evidence": ["src/fastwam/models/h3wam/temporal.py", "scripts/h3wam/precompute_libero_official_h3.py"], "rationale": "Both modalities cover the same 1.6-second LIBERO interval."}],
+    "action": [{"field": "action time and RoPE", "paper": "action chunks follow generated world chunks", "upstream_code": "action positions are fractional coordinates inside the same latent-frame clock", "local": "action coordinates are mapped through the 33-to-39 resampling onto H3's non-uniform rotary clock", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/utils/utils.py:33", "src/fastwam/models/h3dreamwam/joint_attention.py"], "rationale": "This removes the prior text-origin and ordinal-time mismatch while retaining H3's native geometry."}],
+    "objective": [{"field": "training losses", "paper": "joint video/action flow matching", "upstream_code": "unweighted video plus action losses", "local": "same E24 video plus action velocity MSE", "status": "EQUIVALENT", "evidence": ["scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "No loss variable changes."}],
+    "optimization": [{"field": "bounded canary", "paper": "post-training", "upstream_code": "distributed training", "local": "100 steps, global batch8, first 800 windows, lr1e-6, warmup10, tail-2", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Small paired experiment before expensive training."}],
+    "evaluation": [{"field": "promotion", "paper": "closed-loop LIBERO", "upstream_code": "closed-loop benchmark", "local": "episode-disjoint val40, then no-leak sample40 and rollout only after threshold", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "Evidence gate bounds GPU cost."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed LingBot commit and deployed H3 source"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["shared-H3 implementation unchanged"]},
+    "data_contract": {"status": "PASS", "evidence": ["same E24 first 800 windows"]},
+    "action_contract": {"status": "PASS", "evidence": ["same E24 q01/q99 and horizon32"]},
+    "objective_contract": {"status": "PASS", "evidence": ["same E24 losses"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["same E24 seed and optimizer"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered val40 threshold"]},
+    "gradient_path": {"status": "PENDING", "evidence": []},
+    "smoke_finite": {"status": "PENDING", "evidence": []},
+    "checkpoint_restore": {"status": "PENDING", "evidence": []},
+    "parent_baseline": {"status": "PASS", "evidence": ["E24 clean val40"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["33 local tests; explicit index sequence"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.35},
+  "decision": {
+    "status": "GO_CANARY_AFTER_SMOKE",
+    "rationale": "Run real 2-step smoke and restore first. If finite, train s100. Promote to causal sample40 only if clean action improvement versus initialization is at least 0.926% (E24 0.676% plus 0.25 percentage points) and video remains positively improved. Otherwise stop without rollout.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --h3-physical-time-alignment --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_physical_time_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_physical_time_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
+  }
+}

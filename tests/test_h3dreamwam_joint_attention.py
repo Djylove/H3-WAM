@@ -9,6 +9,7 @@ from fastwam.models.h3dreamwam import (
     align_h3_action_chunk_ids,
     build_lingbot_block_causal_mask,
     four_stream_h3_action_layer,
+    h3_action_temporal_positions,
     lingbot_four_stream_attention,
     load_action_block_state,
     paired_h3_action_layer,
@@ -381,6 +382,50 @@ class LingBotBlockCausalMaskTest(unittest.TestCase):
         )
         self.assertEqual(video_chunks.tolist(), [0, 1, 2])
         self.assertEqual(action_chunks.tolist(), [0, 0, 0, 0, 1, 1, 1, 1, 2, 2])
+
+    def test_h3_physical_time_alignment_uses_nonuniform_vae_clock(self) -> None:
+        # H3's 39-frame timeline starts 12 latent rows at target frames
+        # 0,1,5,9,13,17,18,22,26,30,34,35. The independent first-frame
+        # anchor shares time zero with generated latent zero.
+        target_starts = torch.tensor(
+            [0, 1, 5, 9, 13, 17, 18, 22, 26, 30, 34, 35],
+            dtype=torch.float64,
+        )
+        rotary_times = 15.0 + target_starts * (5.0 / 3.0)
+        frame_ids = torch.cat((rotary_times[:1], rotary_times))
+        video_chunks, action_chunks = align_h3_action_chunk_ids(
+            video_frame_ids=frame_ids,
+            action_horizon=32,
+            actions_per_chunk=4,
+            h3_frame_count=39,
+        )
+        self.assertEqual(
+            video_chunks.tolist(),
+            [0, 0, 0, 1, 2, 2, 3, 3, 4, 5, 6, 7, 7],
+        )
+        self.assertEqual(
+            action_chunks.tolist(),
+            [index // 4 for index in range(32)],
+        )
+
+    def test_h3_physical_time_alignment_validates_geometry(self) -> None:
+        with self.assertRaisesRegex(ValueError, "frame count"):
+            align_h3_action_chunk_ids(
+                video_frame_ids=torch.tensor([0.0, 1.0]),
+                action_horizon=8,
+                h3_frame_count=1,
+            )
+
+    def test_actions_share_h3_video_rotary_clock(self) -> None:
+        positions = h3_action_temporal_positions(
+            video_frame_ids=torch.tensor([15.0, 73.3333333333]),
+            action_horizon=32,
+            actions_per_chunk=4,
+            h3_frame_count=39,
+        )
+        self.assertTrue(torch.all(positions[1:] > positions[:-1]))
+        self.assertAlmostEqual(positions[0].item(), 16.5833333333, places=8)
+        self.assertAlmostEqual(positions[-1].item(), 76.75, places=8)
 
     def test_four_stream_attention_respects_teacher_forcing_boundary(self) -> None:
         def qkv(values: list[float]) -> tuple[torch.Tensor, ...]:

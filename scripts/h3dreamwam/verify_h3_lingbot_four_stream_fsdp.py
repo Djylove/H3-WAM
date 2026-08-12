@@ -77,6 +77,11 @@ def parse_args() -> argparse.Namespace:
         help="Train action on a detached one-step video x0 prediction.",
     )
     parser.add_argument(
+        "--h3-physical-time-alignment",
+        action="store_true",
+        help="Align H3 latent rows using the non-uniform H3 VAE clock.",
+    )
+    parser.add_argument(
         "--shared-backbone",
         action="store_true",
         help="Use LingBot's code-aligned shared H3 block stack instead of ActionDiT.",
@@ -298,10 +303,14 @@ def prepare_real_batch(
         - 1.0
     ).clamp(-1.0, 1.0)[None].to(device)
     context_mask = torch.ones(context.shape[:2], device=device, dtype=torch.bool)
+    alignment_kwargs = {}
+    if args.h3_physical_time_alignment:
+        alignment_kwargs["h3_frame_count"] = int(window["h3_frame_count"])
     video_chunks, action_chunks = align_chunk_ids(
         video_frame_ids=video_position_ids[:, 0],
         action_horizon=args.action_horizon,
         actions_per_chunk=args.actions_per_chunk,
+        **alignment_kwargs,
     )
     video_tokens = clean_video.shape[1]
     noisy_video_timestep_indices = torch.ones(
@@ -361,6 +370,8 @@ def main() -> None:
         raise ValueError("noisy clean video is a training-only intervention")
     if args.sample_eval and (not args.eval_only or not args.shared_backbone):
         raise ValueError("sample-eval requires eval-only and shared-backbone")
+    if args.h3_physical_time_alignment and args.data_root is None:
+        raise ValueError("H3 physical-time alignment requires a real cached window")
     if (
         args.sample_steps <= 0
         or args.video_sample_steps < 0
@@ -394,6 +405,7 @@ def main() -> None:
         H3LingBotWAM,
         align_h3_action_chunk_ids,
         build_h3dream_inference_schedule,
+        h3_action_temporal_positions,
         initialize_action_expert_from_h3,
         sample_h3_lingbot_chunk_causal,
     )
@@ -546,6 +558,15 @@ def main() -> None:
                 f"{checkpoint_generated_video} != "
                 f"{args.detached_generated_video_conditioning}"
             )
+        checkpoint_physical_time = payload.get(
+            "h3_physical_time_alignment", False
+        )
+        if checkpoint_physical_time != args.h3_physical_time_alignment:
+            raise ValueError(
+                "stage H3 temporal-alignment contract mismatch: "
+                f"{checkpoint_physical_time} != "
+                f"{args.h3_physical_time_alignment}"
+            )
         for index_text, layer_state in payload["layers"].items():
             layer = (
                 model.module.shared_layers[int(index_text)]
@@ -692,11 +713,21 @@ def main() -> None:
         noisy_action += sigma[:, None, None] * action_noise
         video_target = clean_video - video_noise
         action_target = action_noise - clean_action
-        action_position_ids = torch.stack(
-            (
-                torch.arange(args.action_horizon, device=device).float()
-                / args.actions_per_chunk,
-                torch.full((args.action_horizon,), -1.0, device=device),
+    action_temporal_positions = (
+        h3_action_temporal_positions(
+            video_frame_ids=video_position_ids[:, 0],
+            action_horizon=args.action_horizon,
+            actions_per_chunk=args.actions_per_chunk,
+            h3_frame_count=int(window["h3_frame_count"]),
+        )
+        if args.h3_physical_time_alignment
+        else torch.arange(args.action_horizon, device=device).float()
+        / args.actions_per_chunk
+    )
+    action_position_ids = torch.stack(
+        (
+            action_temporal_positions,
+            torch.full((args.action_horizon,), -1.0, device=device),
                 torch.full((args.action_horizon,), -1.0, device=device),
             ),
             dim=-1,
@@ -1041,6 +1072,7 @@ def main() -> None:
             "detached_generated_video_conditioning": (
                 args.detached_generated_video_conditioning
             ),
+            "h3_physical_time_alignment": args.h3_physical_time_alignment,
             "layers": {},
         }
         for index in range(50 - args.last_trainable_layers, 50):
@@ -1100,6 +1132,7 @@ def main() -> None:
             "detached_generated_video_conditioning": (
                 args.detached_generated_video_conditioning
             ),
+            "h3_physical_time_alignment": args.h3_physical_time_alignment,
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],

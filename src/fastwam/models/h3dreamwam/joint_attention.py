@@ -106,6 +106,8 @@ def align_h3_action_chunk_ids(
     video_frame_ids: torch.Tensor,
     action_horizon: int,
     actions_per_chunk: int = 4,
+    h3_frame_count: int | None = None,
+    h3_rope_frame_rescale: float = 5.0 / 3.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Align H3 latent-frame tokens and robot actions on shared time chunks.
 
@@ -114,7 +116,10 @@ def align_h3_action_chunk_ids(
     12 latent frames for 32 actions), so copying that reshape would silently
     misalign supervision.  This function instead assigns monotonically
     ordered H3 latent frames and actions to the same fixed-duration action
-    chunks.  Every spatial token from one latent frame receives the same id.
+    chunks. By default the ordinal mapping is retained for checkpoint
+    compatibility. If ``h3_frame_count`` is given, the mapping follows H3's
+    non-uniform rotary/VAE time grid. Every spatial token from one latent
+    frame receives the same id.
     """
 
     video_frame_ids = video_frame_ids.reshape(-1).contiguous()
@@ -122,25 +127,93 @@ def align_h3_action_chunk_ids(
         raise ValueError("video frame ids cannot be empty")
     if action_horizon <= 0 or actions_per_chunk <= 0:
         raise ValueError("action horizon and actions_per_chunk must be positive")
+    if h3_frame_count is not None and h3_frame_count <= 1:
+        raise ValueError("H3 frame count must be greater than one")
+    if h3_rope_frame_rescale <= 0:
+        raise ValueError("H3 rotary frame rescale must be positive")
     # H3 positions are floating point and may repeat for every spatial token.
     # sorted_unique plus searchsorted gives a stable ordinal without assuming
     # a particular positional scaling used by Diffusers.
     unique_frames = torch.unique(video_frame_ids, sorted=True)
-    frame_ordinals = torch.searchsorted(unique_frames, video_frame_ids)
     num_chunks = (int(action_horizon) + int(actions_per_chunk) - 1) // int(
         actions_per_chunk
     )
-    video_chunks = torch.div(
-        frame_ordinals * num_chunks,
-        unique_frames.numel(),
-        rounding_mode="floor",
-    ).clamp_max(num_chunks - 1)
+    if h3_frame_count is None:
+        frame_ordinals = torch.searchsorted(unique_frames, video_frame_ids)
+        video_chunks = torch.div(
+            frame_ordinals * num_chunks,
+            unique_frames.numel(),
+            rounding_mode="floor",
+        ).clamp_max(num_chunks - 1)
+    else:
+        # Relative rotary time divided by 5/3 gives H3 target pixel-frame
+        # starts (0, 1, 5, ...). The cache builder resamples source indices as
+        # round(linspace(0, action_horizon, h3_frame_count)).
+        target_frame_starts = (
+            (video_frame_ids - unique_frames[0]) / float(h3_rope_frame_rescale)
+        )
+        source_action_indices = torch.round(
+            target_frame_starts
+            * float(action_horizon)
+            / float(h3_frame_count - 1)
+        ).long()
+        video_chunks = torch.div(
+            source_action_indices.clamp(0, action_horizon - 1),
+            int(actions_per_chunk),
+            rounding_mode="floor",
+        ).clamp_max(num_chunks - 1)
     action_chunks = torch.div(
         torch.arange(action_horizon, device=video_frame_ids.device),
         int(actions_per_chunk),
         rounding_mode="floor",
     )
     return video_chunks.long(), action_chunks.long()
+
+
+def h3_action_temporal_positions(
+    *,
+    video_frame_ids: torch.Tensor,
+    action_horizon: int,
+    actions_per_chunk: int,
+    h3_frame_count: int,
+    h3_rope_frame_rescale: float = 5.0 / 3.0,
+) -> torch.Tensor:
+    """Place robot actions on the same physical rotary clock as H3 video.
+
+    LingBot places actions fractionally inside each video frame. H3's valid
+    target clip is resampled from ``action_horizon + 1`` source observations,
+    and its rotary clock advances by ``5/3`` per target pixel frame. This maps
+    equivalent within-chunk action fractions onto that media clock while
+    preserving the text-dependent video time origin.
+    """
+
+    video_frame_ids = video_frame_ids.reshape(-1)
+    if video_frame_ids.numel() == 0:
+        raise ValueError("video frame ids cannot be empty")
+    if action_horizon <= 0 or actions_per_chunk <= 0:
+        raise ValueError("action horizon and actions per chunk must be positive")
+    if h3_frame_count <= 1 or h3_rope_frame_rescale <= 0:
+        raise ValueError("invalid H3 temporal geometry")
+    action_ids = torch.arange(
+        action_horizon, device=video_frame_ids.device, dtype=torch.float64
+    )
+    chunk_ids = torch.div(
+        action_ids.long(), int(actions_per_chunk), rounding_mode="floor"
+    ).to(torch.float64)
+    within_chunk = torch.remainder(
+        action_ids.long(), int(actions_per_chunk)
+    ).to(torch.float64)
+    source_time = chunk_ids * float(actions_per_chunk)
+    source_time += (
+        (within_chunk + 1.0)
+        * float(actions_per_chunk)
+        / float(actions_per_chunk + 1)
+    )
+    target_time = source_time * float(h3_frame_count - 1) / float(action_horizon)
+    return (
+        video_frame_ids.min().to(torch.float64)
+        + target_time * float(h3_rope_frame_rescale)
+    )
 
 
 def lingbot_four_stream_attention(
