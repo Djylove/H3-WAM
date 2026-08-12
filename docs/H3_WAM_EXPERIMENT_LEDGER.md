@@ -53,7 +53,7 @@
 | E25 | per-chunk action timestep s100 | E24 合约；每4个动作独立采样 timestep，其余固定 | val40 action `1.304397 → 1.295933`（改善 `0.649%`）；video 改善 `2.195%` | 按门控不重跑 | 低于 E24 的 `0.676%` 且未过 `0.926%` 门；噪声粒度单独不是瓶颈 |
 | E26 | LingBot noisy clean-video s100 | E24 合约；训练时以0.5概率给 clean-video stream 加高噪声 | clean val40 action `1.297608`（较初始化改善 `0.520%`）；masked action `1.299689` | 按门控不重跑 | masked action 与 E24 `1.299678` 持平且略差；未缩小训推偏移，停止该线 |
 | E27 | detached generated-video conditioning s100 | E24 合约；action 训练改为消费模型首次 forward 的 detached one-step `x0` | clean action `1.295345`（较初始化改善 `0.694%`）；masked action `1.299328` | 按门控不重跑 | masked action 较 E24 仅改善 `0.027%`，远低于预注册 `0.5%`；不晋级 causal sample/闭环 |
-| E28 | H3 physical-time alignment s100 | E24 合约；将 video chunk mask 和 action RoPE 对齐 H3 非均匀 VAE 物理时间 | 33 项测试；2-step 反向与 restore 通过 | 训练中 | 预注册 action 相对初始化改善至少 `0.926%`；过门后才做 no-leak sample40/闭环 |
+| E28 | H3 physical-time alignment s100 | E24 合约；将 video chunk mask 和 action RoPE 对齐 H3 非均匀 VAE 物理时间 | val40 video/action `0.146827/1.298060`；改善 `1.867%/0.067%` | 按门控不重跑 | action 远低于预注册 `0.926%`；不晋级 no-leak sample40/闭环 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -150,6 +150,15 @@ one-step scheduled sampling 这四个“小修补”作为主瓶颈。下一步�
 与 8 个 action chunk 采用比例映射，这是相对 LingBot 官方 frame-stride/latent-frame 关系的
 明确偏离。只有证据包锁定对齐合约且 smoke 通过后，才启动新 canary。
 
+E28 已将这一偏离实现为可选的物理时间合约：根据 H3 释放实现的非均匀
+`5/3 × (1,4,4,4,4)` rotary/VAE 时钟和缓存的 33→39 帧最近邻采样，同时修正 video
+chunk mask 与 action RoPE。33 项云端测试、真实 2-step 反向和 checkpoint restore 全部
+通过；s100 在 8×A800 上用时 `483s`，峰值 `42.03 GiB reserved`。因新时间合约会
+改变未训练前向，配对评估另算同构初始化 `video/action=0.149620/1.298935`；s100 为
+`0.146827/1.298060`，对应 video 改善 `1.867%`，action 仅改善 `0.067%`。远低于
+预注册 `0.926%` action 门，所以不做 no-leak sampling/闭环，也不扩训。该实验
+再次确认当前修正主要转化为 world/video 改善，action 学习仍是独立瓶颈。
+
 ## 2026-08-12 活跃长线
 
 | 线路 | 节点 | 训练规模 | 最后观测进度 | 保留原因 |
@@ -211,8 +220,9 @@ steps 或 gate 数量来追逐噪声。E12 的正面价值是排除了“只补�
 
 1. 读取本账本和 `UPSTREAM_SOURCES.lock.json`，恢复固定上游 commit。
 2. 核验 M11/M13 的最新 checkpoint、日志、resolved config 与数据 manifest hash。
-3. 固定 E24 作为当前动作合约；E25–E27 不再扩步数，也不重复 causal sample/闭环。
-4. 逐行对齐 LingBot 的 `latent_frame_num × frame_stride` 与本地 12 future-video latents / 32
-   actions / 8 chunks，生成可复现的 frame-action index 对照表和新 evidence dossier。
-5. 只在时序偏离被证明且修正的 2-step smoke 通过后，启动单变量 s100 canary；预注册
-   动作门后再决定是否进入无泄漏 sampling 和 LIBERO 闭环。
+3. 固定 E24 作为当前 quantile 动作基线；E25–E28 均不扩步数，也不重复 causal
+   sample/闭环。E28 的物理时间实现保留为已验证合约，但不视为有效策略改进。
+4. 下一证据审计转向动作专用建模：比较 LingBot/MiniWorld/DiT4DiT 的 action carrier 宽度、
+   action loss weighting/调度、state 注入位置和 chunk 目标，不再从 video condition 侧做小修补。
+5. 新实验必须由作者开源代码中的明确差异驱动，且先交付配对基线、单变量门和
+   2-step/restore smoke；未过 offline action 门不调度 LIBERO 闭环。

@@ -1,0 +1,25 @@
+{
+  "event": "h3_lingbot_shared_physical_time_s100_val40",
+  "protocol": {
+    "training_steps": 100,
+    "training_unique_windows": 800,
+    "h3_physical_time_alignment": true,
+    "paired_eval_samples": 40,
+    "episode_disjoint": true,
+    "fixed_noise_by_sample": true
+  },
+  "physical_time_initialization": {
+    "video_mse": 0.14962041154503822,
+    "action_mse": 1.2989345818758011
+  },
+  "physical_time_step100": {
+    "video_mse": 0.1468265350908041,
+    "action_mse": 1.298060005903244,
+    "video_improvement_percent": 1.867310,
+    "action_improvement_percent": 0.067330
+  },
+  "preregistered_required_action_improvement_percent": 0.926471,
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_physical_time_tail2_s100.pt",
+  "decision": "NO_GO_NEXT_GATE",
+  "rationale": "Physical-time alignment improves held-out video loss but action improves only 0.067%, far below the preregistered 0.926% gate. Stop without no-leak sampling or rollout."
+}

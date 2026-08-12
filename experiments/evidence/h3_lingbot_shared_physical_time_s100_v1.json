@@ -35,7 +35,7 @@
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.35},
   "decision": {
-    "status": "GO_CANARY_ACTIVE",
+    "status": "NO_GO_NEXT_GATE",
     "rationale": "Run real 2-step smoke and restore first. If finite, train s100. Promote to causal sample40 only if clean action improvement versus initialization is at least 0.926% (E24 0.676% plus 0.25 percentage points) and video remains positively improved. Otherwise stop without rollout.",
     "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --h3-physical-time-alignment --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_physical_time_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_physical_time_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
   }
