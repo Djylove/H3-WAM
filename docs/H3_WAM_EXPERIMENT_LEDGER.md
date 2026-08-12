@@ -36,6 +36,7 @@
 | E11 | H3 bidirectional engineering smoke | 真实 H3 33B、8×A800、tail-2、2 steps | loss `35.8310 → 31.4696`；反向 gate grad norm `46.4479` | 不适用 | 工程/梯度链路通过，不构成效果证据 |
 | E12 | LingBot-inspired gate-only A/B | 同初始化/seed/800 dense windows；A 输出头，B 额外112个反向 gate scalars | train action：A `26.697083`，B `26.692795`；val40：A `24.207277`，B `24.203841` | 按预注册规则不晋级 rollout | held-out 仅改善 `0.0142%`，`NO_GO_LONG`；停止 gate-only 放大 |
 | E13 | LingBot four-stream real-layer smoke | H3真实末层 + action expert；noisy/clean video/action；2 steps | velocity-head loss `9.8255 → 8.0418`；双专家梯度非零；reserved `10.37 GiB` | 不适用 | 单层工程门通过；整模 packed/FSDP 前仍 `NO_GO_LONG` |
+| E14 | four-stream full50 FSDP smoke | 8×A800、50层、尾2层可训练、1 step | loss `26.0150`；H3/action grad `70.23/10131.99`；reserved `21.16 GiB` | 不适用 | 全层/FSDP门通过；等待真实 dense window smoke |
 
 ## 2026-08-12 活跃长线
 

@@ -123,6 +123,13 @@ layer states，最终只从 noisy streams 输出 video/action velocity。tiny fu
 ownership、双向 objective gradient 和 proprio layout 测试通过；相关 H3-DreamWAM 回归合计
 40 项通过。
 
+full-50-layer 8×A800 FSDP smoke 也已通过：尾 2 层 H3/action 可训练，1-step total/video/action
+loss 为 `26.0150/3.2607/22.7543`，H3/action gradient norm 为 `70.23/10131.99`，两个专家
+独立 clip 前 norm 为 `70.23/10176`；峰值 `15.78/21.16 GiB allocated/reserved`。第一次
+full-FSDP 尝试错误地同时 wrap pair 与 pair 内 H3 block，AdaLN weight 留在 1-D shard；改为只
+wrap `H3LingBotPairedLayer` 后通过。因此显存和全层 collective 已不是阻塞点，下一门是使用真实
+dense window 的首帧条件、packed position 和 velocity target。
+
 ### B. DiT4DiT → H3 受控线
 
 保留官方 detached feature 边界，用真实 future-video loss 更新 H3，用独立 ActionDiT 学动作。这个
