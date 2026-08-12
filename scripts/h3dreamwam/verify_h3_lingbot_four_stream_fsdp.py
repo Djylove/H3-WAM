@@ -64,9 +64,6 @@ def main() -> None:
     generator = torch.Generator(device=device).manual_seed(args.seed + rank)
 
     from diffusers import MiniMaxH3Transformer3DModel
-    from diffusers.models.transformers.transformer_minimax_h3 import (
-        MiniMaxH3TransformerBlock,
-    )
     from fastwam.models.h3dreamwam import (
         H3DreamActionExpert,
         H3LingBotPairedLayer,
@@ -129,9 +126,10 @@ def main() -> None:
     model.train()
     model = FSDP(
         model,
-        auto_wrap_policy=ModuleWrapPolicy(
-            {H3LingBotPairedLayer, MiniMaxH3TransformerBlock}
-        ),
+        # The paired unit must be the only nested FSDP boundary. Wrapping its
+        # H3 block again leaves AdaLN parameters as 1-D shards during the outer
+        # forward (observed as ``mat2 must be a matrix``).
+        auto_wrap_policy=ModuleWrapPolicy({H3LingBotPairedLayer}),
         ignored_modules=ignored_modules,
         device_id=device,
         use_orig_params=True,
