@@ -61,6 +61,11 @@ def parse_args() -> argparse.Namespace:
         help="JSON containing q01/q99 arrays; required for quantile normalization.",
     )
     parser.add_argument(
+        "--per-chunk-action-timesteps",
+        action="store_true",
+        help="Sample one LingBot-style training timestep per action chunk.",
+    )
+    parser.add_argument(
         "--shared-backbone",
         action="store_true",
         help="Use LingBot's code-aligned shared H3 block stack instead of ActionDiT.",
@@ -178,11 +183,28 @@ def prepare_real_batch(
     video_noise = torch.randn(
         clean_video.shape, generator=sample_generator, device=device
     )
+    action_timestep_indices = torch.zeros(
+        args.action_horizon, device=device, dtype=torch.long
+    )
     if args.random_timesteps and not deterministic_noise:
         video_uniform = torch.rand(1, generator=sample_generator, device=device)
-        action_uniform = torch.rand(1, generator=sample_generator, device=device)
+        action_uniform = torch.rand(
+            (
+                math.ceil(args.action_horizon / args.actions_per_chunk)
+                if args.per_chunk_action_timesteps
+                else 1
+            ),
+            generator=sample_generator,
+            device=device,
+        )
         video_noise_sigma = shifted_noise_sigma(video_uniform, 12.0)
         action_noise_sigma = shifted_noise_sigma(action_uniform, 0.05)
+        if args.per_chunk_action_timesteps:
+            action_timestep_indices = torch.div(
+                torch.arange(args.action_horizon, device=device),
+                args.actions_per_chunk,
+                rounding_mode="floor",
+            )
     else:
         video_noise_sigma = torch.tensor([0.5], device=device)
         action_noise_sigma = torch.tensor([0.5], device=device)
@@ -202,8 +224,11 @@ def prepare_real_batch(
     action_noise = torch.randn(
         clean_action.shape, generator=sample_generator, device=device
     )
-    noisy_action = (1.0 - action_noise_sigma[:, None, None]) * clean_action
-    noisy_action += action_noise_sigma[:, None, None] * action_noise
+    action_sigma_per_token = action_noise_sigma.index_select(
+        0, action_timestep_indices
+    )[None, :, None]
+    noisy_action = (1.0 - action_sigma_per_token) * clean_action
+    noisy_action += action_sigma_per_token * action_noise
     context = conditioning["context"].to(device=device, dtype=torch.bfloat16)
     state_scale = (
         stats["state_max"].float() - stats["state_min"].float()
@@ -258,6 +283,7 @@ def prepare_real_batch(
         "action_position_ids": action_position_ids,
         "action_chunks": action_chunks,
         "action_time": action_time,
+        "action_timestep_indices": action_timestep_indices,
         "context": context,
         "context_position_ids": context_position_ids,
         "state": state,
@@ -441,6 +467,12 @@ def main() -> None:
                 "stage action normalization mismatch: "
                 f"{checkpoint_normalization} != {args.action_normalization}"
             )
+        checkpoint_per_chunk = payload.get("per_chunk_action_timesteps", False)
+        if checkpoint_per_chunk != args.per_chunk_action_timesteps:
+            raise ValueError(
+                "stage action timestep contract mismatch: "
+                f"{checkpoint_per_chunk} != {args.per_chunk_action_timesteps}"
+            )
         for index_text, layer_state in payload["layers"].items():
             layer = (
                 model.module.shared_layers[int(index_text)]
@@ -520,6 +552,9 @@ def main() -> None:
         noisy_video += sigma[:, None, None] * video_noise
         clean_action = torch.randn(
             1, args.action_horizon, 7, generator=generator, device=device
+        )
+        action_timestep_indices = torch.zeros(
+            args.action_horizon, device=device, dtype=torch.long
         )
         action_noise = torch.randn(
             clean_action.shape, generator=generator, device=device
@@ -654,6 +689,7 @@ def main() -> None:
             action_position_ids = batch["action_position_ids"]
             action_chunks = batch["action_chunks"]
             action_time = batch["action_time"]
+            action_timestep_indices = batch["action_timestep_indices"]
             context = batch["context"]
             context_position_ids = batch["context_position_ids"]
             state = batch["state"]
@@ -697,6 +733,10 @@ def main() -> None:
             forward_arguments.update(
                 action_position_ids=action_position_ids,
                 clean_action_timestep=torch.ones_like(sigma),
+                noisy_action_timestep_indices=action_timestep_indices,
+                clean_action_timestep_indices=torch.zeros_like(
+                    action_timestep_indices
+                ),
             )
         if args.sample_eval:
             video_schedule = build_h3dream_inference_schedule(
@@ -879,6 +919,7 @@ def main() -> None:
             "warmup_steps": args.warmup_steps,
             "action_normalization": args.action_normalization,
             "action_quantile_stats": quantile_stats,
+            "per_chunk_action_timesteps": args.per_chunk_action_timesteps,
             "layers": {},
         }
         for index in range(50 - args.last_trainable_layers, 50):
@@ -933,6 +974,7 @@ def main() -> None:
                 if args.action_stats_json is None
                 else str(args.action_stats_json.resolve())
             ),
+            "per_chunk_action_timesteps": args.per_chunk_action_timesteps,
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],

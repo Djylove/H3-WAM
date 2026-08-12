@@ -46,6 +46,7 @@
 | E21 | shared-H3 首次闭环工程门 | s200、goal task3/trial0、sample4、replan32、max80 | 3次 replan；动作有限、零饱和；平均推理 `71.90s` | `0/1`；物体最大位移约 `1e-16` | 服务/FSDP/VAE/仿真链路通过，但未产生有效物体交互；`NO_GO_LONG` |
 | E22 | shared-H3 s300 bounded continuation | s200再训100 steps、下一批800个不重复 window；累计2400 windows | teacher-forced val40 action/video `1.240105/0.158307`；无泄漏 sample40 action/video `1.254009/0.607254` | 按门控不重跑 | 生成 video 较初始化改善 `12.696%`，action 仅改善 `0.384%`，未过 `0.5%` 动作门；停止纯续训 |
 | E23 | 官方 20/50 denoise-step 消融 | 固定 s200、固定 val8/seed；4/4 改为 video20/action50 | action `1.207244 → 1.202721`（改善 `0.375%`）；video `0.585749 → 0.671369`（退化 `14.617%`） | 不重跑 | 未过预注册 `1%` 动作门且耗时 `665s`；高采样步数不是当前主瓶颈 |
+| E24 | LingBot quantile normalization s100 | 与 E17 同初始化/seed/800 windows；仅将 min/max `[-1,1]` 改为 q01/q99 `[-1.5,1.5]` | val40 action `1.304397 → 1.295573`（改善 `0.676%`）；video 改善 `2.165%` | 按门控不重跑 | 比 E17 action 多改善 `0.224` 个百分点，略低于预注册 `0.25`；方向有效但单独不足以晋级 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -103,6 +104,15 @@ action 继续下降到 `1.240105`，但严格无泄漏 action 只从初始化的
 并没有等比例转化为可执行动作。固定 s200 的官方 `20/50` 采样在 val8 上只改善 action
 `0.375%`，同时 video 退化 `14.617%`，推理耗时达到 `665s`，故不得进入闭环。后续只允许从作者
 开源代码中选择一个动作侧不一致项做 canary；在动作无泄漏门通过前，不再增加 steps 或服务器。
+
+E24 对作者代码中的 action normalization 做了严格单变量复现。四套 LIBERO 原始数据共
+`1712 episodes / 277713 frames`，从原始帧（而不是高度重叠的 window）计算 q01/q99；六个连续
+控制维与作者发布统计接近，本地 gripper 的 `[0,1]` 支持在归一化后与作者 `[-1,1]` 支持等价。
+quantile 将三个小幅旋转维的标准差放大约 `1.31–2.12×`，但 val40 动作改善只从 E17 的
+`0.453%` 提升到 `0.676%`，比基线多 `0.224` 个百分点，未达到预注册 `0.25`。因此保留 quantile
+作为下一次完整代码对齐实验的默认动作合约，但不为 E24 单独做无泄漏采样或闭环。进一步核对
+发现更关键的训练偏差：LingBot 为每个 latent/action frame 独立采样 timestep，而当前 H3 端为
+整段 action 使用单一 timestep；下一 canary 必须先补齐 per-chunk action diffusion forcing。
 
 ## 2026-08-12 活跃长线
 

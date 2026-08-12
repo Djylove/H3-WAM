@@ -1,0 +1,32 @@
+{
+  "event": "h3_lingbot_shared_quantile_s100_val40",
+  "protocol": {
+    "paired_samples": 40,
+    "episode_disjoint": true,
+    "fixed_noise_by_sample": true,
+    "training_steps": 100,
+    "training_unique_windows": 800,
+    "single_variable_vs_e17": "q01/q99 normalization clipped to [-1.5,1.5] instead of global min/max clipped to [-1,1]"
+  },
+  "initialization": {
+    "video_mse": 0.17002603001892566,
+    "action_mse": 1.3043972849845886
+  },
+  "step100": {
+    "video_mse": 0.16634543389081954,
+    "action_mse": 1.2955734133720398,
+    "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_tail2_s100.pt"
+  },
+  "relative_improvement_percent": {
+    "video": 2.164730123,
+    "action": 0.676471019
+  },
+  "comparison_to_minmax_e17": {
+    "minmax_action_improvement_percent": 0.452953,
+    "quantile_action_improvement_percent": 0.676471019,
+    "incremental_percentage_points": 0.223518019,
+    "preregistered_required_incremental_percentage_points": 0.25
+  },
+  "decision": "NO_GO_NEXT_GATE",
+  "rationale": "The upstream-aligned normalization is directionally useful but misses the preregistered incremental action threshold by 0.0265 percentage points. Preserve it as the default candidate for future code-aligned runs, but do not spend causal sampling or rollout budget on this checkpoint alone."
+}

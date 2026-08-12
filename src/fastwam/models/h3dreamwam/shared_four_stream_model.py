@@ -166,6 +166,8 @@ class H3LingBotSharedWAM(nn.Module):
         action_chunk_ids: torch.Tensor,
         noisy_action_timestep: torch.Tensor,
         clean_action_timestep: torch.Tensor | None = None,
+        noisy_action_timestep_indices: torch.Tensor | None = None,
+        clean_action_timestep_indices: torch.Tensor | None = None,
         context: torch.Tensor,
         context_position_ids: torch.Tensor,
         state: torch.Tensor,
@@ -258,15 +260,36 @@ class H3LingBotSharedWAM(nn.Module):
             raise ValueError("video timestep index is outside its embedding table")
         noisy_video_indices = noisy_video_timestep_indices * 3
         clean_video_indices = clean_video_timestep_indices * 3
-        noisy_action_indices = self._indices(
-            length=action_length,
-            modality_id=self.action_modality_id,
-            device=noisy_action.device,
+        if noisy_action_timestep_indices is None:
+            noisy_action_timestep_indices = torch.zeros(
+                action_length, device=noisy_action.device, dtype=torch.long
+            )
+        if clean_action_timestep_indices is None:
+            clean_action_timestep_indices = torch.zeros(
+                action_length, device=clean_action.device, dtype=torch.long
+            )
+        noisy_action_timestep_indices = noisy_action_timestep_indices.to(
+            device=noisy_action.device, dtype=torch.long
+        ).reshape(-1)
+        clean_action_timestep_indices = clean_action_timestep_indices.to(
+            device=clean_action.device, dtype=torch.long
+        ).reshape(-1)
+        if noisy_action_timestep_indices.shape != (action_length,) or (
+            clean_action_timestep_indices.shape != (action_length,)
+        ):
+            raise ValueError("action timestep indices must cover every token")
+        if (
+            int(noisy_action_timestep_indices.min()) < 0
+            or int(noisy_action_timestep_indices.max()) >= noisy_action_temb.shape[0]
+            or int(clean_action_timestep_indices.min()) < 0
+            or int(clean_action_timestep_indices.max()) >= clean_action_temb.shape[0]
+        ):
+            raise ValueError("action timestep index is outside its embedding table")
+        noisy_action_indices = (
+            noisy_action_timestep_indices * 3 + self.action_modality_id
         )
-        clean_action_indices = self._indices(
-            length=action_length,
-            modality_id=self.action_modality_id,
-            device=clean_action.device,
+        clean_action_indices = (
+            clean_action_timestep_indices * 3 + self.action_modality_id
         )
         context_indices = self._indices(
             length=context_hidden.shape[1],
@@ -355,13 +378,9 @@ class H3LingBotSharedWAM(nn.Module):
         video_velocity = self.h3.proj_out(
             video_hidden.to(self.h3.proj_out.weight.dtype)
         )
-        # H3's final norm selects a timestep row, unlike per-block AdaLN which
-        # indexes timestep*3+modality. There is one action timestep here.
-        action_final_timestep_indices = torch.zeros(
-            action_length, device=noisy_action.device, dtype=torch.long
-        )
+        # H3's final norm selects timestep rows without the modality stride.
         action_hidden = self.h3.norm_out(
-            noisy_action, noisy_action_temb, action_final_timestep_indices
+            noisy_action, noisy_action_temb, noisy_action_timestep_indices
         )
         action_velocity = self.action_adapters.output(
             action_hidden.to(self.action_adapters.output.weight.dtype)

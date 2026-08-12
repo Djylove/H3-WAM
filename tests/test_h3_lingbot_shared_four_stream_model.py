@@ -75,6 +75,19 @@ class H3LingBotSharedWAMTest(unittest.TestCase):
         torch.testing.assert_close(video_parameter, action_parameter)
         self.assertIsNot(video_parameter, action_parameter)
 
+    def test_action_accepts_per_chunk_timestep_rows(self) -> None:
+        arguments = dict(self.arguments)
+        arguments["noisy_action_timestep"] = torch.tensor([0.25, 0.75])
+        arguments["noisy_action_timestep_indices"] = torch.tensor([0, 0, 1, 1])
+        output = self.model(**arguments)
+        self.assertEqual(output.action_velocity.shape, (1, 4, 2))
+
+    def test_action_timestep_indices_are_checked(self) -> None:
+        arguments = dict(self.arguments)
+        arguments["noisy_action_timestep_indices"] = torch.tensor([0, 0, 0])
+        with self.assertRaisesRegex(ValueError, "action timestep indices"):
+            self.model(**arguments)
+
     def test_action_position_layout_is_checked(self) -> None:
         arguments = dict(self.arguments)
         arguments["action_position_ids"] = torch.zeros(3, 3)
