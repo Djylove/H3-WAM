@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_noisy_clean_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "LingBot's 0.5 clean-video corruption probability reduces the deployment-proxy masked val40 action loss while retaining the quantile arm's clean val40 improvement.",
+  "single_variable": "With probability 0.5 per sample, corrupt every clean-video latent frame with an independently sampled high-noise timestep. Quantile action normalization, one action timestep per window, initialization, seed, first 800 windows, model and optimizer remain fixed.",
+  "parent_baseline": "E24 quantile s100 clean val40 video/action 0.166345/1.295573 from initialization 0.170026/1.304397. The matched quantile initialization and E24 masked val40 must be measured before promotion.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy noisy clean-video canary", "locator": "/home/ubuntu/fastwam_deploy", "revision": "working tree after 6dc9517", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "four-stream shared backbone", "paper": "causal joint world/action model", "upstream_code": "four streams share Wan blocks", "local": "four streams share H3 blocks; tail-2 trainable", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "H3 port is unchanged across arms."}],
+    "data": [{"field": "paired windows", "paper": "LIBERO demonstrations", "upstream_code": "dense latent segments", "local": "same first 800 windows as E24", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"], "rationale": "Condition-corruption RNG is independently seeded and does not perturb base video/action noise draws."}],
+    "action": [{"field": "action contract", "paper": "action chunks", "upstream_code": "q01/q99 normalization", "local": "same E24 q01/q99 normalization", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json"], "rationale": "No action representation change."}],
+    "objective": [{"field": "noisy clean-video condition", "paper": "robust causal conditioning", "upstream_code": "latent _add_noise called with noisy_cond_prob=0.5 and cond timestep in [0.5,1.0]", "local": "probability0.5; one high-noise shifted timestep per H3 latent frame; clean target unchanged", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/train.py:193", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "H3 uses its native video shift12 rather than Wan's shift5; the corruption semantics and probability are preserved."}],
+    "optimization": [{"field": "bounded canary", "paper": "long post-training", "upstream_code": "5000 steps", "local": "100 steps, global batch8, lr1e-6, warmup10", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Exposure-bias signal is tested before scale."}],
+    "evaluation": [{"field": "two-stage offline gate", "paper": "closed-loop LIBERO", "upstream_code": "closed-loop benchmark", "local": "clean val40 plus masked-clean-future val40; causal sample40 only after both pass", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "The mechanism specifically targets robustness to missing/imperfect clean future context."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed official LingBot commit"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["E16-E25"]},
+    "data_contract": {"status": "PASS", "evidence": ["same E24 windows and independent corruption RNG"]},
+    "action_contract": {"status": "PASS", "evidence": ["unchanged quantile action contract"]},
+    "objective_contract": {"status": "PASS", "evidence": ["official noisy_cond_prob port"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["fixed 100-step command"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["clean and masked val40 pre-registered"]},
+    "gradient_path": {"status": "PASS", "evidence": ["forced-corruption 2-step H3/action gradients finite"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["forced corruption losses 1.7854/2.4647; peak 41.53 GiB"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["E24 checkpoint contract plus stored corruption probability"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E24 clean val40; masked baseline measured before decision"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["official upstream train path directly uses probability0.5"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Train s100, then evaluate clean val40 and masked-clean-future val40 for initialization, E24 and this arm. Run causal sample40 only if clean action remains at least 0.5% better than initialization and masked action improves at least 0.5% over E24 while masked video does not regress more than 2%. Otherwise stop without rollout.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --noisy-clean-video-prob 0.5 --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_noisyclean_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_noisyclean_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
+  }
+}

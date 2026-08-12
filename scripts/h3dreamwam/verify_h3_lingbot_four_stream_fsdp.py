@@ -66,6 +66,12 @@ def parse_args() -> argparse.Namespace:
         help="Sample one LingBot-style training timestep per action chunk.",
     )
     parser.add_argument(
+        "--noisy-clean-video-prob",
+        type=float,
+        default=0.0,
+        help="Probability of LingBot-style noise on the clean video stream.",
+    )
+    parser.add_argument(
         "--shared-backbone",
         action="store_true",
         help="Use LingBot's code-aligned shared H3 block stack instead of ActionDiT.",
@@ -214,6 +220,42 @@ def prepare_real_batch(
     noisy_future += (1.0 - video_time[:, None, None]) * video_noise[:, condition_rows:]
     noisy_video = torch.cat((first_rows, noisy_future), dim=1)
     initial_video = torch.cat((first_rows, video_noise[:, condition_rows:]), dim=1)
+    clean_video_input = clean_video
+    clean_video_timesteps = torch.ones(1, device=device)
+    clean_video_timestep_indices = torch.zeros(
+        clean_video.shape[1], device=device, dtype=torch.long
+    )
+    if not deterministic_noise and args.noisy_clean_video_prob > 0.0:
+        condition_generator = torch.Generator(device=device).manual_seed(
+            args.seed + 2000003 * int(row_index)
+        )
+        corrupt = torch.rand(
+            (), generator=condition_generator, device=device
+        ) < args.noisy_clean_video_prob
+        if bool(corrupt):
+            _, clean_video_timestep_indices = torch.unique(
+                video_position_ids[:, 0], sorted=True, return_inverse=True
+            )
+            condition_uniform = torch.rand(
+                int(clean_video_timestep_indices.max()) + 1,
+                generator=condition_generator,
+                device=device,
+            )
+            condition_uniform = condition_uniform * 0.5 + 0.5
+            condition_sigma = shifted_noise_sigma(condition_uniform, 12.0)
+            clean_video_timesteps = 1.0 - condition_sigma
+            condition_sigma_rows = condition_sigma.index_select(
+                0, clean_video_timestep_indices
+            )[None, :, None]
+            condition_noise = torch.randn(
+                clean_video.shape,
+                generator=condition_generator,
+                device=device,
+            )
+            clean_video_input = (
+                (1.0 - condition_sigma_rows) * clean_video
+                + condition_sigma_rows * condition_noise
+            )
 
     clean_action = normalize_action(
         window["actions"][: args.action_horizon],
@@ -267,16 +309,15 @@ def prepare_real_batch(
         "noisy_video": noisy_video,
         "initial_video": initial_video,
         "clean_video": clean_video,
+        "clean_video_input": clean_video_input,
         "video_position_ids": video_position_ids,
         "video_chunks": video_chunks,
         "noisy_video_timesteps": torch.cat(
             (torch.tensor([0.9], device=device), video_time)
         ),
-        "clean_video_timesteps": torch.ones(1, device=device),
+        "clean_video_timesteps": clean_video_timesteps,
         "noisy_video_timestep_indices": noisy_video_timestep_indices,
-        "clean_video_timestep_indices": torch.zeros(
-            video_tokens, device=device, dtype=torch.long
-        ),
+        "clean_video_timestep_indices": clean_video_timestep_indices,
         "noisy_action": noisy_action,
         "initial_action": action_noise,
         "clean_action": clean_action,
@@ -298,6 +339,10 @@ def main() -> None:
     args = parse_args()
     if args.mask_clean_future and not args.eval_only:
         raise ValueError("mask-clean-future is an evaluation-only intervention")
+    if not 0.0 <= args.noisy_clean_video_prob <= 1.0:
+        raise ValueError("noisy-clean-video-prob must be in [0,1]")
+    if args.noisy_clean_video_prob > 0.0 and args.eval_only:
+        raise ValueError("noisy clean video is a training-only intervention")
     if args.sample_eval and (not args.eval_only or not args.shared_backbone):
         raise ValueError("sample-eval requires eval-only and shared-backbone")
     if (
@@ -545,6 +590,7 @@ def main() -> None:
         clean_video = torch.randn(
             1, video_tokens, input_width, generator=generator, device=device
         )
+        clean_video_input = clean_video
         video_noise = torch.randn(
             clean_video.shape, generator=generator, device=device
         )
@@ -674,6 +720,7 @@ def main() -> None:
             video_tokens = batch["video_tokens"]
             noisy_video = batch["noisy_video"]
             clean_video = batch["clean_video"]
+            clean_video_input = batch["clean_video_input"]
             video_position_ids = batch["video_position_ids"]
             video_chunks = batch["video_chunks"]
             noisy_video_timesteps = batch["noisy_video_timesteps"]
@@ -703,13 +750,14 @@ def main() -> None:
                 # enter the clean action stream. Targets stay unchanged.
                 clean_video = clean_video.clone()
                 clean_video[:, future] = 0.0
+                clean_video_input = clean_video
                 clean_action = torch.zeros_like(clean_action)
         else:
             action_time = sigma
         optimizer.zero_grad(set_to_none=True)
         forward_arguments = dict(
             noisy_video_rows=noisy_video,
-            clean_video_rows=clean_video,
+            clean_video_rows=clean_video_input,
             video_position_ids=video_position_ids,
             video_chunk_ids=video_chunks,
             noisy_video_timestep=noisy_video_timesteps,
@@ -920,6 +968,7 @@ def main() -> None:
             "action_normalization": args.action_normalization,
             "action_quantile_stats": quantile_stats,
             "per_chunk_action_timesteps": args.per_chunk_action_timesteps,
+            "noisy_clean_video_prob": args.noisy_clean_video_prob,
             "layers": {},
         }
         for index in range(50 - args.last_trainable_layers, 50):
@@ -975,6 +1024,7 @@ def main() -> None:
                 else str(args.action_stats_json.resolve())
             ),
             "per_chunk_action_timesteps": args.per_chunk_action_timesteps,
+            "noisy_clean_video_prob": args.noisy_clean_video_prob,
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],
