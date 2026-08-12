@@ -33,10 +33,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--action-horizon", type=int, default=8)
     parser.add_argument("--actions-per-chunk", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=1.0e-6)
+    parser.add_argument("--warmup-steps", type=int, default=0)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--save-stage", type=Path)
     parser.add_argument("--load-stage", type=Path)
     parser.add_argument("--eval-only", action="store_true")
+    parser.add_argument(
+        "--shared-backbone",
+        action="store_true",
+        help="Use LingBot's code-aligned shared H3 block stack instead of ActionDiT.",
+    )
     return parser.parse_args()
 
 
@@ -76,6 +82,8 @@ def main() -> None:
     from fastwam.models.h3dreamwam import (
         H3DreamActionExpert,
         H3LingBotPairedLayer,
+        H3LingBotSharedLayer,
+        H3LingBotSharedWAM,
         H3LingBotWAM,
         align_h3_action_chunk_ids,
         initialize_action_expert_from_h3,
@@ -97,39 +105,59 @@ def main() -> None:
     previous_dtype = torch.get_default_dtype()
     torch.set_default_dtype(torch.bfloat16)
     try:
-        action_expert = H3DreamActionExpert(
+        if args.shared_backbone:
+            action_expert = None
+            initialization = {
+                "type": "lingbot_shared_h3_blocks",
+                "action_modality_id": 2,
+            }
+        else:
+            action_expert = H3DreamActionExpert(
+                action_dim=7,
+                state_dim=8,
+                text_dim=5120,
+                hidden_dim=1024,
+                ffn_dim=4096,
+                num_heads=56,
+                head_dim=128,
+                num_layers=50,
+                frequency_dim=256,
+                full_width_rmsnorm=True,
+            )
+            initialization = initialize_action_expert_from_h3(
+                action_expert, h3, alpha_scaling=True
+            ).__dict__
+    finally:
+        torch.set_default_dtype(previous_dtype)
+    h3.requires_grad_(False)
+    for block in h3.transformer_blocks[-args.last_trainable_layers :]:
+        block.requires_grad_(True)
+    h3.proj_out.requires_grad_(True)
+    if args.shared_backbone:
+        model = H3LingBotSharedWAM(
+            h3,
             action_dim=7,
             state_dim=8,
             text_dim=5120,
-            hidden_dim=1024,
-            ffn_dim=4096,
-            num_heads=56,
-            head_dim=128,
-            num_layers=50,
-            frequency_dim=256,
-            full_width_rmsnorm=True,
+            use_gradient_checkpointing=True,
+            compute_dtype=torch.bfloat16,
         )
-    finally:
-        torch.set_default_dtype(previous_dtype)
-    initialization = initialize_action_expert_from_h3(
-        action_expert, h3, alpha_scaling=True
-    )
-    h3.requires_grad_(False)
-    action_expert.requires_grad_(False)
-    for block in h3.transformer_blocks[-args.last_trainable_layers :]:
-        block.requires_grad_(True)
-    for block in action_expert.blocks[-args.last_trainable_layers :]:
-        block.requires_grad_(True)
-    h3.proj_out.requires_grad_(True)
-    action_expert.output.requires_grad_(True)
-
-    model = H3LingBotWAM(
-        h3,
-        action_expert,
-        use_gradient_checkpointing=True,
-        compute_dtype=torch.bfloat16,
-    )
-    ignored_modules = [*model.h3.children(), *model.action_expert.children()]
+        model.action_adapters.requires_grad_(True)
+        ignored_modules = [*model.h3.children(), *model.action_adapters.children()]
+        wrap_class = H3LingBotSharedLayer
+    else:
+        action_expert.requires_grad_(False)
+        for block in action_expert.blocks[-args.last_trainable_layers :]:
+            block.requires_grad_(True)
+        action_expert.output.requires_grad_(True)
+        model = H3LingBotWAM(
+            h3,
+            action_expert,
+            use_gradient_checkpointing=True,
+            compute_dtype=torch.bfloat16,
+        )
+        ignored_modules = [*model.h3.children(), *model.action_expert.children()]
+        wrap_class = H3LingBotPairedLayer
     ignored_modules = [
         module for module in ignored_modules if len(list(module.parameters())) > 0
     ]
@@ -141,7 +169,7 @@ def main() -> None:
         # The paired unit must be the only nested FSDP boundary. Wrapping its
         # H3 block again leaves AdaLN parameters as 1-D shards during the outer
         # forward (observed as ``mat2 must be a matrix``).
-        auto_wrap_policy=ModuleWrapPolicy({H3LingBotPairedLayer}),
+        auto_wrap_policy=ModuleWrapPolicy({wrap_class}),
         ignored_modules=ignored_modules,
         device_id=device,
         use_orig_params=True,
@@ -158,31 +186,59 @@ def main() -> None:
     # sharded the 33B/ActionDiT blocks. Forward compute remains BF16 through
     # MixedPrecision, matching the proven H3-DreamWAM training path.
     model.float()
+    # FSDP establishes root/non-root ownership lazily. Checkpoint restore may
+    # summon nested layer parameters before the first real forward, so force
+    # hierarchy initialization from the true root after the final storage
+    # dtype has been set. Otherwise a child may mark itself as root, or its
+    # all-gather buffer may retain the pre-conversion BF16 dtype.
+    model.check_is_root()
     if args.load_stage is not None:
         payload = torch.load(
             args.load_stage.resolve(), map_location="cpu", weights_only=True
         )
-        if payload.get("format") != "h3_lingbot_four_stream_tail_v1":
+        expected_format = (
+            "h3_lingbot_shared_four_stream_tail_v1"
+            if args.shared_backbone
+            else "h3_lingbot_four_stream_tail_v1"
+        )
+        if payload.get("format") != expected_format:
             raise ValueError("four-stream stage checkpoint format mismatch")
         if payload.get("last_trainable_layers") != args.last_trainable_layers:
             raise ValueError("four-stream stage layer count mismatch")
         for index_text, layer_state in payload["layers"].items():
-            paired = model.module.paired_layers[int(index_text)]
-            with FSDP.summon_full_params(paired, recurse=False, writeback=True):
-                paired.module.load_state_dict(layer_state, strict=True)
+            layer = (
+                model.module.shared_layers[int(index_text)]
+                if args.shared_backbone
+                else model.module.paired_layers[int(index_text)]
+            )
+            with FSDP.summon_full_params(layer, recurse=False, writeback=True):
+                layer.module.load_state_dict(layer_state, strict=True)
         with FSDP.summon_full_params(model, recurse=False, writeback=True):
             model.module.h3.proj_out.load_state_dict(
                 payload["h3_proj_out"], strict=True
             )
-            model.module.action_expert.output.load_state_dict(
-                payload["action_output"], strict=True
-            )
+            if args.shared_backbone:
+                model.module.action_adapters.load_state_dict(
+                    payload["action_adapters"], strict=True
+                )
+            else:
+                model.module.action_expert.output.load_state_dict(
+                    payload["action_output"], strict=True
+                )
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
     optimizer = torch.optim.AdamW(
         trainable,
         lr=args.learning_rate,
         betas=(0.9, 0.95),
         foreach=False,
+    )
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        lr_lambda=lambda step: (
+            float(step) / float(max(1, args.warmup_steps))
+            if args.warmup_steps > 0 and step < args.warmup_steps
+            else 1.0
+        ),
     )
     load_seconds = time.perf_counter() - started
 
@@ -353,12 +409,21 @@ def main() -> None:
     noisy_action += sigma[:, None, None] * action_noise
     video_target = clean_video - video_noise
     action_target = action_noise - clean_action
+    action_position_ids = torch.stack(
+        (
+            torch.arange(args.action_horizon, device=device).float()
+            / args.actions_per_chunk,
+            torch.full((args.action_horizon,), -1.0, device=device),
+            torch.full((args.action_horizon,), -1.0, device=device),
+        ),
+        dim=-1,
+    )
 
     torch.cuda.reset_peak_memory_stats(device)
     history = []
     for step in range(1, args.steps + 1):
         optimizer.zero_grad(set_to_none=True)
-        output = model(
+        forward_arguments = dict(
             noisy_video_rows=noisy_video,
             clean_video_rows=clean_video,
             video_position_ids=video_position_ids,
@@ -370,12 +435,18 @@ def main() -> None:
             noisy_actions=noisy_action,
             clean_actions=clean_action,
             action_chunk_ids=action_chunks,
-            noisy_action_timestep=sigma * 1000.0,
+            noisy_action_timestep=(sigma if args.shared_backbone else sigma * 1000.0),
             context=context,
             context_position_ids=context_position_ids,
             state=state,
             context_mask=context_mask,
         )
+        if args.shared_backbone:
+            forward_arguments.update(
+                action_position_ids=action_position_ids,
+                clean_action_timestep=torch.ones_like(sigma),
+            )
+        output = model(**forward_arguments)
         video_loss = F.mse_loss(
             output.video_velocity_rows[:, future].float(),
             video_target[:, future].float(),
@@ -387,13 +458,13 @@ def main() -> None:
         if not args.eval_only:
             loss.backward()
         named = list(model.named_parameters())
-        h3_gradient = (
-            0.0 if args.eval_only else global_grad_norm(named, ".h3_block.", device)
+        h3_gradient = 0.0 if args.eval_only else global_grad_norm(
+            named, ".h3_block.", device
         )
-        action_gradient = (
-            0.0
-            if args.eval_only
-            else global_grad_norm(named, ".action_block.", device)
+        action_gradient = 0.0 if args.eval_only else global_grad_norm(
+            named,
+            ".action_adapters." if args.shared_backbone else ".action_block.",
+            device,
         )
         if not math.isfinite(float(loss.detach())) or (
             not args.eval_only
@@ -413,10 +484,17 @@ def main() -> None:
             parameter for parameter in model.parameters() if parameter.grad is not None
         ]
         expert_clip_norms = {}
-        expert_markers = {
-            "h3": (".h3_block.", ".h3.proj_out."),
-            "action": (".action_block.", ".action_expert.output."),
-        }
+        expert_markers = (
+            {
+                "h3": (".h3_block.", ".h3.proj_out."),
+                "action": (".action_adapters.",),
+            }
+            if args.shared_backbone
+            else {
+                "h3": (".h3_block.", ".h3.proj_out."),
+                "action": (".action_block.", ".action_expert.output."),
+            }
+        )
         for expert, markers in expert_markers.items():
             active_ids = {
                 id(parameter)
@@ -438,6 +516,7 @@ def main() -> None:
                 parameter.grad = gradient
         if not args.eval_only:
             optimizer.step()
+            scheduler.step()
         item = {
             "step": step,
             "loss": float(loss.detach()),
@@ -446,6 +525,7 @@ def main() -> None:
             "h3_gradient_norm": h3_gradient,
             "action_gradient_norm": action_gradient,
             "expert_clip_norms": expert_clip_norms,
+            "learning_rate": float(scheduler.get_last_lr()[0]),
         }
         history.append(item)
         if rank == 0:
@@ -453,17 +533,26 @@ def main() -> None:
 
     if args.save_stage is not None and not args.eval_only:
         stage = {
-            "format": "h3_lingbot_four_stream_tail_v1",
+            "format": (
+                "h3_lingbot_shared_four_stream_tail_v1"
+                if args.shared_backbone
+                else "h3_lingbot_four_stream_tail_v1"
+            ),
             "last_trainable_layers": args.last_trainable_layers,
+            "warmup_steps": args.warmup_steps,
             "layers": {},
         }
         for index in range(50 - args.last_trainable_layers, 50):
-            paired = model.module.paired_layers[index]
-            with FSDP.summon_full_params(paired, recurse=False, writeback=False):
+            layer = (
+                model.module.shared_layers[index]
+                if args.shared_backbone
+                else model.module.paired_layers[index]
+            )
+            with FSDP.summon_full_params(layer, recurse=False, writeback=False):
                 if rank == 0:
                     stage["layers"][str(index)] = {
                         key: value.detach().cpu().clone()
-                        for key, value in paired.module.state_dict().items()
+                        for key, value in layer.module.state_dict().items()
                     }
         with FSDP.summon_full_params(model, recurse=False, writeback=False):
             if rank == 0:
@@ -471,10 +560,16 @@ def main() -> None:
                     key: value.detach().cpu().clone()
                     for key, value in model.module.h3.proj_out.state_dict().items()
                 }
-                stage["action_output"] = {
-                    key: value.detach().cpu().clone()
-                    for key, value in model.module.action_expert.output.state_dict().items()
-                }
+                if args.shared_backbone:
+                    stage["action_adapters"] = {
+                        key: value.detach().cpu().clone()
+                        for key, value in model.module.action_adapters.state_dict().items()
+                    }
+                else:
+                    stage["action_output"] = {
+                        key: value.detach().cpu().clone()
+                        for key, value in model.module.action_expert.output.state_dict().items()
+                    }
         if rank == 0:
             args.save_stage.parent.mkdir(parents=True, exist_ok=True)
             torch.save(stage, args.save_stage)
@@ -498,7 +593,8 @@ def main() -> None:
             "peak_reserved_gib": torch.cuda.max_memory_reserved(device) / 2**30,
             "load_seconds": load_seconds,
             "elapsed_seconds": time.perf_counter() - started,
-            "initialization": initialization.__dict__,
+            "shared_backbone": args.shared_backbone,
+            "initialization": initialization,
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2) + "\n")

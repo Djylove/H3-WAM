@@ -37,6 +37,30 @@
 | E12 | LingBot-inspired gate-only A/B | 同初始化/seed/800 dense windows；A 输出头，B 额外112个反向 gate scalars | train action：A `26.697083`，B `26.692795`；val40：A `24.207277`，B `24.203841` | 按预注册规则不晋级 rollout | held-out 仅改善 `0.0142%`，`NO_GO_LONG`；停止 gate-only 放大 |
 | E13 | LingBot four-stream real-layer smoke | H3真实末层 + action expert；noisy/clean video/action；2 steps | velocity-head loss `9.8255 → 8.0418`；双专家梯度非零；reserved `10.37 GiB` | 不适用 | 单层工程门通过；整模 packed/FSDP 前仍 `NO_GO_LONG` |
 | E14 | four-stream full50 FSDP smoke | 8×A800、50层、尾2层可训练、1 step | loss `26.0150`；H3/action grad `70.23/10131.99`；reserved `21.16 GiB` | 不适用 | 全层/FSDP门通过；等待真实 dense window smoke |
+| E15 | 独立 ActionDiT 真实 dense 更新 | 8×A800、1274 video tokens、32 actions、tail-2、LR `1e-6`、无 warmup | step1 `33.3022`；step2 `7505.1816`；action grad `5.87e5 → 3.81e7` | 不适用 | `NO_GO`；checkpoint 只作诊断，不得续训 |
+| E16 | shared-H3 four-stream 工程门 | 官方共享 block 结构；真实 H3 单层2步 + full50真实dense 10步；tail-2；10步warmup | 单层 action `2.3449 → 2.3432`；full50 action `1.07875 → 1.07266`；H3/action grad稳定 | 不适用 | 数值、FSDP、save/restore 均通过；只晋级 multi-window canary，不构成泛化证据 |
+
+## 2026-08-13 LingBot 核心结构纠偏
+
+重新逐行核对作者仓库固定 commit
+`7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb` 后确认：官方 LingBot-VA 先将
+`[noisy video, clean video, noisy action, clean action]` 四路 token 拼接，再让全部 token
+通过同一组 `WanTransformerBlock`。动作侧新增的是 `action_embedder`、独立
+`condition_embedder_action` 与 `action_proj_out`，不存在一套独立的 30 层 ActionDiT body。
+
+因此 E13–E15 的“独立 ActionDiT + joint attention”只保留为工程探索，不再称为官方结构对齐。
+E15 同时存在固定 `sigma=0.5`、无 10-step warmup、动作未使用官方 `action_snr_shift=0.05`
+等优化协议偏差，所以它不能否定 LingBot 方法本身；它只否定当前实现直接扩成长训。新主线的
+唯一结构变量改为：将动作投影到 H3 hidden width，并让四路 token 共享 H3 的 50 个 blocks；
+H3 没有第四个原生 modality tag，首个 canary 明确复用未参与当前任务的 audio tag `2` 作为动作
+AdaLN 通道，这是 `INTENTIONAL_DEVIATION`，必须单独记录和消融。
+
+共享 H3 实现随后通过 34 项相关测试、真实 H3 单层 2-step 和 8×A800 full-50 真实 dense
+10-step 门。后者在 10-step linear warmup 下 action loss 从 `1.078752` 降到 `1.072662`，video
+loss `0.182335 → 0.182341`，H3/action gradient norm 始终约 `0.21–0.25/8.14–9.49`；峰值
+`42.01 GiB reserved`。独立进程加载保存的 stage 后得到 action loss `1.072317`，证明 checkpoint
+restore 成功。该实验重复同一窗口，故只回答数值稳定性；下一门必须轮换 train windows，并在
+episode-disjoint val40 上与未训练 shared-H3 初始化做同噪声对照。
 
 ## 2026-08-12 活跃长线
 

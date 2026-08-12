@@ -1,0 +1,25 @@
+{
+  "event": "h3_lingbot_shared_full50_real_dense_s10",
+  "world_size": 8,
+  "gpu": "A800 80GB",
+  "steps": 10,
+  "layers": 50,
+  "last_trainable_layers": 2,
+  "video_tokens": 1274,
+  "action_horizon": 32,
+  "warmup_steps": 10,
+  "learning_rate": 1e-6,
+  "sample": "libero_object_ep000239_s000115",
+  "history_summary": {
+    "step1": {"loss": 1.2610868215560913, "video_loss": 0.1823345571756363, "action_loss": 1.0787522792816162, "h3_gradient_norm": 0.22084860503673553, "action_gradient_norm": 8.141911506652832, "learning_rate": 1e-7},
+    "step10": {"loss": 1.2550026178359985, "video_loss": 0.18234077095985413, "action_loss": 1.0726618766784668, "h3_gradient_norm": 0.22567223012447357, "action_gradient_norm": 9.381937980651855, "learning_rate": 1e-6}
+  },
+  "action_loss_relative_change_percent": -0.5645782161499712,
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/full50_real_dense_tail2_s10.pt",
+  "restore_eval": {"loss": 1.2546727657318115, "video_loss": 0.18235629796981812, "action_loss": 1.0723165273666382},
+  "peak_allocated_gib": 26.99881410598755,
+  "peak_reserved_gib": 42.013671875,
+  "elapsed_seconds": 73.06718330900185,
+  "status": "GO_MULTIWINDOW_CANARY",
+  "claim_limit": "Repeated one-window training proves numerical stability and checkpoint restore only; it is not held-out effectiveness evidence."
+}

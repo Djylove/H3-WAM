@@ -343,6 +343,166 @@ def four_stream_h3_action_layer(
     )
 
 
+def shared_h3_four_stream_layer(
+    *,
+    h3_block: nn.Module,
+    noisy_video_hidden: torch.Tensor,
+    clean_video_hidden: torch.Tensor,
+    noisy_action_hidden: torch.Tensor,
+    clean_action_hidden: torch.Tensor,
+    noisy_video_temb: torch.Tensor,
+    clean_video_temb: torch.Tensor,
+    noisy_action_temb: torch.Tensor,
+    clean_action_temb: torch.Tensor,
+    noisy_video_adaln_indices: torch.Tensor,
+    clean_video_adaln_indices: torch.Tensor,
+    noisy_action_adaln_indices: torch.Tensor,
+    clean_action_adaln_indices: torch.Tensor,
+    video_rotary_emb: tuple[torch.Tensor, torch.Tensor],
+    action_rotary_emb: tuple[torch.Tensor, torch.Tensor],
+    h3_apply_rotary: Callable[
+        [torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor
+    ],
+    video_chunk_ids: torch.Tensor,
+    action_chunk_ids: torch.Tensor,
+    window_size: int | None = None,
+    context_hidden: torch.Tensor | None = None,
+    context_temb: torch.Tensor | None = None,
+    context_adaln_indices: torch.Tensor | None = None,
+    context_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor | None,
+]:
+    """Advance LingBot's four streams through one *shared* H3 block.
+
+    This is the code-aligned backbone port of LingBot-VA: action tokens have
+    their own input/time/output adapters, but do not own a second Transformer
+    body. All four streams use the same H3 Q/K/V, output projection and FFN.
+    H3 text/proprio rows remain read-only context for the predicted streams
+    and are refined only by context self-attention.
+    """
+
+    if noisy_video_hidden.shape != clean_video_hidden.shape:
+        raise ValueError("noisy/clean video hidden shapes must match")
+    if noisy_action_hidden.shape != clean_action_hidden.shape:
+        raise ValueError("noisy/clean action hidden shapes must match")
+    if noisy_video_hidden.shape[-1] != noisy_action_hidden.shape[-1]:
+        raise ValueError("shared H3 streams must have the same hidden width")
+    if noisy_video_hidden.shape[1] != video_chunk_ids.numel():
+        raise ValueError("video chunk ids must cover every video token")
+    if noisy_action_hidden.shape[1] != action_chunk_ids.numel():
+        raise ValueError("action chunk ids must cover every action token")
+
+    stream_specs = (
+        (
+            noisy_video_hidden,
+            noisy_video_temb,
+            noisy_video_adaln_indices,
+            video_rotary_emb,
+        ),
+        (
+            clean_video_hidden,
+            clean_video_temb,
+            clean_video_adaln_indices,
+            video_rotary_emb,
+        ),
+        (
+            noisy_action_hidden,
+            noisy_action_temb,
+            noisy_action_adaln_indices,
+            action_rotary_emb,
+        ),
+        (
+            clean_action_hidden,
+            clean_action_temb,
+            clean_action_adaln_indices,
+            action_rotary_emb,
+        ),
+    )
+    stream_io = tuple(
+        h3_attention_input(
+            h3_block,
+            hidden,
+            temb=temb,
+            adaln_indices=indices,
+            rotary_emb=rotary,
+            apply_rotary=h3_apply_rotary,
+        )
+        for hidden, temb, indices, rotary in stream_specs
+    )
+
+    context_io = None
+    context_key_value = None
+    context_metadata = (
+        context_temb,
+        context_adaln_indices,
+        context_rotary_emb,
+    )
+    if context_hidden is None:
+        if any(value is not None for value in context_metadata):
+            raise ValueError("context metadata requires context_hidden")
+    else:
+        if any(value is None for value in context_metadata):
+            raise ValueError("H3 context requires temb, AdaLN indices and RoPE")
+        context_io = h3_attention_input(
+            h3_block,
+            context_hidden,
+            temb=context_temb,
+            adaln_indices=context_adaln_indices,
+            rotary_emb=context_rotary_emb,
+            apply_rotary=h3_apply_rotary,
+        )
+        context_key_value = context_io[1:3]
+
+    mask = build_lingbot_block_causal_mask(
+        video_chunk_ids=video_chunk_ids.to(noisy_video_hidden.device),
+        action_chunk_ids=action_chunk_ids.to(noisy_video_hidden.device),
+        window_size=window_size,
+    )
+    attended = lingbot_four_stream_attention(
+        noisy_video_qkv=stream_io[0][:3],
+        clean_video_qkv=stream_io[1][:3],
+        noisy_action_qkv=stream_io[2][:3],
+        clean_action_qkv=stream_io[3][:3],
+        attention_mask=mask,
+        context_key_value=context_key_value,
+    )
+
+    def finish(
+        io: tuple[torch.Tensor, ...],
+        value: torch.Tensor,
+        indices: torch.Tensor,
+    ) -> torch.Tensor:
+        return h3_post_attention(
+            h3_block,
+            attended=value,
+            residual=io[3],
+            gate_attn=io[4],
+            shift_ffn=io[5],
+            scale_ffn=io[6],
+            gate_ffn=io[7],
+            adaln_indices=indices,
+        )
+
+    next_streams = tuple(
+        finish(io, value, specs[2])
+        for io, value, specs in zip(stream_io, attended, stream_specs, strict=True)
+    )
+    next_context = None
+    if context_io is not None:
+        context_attended = _attention(
+            context_io[0], context_io[1], context_io[2]
+        )
+        next_context = finish(
+            context_io, context_attended, context_adaln_indices
+        )
+    return (*next_streams, next_context)
+
+
 def h3_attention_input(
     block: nn.Module,
     hidden: torch.Tensor,

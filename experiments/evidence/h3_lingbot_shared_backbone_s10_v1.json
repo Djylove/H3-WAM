@@ -1,0 +1,139 @@
+{
+  "experiment_id": "h3_lingbot_shared_backbone_s10_v1",
+  "classification": "backbone_port",
+  "hypothesis": "Replacing LingBot-VA's Wan2.2 shared block stack with MiniMax-H3 while preserving its four-stream mask will keep two-step updates finite and reduce action loss over a 10-step warmup canary without destabilizing video loss.",
+  "single_variable": "Use MiniMax-H3 as the single Transformer body shared by noisy/clean video/action tokens; retain the existing verified LIBERO dense cache and velocity objectives.",
+  "parent_baseline": "E15 independent-ActionDiT full50 real-dense smoke: step1/2 action loss 33.1296/7505.0068 and action gradient norm 5.87e5/3.81e7.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "Causal World Modeling for Robot Control",
+      "locator": "https://arxiv.org/abs/2601.21998",
+      "revision": "v1",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Robbyant/lingbot-va",
+      "locator": "https://github.com/Robbyant/lingbot-va",
+      "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "fastwam_deploy shared-H3 four-stream port",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "working tree following 393e86a",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "four-stream Transformer ownership",
+        "paper": "noisy/clean video/action streams interact under causal attention",
+        "upstream_code": "all four streams concatenate before and share every WanTransformerBlock",
+        "local": "all four streams use every shared MiniMax-H3 block; text/proprio are read-only H3 context",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["third_party/code_audit/lingbot-va/wan_va/modules/model.py:705", "src/fastwam/models/h3dreamwam/shared_four_stream_model.py", "tests/test_h3_lingbot_shared_four_stream_model.py"],
+        "rationale": "This is a backbone port, not a Wan reproduction; H3 uses native self-attended text instead of Wan cross-attention."
+      },
+      {
+        "field": "action modulation tag",
+        "paper": "action has an independent copied time embedding",
+        "upstream_code": "condition_embedder_action is a deepcopy of video conditioning",
+        "local": "action time embedder is a deepcopy of H3 video time embedder and action rows use unused H3 audio AdaLN tag 2",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["third_party/code_audit/lingbot-va/wan_va/modules/model.py:635", "src/fastwam/models/h3dreamwam/shared_four_stream_model.py:48"],
+        "rationale": "H3 exposes only three pretrained modality rows; tag 2 is unused because this canary has no audio tokens and provides distinct action modulation without adding a random Transformer body."
+      }
+    ],
+    "data": [
+      {
+        "field": "LIBERO window sampling",
+        "paper": "streaming video/action chunks",
+        "upstream_code": "LeRobot action segments paired to cached latent segments",
+        "local": "episode-disjoint v7 dense cache; 200779 train windows and fixed val40 manifest; canary uses one real window per rank",
+        "status": "EQUIVALENT",
+        "evidence": ["docs/H3_WAM_EXPERIMENT_LEDGER.md", "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl", "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl"],
+        "rationale": "Both consume dense temporal windows; H3 latent frames are explicitly mapped to the same eight action chunks instead of copying Wan VAE frame geometry."
+      }
+    ],
+    "action": [
+      {
+        "field": "LIBERO action representation",
+        "paper": "embodiment-specific masked channels",
+        "upstream_code": "30D carrier with seven active normalized LIBERO dimensions",
+        "local": "direct seven active dimensions, min-max normalized, horizon 32",
+        "status": "EQUIVALENT",
+        "evidence": ["third_party/code_audit/lingbot-va/wan_va/configs/va_libero_cfg.py:27", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"],
+        "rationale": "The 23 inactive upstream carrier channels are masked from loss and carry no policy information."
+      }
+    ],
+    "objective": [
+      {
+        "field": "joint flow objectives",
+        "paper": "joint video/action diffusion objective",
+        "upstream_code": "latent velocity MSE plus masked action velocity MSE",
+        "local": "future-video velocity MSE plus action velocity MSE",
+        "status": "EQUIVALENT",
+        "evidence": ["third_party/code_audit/lingbot-va/wan_va/train.py:254", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py:433"],
+        "rationale": "Both targets are noise minus clean sample under linear flow interpolation."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "10-step stability budget",
+        "paper": "long training",
+        "upstream_code": "AdamW, lr 1e-5, beta2 0.95, weight decay 0.1, 10-step warmup, global batch 10, 5000 steps",
+        "local": "AdamW, tail-2 H3 lr 1e-6, beta2 0.95, 10-step warmup, global batch 8, 10 steps",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["third_party/code_audit/lingbot-va/wan_va/configs/va_libero_train_cfg.py", "decision.launch_command"],
+        "rationale": "This is only a finite-update and checkpoint gate for a 33B backbone; it cannot establish policy quality."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "promotion evaluation",
+        "paper": "closed-loop LIBERO benchmark",
+        "upstream_code": "LIBERO client rollout with observation feedback",
+        "local": "10-step gradient/checkpoint smoke; episode-disjoint val and fixed rollout remain required before GO_LONG",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["docs/H3_WAM_EXPERIMENT_LEDGER.md", "scripts/h3dreamwam/rollout_h3dreamwam_fsdp.py"],
+        "rationale": "The canary is an engineering gate and makes no effectiveness claim."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["official repository commit 7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["shared-backbone code audit and 34 related unit tests"]},
+    "data_contract": {"status": "PASS", "evidence": ["v7 dense cache and episode-disjoint fixed manifests"]},
+    "action_contract": {"status": "PASS", "evidence": ["seven active LIBERO channels verified against upstream carrier mask"]},
+    "objective_contract": {"status": "PASS", "evidence": ["real velocity heads and targets in full50 smoke"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit AdamW LR/warmup/global-batch command"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered numeric stop gate; no rollout claim from smoke"]},
+    "gradient_path": {"status": "PASS", "evidence": ["action loss reaches shared H3; video loss reaches action embedding unit tests"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["real full50 s1 loss 1.2611, H3/action grad 0.2209/8.1456"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["independent-process restore action loss 1.072317 from saved s10 stage"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E15 fixed real-window independent-ActionDiT smoke"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["shared block receives joint gradients without independent action body"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not permitted before multi-window training"]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 10,
+    "training_samples": 80,
+    "unique_windows": 8,
+    "effective_epochs": 10.0,
+    "gpu_count": 8,
+    "estimated_hours": 0.1
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Official shared-block architecture, causal mask, real data, gradient paths and full50 FSDP smoke pass; run only a 10-step warmup/checkpoint canary.",
+    "launch_command": "python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl --output /mnt/h3-wam/outputs/h3-lingbot-shared/full50_real_dense_tail2_s10.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/full50_real_dense_tail2_s10.pt --steps 10 --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "event": "h3_lingbot_four_stream_full50_real_dense_s2",
+  "date": "2026-08-13",
+  "upstream_lingbot_commit": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb",
+  "world_size": 8,
+  "gpu": "A800 80GB",
+  "sample": "libero_spatial_ep000378_s000071",
+  "video_tokens": 1274,
+  "action_horizon": 32,
+  "last_trainable_layers": 2,
+  "learning_rate": 1e-6,
+  "warmup_steps": 0,
+  "sigma": 0.5,
+  "architecture": "H3 video expert plus independently initialized 1024-wide ActionDiT",
+  "history": [
+    {
+      "step": 1,
+      "loss": 33.30216979980469,
+      "video_loss": 0.17256279289722443,
+      "action_loss": 33.129608154296875,
+      "h3_gradient_norm": 56.74837875366211,
+      "action_gradient_norm": 586520.0625
+    },
+    {
+      "step": 2,
+      "loss": 7505.181640625,
+      "video_loss": 0.17492568492889404,
+      "action_loss": 7505.0068359375,
+      "h3_gradient_norm": 7098.37255859375,
+      "action_gradient_norm": 38088052.0
+    }
+  ],
+  "peak_allocated_gib": 27.521042346954346,
+  "peak_reserved_gib": 43.853515625,
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-four-stream/full50_real_dense_tail2_s2.pt",
+  "status": "NO_GO",
+  "reason": "The action loss and gradient exploded on the second optimizer step. Code audit also found that the independent ActionDiT is a structural mismatch: official LingBot-VA embeds all four streams into one shared Wan block stack. This checkpoint is diagnostic only and must not seed a long run."
+}

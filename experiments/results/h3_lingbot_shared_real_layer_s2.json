@@ -1,0 +1,15 @@
+{
+  "event": "h3_lingbot_shared_four_stream_real_layer_smoke",
+  "layers": 1,
+  "steps": 2,
+  "video_tokens": 196,
+  "action_horizon": 8,
+  "action_modality_id": 2,
+  "history": [
+    {"step": 1, "loss": 4.523800849914551, "video_loss": 2.1789462566375732, "action_loss": 2.3448543548583984, "shared_block_gradient_norm": 7.219818592071533, "action_adapter_gradient_norm": 7.092482089996338},
+    {"step": 2, "loss": 4.522140026092529, "video_loss": 2.1789748668670654, "action_loss": 2.343165159225464, "shared_block_gradient_norm": 8.803677558898926, "action_adapter_gradient_norm": 7.378499984741211}
+  ],
+  "peak_allocated_gib": 8.625714302062988,
+  "peak_reserved_gib": 12.146484375,
+  "status": "PASS"
+}

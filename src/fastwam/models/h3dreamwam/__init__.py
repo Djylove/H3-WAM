@@ -15,6 +15,7 @@ from .joint_attention import (
     four_stream_h3_action_layer,
     lingbot_four_stream_attention,
     paired_h3_action_layer,
+    shared_h3_four_stream_layer,
 )
 from .model import (
     H3DreamPairedLayer,
@@ -26,6 +27,12 @@ from .four_stream_model import (
     H3LingBotPairedLayer,
     H3LingBotWAM,
     H3LingBotWAMOutput,
+)
+from .shared_four_stream_model import (
+    H3LingBotActionAdapters,
+    H3LingBotSharedLayer,
+    H3LingBotSharedOutput,
+    H3LingBotSharedWAM,
 )
 from .docking import (
     H3DoTActionHead,
@@ -64,6 +71,10 @@ __all__ = [
     "H3LingBotPairedLayer",
     "H3LingBotWAM",
     "H3LingBotWAMOutput",
+    "H3LingBotActionAdapters",
+    "H3LingBotSharedLayer",
+    "H3LingBotSharedOutput",
+    "H3LingBotSharedWAM",
     "H3ActionInitializationReport",
     "H3DreamInferenceSchedule",
     "H3DreamJointSample",
@@ -74,6 +85,7 @@ __all__ = [
     "build_lingbot_block_causal_mask",
     "four_stream_h3_action_layer",
     "lingbot_four_stream_attention",
+    "shared_h3_four_stream_layer",
     "expand_h3_rgb_flow_projections",
     "initialize_action_expert_from_h3",
     "inverse_h3_rotary",

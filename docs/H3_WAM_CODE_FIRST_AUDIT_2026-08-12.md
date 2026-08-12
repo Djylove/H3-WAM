@@ -117,11 +117,11 @@ self-attention。四流核心现已支持只读 H3 context K/V：所有 video/ac
 text/proprio，context 本身不进入预测 stream、不能读取 future target。该 contract 与 23 项模块
 测试一起通过，避免移植 LingBot 时意外绕开 H3 的预训练语言接口。
 
-上述组件已封装为 `H3LingBotWAM`：50 个 FSDP wrapping units 分别拥有一个 H3 block 与一个
+早期组件封装为 `H3LingBotWAM`：50 个 FSDP wrapping units 分别拥有一个 H3 block 与一个
 ActionDiT block，forward 显式维护 noisy/clean video、noisy/clean action 和 H3 context 五个
-layer states，最终只从 noisy streams 输出 video/action velocity。tiny full-model 的 shape、block
-ownership、双向 objective gradient 和 proprio layout 测试通过；相关 H3-DreamWAM 回归合计
-40 项通过。
+layer states。该版本完成了梯度和 FSDP 工程验证，但 2026-08-13 重新逐行审计作者 commit
+`7c6ffa9` 后确认它并不对齐官方核心结构：LingBot 的四路 token 全部共享同一套 Wan blocks，
+并没有独立 ActionDiT body。因此该版本降级为 rejected engineering branch，不进入长训。
 
 full-50-layer 8×A800 FSDP smoke 也已通过：尾 2 层 H3/action 可训练，1-step total/video/action
 loss 为 `26.0150/3.2607/22.7543`，H3/action gradient norm 为 `70.23/10131.99`，两个专家
@@ -129,6 +129,13 @@ loss 为 `26.0150/3.2607/22.7543`，H3/action gradient norm 为 `70.23/10131.99`
 full-FSDP 尝试错误地同时 wrap pair 与 pair 内 H3 block，AdaLN weight 留在 1-D shard；改为只
 wrap `H3LingBotPairedLayer` 后通过。因此显存和全层 collective 已不是阻塞点，下一门是使用真实
 dense window 的首帧条件、packed position 和 velocity target。
+
+真实 dense window 随后跑通 1274 video rows、32 actions 的 full-50 forward/backward，但在
+LR `1e-6`、无 warmup 的第二次更新中 total/action loss 从 `33.3022/33.1296` 爆炸到
+`7505.1816/7505.0068`，action gradient norm 从 `5.87e5` 增至 `3.81e7`。结果定为
+`NO_GO`，保存的 tail-2 checkpoint 仅作诊断。下一步不是降低该独立专家 LR 后继续长训，而是先
+实现官方代码支持的共享 block 版本；优化合同同时补回独立 action time embedding、warmup 与
+action flow timestep 分布。
 
 ### B. DiT4DiT → H3 受控线
 
