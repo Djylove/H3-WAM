@@ -82,6 +82,11 @@ def parse_args() -> argparse.Namespace:
         help="Align H3 latent rows using the non-uniform H3 VAE clock.",
     )
     parser.add_argument(
+        "--flow-match-loss-weighting",
+        action="store_true",
+        help="Apply the LingBot/DreamWAM timestep-dependent training weights.",
+    )
+    parser.add_argument(
         "--shared-backbone",
         action="store_true",
         help="Use LingBot's code-aligned shared H3 block stack instead of ActionDiT.",
@@ -106,6 +111,75 @@ def shifted_noise_sigma(uniform: torch.Tensor, shift: float) -> torch.Tensor:
     """FlowMatch shifted noise sigma used by H3/LingBot schedulers."""
 
     return float(shift) * uniform / (1.0 + (float(shift) - 1.0) * uniform)
+
+
+def flow_match_training_weight(
+    noise_sigma: torch.Tensor,
+    *,
+    shift: float,
+    num_train_timesteps: int = 1000,
+) -> torch.Tensor:
+    """Reproduce LingBot/DreamWAM's normalized bell-shaped loss weight.
+
+    ``noise_sigma`` is already shifted, matching the scheduler timestep divided
+    by ``num_train_timesteps``. The normalization is computed over the same
+    discrete uniform pre-shift training grid used by the released schedulers.
+    """
+
+    if shift <= 0 or num_train_timesteps <= 0:
+        raise ValueError("shift and num_train_timesteps must be positive")
+    sigma = noise_sigma.float()
+    raw_grid = torch.linspace(
+        1.0,
+        0.0,
+        num_train_timesteps + 1,
+        device=sigma.device,
+        dtype=torch.float64,
+    )[:-1]
+    shifted_grid = shifted_noise_sigma(raw_grid, shift)
+    grid_weight = torch.exp(-2.0 * (shifted_grid - 0.5).square())
+    weight_min = grid_weight.min()
+    weight_mean = (grid_weight - weight_min).mean().clamp_min(1.0e-10)
+    weight = torch.exp(-2.0 * (sigma.double() - 0.5).square())
+    return ((weight - weight_min) / weight_mean).to(sigma.dtype)
+
+
+def weighted_video_action_losses(
+    *,
+    video_prediction: torch.Tensor,
+    video_target: torch.Tensor,
+    future: torch.Tensor,
+    noisy_video_timesteps: torch.Tensor,
+    noisy_video_timestep_indices: torch.Tensor,
+    action_prediction: torch.Tensor,
+    action_target: torch.Tensor,
+    action_time: torch.Tensor,
+    action_timestep_indices: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Frame/token-wise official flow weighting for the two training losses."""
+
+    video_per_row = F.mse_loss(
+        video_prediction[:, future].float(),
+        video_target[:, future].float(),
+        reduction="none",
+    ).mean(dim=-1)
+    video_clean_time = noisy_video_timesteps.index_select(
+        0, noisy_video_timestep_indices[future]
+    )
+    video_weight = flow_match_training_weight(
+        1.0 - video_clean_time, shift=12.0
+    )
+    action_per_token = F.mse_loss(
+        action_prediction.float(), action_target.float(), reduction="none"
+    ).mean(dim=-1)
+    action_clean_time = action_time.index_select(0, action_timestep_indices)
+    action_weight = flow_match_training_weight(
+        1.0 - action_clean_time, shift=0.05
+    )
+    return (
+        (video_per_row * video_weight[None]).mean(),
+        (action_per_token * action_weight[None]).mean(),
+    )
 
 
 def video_clean_from_velocity(
@@ -578,6 +652,15 @@ def main() -> None:
                 f"{checkpoint_physical_time} != "
                 f"{args.h3_physical_time_alignment}"
             )
+        checkpoint_loss_weighting = payload.get(
+            "flow_match_loss_weighting", False
+        )
+        if checkpoint_loss_weighting != args.flow_match_loss_weighting:
+            raise ValueError(
+                "stage flow-match loss-weighting contract mismatch: "
+                f"{checkpoint_loss_weighting} != "
+                f"{args.flow_match_loss_weighting}"
+            )
         for index_text, layer_state in payload["layers"].items():
             layer = (
                 model.module.shared_layers[int(index_text)]
@@ -958,13 +1041,26 @@ def main() -> None:
             )
         else:
             output = model(**forward_arguments)
-            video_loss = F.mse_loss(
-                output.video_velocity_rows[:, future].float(),
-                video_target[:, future].float(),
-            )
-            action_loss = F.mse_loss(
-                output.action_velocity.float(), action_target.float()
-            )
+            if args.flow_match_loss_weighting and not args.eval_only:
+                video_loss, action_loss = weighted_video_action_losses(
+                    video_prediction=output.video_velocity_rows,
+                    video_target=video_target,
+                    future=future,
+                    noisy_video_timesteps=noisy_video_timesteps,
+                    noisy_video_timestep_indices=noisy_video_timestep_indices,
+                    action_prediction=output.action_velocity,
+                    action_target=action_target,
+                    action_time=action_time,
+                    action_timestep_indices=action_timestep_indices,
+                )
+            else:
+                video_loss = F.mse_loss(
+                    output.video_velocity_rows[:, future].float(),
+                    video_target[:, future].float(),
+                )
+                action_loss = F.mse_loss(
+                    output.action_velocity.float(), action_target.float()
+                )
         loss = video_loss + action_loss
         valid_weight = float(has_sample)
         loss_sums += torch.tensor(
@@ -1076,6 +1172,7 @@ def main() -> None:
                 args.detached_generated_video_conditioning
             ),
             "h3_physical_time_alignment": args.h3_physical_time_alignment,
+            "flow_match_loss_weighting": args.flow_match_loss_weighting,
             "layers": {},
         }
         for index in range(50 - args.last_trainable_layers, 50):
@@ -1136,6 +1233,7 @@ def main() -> None:
                 args.detached_generated_video_conditioning
             ),
             "h3_physical_time_alignment": args.h3_physical_time_alignment,
+            "flow_match_loss_weighting": args.flow_match_loss_weighting,
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],

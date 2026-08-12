@@ -1,0 +1,42 @@
+{
+  "experiment_id": "h3_lingbot_shared_flow_weight_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Official timestep-dependent flow-loss weighting improves clean val40 action loss by at least 0.25 percentage points beyond E24 while preserving positive video improvement.",
+  "single_variable": "During training only, multiply per-video-row and per-action-token velocity MSE by the normalized bell-shaped scheduler training_weight used by LingBot-VA and DreamWAM. E24 architecture, ordinal time mapping, data, quantile normalization, seed, timesteps, optimizer and evaluation remain fixed.",
+  "parent_baseline": "E24 quantile s100: initialization video/action 0.170026/1.304397; s100 0.166345/1.295573; action improvement 0.676%.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "DreamWAM", "locator": "https://github.com/bytedance/DreamWAM", "revision": "6e989facc0c452fd3488d75f60bc36411005558c", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy flow-match loss weighting", "locator": "/home/ubuntu/fastwam_deploy", "revision": "working tree after 9876147", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared four-stream H3", "paper": "causal shared video/action model", "upstream_code": "LingBot shared Wan blocks", "local": "same E24 shared H3 tail-2", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "The H3 backbone port is fixed across parent and canary."}],
+    "data": [{"field": "dense paired windows", "paper": "LIBERO demonstrations", "upstream_code": "dense latent/action segments", "local": "same first 800 rows and episode-disjoint val40 as E24", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl", "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl"], "rationale": "No data variable changes."}],
+    "action": [{"field": "action contract", "paper": "chunked normalized actions", "upstream_code": "q01/q99, clip [-1.5,1.5], shift 0.05", "local": "same E24 q01/q99, horizon32 and shift0.05", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/configs/va_libero_cfg.py", "experiments/data/libero_v7_action_quantiles.json"], "rationale": "Carrier dimensionality differs but the seven active channels and schedule are equivalent and unchanged from E24."}],
+    "objective": [{"field": "timestep loss weighting", "paper": "flow-matching post-training", "upstream_code": "LingBot train.py and DreamWAM model.py multiply losses by scheduler.training_weight", "local": "training-only per-row/per-token normalized scheduler weights; evaluation remains raw MSE", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/train.py:267", "third_party/code_audit/lingbot-va/wan_va/utils/scheduler.py:115", "third_party/DreamWAM/dreamwam/model.py:806", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "The local analytic implementation matches both released scheduler formulas and is locked by unit tests."}],
+    "optimization": [{"field": "bounded canary", "paper": "post-training", "upstream_code": "FSDP with larger recommended global batch", "local": "100 steps, global batch8, 800 unique windows, lr1e-6, warmup10, tail-2", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "A paired small-budget mechanism test precedes any scale-up."}],
+    "evaluation": [{"field": "promotion", "paper": "closed-loop LIBERO", "upstream_code": "LIBERO success predicate", "local": "raw episode-disjoint val40 then no-leak sample40 and rollout only if threshold passes", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "The offline gate bounds GPU and simulator cost without changing the metric versus E24."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed clean LingBot and DreamWAM commits; official LingBot repository rechecked 2026-08-13"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["same E24 model and ordinal chunk mapping"]},
+    "data_contract": {"status": "PASS", "evidence": ["same E24 train/val manifests"]},
+    "action_contract": {"status": "PASS", "evidence": ["same E24 quantile action contract"]},
+    "objective_contract": {"status": "PASS", "evidence": ["35 unit tests including analytic scheduler equivalence"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["same E24 budget and optimizer"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["evaluation bypasses weighting and reports raw MSE"]},
+    "gradient_path": {"status": "FAIL", "evidence": ["pending real 2-step smoke"]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["pending real 2-step smoke"]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["pending stage restore"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E24 val40 paired baseline"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["weight mean is one; action shift0.05 weight range 0..3.84"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
+  "decision": {
+    "status": "NO_GO",
+    "rationale": "Do not launch s100 until real weighted-gradient and checkpoint-restore gates pass. If they pass, require action improvement versus initialization of at least 0.926% and positive video improvement before causal sampling.",
+    "launch_command": null
+  }
+}
