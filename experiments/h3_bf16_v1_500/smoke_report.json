@@ -1,0 +1,44 @@
+{
+  "context_shape": [
+    1,
+    112,
+    5120
+  ],
+  "data_root": "/home/h3wam_finetune/data/v1/cache",
+  "event": "complete",
+  "first_context": "/home/h3wam_finetune/data/v1/cache/contexts/ep000171_s000069.pt",
+  "first_window": "/home/h3wam_finetune/data/v1/cache/windows/ep000171_s000069.pt",
+  "fp32_master_weights": true,
+  "full_trainable_parameter_count": 1291143680,
+  "host": "10-60-132-100",
+  "initial_validation_loss": 0.19859705865383148,
+  "last_blocks": 2,
+  "last_checkpoint": "/home/h3wam_finetune/outputs/v1_libero_goal_last2_500/checkpoints/step000500",
+  "last_validation_loss": 0.16099324822425842,
+  "load_seconds": 1.0116087430214975,
+  "manifest": "/home/h3wam_finetune/data/v1/candidate/manifest_train.jsonl",
+  "model": "/home/h3wam_finetune/models/MiniMax-H3",
+  "num_audio_latents": 65,
+  "num_condition_video_rows": 98,
+  "rank0_trainable_shard_parameter_count": 161392960,
+  "replicated_frozen_parameter_count": 844400896,
+  "sequence_length": 1516,
+  "start_step": 0,
+  "steps": 500,
+  "torch": "2.9.1+cu128",
+  "trainable_storage_dtypes": [
+    "torch.float32"
+  ],
+  "trainable_tensor_count": 24,
+  "training_windows": 450,
+  "validation_manifest": "/home/h3wam_finetune/data/v1/candidate/manifest_val.jsonl",
+  "validation_windows": 50,
+  "video_shape": [
+    1,
+    24,
+    12,
+    14,
+    28
+  ],
+  "world_size": 8
+}

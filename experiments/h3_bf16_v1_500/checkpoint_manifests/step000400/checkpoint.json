@@ -1,0 +1,15 @@
+{
+  "format": "h3wam_fsdp_same_world_size_v2",
+  "rank_files": [
+    "rank00000.pt",
+    "rank00001.pt",
+    "rank00002.pt",
+    "rank00003.pt",
+    "rank00004.pt",
+    "rank00005.pt",
+    "rank00006.pt",
+    "rank00007.pt"
+  ],
+  "step": 400,
+  "world_size": 8
+}

@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-08-08",
+  "dreamwam": {
+    "commit": "6e989facc0c452fd3488d75f60bc36411005558c",
+    "path": "third_party/DreamWAM"
+  },
+  "h3": {
+    "diffusers_version": "0.36.0.dev0",
+    "model_class": "MiniMaxH3Transformer3DModel",
+    "parameter_count": 33122992896,
+    "transformer": {
+      "attention_head_dim": 128,
+      "audio_in_channels": 32,
+      "ffn_dim": 14336,
+      "hidden_size": 5376,
+      "in_channels": 24,
+      "num_attention_heads": 56,
+      "num_layers": 50,
+      "num_refiner_layers": 2,
+      "patch_size": [1, 2, 2],
+      "qkv_width": 7168,
+      "text_dim": 5120,
+      "time_embed_dim": 2688
+    },
+    "vae": {
+      "clip_length": 17,
+      "latent_channels": 24,
+      "spatial_downsample_factor": 16,
+      "temporal_downsample_factor": 4,
+      "token_drop": 3
+    },
+    "projections": {
+      "audio_proj_in_weight": [5376, 32],
+      "audio_proj_out_weight": [32, 5376],
+      "context_embedder_weight": [5376, 5120],
+      "proj_in_weight": [5376, 96],
+      "proj_out_weight": [96, 5376],
+      "rgb_flow_proj_in_target": [5376, 192],
+      "rgb_flow_proj_out_target": [192, 5376]
+    },
+    "first_block": {
+      "adaln_projection_weight": [96768, 2688],
+      "attention_k_weight": [7168, 5376],
+      "attention_output_weight": [5376, 7168],
+      "attention_q_weight": [7168, 5376],
+      "attention_v_weight": [7168, 5376],
+      "ffn_input_weight": [28672, 5376],
+      "ffn_output_weight": [5376, 14336],
+      "norm": "RMSNorm"
+    }
+  },
+  "h3_adapted_dreamwam": {
+    "action_dit": {
+      "attention_head_dim": 128,
+      "ffn_dim": 4096,
+      "hidden_dim": 1024,
+      "num_attention_heads": 56,
+      "num_layers": 50,
+      "parameter_count": 3373714439,
+      "text_dim": 5120
+    },
+    "h3_plus_action_dit_parameter_count": 36496707335
+  }
+}

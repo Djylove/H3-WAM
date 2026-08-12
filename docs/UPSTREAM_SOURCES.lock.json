@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-12T22:30:00+08:00",
+  "policy": "Nested upstream repositories are local read-only mirrors and are not vendored. Clone each URL and checkout the recorded commit.",
+  "sources": [
+    {
+      "name": "BadWAM",
+      "url": "https://github.com/LiQiiiii/BadWAM.git",
+      "commit": "112630aa482eff43154c09e9af03339e72391d32",
+      "role": "method comparison"
+    },
+    {
+      "name": "DreamWAM",
+      "url": "https://github.com/hustvl/DreamWAM.git",
+      "commit": "6e989facc0c452fd3488d75f60bc36411005558c",
+      "role": "structured-future supervision reference"
+    },
+    {
+      "name": "FastWAM",
+      "url": "https://github.com/yuantianyuan01/FastWAM.git",
+      "commit": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "role": "primary local WAM baseline"
+    },
+    {
+      "name": "ImageWAM",
+      "url": "https://github.com/yuyangalin/ImageWAM.git",
+      "commit": "5d4a341ed20a95cdb08f0293f3d44778b9a9e05a",
+      "role": "image-conditioned WAM comparison"
+    },
+    {
+      "name": "MiniWorld",
+      "url": "https://github.com/zhao-yian/MiniWorld.git",
+      "commit": "e484206bbd4360ae56ed8abad51c83f2457ac092",
+      "role": "streaming action-conditioned world-model comparison"
+    },
+    {
+      "name": "Motubrain",
+      "url": "https://github.com/shengshu-ai/Motubrain.git",
+      "commit": "a845f4b93f430c578398bc65b1614b79f17088cd",
+      "role": "video-action model comparison"
+    },
+    {
+      "name": "RAFT",
+      "url": "https://github.com/princeton-vl/RAFT.git",
+      "commit": "2888e15a51fa41140771d3f498ed8023cff098d1",
+      "role": "optical-flow target generation"
+    },
+    {
+      "name": "Cosmos-Policy",
+      "url": "https://github.com/NVlabs/cosmos-policy.git",
+      "commit": "18a2accadf4e7a3531e56754102af5a24d2316da",
+      "role": "large-scale world foundation model policy reference"
+    },
+    {
+      "name": "DiT4DiT",
+      "url": "https://github.com/Mondo-Robotics/DiT4DiT.git",
+      "commit": "66a6f3a12e2c8740157c1e478795952c040d31dd",
+      "role": "detached video feature plus ActionDiT controlled alternative"
+    },
+    {
+      "name": "LeRobot",
+      "url": "https://github.com/huggingface/lerobot.git",
+      "commit": "9e14584904d14eb79dc960b27bb40220f85bb993",
+      "role": "dataset and policy integration reference"
+    },
+    {
+      "name": "LingBot-VA",
+      "url": "https://github.com/Robbyant/lingbot-va.git",
+      "commit": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb",
+      "role": "trainable streaming video-action architecture reference"
+    },
+    {
+      "name": "Motus",
+      "url": "https://github.com/thu-ml/Motus.git",
+      "commit": "f771216802b8a1601599422f12088bee3c068c14",
+      "role": "multi-stage video-action mixture-of-transformers reference"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"context_id":"task_ad9355012a4d4341","dataset_root":"/home/h3wam_finetune/data/libero_fastwam_extracted/libero_goal_no_noops_lerobot","episode":8,"id":"libero_goal_ep000008_s000114","length":185,"split":"validation","start":114,"suite":"libero_goal","task":"open the middle drawer of the cabinet"}

@@ -1,0 +1,3 @@
+deb http://mirrors.aliyun.com/ubuntu/ jammy main universe
+deb http://mirrors.aliyun.com/ubuntu/ jammy-updates main universe
+deb http://mirrors.aliyun.com/ubuntu/ jammy-security main universe

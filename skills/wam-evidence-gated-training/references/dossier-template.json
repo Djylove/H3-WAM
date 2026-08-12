@@ -1,0 +1,37 @@
+{
+  "experiment_id": "replace-me",
+  "classification": "backbone_port",
+  "hypothesis": "One falsifiable sentence.",
+  "single_variable": "The only intended change from parent baseline.",
+  "parent_baseline": "checkpoint + resolved config + metrics",
+  "references": [
+    {"kind": "paper", "title": "paper", "locator": "https://arxiv.org/abs/...", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "author repository", "locator": "https://github.com/owner/repo", "revision": "fixed commit", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "local project", "locator": "/absolute/path", "revision": "commit + diff", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "backbone and docking", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["file:line"], "rationale": "pending"}],
+    "data": [{"field": "window sampling", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["audit"], "rationale": "pending"}],
+    "action": [{"field": "action contract", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["replay"], "rationale": "pending"}],
+    "objective": [{"field": "loss and gradient", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["gradient report"], "rationale": "pending"}],
+    "optimization": [{"field": "budget", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["resolved config"], "rationale": "pending"}],
+    "evaluation": [{"field": "closed-loop protocol", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["eval config"], "rationale": "pending"}]
+  },
+  "gates": {
+    "source_identity": {"status": "FAIL", "evidence": ["pending"]},
+    "architecture_contract": {"status": "FAIL", "evidence": ["pending"]},
+    "data_contract": {"status": "FAIL", "evidence": ["pending"]},
+    "action_contract": {"status": "FAIL", "evidence": ["pending"]},
+    "objective_contract": {"status": "FAIL", "evidence": ["pending"]},
+    "optimization_contract": {"status": "FAIL", "evidence": ["pending"]},
+    "evaluation_contract": {"status": "FAIL", "evidence": ["pending"]},
+    "gradient_path": {"status": "FAIL", "evidence": ["pending"]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["pending"]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["pending"]},
+    "parent_baseline": {"status": "FAIL", "evidence": ["pending"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["pending"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["pending"]}
+  },
+  "budget": {"global_batch": 0, "optimizer_steps": 0, "training_samples": 0, "unique_windows": 0, "effective_epochs": 0.0, "gpu_count": 0, "estimated_hours": 0.0},
+  "decision": {"status": "NO_GO", "rationale": "Unresolved template; do not launch.", "launch_command": null}
+}

@@ -1,0 +1,44 @@
+{
+  "date": "2026-08-07",
+  "decision": "promote_as_two_task_regression_candidate",
+  "model": "/home/h3wam_finetune/models/MiniMax-H3",
+  "primary_action_checkpoint": "/home/h3wam_finetune/checkpoints/local_recipe/goal_task0_task5_official_multitask_taskexpert_distill100_5000_best.pt",
+  "recovery_action_checkpoint": "/home/h3wam_finetune/checkpoints/local_recipe/task5_recovery_from_taskexpert_step25_best.pt",
+  "recovery_gate_checkpoint": "/home/h3wam_finetune/checkpoints/local_recipe/task5_recovery_switch_gate64_best.pt",
+  "h3_lora_checkpoint": "/home/h3wam_finetune/checkpoints/h3_tail/lora_task5_ep508_anchor0_lr1e3_r16_blocks2_steps200/step000050",
+  "routing": {
+    "task": "push the plate to the front of the stove",
+    "gate_threshold": 0.99,
+    "max_trigger_step": 64,
+    "rerun_same_observation_on_trigger": true
+  },
+  "protocol": {
+    "suite": "libero_goal",
+    "seed": 42,
+    "trial_indices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    "max_steps": 400,
+    "replan_steps": 8,
+    "action_horizon": 8
+  },
+  "results": {
+    "frozen_baseline": {
+      "task0": "10/10",
+      "task5": "9/10",
+      "combined": "19/20"
+    },
+    "conditional_h3_lora": {
+      "task0": "10/10",
+      "task5": "10/10",
+      "combined": "20/20"
+    },
+    "repaired_episode": {
+      "task": 5,
+      "trial": 8,
+      "baseline_steps": 400,
+      "adapted_steps": 102,
+      "baseline_success": false,
+      "adapted_success": true
+    }
+  },
+  "scope": "Two-task laboratory regression candidate; not a full LIBERO benchmark claim."
+}

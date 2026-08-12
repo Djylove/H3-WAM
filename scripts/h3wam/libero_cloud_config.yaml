@@ -1,0 +1,5 @@
+assets: /mnt/h3-wam/simulator/LIBERO/libero/libero/assets
+bddl_files: /mnt/h3-wam/simulator/LIBERO/libero/libero/bddl_files
+benchmark_root: /mnt/h3-wam/simulator/LIBERO/libero/libero
+datasets: /mnt/h3-wam/simulator/LIBERO/libero/datasets
+init_states: /mnt/h3-wam/simulator/LIBERO/libero/libero/init_files

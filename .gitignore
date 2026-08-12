@@ -243,3 +243,16 @@ manifest.json
 wandb/
 onelogger.err
 onelogger.log
+
+# Local research mirrors and disposable diagnostics.  Their exact upstream
+# identities are recorded in docs/UPSTREAM_SOURCES.lock.json instead of
+# committing nested Git repositories into this repository.
+third_party/BadWAM/
+third_party/DreamWAM/
+third_party/FastWAM/
+third_party/ImageWAM/
+third_party/MiniWorld/
+third_party/Motubrain/
+third_party/RAFT/
+third_party/code_audit/
+tmp_diagnostics/
