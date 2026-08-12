@@ -1,6 +1,6 @@
 # H3-WAM 实验资产账本
 
-更新时间：2026-08-12（Asia/Shanghai）
+更新时间：2026-08-13（Asia/Shanghai）
 
 本文档保存 H3-WAM 已完成和正在运行的关键尝试，避免云资源结束后只剩模型文件而无法解释。
 历史 `M*` 名称曾被复用，因此这里增加稳定的 `E*` 编号。所有成功率均指真实 LIBERO
@@ -17,6 +17,9 @@
 - H3/ActionDiT 的 action→future-video 反向梯度链路已在真实 33B H3、8×A800 上跑通；但
   严格配对的 100-step 消融仅带来 `0.0142%` held-out action-loss 改善，低于实验噪声量级，
   因此停止 gate-only 长训，转向 LingBot-VA 的完整 block-causal 双流接口。
+- shared-H3 已证明生成 video 可学（E22 严格无泄漏 video 改善 `12.696%`），但 action
+  仅改善 `0.384%`。E24–E27 四个作者代码驱动的小型 canary 均未过动作门；主瓶颈是
+  video/action 时序合约与动作建模，而不是 GPU 数量、采样步数或简单扩大训练步数。
 
 ## 稳定实验记录
 
@@ -49,6 +52,7 @@
 | E24 | LingBot quantile normalization s100 | 与 E17 同初始化/seed/800 windows；仅将 min/max `[-1,1]` 改为 q01/q99 `[-1.5,1.5]` | val40 action `1.304397 → 1.295573`（改善 `0.676%`）；video 改善 `2.165%` | 按门控不重跑 | 比 E17 action 多改善 `0.224` 个百分点，略低于预注册 `0.25`；方向有效但单独不足以晋级 |
 | E25 | per-chunk action timestep s100 | E24 合约；每4个动作独立采样 timestep，其余固定 | val40 action `1.304397 → 1.295933`（改善 `0.649%`）；video 改善 `2.195%` | 按门控不重跑 | 低于 E24 的 `0.676%` 且未过 `0.926%` 门；噪声粒度单独不是瓶颈 |
 | E26 | LingBot noisy clean-video s100 | E24 合约；训练时以0.5概率给 clean-video stream 加高噪声 | clean val40 action `1.297608`（较初始化改善 `0.520%`）；masked action `1.299689` | 按门控不重跑 | masked action 与 E24 `1.299678` 持平且略差；未缩小训推偏移，停止该线 |
+| E27 | detached generated-video conditioning s100 | E24 合约；action 训练改为消费模型首次 forward 的 detached one-step `x0` | clean action `1.295345`（较初始化改善 `0.694%`）；masked action `1.299328` | 按门控不重跑 | masked action 较 E24 仅改善 `0.027%`，远低于预注册 `0.5%`；不晋级 causal sample/闭环 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -132,6 +136,19 @@ causal sampling 或闭环。E24 的 quantile normalization 保留为当前动作
 训练 action 直接消费 detached generated-video latent（或等价 scheduled sampling），而不是继续
 调 noise granularity、condition corruption、denoise steps 或纯训练步数。
 
+E27 已完成这一 scheduled-sampling canary。实现用解析单测锁定 H3 clean-time velocity
+约定下的 `x0 = xt + sigma * v`，37 项测试和真实 2-step 反向 smoke 通过，峰值
+`43.03 GiB`。100-step clean val40 的 action/video 为 `1.295345/0.166247`，action 较初始化
+改善 `0.694%`；masked-clean-future 为 `1.299328/0.420343`。与 E24 的 masked action
+`1.299678` 相比仅改善 `0.027%`，masked video 退化 `0.050%`。虽然方向略正且满足
+clean 保底门，但未达预注册 `0.5%` 的机制门，因此不做 causal sample 和闭环。
+
+E24–E27 已经单变量排除了 quantile 幅度、action timestep 粒度、clean-video 噪声和
+one-step scheduled sampling 这四个“小修补”作为主瓶颈。下一步不再盲目扩步数，而是先
+完成 video latent frame 与 32-step action horizon 的时序对齐审计：当前 12 个 future-video latent
+与 8 个 action chunk 采用比例映射，这是相对 LingBot 官方 frame-stride/latent-frame 关系的
+明确偏离。只有证据包锁定对齐合约且 smoke 通过后，才启动新 canary。
+
 ## 2026-08-12 活跃长线
 
 | 线路 | 节点 | 训练规模 | 最后观测进度 | 保留原因 |
@@ -193,7 +210,8 @@ steps 或 gate 数量来追逐噪声。E12 的正面价值是排除了“只补�
 
 1. 读取本账本和 `UPSTREAM_SOURCES.lock.json`，恢复固定上游 commit。
 2. 核验 M11/M13 的最新 checkpoint、日志、resolved config 与数据 manifest hash。
-3. 先完成固定闭环评测，不以离线 MSE 自动晋级。
-4. 新主线按 `H3_WAM_CODE_FIRST_AUDIT_2026-08-12.md`，实现完整 chunk-level block-causal
-   video/action 双流；不得把 E12 gate-only 版本直接扩成长训。
-5. 每个新实验只改一个变量，并在启动前记录父基线、预算、晋级门槛和停止条件。
+3. 固定 E24 作为当前动作合约；E25–E27 不再扩步数，也不重复 causal sample/闭环。
+4. 逐行对齐 LingBot 的 `latent_frame_num × frame_stride` 与本地 12 future-video latents / 32
+   actions / 8 chunks，生成可复现的 frame-action index 对照表和新 evidence dossier。
+5. 只在时序偏离被证明且修正的 2-step smoke 通过后，启动单变量 s100 canary；预注册
+   动作门后再决定是否进入无泄漏 sampling 和 LIBERO 闭环。

@@ -1,0 +1,26 @@
+{
+  "event": "h3_lingbot_shared_generated_video_s100_val40",
+  "protocol": {
+    "training_steps": 100,
+    "training_unique_windows": 800,
+    "detached_generated_video_conditioning": true,
+    "clean_and_masked_eval_samples": 40,
+    "episode_disjoint": true,
+    "fixed_noise_by_sample": true
+  },
+  "clean_val40": {
+    "quantile_initialization": {"video_mse": 0.17002603001892566, "action_mse": 1.3043972849845886},
+    "e24_quantile_s100": {"video_mse": 0.16634543389081954, "action_mse": 1.2955734133720398},
+    "generated_video_s100": {"video_mse": 0.16624720208346844, "action_mse": 1.2953446716070176},
+    "generated_video_action_improvement_vs_initialization_percent": 0.694007
+  },
+  "masked_clean_future_val40": {
+    "e24_quantile_s100": {"video_mse": 0.4201313242316246, "action_mse": 1.299678459763527},
+    "generated_video_s100": {"video_mse": 0.42034322693943976, "action_mse": 1.2993277877569198},
+    "generated_video_action_improvement_vs_e24_percent": 0.026981,
+    "generated_video_video_change_vs_e24_percent": -0.050437
+  },
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_generated_video_tail2_s100.pt",
+  "decision": "NO_GO_NEXT_GATE",
+  "rationale": "The clean-val action signal remains positive, but masked-clean-future action improves only 0.027% over E24, far below the preregistered 0.5% mechanism gate. Stop without causal sampling or rollout."
+}
