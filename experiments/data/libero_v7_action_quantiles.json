@@ -1,0 +1,24 @@
+{
+  "source": "all 277713 raw action frames from the four v7 LIBERO no-noops datasets",
+  "method": "per-dimension numpy quantile over frames",
+  "q01": [
+    -0.7071428298950195,
+    -0.8008928298950195,
+    -0.9375,
+    -0.11464285850524902,
+    -0.16285714507102966,
+    -0.22285714745521545,
+    0.0
+  ],
+  "q99": [
+    0.9375,
+    0.8732143044471741,
+    0.9375,
+    0.13178572058677673,
+    0.1907142847776413,
+    0.33964285254478455,
+    1.0
+  ],
+  "upstream_alignment": "LingBot-VA action_norm_method=quantiles; training clips normalized actions to [-1.5, 1.5]",
+  "upstream_gripper_note": "LingBot's released raw gripper support is [-1,1]; this cache stores [0,1], so q01=0/q99=1 produces the same normalized support."
+}

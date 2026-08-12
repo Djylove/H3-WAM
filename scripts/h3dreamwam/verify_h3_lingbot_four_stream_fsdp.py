@@ -50,6 +50,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--action-sample-steps", type=int, default=0)
     parser.add_argument("--eval-limit", type=int, default=0)
     parser.add_argument(
+        "--action-normalization",
+        choices=("minmax", "quantile"),
+        default="minmax",
+        help="Action normalization contract. Quantile follows LingBot-VA.",
+    )
+    parser.add_argument(
+        "--action-stats-json",
+        type=Path,
+        help="JSON containing q01/q99 arrays; required for quantile normalization.",
+    )
+    parser.add_argument(
         "--shared-backbone",
         action="store_true",
         help="Use LingBot's code-aligned shared H3 block stack instead of ActionDiT.",
@@ -76,6 +87,29 @@ def shifted_noise_sigma(uniform: torch.Tensor, shift: float) -> torch.Tensor:
     return float(shift) * uniform / (1.0 + (float(shift) - 1.0) * uniform)
 
 
+def normalize_action(
+    action: torch.Tensor,
+    *,
+    mode: str,
+    stats: dict,
+    quantile_stats: dict | None,
+) -> torch.Tensor:
+    if mode == "minmax":
+        low = stats["action_min"].float()
+        high = stats["action_max"].float()
+        clip = 1.0
+    elif mode == "quantile":
+        if quantile_stats is None:
+            raise ValueError("quantile action normalization requires action stats")
+        low = torch.as_tensor(quantile_stats["q01"], dtype=torch.float32)
+        high = torch.as_tensor(quantile_stats["q99"], dtype=torch.float32)
+        clip = 1.5
+    else:
+        raise ValueError(f"unsupported action normalization: {mode}")
+    scale = (high - low).clamp_min(1e-6)
+    return ((action.float() - low) / scale * 2.0 - 1.0).clamp(-clip, clip)
+
+
 def prepare_real_batch(
     *,
     args: argparse.Namespace,
@@ -85,6 +119,7 @@ def prepare_real_batch(
     generator: torch.Generator,
     model_root: torch.nn.Module,
     stats: dict,
+    quantile_stats: dict | None,
     patchify_video_latents,
     layout_builder,
     align_chunk_ids,
@@ -158,13 +193,12 @@ def prepare_real_batch(
     noisy_video = torch.cat((first_rows, noisy_future), dim=1)
     initial_video = torch.cat((first_rows, video_noise[:, condition_rows:]), dim=1)
 
-    clean_action = window["actions"][: args.action_horizon].float()
-    action_scale = (
-        stats["action_max"].float() - stats["action_min"].float()
-    ).clamp_min(1e-6)
-    clean_action = (
-        (clean_action - stats["action_min"].float()) / action_scale * 2.0 - 1.0
-    ).clamp(-1.0, 1.0)[None].to(device)
+    clean_action = normalize_action(
+        window["actions"][: args.action_horizon],
+        mode=args.action_normalization,
+        stats=stats,
+        quantile_stats=quantile_stats,
+    )[None].to(device)
     action_noise = torch.randn(
         clean_action.shape, generator=sample_generator, device=device
     )
@@ -401,6 +435,12 @@ def main() -> None:
             raise ValueError("four-stream stage checkpoint format mismatch")
         if payload.get("last_trainable_layers") != args.last_trainable_layers:
             raise ValueError("four-stream stage layer count mismatch")
+        checkpoint_normalization = payload.get("action_normalization", "minmax")
+        if checkpoint_normalization != args.action_normalization:
+            raise ValueError(
+                "stage action normalization mismatch: "
+                f"{checkpoint_normalization} != {args.action_normalization}"
+            )
         for index_text, layer_state in payload["layers"].items():
             layer = (
                 model.module.shared_layers[int(index_text)]
@@ -442,6 +482,7 @@ def main() -> None:
     sample_id = "synthetic"
     rows = []
     stats = None
+    quantile_stats = None
     if args.data_root is None:
         video_tokens = args.video_frames * args.tokens_per_frame
         input_width = model.module.h3.proj_in.in_features
@@ -510,6 +551,18 @@ def main() -> None:
             map_location="cpu",
             weights_only=False,
         )
+        if args.action_normalization == "quantile":
+            if args.action_stats_json is None:
+                raise ValueError(
+                    "--action-stats-json is required with quantile normalization"
+                )
+            quantile_stats = json.loads(
+                args.action_stats_json.resolve().read_text()
+            )
+            if len(quantile_stats.get("q01", [])) != 7 or len(
+                quantile_stats.get("q99", [])
+            ) != 7:
+                raise ValueError("action q01/q99 must each contain seven values")
         batch = prepare_real_batch(
             args=args,
             row=rows[(args.sample_offset * world_size + rank) % len(rows)],
@@ -518,6 +571,7 @@ def main() -> None:
             generator=generator,
             model_root=model.module,
             stats=stats,
+            quantile_stats=quantile_stats,
             patchify_video_latents=patchify_video_latents,
             layout_builder=MiniMaxH3PrepareLayoutStep,
             align_chunk_ids=align_h3_action_chunk_ids,
@@ -572,6 +626,7 @@ def main() -> None:
                 generator=generator,
                 model_root=model.module,
                 stats=stats,
+                quantile_stats=quantile_stats,
                 patchify_video_latents=patchify_video_latents,
                 layout_builder=MiniMaxH3PrepareLayoutStep,
                 align_chunk_ids=align_h3_action_chunk_ids,
@@ -822,6 +877,8 @@ def main() -> None:
             ),
             "last_trainable_layers": args.last_trainable_layers,
             "warmup_steps": args.warmup_steps,
+            "action_normalization": args.action_normalization,
+            "action_quantile_stats": quantile_stats,
             "layers": {},
         }
         for index in range(50 - args.last_trainable_layers, 50):
@@ -870,6 +927,12 @@ def main() -> None:
             "loaded_stage": None if args.load_stage is None else str(args.load_stage),
             "saved_stage": None if args.save_stage is None else str(args.save_stage),
             "action_horizon": args.action_horizon,
+            "action_normalization": args.action_normalization,
+            "action_stats_json": (
+                None
+                if args.action_stats_json is None
+                else str(args.action_stats_json.resolve())
+            ),
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],

@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_quantile_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "LingBot-aligned q01/q99 action normalization increases the paired s100 held-out action improvement by at least 0.25 percentage points over the min/max s100 arm while preserving positive video improvement.",
+  "single_variable": "Replace per-dimension global min/max action normalization clipped to [-1,1] with q01/q99 normalization clipped to [-1.5,1.5]. Initialization, seed, first 800 dense windows, architecture, optimizer and noise schedules remain fixed.",
+  "parent_baseline": "E17 min/max s100: paired val40 action improvement 0.453% and video improvement 2.166% from its own initialization.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy quantile normalization canary", "locator": "/home/ubuntu/fastwam_deploy", "revision": "836635f plus working tree", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared four-stream backbone", "paper": "shared causal video/action world model", "upstream_code": "four streams traverse shared Wan blocks", "local": "four streams traverse shared H3 blocks; tail-2 trainable", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "H3 port remains fixed across paired arms."}],
+    "data": [{"field": "action statistics and windows", "paper": "multi-task LIBERO demonstrations", "upstream_code": "q01/q99 action statistics", "local": "q01/q99 computed once over all 277713 raw action frames; train uses the same first 800 windows as E17", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json", "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"], "rationale": "All suites contribute once per raw frame; overlapping windows do not bias statistics."}],
+    "action": [{"field": "normalization", "paper": "normalized robot actions", "upstream_code": "(a-q01)/(q99-q01)*2-1, clip [-1.5,1.5] in dataset", "local": "same formula and clipping on seven active LIBERO channels", "status": "EXACT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/dataset/lerobot_latent_dataset.py:279", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "The local raw gripper is [0,1] rather than upstream [-1,1], but each maps exactly to normalized [-1,1] under its own quantiles."}],
+    "objective": [{"field": "joint loss", "paper": "video/action flow matching", "upstream_code": "latent_loss + action_loss", "local": "video velocity MSE + action velocity MSE", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/train.py:310", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "No invented action-loss multiplier is introduced."}],
+    "optimization": [{"field": "bounded paired canary", "paper": "post-training", "upstream_code": "5000 steps", "local": "100 steps, global batch8, lr1e-6, warmup10", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "A cheap mechanism gate precedes any long training."}],
+    "evaluation": [{"field": "paired promotion", "paper": "LIBERO closed-loop", "upstream_code": "closed-loop benchmark", "local": "same-noise val40 in each normalization space; causal sample40 only after teacher-forced gate", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "Percentage improvement from each arm's own initialization is comparable despite different units."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed official commit"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["E16-E23"]},
+    "data_contract": {"status": "PASS", "evidence": ["1712 episodes, 277713 raw frames, explicit quantile artifact"]},
+    "action_contract": {"status": "PASS", "evidence": ["upstream-exact normalization formula"]},
+    "objective_contract": {"status": "PASS", "evidence": ["upstream and local both sum video and action losses"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["same E17 budget"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered paired relative threshold"]},
+    "gradient_path": {"status": "PASS", "evidence": ["E16-E22 stable gradients"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["normalization finite; maximum quantile clip fraction 0.37%"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["checkpoint stores and validates normalization identity"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E17"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["quantile normalization expands rotational action std by 1.31-2.12x"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["E21 0/1"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.2},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "First measure quantile initialization val40, then train s100 and repeat val40. Continue to causal sample40 only if action improvement is at least 0.703% (E17 plus 0.25 percentage points) and video remains positive. Otherwise stop this route without rollout.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-6"
+  }
+}
