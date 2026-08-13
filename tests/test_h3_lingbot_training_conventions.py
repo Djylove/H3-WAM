@@ -10,6 +10,7 @@ from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import (
     prepend_initial_action_history,
     video_clean_from_velocity,
     weighted_video_action_losses,
+    shifted_noise_sigma,
 )
 
 
@@ -48,6 +49,33 @@ class H3LingBotTrainingConventionsTest(unittest.TestCase):
             args = parse_args()
         self.assertEqual(args.learning_rate, 1.0e-5)
         self.assertEqual(args.weight_decay, 0.1)
+
+    def test_action_train_and_infer_shifts_are_independent(self) -> None:
+        from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import parse_args
+
+        with patch(
+            "sys.argv",
+            [
+                "verify",
+                "--model", "/tmp/model",
+                "--output", "/tmp/out.json",
+                "--action-train-shift", "5.0",
+                "--action-infer-shift", "1.0",
+            ],
+        ):
+            args = parse_args()
+        self.assertEqual(args.action_train_shift, 5.0)
+        self.assertEqual(args.action_infer_shift, 1.0)
+
+    def test_action_shift_controls_high_noise_training_coverage(self) -> None:
+        raw = torch.linspace(0.0, 1.0, 10001)[:-1]
+        low = shifted_noise_sigma(raw, 0.05)
+        neutral = shifted_noise_sigma(raw, 1.0)
+        high = shifted_noise_sigma(raw, 5.0)
+        self.assertLess(float(low.mean()), float(neutral.mean()))
+        self.assertLess(float(neutral.mean()), float(high.mean()))
+        self.assertLess(float((low > 0.5).float().mean()), 0.06)
+        self.assertGreater(float((high > 0.5).float().mean()), 0.8)
 
     def test_long_run_checkpoint_contract_is_explicit(self) -> None:
         from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import parse_args
@@ -122,12 +150,13 @@ class H3LingBotTrainingConventionsTest(unittest.TestCase):
             action_target=action_target,
             action_time=action_time,
             action_timestep_indices=action_indices,
+            action_shift=5.0,
         )
         video_weights = flow_match_training_weight(
             1.0 - video_times[1:], shift=12.0
         )
         action_weights = flow_match_training_weight(
-            1.0 - action_time, shift=0.05
+            1.0 - action_time, shift=5.0
         )
         torch.testing.assert_close(
             video_loss, (torch.tensor([4.0, 16.0]) * video_weights).mean()

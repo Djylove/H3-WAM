@@ -303,3 +303,25 @@ tail-2 在累计 step2500 首次得到明确的无泄漏因果动作改善：vid
 tail-2/tail-4 ladder 完成后自动消费全部里程碑，运行 val40 与无泄漏 causal sample40。因为 s2500
 尚无闭环 success，这条线是用户授权保留的 legacy scale probe，当前仍为 `NO_GO_LONG`；任何里程碑
 都必须通过固定 LIBERO success predicate 才能晋级。
+
+## 2026-08-13 动作训练噪声支持三臂消融
+
+在 tail-2 长训继续运行的同时，上游代码审计发现当前 shared-H3 配方直接继承了 LingBot
+LIBERO 的 `action_snr_shift=0.05`。该分布平均噪声 sigma 约 `0.113`，仅约 `4.76%` 的训练
+样本满足 `sigma>0.5`，而因果动作生成从纯噪声 `sigma=1` 开始。作为对照，LingBot 的
+demo/Robotwin/Franka 配置使用 shift `1.0`，FastWAM 与 DreamWAM 使用 shift `5.0`；后两者
+对应的 `sigma>0.5` 覆盖约为 `50%/83.33%`。
+
+为避免把训练支持与采样器同时改变，新增 `action_train_shift` 和 `action_infer_shift` 两个独立
+合约，并保持所有主评测 `action_infer_shift=0.05`。E30 已提供 shift `0.05` 的配对父基线；
+在 `32611/32409` 并行启动 shift `5/1` 两条 s100 canary。两条实验都使用相同 H3 初始化、
+seed `2026`、前800个训练 window、global batch8、LR `1e-5`、WD `0.01`、warmup10、tail-2、
+quantile 动作归一化和 weighted flow objective，唯一训练变量是 scheduler shift。
+
+主门要求因果 action MSE 不高于 `1.282267`（比 E30 `1.295219` 再改善1%）、因果 video MSE
+不高于 `0.627947`，raw action MSE 低于 `1.304397`，raw video MSE 不高于 `0.146192`。
+三臂先统一 video/action 4步以严格复用 E30；随后固定 video4、仅把 action solver 提至 LingBot
+LIBERO 官方50步，作为独立采样敏感性复核。需要注意 `action_train_shift` 同时改变噪声采样与
+官方 loss weighting，因此本轮只能归因于“训练 scheduler”，不能单凭结果宣称高噪声覆盖就是
+唯一机制。预注册 dossier：
+`experiments/evidence/h3_lingbot_action_shift{1,5}_s100_v1.json`。

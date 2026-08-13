@@ -34,6 +34,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--actions-per-chunk", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=1.0e-6)
     parser.add_argument("--weight-decay", type=float, default=1.0e-2)
+    parser.add_argument(
+        "--action-train-shift",
+        type=float,
+        default=0.05,
+        help=(
+            "FlowMatch shift for sampling action training noise and weighting "
+            "its loss. LingBot LIBERO uses 0.05; other released WAM recipes "
+            "use 1.0 or 5.0."
+        ),
+    )
+    parser.add_argument(
+        "--action-infer-shift",
+        type=float,
+        default=0.05,
+        help=(
+            "FlowMatch shift for the action sampling schedule. Kept separate "
+            "from action-train-shift so training-support and solver effects "
+            "can be evaluated independently."
+        ),
+    )
     parser.add_argument("--warmup-steps", type=int, default=0)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--save-stage", type=Path)
@@ -177,6 +197,7 @@ def weighted_video_action_losses(
     action_target: torch.Tensor,
     action_time: torch.Tensor,
     action_timestep_indices: torch.Tensor,
+    action_shift: float = 0.05,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Frame/token-wise official flow weighting for the two training losses."""
 
@@ -196,7 +217,7 @@ def weighted_video_action_losses(
     ).mean(dim=-1)
     action_clean_time = action_time.index_select(0, action_timestep_indices)
     action_weight = flow_match_training_weight(
-        1.0 - action_clean_time, shift=0.05
+        1.0 - action_clean_time, shift=action_shift
     )
     return (
         (video_per_row * video_weight[None]).mean(),
@@ -348,7 +369,9 @@ def prepare_real_batch(
             device=device,
         )
         video_noise_sigma = shifted_noise_sigma(video_uniform, 12.0)
-        action_noise_sigma = shifted_noise_sigma(action_uniform, 0.05)
+        action_noise_sigma = shifted_noise_sigma(
+            action_uniform, args.action_train_shift
+        )
         if args.per_chunk_action_timesteps:
             action_timestep_indices = torch.div(
                 torch.arange(args.action_horizon, device=device),
@@ -512,6 +535,8 @@ def main() -> None:
         raise ValueError("noisy-clean-video-prob must be in [0,1]")
     if args.weight_decay < 0.0:
         raise ValueError("weight-decay must be non-negative")
+    if args.action_train_shift <= 0.0 or args.action_infer_shift <= 0.0:
+        raise ValueError("action train/infer shifts must be positive")
     if args.checkpoint_every < 0 or args.base_completed_steps < 0:
         raise ValueError("checkpoint cadence and base completed steps must be non-negative")
     if args.checkpoint_every and args.save_stage is None:
@@ -735,6 +760,19 @@ def main() -> None:
                 f"{checkpoint_loss_weighting} != "
                 f"{args.flow_match_loss_weighting}"
             )
+        checkpoint_action_train_shift = payload.get(
+            "action_train_shift", 0.05
+        )
+        if not math.isclose(
+            float(checkpoint_action_train_shift),
+            args.action_train_shift,
+            rel_tol=0.0,
+            abs_tol=1.0e-12,
+        ):
+            raise ValueError(
+                "stage action training-shift contract mismatch: "
+                f"{checkpoint_action_train_shift} != {args.action_train_shift}"
+            )
         checkpoint_weight_decay = payload.get("weight_decay", 1.0e-2)
         if checkpoint_weight_decay != args.weight_decay:
             raise ValueError(
@@ -920,6 +958,7 @@ def main() -> None:
             ),
             "h3_physical_time_alignment": args.h3_physical_time_alignment,
             "flow_match_loss_weighting": args.flow_match_loss_weighting,
+            "action_train_shift": args.action_train_shift,
             "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
             "weight_decay": args.weight_decay,
             "completed_steps": int(completed_steps),
@@ -1122,7 +1161,7 @@ def main() -> None:
                 args.action_sample_steps or args.sample_steps,
                 device=device,
                 video_shift=12.0,
-                action_shift=0.05,
+                action_shift=args.action_infer_shift,
             )
 
             def predict_velocity(
@@ -1203,6 +1242,7 @@ def main() -> None:
                     action_target=action_target,
                     action_time=action_time,
                     action_timestep_indices=action_timestep_indices,
+                    action_shift=args.action_train_shift,
                 )
             else:
                 video_loss = F.mse_loss(
@@ -1351,6 +1391,8 @@ def main() -> None:
             ),
             "h3_physical_time_alignment": args.h3_physical_time_alignment,
             "flow_match_loss_weighting": args.flow_match_loss_weighting,
+            "action_train_shift": args.action_train_shift,
+            "action_infer_shift": args.action_infer_shift,
             "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
             "weight_decay": args.weight_decay,
             "base_completed_steps": args.base_completed_steps,
