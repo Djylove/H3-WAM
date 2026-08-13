@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_tail4_scale_s2500_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "At the same 2500-step/global-batch-8 budget, training four H3 tail layers instead of two improves causal action MSE and first-contact behavior, showing that insufficient H3 adaptation depth—not only insufficient steps—limits the shared-H3 policy.",
+  "single_variable": "Increase last_trainable_layers from 2 to 4; all data, initialization family, objective, LR, weight decay, normalization, horizon and optimizer-step budget remain fixed.",
+  "parent_baseline": "Shared-H3 tail-2 cumulative 2500-step run h3_lingbot_shared_scale_s2500_v1, initialized from the same MiniMax-H3 release and action adapters.",
+  "references": [
+    {"kind": "paper", "title": "LingBot-VA: Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "arXiv:2601.21998", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "LingBot-VA training implementation", "locator": "third_party/code_audit/lingbot-va/wan_va/train.py", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "Shared-H3 four-stream trainer", "locator": "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "revision": "5344504", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "H3 trainable depth", "paper": "shared backbone post-training", "upstream_code": "shared Wan backbone trainable", "local": "tail-4 instead of tail-2", "status": "INTENTIONAL_DEVIATION", "evidence": ["--last-trainable-layers 4"], "rationale": "A single controlled capacity variable tests whether tail-2 under-adapts H3."}],
+    "data": [{"field": "dense LIBERO windows", "paper": "robot demonstrations", "upstream_code": "dense latent segments", "local": "first 20000 unique v7 windows", "status": "EQUIVALENT", "evidence": ["manifest_train_uniform.jsonl; steps2500*8"], "rationale": "Same rows and order as tail-2 learning curve."}],
+    "action": [{"field": "action contract", "paper": "chunked robot action", "upstream_code": "quantile normalized action", "local": "q01/q99 horizon32", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json"], "rationale": "Unchanged from tail-2."}],
+    "objective": [{"field": "flow objective", "paper": "causal video/action diffusion", "upstream_code": "weighted flow matching", "local": "same weighted video/action loss", "status": "EQUIVALENT", "evidence": ["--flow-match-loss-weighting"], "rationale": "Unchanged from tail-2."}],
+    "optimization": [{"field": "budget", "paper": "5000-step post-training", "upstream_code": "LR1e-5", "local": "2500 steps, global batch8, LR1e-5", "status": "INTENTIONAL_DEVIATION", "evidence": ["launch command"], "rationale": "Same bounded budget as tail-2; smaller than upstream sample budget."}],
+    "evaluation": [{"field": "paired promotion", "paper": "LIBERO success", "upstream_code": "closed-loop success", "local": "step500 milestones, val40, causal sample40, fixed task3", "status": "INTENTIONAL_DEVIATION", "evidence": ["checkpoint_every=500"], "rationale": "Fixed paired protocol selects capacity without endpoint-only bias."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed upstream commit"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["tail-4 implementation already passed FSDP full-model smoke in earlier local experiments"]},
+    "data_contract": {"status": "PASS", "evidence": ["audited v7 dense manifest"]},
+    "action_contract": {"status": "PASS", "evidence": ["fixed quantile stats and horizon32"]},
+    "objective_contract": {"status": "PASS", "evidence": ["same E30 objective"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["same budget and optimizer settings as tail-2"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["same val/sample/rollout protocol"]},
+    "gradient_path": {"status": "PASS", "evidence": ["full50 and tail-layer local gradient smokes finite"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["shared-H3 real-layer FSDP path completed"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["shared-H3 save/restore tests pass"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["tail-2 run active with fixed milestones"]},
+    "mechanism_signal": {"status": "PENDING", "evidence": ["tail-4 causal evaluation pending"]},
+    "closed_loop_canary": {"status": "PENDING", "evidence": ["tail-4 rollout pending"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 2500, "training_samples": 20000, "unique_windows": 200779, "effective_epochs": 0.099612, "gpu_count": 8, "estimated_hours": 3.3},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "All canary contracts are fixed and the only variable is trainable H3 depth. Preserve every 500-step milestone; do not claim GO_LONG until causal and closed-loop gates pass.",
+    "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail4_s2500.pt --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail4_s2500_train.json --steps 2500 --base-completed-steps 0 --checkpoint-every 500 --sample-offset 0 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 4 --action-horizon 32 --learning-rate 1e-5 --weight-decay 0.01"
+  }
+}

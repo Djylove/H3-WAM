@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3dotwam_frameindexed_epoch2_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "The M11 frame-indexed action policy is undertrained: a second full pass over the same 277713-window population lowers held-out action loss below final2170 and converts its demonstrated object motion into at least one success in the fixed ten-trial task3 rollout.",
+  "single_variable": "Continue M11 action-head/KV-fusion training for one additional frame-indexed epoch; keep H3 frozen, data, action contract, optimizer LR, loss, sampler and rollout protocol fixed.",
+  "parent_baseline": "M11 final2170: one frame-indexed epoch, global batch128, val/rollout artifacts fixed; task3 closed loop 0/10 despite nonzero interaction.",
+  "references": [
+    {"kind": "paper", "title": "Fast-WAM: Do World Action Models Need Test-time Future Imagination?", "locator": "https://arxiv.org/abs/2603.16666", "revision": "arXiv:2603.16666", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "FastWAM official implementation", "locator": "https://github.com/yuantianyuan01/FastWAM", "revision": "local origin snapshot 5344504", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 DoT frame-indexed trainer", "locator": "scripts/h3dreamwam/train_h3dotwam_fsdp.py", "revision": "5344504", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "frozen H3 plus DoT action carrier", "paper": "Wan2.2 video hub plus ActionDiT", "upstream_code": "DoT action path", "local": "H3 hub frozen plus 1-layer action carrier/KV fusion", "status": "INTENTIONAL_DEVIATION", "evidence": ["M11 checkpoint metadata; --last-h3-blocks 0"], "rationale": "Backbone port and shallow carrier remain fixed within the continuation."}],
+    "data": [{"field": "frame-indexed sampling", "paper": "dense per-frame windows", "upstream_code": "dense LeRobot indexing", "local": "277713 frame_indexed_padded windows", "status": "EQUIVALENT", "evidence": ["v8 candidate_report.json and manifest"], "rationale": "Second pass starts at sample_offset 277713 and wraps deterministically."}],
+    "action": [{"field": "horizon and normalization", "paper": "32-step action chunks", "upstream_code": "dataset stats normalization", "local": "horizon32 and fixed M11 stats", "status": "EQUIVALENT", "evidence": ["M11 checkpoint and eval script"], "rationale": "No action contract changes."}],
+    "objective": [{"field": "action/video flow", "paper": "joint world/action training", "upstream_code": "action flow with world representation", "local": "H3 frozen; action and video forward loss unchanged", "status": "INTENTIONAL_DEVIATION", "evidence": ["train_h3dotwam_fsdp.py"], "rationale": "This isolates additional action-side optimization rather than claiming full joint reproduction."}],
+    "optimization": [{"field": "second epoch", "paper": "multi-epoch training", "upstream_code": "10 LIBERO epochs", "local": "one additional epoch, global batch128, LR1e-4 cosine restart", "status": "INTENTIONAL_DEVIATION", "evidence": ["launch command"], "rationale": "A bounded second epoch tests undertraining before committing to 10 epochs; optimizer state is not available and the LR schedule restarts."}],
+    "evaluation": [{"field": "fixed LIBERO gate", "paper": "full benchmark success", "upstream_code": "LIBERO rollouts", "local": "episode-disjoint val40 then goal task3 trials0-9", "status": "INTENTIONAL_DEVIATION", "evidence": ["eval_h3dotwam_frameindexed_checkpoint.sh"], "rationale": "Same parent protocol provides a controlled early gate."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["official repo and fixed local implementation"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["M11 completed and restored"]},
+    "data_contract": {"status": "PASS", "evidence": ["277713-window audited frame-indexed manifest"]},
+    "action_contract": {"status": "PASS", "evidence": ["M11 fixed action normalization and expert rollout"]},
+    "objective_contract": {"status": "PASS", "evidence": ["same M11 code and weights"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit restart deviation, sample offset, batch and steps"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["same val40 and task3 ten trials"]},
+    "gradient_path": {"status": "PASS", "evidence": ["M11 finite action/KV gradients through 2170 steps"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["M11 first epoch complete"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["M11 final2170 served and evaluated"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["final2170 val and 0/10 rollout"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["M11 step1600 held-out action improved 28.31% versus early checkpoint"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["final2170 task3 0/10"]}
+  },
+  "budget": {"global_batch": 128, "optimizer_steps": 2170, "training_samples": 277760, "unique_windows": 277713, "effective_epochs": 1.000169, "gpu_count": 8, "estimated_hours": 16.2},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The user explicitly prioritizes more training and the first-epoch learning curve has not saturated offline. Run one additional epoch with 200-step checkpoints; promotion still requires fixed closed-loop success.",
+    "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/train_h3dotwam_fsdp.py --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v8_frameindexed_h3_cache --manifest /mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl --output /mnt/h3-wam/outputs/h3dotwam-frameindexed/m36_frameindexed_head_epoch2_s2170.json --load-stage /mnt/h3-wam/outputs/h3dotwam-frameindexed/m11_frameindexed_head_gb128_s2170.pt --save-stage /mnt/h3-wam/outputs/h3dotwam-frameindexed/m36_frameindexed_head_epoch2_s2170.pt --checkpoint-every 200 --steps 2170 --gradient-accumulation-steps 16 --sample-offset 277713 --action-horizon 32 --learning-rate 1e-4 --h3-learning-rate 1e-6 --last-h3-blocks 0 --video-loss-weight 1.0 --language-ranking-weight 0 --lr-schedule cosine --require-text-only-context --log-every 1"
+  }
+}

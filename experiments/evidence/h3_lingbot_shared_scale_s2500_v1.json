@@ -1,0 +1,53 @@
+{
+  "experiment_id": "h3_lingbot_shared_scale_s2500_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "If the shared-H3 branch is primarily undertrained, extending the fixed E30 recipe from cumulative step 500 to 2500 will recover causal action generation while retaining the large video and teacher-forced action gains seen at step 500.",
+  "single_variable": "Increase cumulative optimizer steps from 500 to 2500; keep checkpoint, architecture, trainable tail, data order, LR, weight decay, normalization, objective and action horizon fixed.",
+  "parent_baseline": "Cumulative step500: teacher-forced video/action MSE 0.117352/1.167875; causal sample40 video/action MSE 0.419902/1.313663; cumulative 4000 windows (0.019922 epochs).",
+  "references": [
+    {"kind": "paper", "title": "LingBot-VA: Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "arXiv:2601.21998", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "LingBot-VA LIBERO training config", "locator": "third_party/code_audit/lingbot-va/wan_va/configs/va_libero_train_cfg.py", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "Shared-H3 four-stream trainer", "locator": "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "revision": "5344504", "official": false, "clean": true},
+    {"kind": "local_result", "title": "E30 cumulative step500", "locator": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s500.pt", "revision": "5344504", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared H3 tail-2", "paper": "shared causal WAM", "upstream_code": "shared Wan blocks", "local": "unchanged H3 backbone port", "status": "INTENTIONAL_DEVIATION", "evidence": ["step500 checkpoint"], "rationale": "Backbone replacement is fixed within this scale probe."}],
+    "data": [{"field": "dense windows", "paper": "LIBERO demonstrations", "upstream_code": "dense post-training", "local": "next 16000 unique windows after the first 4000", "status": "EQUIVALENT", "evidence": ["sample_offset=500; world_size=8; steps=2000"], "rationale": "No training window is intentionally replayed before the manifest wraps."}],
+    "action": [{"field": "action contract", "paper": "chunked action flow", "upstream_code": "quantile normalization", "local": "fixed q01/q99 horizon32", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json"], "rationale": "Unchanged from step500."}],
+    "objective": [{"field": "flow matching", "paper": "video/action flow", "upstream_code": "flow-weighted objective", "local": "fixed E30 weighting", "status": "EQUIVALENT", "evidence": ["--flow-match-loss-weighting"], "rationale": "Unchanged from step500."}],
+    "optimization": [{"field": "scale budget", "paper": "long post-training", "upstream_code": "5000 steps with effective global batch 80", "local": "2500 cumulative steps with global batch 8", "status": "INTENTIONAL_DEVIATION", "evidence": ["launch command"], "rationale": "This is a bounded local learning-curve probe, not an upstream-budget reproduction; optimizer moments are not restored by the tail-stage format."}],
+    "evaluation": [{"field": "checkpoint ladder", "paper": "LIBERO success rate", "upstream_code": "closed-loop benchmark", "local": "save 1000/1500/2000/2500; paired causal sample40 and fixed closed-loop consume milestones", "status": "INTENTIONAL_DEVIATION", "evidence": ["checkpoint_every=500"], "rationale": "Milestones expose whether causal action recovers before endpoint selection."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed upstream commit"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["step500 restore"]},
+    "data_contract": {"status": "PASS", "evidence": ["dense manifest and explicit offset"]},
+    "action_contract": {"status": "PASS", "evidence": ["fixed quantile stats"]},
+    "objective_contract": {"status": "PASS", "evidence": ["fixed weighted flow objective"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit sample budget and checkpoint cadence"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["fixed paired evaluation"]},
+    "gradient_path": {"status": "PASS", "evidence": ["finite step500 H3/action gradients"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["step500 completed"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["step500 val40/sample40 restore"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["step100 and step500 paired metrics"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["causal action MSE regressed from 1.295219 at step100 to 1.313663 at step500"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["step100 fixed rollout 0/1 without object contact; step500 pending"]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 2000,
+    "cumulative_optimizer_steps": 2500,
+    "training_samples": 16000,
+    "cumulative_training_samples": 20000,
+    "unique_windows": 200779,
+    "effective_epochs": 0.079689,
+    "cumulative_effective_epochs": 0.099612,
+    "gpu_count": 8,
+    "estimated_hours": 2.6
+  },
+  "decision": {
+    "status": "NO_GO_LONG",
+    "rationale": "The evidence gate does not authorize an effectiveness claim because causal action and closed-loop gates are not yet positive. The user explicitly requested a rapid step-scale experiment, so this runs as a preserved legacy scaling probe with milestone checkpoints, not as a promoted mainline result.",
+    "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --load-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s500.pt --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s2500.pt --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s2500_train.json --steps 2000 --base-completed-steps 500 --checkpoint-every 500 --sample-offset 500 --rotate-windows --random-timesteps --warmup-steps 0 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5 --weight-decay 0.01"
+  }
+}
