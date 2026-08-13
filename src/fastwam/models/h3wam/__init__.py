@@ -19,6 +19,7 @@ from .lora import (
 )
 from .inference import H3WAMSample, sample_h3wam_actions
 from .deployment import (
+    action_denormalization_bounds,
     ActionEnsembler,
     libero_dataset_action,
     libero_environment_actions,
@@ -63,6 +64,7 @@ from .official_joint import (
 )
 __all__ = [
     "ActionEnsembler",
+    "action_denormalization_bounds",
     "H3ActionAdapter",
     "H3ActionBridge",
     "H3ActionBridgeOutput",

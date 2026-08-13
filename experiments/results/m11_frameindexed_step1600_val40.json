@@ -12,8 +12,11 @@
   "relative_improvement_vs_step200_percent": 28.309407,
   "closed_loop": {
     "step200_task3_trials": "0/10",
-    "step1600": "pending final watcher after step2170"
+    "step1600_task3_trials": "0/10",
+    "step1600_max_object_joint_delta": 0.48964749643909944,
+    "step1600_mean_roundtrip_seconds_range": [0.4612628974660765, 0.4967970557510853],
+    "artifact": "/mnt/h3-wam/outputs/eval-frameindexed-dot/m11/step1600_gate/complete.json"
   },
   "decision": "KEEP_RUNNING_TO_PREREGISTERED_ENDPOINT",
-  "rationale": "The long-run offline curve remains positive, but no later closed-loop success has been established. Preserve the pre-registered endpoint and evaluate checkpoints without equating MSE with policy success."
+  "rationale": "Step1600 improves val40 action MSE by 28.31% over step200 but remains 0/10 on the same task3 closed-loop gate. Unlike the step200 no-contact behavior, several trials move bowls or plates substantially (maximum object joint delta 0.48965), so control has improved without completing the task. Preserve the pre-registered endpoint and do not equate either MSE or object contact with task success."
 }

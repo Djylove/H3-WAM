@@ -30,12 +30,12 @@
     "checkpoint_restore": {"status": "PASS", "evidence": ["stage restored in a fresh process; raw val8 video/action 0.170403/1.245824"]},
     "parent_baseline": {"status": "PASS", "evidence": ["E29 paired val40"]},
     "mechanism_signal": {"status": "PASS", "evidence": ["lr1e-5 smoke is finite with non-zero H3 and action gradients"]},
-    "closed_loop_canary": {"status": "PENDING", "evidence": []}
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["E30 fixed task3/trial0: 0/1, maximum object joint delta 8.08e-17"]}
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Real 2-step finite/gradient and fresh-process restore gates pass at lr1e-5. Run the bounded s100 canary; promote beyond raw val40 only if action improvement reaches 0.926% and video remains better than initialization.",
+    "status": "NO_GO",
+    "rationale": "The canary passed its raw gate (video/action improved 18.112%/3.067%) and its paired no-leak sample40 gate (14.020%/0.900%), but the fixed task3 rollout was 0/1 with no object contact. Keep the official learning rate, flow weighting and quantile deployment contract, but do not scale this branch before aligning the upstream initial action-history anchor.",
     "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5"
   }
 }

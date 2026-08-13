@@ -1,0 +1,47 @@
+{
+  "event": "h3_lingbot_shared_official_lr_s100",
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s100.pt",
+  "training": {
+    "optimizer_steps": 100,
+    "global_batch": 8,
+    "unique_windows": 800,
+    "learning_rate": 1e-05,
+    "elapsed_seconds": 480.52,
+    "peak_reserved_gib": 42.0234,
+    "mean_weighted_video_loss": 0.1787741765,
+    "mean_weighted_action_loss": 1.2418025402
+  },
+  "teacher_forced_val40": {
+    "initial_video_mse": 0.17002603001892566,
+    "trained_video_mse": 0.139230271615088,
+    "video_improvement_percent": 18.112378675,
+    "initial_action_mse": 1.3043972849845886,
+    "trained_action_mse": 1.2643931165337563,
+    "action_improvement_percent": 3.066869957
+  },
+  "causal_sample40": {
+    "sample_steps": 4,
+    "initial_video_mse": 0.6955631747841835,
+    "trained_video_mse": 0.598044964671135,
+    "video_improvement_percent": 14.020036375,
+    "initial_action_mse": 1.3069883286952972,
+    "trained_action_mse": 1.2952194124460221,
+    "action_improvement_percent": 0.9004607
+  },
+  "closed_loop": {
+    "suite": "libero_goal",
+    "task_id": 3,
+    "trial_indices": [0],
+    "successes": 0,
+    "episodes": 1,
+    "max_steps": 80,
+    "replans": 3,
+    "mean_roundtrip_seconds": 71.99854976598483,
+    "max_object_joint_delta": 8.076921879580461e-17,
+    "action_normalization": "quantile",
+    "normalized_action_clip_bound": 1.5,
+    "artifact": "/mnt/h3-wam/outputs/eval-lingbot-shared/e30_goal_task3_trial0/results.json"
+  },
+  "decision": "NO_GO_LONG",
+  "rationale": "The official 1e-5 learning rate is the strongest shared-H3 offline and leak-free improvement so far, but the fixed closed-loop canary remains 0/1 with no object contact. Preserve the optimization change; do not scale this incomplete action-history protocol."
+}

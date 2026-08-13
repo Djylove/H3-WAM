@@ -170,6 +170,7 @@ def sample_h3_lingbot_chunk_causal(
     action_chunk_ids: torch.Tensor,
     video_schedule: H3DreamInferenceSchedule,
     action_schedule: H3DreamInferenceSchedule,
+    observed_action_mask: torch.Tensor | None = None,
 ) -> H3LingBotCausalSample:
     """Generate interleaved video/action chunks without clean-future leakage.
 
@@ -195,6 +196,12 @@ def sample_h3_lingbot_chunk_causal(
         raise ValueError("video chunk ids must cover every video row")
     if action_chunk_ids.shape != (action_length,):
         raise ValueError("action chunk ids must cover every action row")
+    if observed_action_mask is None:
+        observed_action_mask = torch.zeros_like(action_chunk_ids, dtype=torch.bool)
+    else:
+        observed_action_mask = observed_action_mask.reshape(-1).bool()
+    if observed_action_mask.shape != (action_length,):
+        raise ValueError("observed action mask must cover every action row")
     if not bool(observed_video_mask.any()):
         raise ValueError("at least one observed video row is required")
     if int(video_chunk_ids.min()) < 0 or int(action_chunk_ids.min()) < 0:
@@ -205,8 +212,9 @@ def sample_h3_lingbot_chunk_causal(
     clean_video = torch.zeros_like(video_rows)
     clean_video[:, observed_video_mask] = video_rows[:, observed_video_mask]
     clean_actions = torch.zeros_like(actions)
+    clean_actions[:, observed_action_mask] = actions[:, observed_action_mask]
     clean_video_valid = observed_video_mask.clone()
-    clean_action_valid = torch.zeros_like(action_chunk_ids, dtype=torch.bool)
+    clean_action_valid = observed_action_mask.clone()
     chunks = torch.unique(
         torch.cat((video_chunk_ids, action_chunk_ids)), sorted=True
     ).tolist()
@@ -242,7 +250,7 @@ def sample_h3_lingbot_chunk_causal(
             clean_video[:, video_selection] = video_rows[:, video_selection]
             clean_video_valid[video_selection] = True
 
-        action_selection = action_chunk_ids == int(chunk)
+        action_selection = (action_chunk_ids == int(chunk)) & ~observed_action_mask
         if bool(action_selection.any()):
             for action_sigma, action_delta in zip(
                 action_schedule.action_sigmas,

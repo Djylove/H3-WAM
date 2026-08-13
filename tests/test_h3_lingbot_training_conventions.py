@@ -4,12 +4,26 @@ import torch
 
 from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import (
     flow_match_training_weight,
+    normalize_action,
+    prepend_initial_action_history,
     video_clean_from_velocity,
     weighted_video_action_losses,
 )
 
 
 class H3LingBotTrainingConventionsTest(unittest.TestCase):
+    def test_initial_action_history_is_zero_before_quantile_normalization(self) -> None:
+        action = torch.arange(42, dtype=torch.float32).reshape(6, 7)
+        raw = prepend_initial_action_history(action, history_steps=4, horizon=8)
+        torch.testing.assert_close(raw[:4], torch.zeros(4, 7))
+        torch.testing.assert_close(raw[4:], action[:4])
+        stats = {"q01": [-1.0] * 6 + [0.0], "q99": [1.0] * 7}
+        normalized = normalize_action(
+            raw, mode="quantile", stats={}, quantile_stats=stats
+        )
+        torch.testing.assert_close(normalized[:4, :6], torch.zeros(4, 6))
+        torch.testing.assert_close(normalized[:4, 6], -torch.ones(4))
+
     def test_clean_reconstruction_matches_clean_time_flow(self) -> None:
         clean = torch.tensor([[[2.0], [-1.0]]])
         noise = torch.tensor([[[6.0], [3.0]]])

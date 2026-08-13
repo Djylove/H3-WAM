@@ -129,6 +129,34 @@ def minmax_denormalize(
     return (value.float() + 1.0) * 0.5 * (maximum.float() - minimum.float()) + minimum.float()
 
 
+def action_denormalization_bounds(
+    action_normalization: str,
+    cache_stats: dict,
+    quantile_stats: dict | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Resolve the exact action bounds carried by a training checkpoint."""
+
+    if action_normalization == "minmax":
+        low = torch.as_tensor(cache_stats["action_min"], dtype=torch.float32)
+        high = torch.as_tensor(cache_stats["action_max"], dtype=torch.float32)
+    elif action_normalization == "quantile":
+        if quantile_stats is None:
+            raise ValueError("quantile checkpoint is missing action_quantile_stats")
+        low = torch.as_tensor(quantile_stats.get("q01", []), dtype=torch.float32)
+        high = torch.as_tensor(quantile_stats.get("q99", []), dtype=torch.float32)
+    else:
+        raise ValueError(f"unsupported action normalization: {action_normalization}")
+    if low.shape != (7,) or high.shape != (7,):
+        raise ValueError(
+            f"action denormalization bounds must be seven-dimensional, got {low.shape}/{high.shape}"
+        )
+    if not torch.isfinite(low).all() or not torch.isfinite(high).all():
+        raise ValueError("action denormalization bounds must be finite")
+    if torch.any(high <= low):
+        raise ValueError("action denormalization upper bounds must exceed lower bounds")
+    return low, high
+
+
 def libero_environment_actions(
     normalized_actions: torch.Tensor,
     action_minimum: torch.Tensor,

@@ -87,6 +87,7 @@ def main() -> None:
         sample_h3_lingbot_chunk_causal,
     )
     from fastwam.models.h3wam import (
+        action_denormalization_bounds,
         libero_environment_actions,
         libero_observation_state,
         minmax_normalize,
@@ -136,6 +137,11 @@ def main() -> None:
         raise ValueError("incompatible shared-H3 stage")
     if payload.get("last_trainable_layers") != args.last_trainable_layers:
         raise ValueError("stage layer count mismatch")
+    action_normalization = payload.get("action_normalization", "minmax")
+    action_quantile_stats = payload.get("action_quantile_stats")
+    upstream_initial_action_anchor = payload.get(
+        "upstream_initial_action_anchor", False
+    )
     for index_text, state in payload["layers"].items():
         layer = model.module.shared_layers[int(index_text)]
         with FSDP.summon_full_params(layer, recurse=False, writeback=True):
@@ -147,6 +153,10 @@ def main() -> None:
     model.eval()
 
     stats = torch.load(args.cache_root.resolve() / "stats.pt", map_location="cpu", weights_only=False)
+    action_low, action_high = action_denormalization_bounds(
+        action_normalization, stats, action_quantile_stats
+    )
+    normalized_action_clip = 1.5 if action_normalization == "quantile" else 1.0
     language_to_context = task_contexts(args.manifest.resolve())
     context_cache = {}
     patch_size = tuple(model.module.h3.config.patch_size)
@@ -259,16 +269,30 @@ def main() -> None:
             return output.video_velocity_rows.float(), output.action_velocity.float()
 
         inference_started = time.perf_counter()
+        initial_actions = torch.randn(
+            (1, args.action_horizon, 7), generator=generator, device=device
+        )
+        if upstream_initial_action_anchor:
+            initial_actions[:, : args.actions_per_chunk] = 0.0
         sampled = sample_h3_lingbot_chunk_causal(
             predict_velocity=predict, initial_video_rows=initial_video,
             observed_video_mask=observed, video_chunk_ids=video_chunks,
-            initial_actions=torch.randn((1, args.action_horizon, 7), generator=generator, device=device),
+            initial_actions=initial_actions,
             action_chunk_ids=action_chunks,
             video_schedule=video_schedule,
             action_schedule=action_schedule,
+            observed_action_mask=(
+                torch.arange(args.action_horizon, device=device)
+                < args.actions_per_chunk
+                if upstream_initial_action_anchor
+                else None
+            ),
         )
+        actions = sampled.actions[0]
+        if upstream_initial_action_anchor:
+            actions = actions[args.actions_per_chunk :]
         torch.cuda.synchronize(device)
-        return sampled.actions[0], context_id, time.perf_counter() - inference_started
+        return actions, context_id, time.perf_counter() - inference_started
 
     listener = connection = None
     try:
@@ -282,6 +306,10 @@ def main() -> None:
                 "action_sample_steps": args.action_sample_steps or args.sample_steps,
                 "action_horizon": args.action_horizon, "load_seconds": load_seconds,
                 "stage": str(args.stage.resolve()),
+                "action_normalization": action_normalization,
+                "normalized_action_clipping": args.clip_normalized_actions,
+                "normalized_action_clip_bound": normalized_action_clip,
+                "upstream_initial_action_anchor": upstream_initial_action_anchor,
             }, indent=2))
             connection = listener.accept()
         while True:
@@ -313,9 +341,11 @@ def main() -> None:
             if rank == 0:
                 raw = normalized.float()
                 if args.clip_normalized_actions:
-                    normalized = normalized.clamp(-1, 1)
+                    normalized = normalized.clamp(
+                        -normalized_action_clip, normalized_action_clip
+                    )
                 actions = libero_environment_actions(
-                    normalized, stats["action_min"], stats["action_max"],
+                    normalized, action_low, action_high,
                     binarize_gripper=args.binarize_gripper,
                 )
                 connection.send({"ok": True, "actions": actions.tolist(), "metadata": {

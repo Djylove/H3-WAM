@@ -5,6 +5,7 @@ import torch
 
 from fastwam.models.h3wam import (
     ActionEnsembler,
+    action_denormalization_bounds,
     libero_dataset_action,
     libero_environment_actions,
     libero_observation_state,
@@ -14,6 +15,22 @@ from fastwam.models.h3wam import (
 
 
 class H3WAMDeploymentTest(unittest.TestCase):
+    def test_action_denormalization_bounds_follow_checkpoint_contract(self):
+        cache = {
+            "action_min": torch.full((7,), -2.0),
+            "action_max": torch.full((7,), 2.0),
+        }
+        low, high = action_denormalization_bounds("minmax", cache)
+        torch.testing.assert_close(low, cache["action_min"])
+        torch.testing.assert_close(high, cache["action_max"])
+
+        quantiles = {"q01": [-1.0] * 6 + [0.0], "q99": [1.0] * 7}
+        low, high = action_denormalization_bounds("quantile", cache, quantiles)
+        torch.testing.assert_close(low, torch.tensor(quantiles["q01"]))
+        torch.testing.assert_close(high, torch.tensor(quantiles["q99"]))
+        with self.assertRaises(ValueError):
+            action_denormalization_bounds("quantile", cache)
+
     def test_action_ensembler_fuses_overlapping_absolute_timestamps(self):
         ensembler = ActionEnsembler()
         first = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]], dtype=np.float32)

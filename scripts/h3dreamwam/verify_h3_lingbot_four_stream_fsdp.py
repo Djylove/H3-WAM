@@ -87,6 +87,11 @@ def parse_args() -> argparse.Namespace:
         help="Apply the LingBot/DreamWAM timestep-dependent training weights.",
     )
     parser.add_argument(
+        "--upstream-initial-action-anchor",
+        action="store_true",
+        help="Prepend one zero action chunk as LingBot's initial history frame.",
+    )
+    parser.add_argument(
         "--shared-backbone",
         action="store_true",
         help="Use LingBot's code-aligned shared H3 block stack instead of ActionDiT.",
@@ -214,6 +219,32 @@ def normalize_action(
         raise ValueError(f"unsupported action normalization: {mode}")
     scale = (high - low).clamp_min(1e-6)
     return ((action.float() - low) / scale * 2.0 - 1.0).clamp(-clip, clip)
+
+
+def prepend_initial_action_history(
+    action: torch.Tensor,
+    *,
+    history_steps: int,
+    horizon: int,
+) -> torch.Tensor:
+    """Match LingBot's raw-space zero action frame before normalization."""
+
+    if action.ndim != 2 or action.shape[-1] != 7:
+        raise ValueError(f"expected [T,7] actions, got {action.shape}")
+    if history_steps <= 0 or horizon <= history_steps:
+        raise ValueError("history steps must be positive and shorter than horizon")
+    return torch.cat(
+        (
+            torch.zeros(
+                history_steps,
+                action.shape[-1],
+                dtype=action.dtype,
+                device=action.device,
+            ),
+            action,
+        ),
+        dim=0,
+    )[:horizon]
 
 
 def prepare_real_batch(
@@ -353,15 +384,26 @@ def prepare_real_batch(
                 + condition_sigma_rows * condition_noise
             )
 
-    clean_action = normalize_action(
-        window["actions"][: args.action_horizon],
+    raw_action = window["actions"][: args.action_horizon]
+    if args.upstream_initial_action_anchor:
+        raw_action = prepend_initial_action_history(
+            raw_action,
+            history_steps=args.actions_per_chunk,
+            horizon=args.action_horizon,
+        )
+    normalized_action = normalize_action(
+        raw_action,
         mode=args.action_normalization,
         stats=stats,
         quantile_stats=quantile_stats,
-    )[None].to(device)
+    ).to(device)
+    clean_action = normalized_action[None]
     action_noise = torch.randn(
         clean_action.shape, generator=sample_generator, device=device
     )
+    initial_action = action_noise.clone()
+    if args.upstream_initial_action_anchor:
+        initial_action[:, : args.actions_per_chunk] = 0.0
     action_sigma_per_token = action_noise_sigma.index_select(
         0, action_timestep_indices
     )[None, :, None]
@@ -429,7 +471,7 @@ def prepare_real_batch(
         "noisy_video_timestep_indices": noisy_video_timestep_indices,
         "clean_video_timestep_indices": clean_video_timestep_indices,
         "noisy_action": noisy_action,
-        "initial_action": action_noise,
+        "initial_action": initial_action,
         "clean_action": clean_action,
         "action_position_ids": action_position_ids,
         "action_chunks": action_chunks,
@@ -642,6 +684,15 @@ def main() -> None:
                 "stage generated-video conditioning contract mismatch: "
                 f"{checkpoint_generated_video} != "
                 f"{args.detached_generated_video_conditioning}"
+            )
+        checkpoint_action_anchor = payload.get(
+            "upstream_initial_action_anchor", False
+        )
+        if checkpoint_action_anchor != args.upstream_initial_action_anchor:
+            raise ValueError(
+                "stage initial action anchor contract mismatch: "
+                f"{checkpoint_action_anchor} != "
+                f"{args.upstream_initial_action_anchor}"
             )
         checkpoint_physical_time = payload.get(
             "h3_physical_time_alignment", False
@@ -1031,13 +1082,25 @@ def main() -> None:
                 action_chunk_ids=action_chunks,
                 video_schedule=video_schedule,
                 action_schedule=action_schedule,
+                observed_action_mask=(
+                    torch.arange(args.action_horizon, device=device)
+                    < args.actions_per_chunk
+                    if args.upstream_initial_action_anchor
+                    else None
+                ),
             )
             video_loss = F.mse_loss(
                 sampled.video_rows[:, future].float(),
                 clean_video[:, future].float(),
             )
+            action_eval_start = (
+                args.actions_per_chunk
+                if args.upstream_initial_action_anchor
+                else 0
+            )
             action_loss = F.mse_loss(
-                sampled.actions.float(), clean_action.float()
+                sampled.actions[:, action_eval_start:].float(),
+                clean_action[:, action_eval_start:].float(),
             )
         else:
             output = model(**forward_arguments)
@@ -1173,6 +1236,7 @@ def main() -> None:
             ),
             "h3_physical_time_alignment": args.h3_physical_time_alignment,
             "flow_match_loss_weighting": args.flow_match_loss_weighting,
+            "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
             "layers": {},
         }
         for index in range(50 - args.last_trainable_layers, 50):
@@ -1234,6 +1298,7 @@ def main() -> None:
             ),
             "h3_physical_time_alignment": args.h3_physical_time_alignment,
             "flow_match_loss_weighting": args.flow_match_loss_weighting,
+            "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],

@@ -118,6 +118,40 @@ class H3DreamSamplingTest(unittest.TestCase):
         torch.testing.assert_close(calls[0][4], torch.tensor([True, False, False]))
         torch.testing.assert_close(calls[0][5], torch.tensor([False, False]))
 
+    def test_lingbot_sampler_preserves_observed_action_anchor(self) -> None:
+        initial_video = torch.tensor([[[7.0], [8.0]]])
+        initial_actions = torch.tensor([[[0.0], [9.0]]])
+
+        def oracle(
+            video,
+            video_history,
+            actions,
+            action_history,
+            video_time,
+            action_sigma,
+            clean_video_valid,
+            clean_action_valid,
+        ):
+            del video_history, video_time, action_sigma, clean_video_valid
+            self.assertTrue(bool(clean_action_valid[0]))
+            self.assertEqual(float(action_history[0, 0, 0]), 0.0)
+            return torch.zeros_like(video), torch.tensor([[[99.0], [9.0]]])
+
+        schedule = build_h3dream_inference_schedule(1, device="cpu")
+        sample = sample_h3_lingbot_chunk_causal(
+            oracle,
+            initial_video_rows=initial_video,
+            observed_video_mask=torch.tensor([True, False]),
+            video_chunk_ids=torch.tensor([0, 1]),
+            initial_actions=initial_actions,
+            action_chunk_ids=torch.tensor([0, 1]),
+            observed_action_mask=torch.tensor([True, False]),
+            video_schedule=schedule,
+            action_schedule=schedule,
+        )
+        self.assertEqual(float(sample.actions[0, 0, 0]), 0.0)
+        self.assertEqual(float(sample.actions[0, 1, 0]), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
