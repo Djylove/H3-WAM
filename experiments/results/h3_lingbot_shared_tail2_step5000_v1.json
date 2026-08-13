@@ -13,8 +13,15 @@
     "suite": "libero_goal",
     "task_id": 3,
     "trial": 0,
-    "status": "QUEUED"
+    "status": "COMPLETE",
+    "successes": 0,
+    "episodes": 1,
+    "steps": 80,
+    "replans": 5,
+    "mean_action_magnitude": 0.25857673585414886,
+    "action_saturation_fraction": 0.04791666666666666,
+    "max_object_joint_delta": 1.454626620978755e-16
   },
-  "decision": "GO_CANARY",
-  "rationale": "Causal action MSE improves 13.55% from step4000 while causal video improves 2.17%; run the unchanged fixed task3/trial0/replan16 closed-loop canary."
+  "decision": "NO_GO_LONG",
+  "rationale": "Causal action MSE improves 13.55% from step4000 while causal video improves 2.17%, but the unchanged fixed task3/trial0/replan16 rollout remains 0/1 with no object contact. Continue the user-authorized learning-curve probe; do not claim closed-loop effectiveness."
 }
