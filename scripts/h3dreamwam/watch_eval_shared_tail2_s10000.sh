@@ -11,6 +11,7 @@ STAGE_ROOT="${H3_WORKSPACE}/outputs/h3-lingbot-shared"
 RESULT_ROOT="${H3_WORKSPACE}/outputs/eval-lingbot-shared/scale-s10000"
 LOG_ROOT="${H3_WORKSPACE}/logs/cluster-32409"
 TMP_ROOT="${H3_WORKSPACE}/tmp/cluster-32409-shared-s10000-eval"
+EVAL_LOCK="${H3_WORKSPACE}/tmp/h3-wam-eval-gpu.lock"
 
 export PYTHONPATH="${PROJECT_ROOT}/third_party/diffusers_h3/src:${PROJECT_ROOT}/src:${PROJECT_ROOT}:${H3_WORKSPACE}/.venv/lib/python3.11/site-packages"
 export LD_LIBRARY_PATH="${H3_WORKSPACE}/runtime/gl_root/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
@@ -32,6 +33,9 @@ evaluate_stage() {
   prefix="${RESULT_ROOT}/tail2_step$(printf '%05d' "${step}")"
   [[ -s "${prefix}_complete.json" ]] && return 0
   until [[ -s "${stage}" ]]; do sleep 30; done
+  exec 9>"${EVAL_LOCK}"
+  flock 9
+  [[ -s "${prefix}_complete.json" ]] && { flock -u 9; exec 9>&-; return 0; }
   wait_for_idle_gpus
 
   "${PYTHON_BIN}" -m torch.distributed.run --standalone --nproc-per-node 8 \
@@ -75,6 +79,8 @@ record = {
 pathlib.Path(f"{prefix}_complete.json").write_text(json.dumps(record, indent=2) + "\n")
 print(json.dumps(record, sort_keys=True))
 PY
+  flock -u 9
+  exec 9>&-
 }
 
 # Do not race the existing tail-2/tail-4 scale-ladder evaluator on this node.

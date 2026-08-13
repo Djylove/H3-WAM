@@ -11,6 +11,7 @@ VAL_MANIFEST="${H3_WORKSPACE}/data/v7_multisuite_dense_candidate/manifest_val_st
 STAGE_ROOT="${H3_WORKSPACE}/outputs/h3-lingbot-history"
 RESULT_ROOT="${STAGE_ROOT}/eval-s3000"
 TMP_ROOT="${H3_WORKSPACE}/tmp/history16-s3000-eval"
+EVAL_LOCK="${H3_WORKSPACE}/tmp/h3-wam-eval-gpu.lock"
 
 mkdir -p "${RESULT_ROOT}" "${TMP_ROOT}"
 cd "${PROJECT_ROOT}"
@@ -33,6 +34,9 @@ evaluate_stage() {
   prefix="${RESULT_ROOT}/history_step$(printf '%06d' "${step}")"
   [[ -s "${prefix}_complete.json" ]] && return 0
   until [[ -s "${stage}" ]]; do sleep 30; done
+  exec 9>"${EVAL_LOCK}"
+  flock 9
+  [[ -s "${prefix}_complete.json" ]] && { flock -u 9; exec 9>&-; return 0; }
   wait_for_idle_gpus
 
   local common=(
@@ -72,6 +76,8 @@ record = {
 pathlib.Path(f"{prefix}_complete.json").write_text(json.dumps(record, indent=2) + "\n")
 print(json.dumps(record, sort_keys=True))
 PY
+  flock -u 9
+  exec 9>&-
 }
 
 for step in 500 1000 1500 2000 2500; do
