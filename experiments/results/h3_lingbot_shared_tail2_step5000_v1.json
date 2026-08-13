@@ -1,0 +1,20 @@
+{
+  "event": "h3_lingbot_shared_tail2_step5000_v1",
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s10000_step005000.pt",
+  "teacher_forced_val40": {
+    "video_mse": 0.09552949294447899,
+    "action_mse": 0.483438803255558
+  },
+  "causal_sample40": {
+    "video_mse": 0.2594404749572277,
+    "action_mse": 0.7190672285854817
+  },
+  "closed_loop_replan16": {
+    "suite": "libero_goal",
+    "task_id": 3,
+    "trial": 0,
+    "status": "QUEUED"
+  },
+  "decision": "GO_CANARY",
+  "rationale": "Causal action MSE improves 13.55% from step4000 while causal video improves 2.17%; run the unchanged fixed task3/trial0/replan16 closed-loop canary."
+}

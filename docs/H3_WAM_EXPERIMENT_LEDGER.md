@@ -368,3 +368,10 @@ causal action 从 `1.099539` 再改善约 `24.35%`，causal video 改善约 `1.3
 “离线改善已在 step3000 饱和”，也进一步说明训练预算确实制约动作预测。按预注册的闭环门，
 step4000 晋级同一 Goal task3/trial0/replan16 的一次固定 canary，并排在上述四任务诊断之后自动
 执行。闭环成功前仍保持 `NO_GO_LONG`，不能用 MSE 代替成功率。
+
+step4000 固定 task3/trial0/replan16 闭环最终仍为 `0/1`，80步、5次重规划，动作绝对值均值
+`0.263`、饱和率 `4.79%`，物体最大位移约 `1.11e-16`。随后累计 step5000 的配对离线结果为：
+teacher-forced video/action `0.095529/0.483439`，无泄漏 causal video/action
+`0.259440/0.719067`。相对 step4000，causal action 再改善约 `13.55%`、video 改善约
+`2.17%`，因此按同一门控晋级不改任务、不改 trial、不改执行周期的固定闭环 canary；成功前仍为
+`NO_GO_LONG`。
