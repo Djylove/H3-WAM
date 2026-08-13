@@ -400,3 +400,17 @@ train+val评测清单检查200819 windows，缺失为0。真实H3 2-step smoke�
   500 updates and evaluating the full causal learning curve.
 - Training permission is `GO_LONG`; effectiveness remains `NOT_EVIDENCE_READY` until causal metrics and
   a fixed LIBERO closed-loop gate pass.
+
+### 2026-08-13 — executed-action history step500 gate
+
+- 累计 step500 的固定 episode-disjoint val40 teacher-forced video/action MSE 为
+  `0.093675/0.448326`，4-step causal video/action MSE 为 `0.258240/0.540989`。
+- 相对未训练 history 父基线 causal action `0.633375` 改善 `14.59%`；相对 step100 的
+  `0.695905` 改善 `22.26%`。causal video 相对父基线 `0.257647` 仅变化 `+0.23%`。
+- 因此 step500 通过预注册离线门，已启动与父 checkpoint 完全相同的 Goal task3/trial0、
+  replan16、80-step 固定闭环。唯一变量是 checkpoint 中新增并训练的 16-step executed-action
+  history；显式 clean history 重算 attention 仍是对 LingBot-VA rolling KV 合约的
+  `INTENTIONAL_DEVIATION`，不能称为等价复现。
+- 训练许可保持 `GO_LONG`，效果结论保持 `NOT_EVIDENCE_READY`。只有固定闭环出现 success 或
+  至少真实物体接触，才扩大 trial/task；若仍无接触，则继续消费 step1000/1500 曲线点，以区分
+  history 学习不足与仅改善离线因果误差但不改善控制语义。

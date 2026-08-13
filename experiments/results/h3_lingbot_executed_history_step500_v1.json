@@ -1,0 +1,33 @@
+{
+  "experiment": "h3_lingbot_executed_history_step500_v1",
+  "source_identity": {
+    "upstream": "LingBot-VA",
+    "upstream_commit": "7c6ffa9",
+    "local_mechanism": "explicit 16-step clean executed-action history with attention recomputation",
+    "alignment": "INTENTIONAL_DEVIATION"
+  },
+  "parent": {
+    "checkpoint": "quantile_flowweight_lr1e5_tail2_s10000_step005000.pt",
+    "causal_video_mse": 0.2576471,
+    "causal_action_mse": 0.6333747
+  },
+  "checkpoint": {
+    "path": "/mnt/h3-wam/outputs/h3-lingbot-history/history16_from_s5000_s3000_step000500.pt",
+    "cumulative_optimizer_steps": 500,
+    "global_batch": 8,
+    "samples_seen": 4000,
+    "effective_epochs": 0.019922
+  },
+  "val40": {
+    "teacher_forced_video_mse": 0.09367470238357782,
+    "teacher_forced_action_mse": 0.44832593724131586,
+    "causal_video_mse": 0.25823986642062663,
+    "causal_action_mse": 0.540988689661026,
+    "causal_action_relative_improvement_vs_parent": 0.14586312073875699,
+    "causal_video_relative_change_vs_parent": 0.0023006912192165617
+  },
+  "offline_gate": "PASS",
+  "closed_loop_gate": "RUNNING",
+  "training_permission": "GO_LONG",
+  "effectiveness": "NOT_EVIDENCE_READY"
+}
