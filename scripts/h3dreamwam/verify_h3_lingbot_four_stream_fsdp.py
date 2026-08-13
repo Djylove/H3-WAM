@@ -102,6 +102,20 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def is_checkpoint_milestone(
+    step: int,
+    *,
+    base_completed_steps: int,
+    checkpoint_every: int,
+    total_steps: int,
+) -> bool:
+    """Return whether this update lands on a cumulative checkpoint boundary."""
+
+    if checkpoint_every <= 0 or step >= total_steps:
+        return False
+    return (base_completed_steps + step) % checkpoint_every == 0
+
+
 def global_grad_norm(
     named_parameters: list[tuple[str, torch.nn.Parameter]],
     marker: str,
@@ -1282,10 +1296,11 @@ def main() -> None:
         history.append(item)
         if rank == 0:
             print(json.dumps(item), flush=True)
-        if (
-            args.checkpoint_every
-            and step % args.checkpoint_every == 0
-            and step < args.steps
+        if is_checkpoint_milestone(
+            step,
+            base_completed_steps=args.base_completed_steps,
+            checkpoint_every=args.checkpoint_every,
+            total_steps=args.steps,
         ):
             cumulative_step = args.base_completed_steps + step
             milestone = args.save_stage.with_name(

@@ -5,6 +5,7 @@ import torch
 
 from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import (
     flow_match_training_weight,
+    is_checkpoint_milestone,
     normalize_action,
     prepend_initial_action_history,
     video_clean_from_velocity,
@@ -13,6 +14,20 @@ from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import (
 
 
 class H3LingBotTrainingConventionsTest(unittest.TestCase):
+    def test_checkpoint_cadence_uses_cumulative_steps(self) -> None:
+        saved = [
+            step
+            for step in range(1, 7501)
+            if is_checkpoint_milestone(
+                step,
+                base_completed_steps=2500,
+                checkpoint_every=1000,
+                total_steps=7500,
+            )
+        ]
+        self.assertEqual(saved, [500, 1500, 2500, 3500, 4500, 5500, 6500])
+        self.assertEqual([2500 + step for step in saved], list(range(3000, 10000, 1000)))
+
     def test_official_optimizer_overrides_are_explicit(self) -> None:
         from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import parse_args
 

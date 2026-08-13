@@ -1,0 +1,52 @@
+{
+  "experiment_id": "h3_lingbot_shared_tail2_scale_s10000_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "If the tail-2 shared-H3 policy remains data-budget limited after step2500, continuing the identical recipe to cumulative step10000 will further reduce causal action MSE and eventually convert the offline gain into a fixed LIBERO closed-loop success.",
+  "single_variable": "Increase cumulative optimizer steps from 2500 to 10000; keep the s2500 parent, architecture, trainable tail, data order, LR, weight decay, normalization, objective, action horizon and sampler fixed.",
+  "parent_baseline": "Tail-2 cumulative step2500: causal sample40 video/action MSE 0.279897/1.231785 and teacher-forced video/action MSE 0.100595/1.040841; fixed closed-loop success has not yet been demonstrated.",
+  "references": [
+    {"kind": "paper", "title": "LingBot-VA: Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "arXiv:2601.21998", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "LingBot-VA LIBERO training config", "locator": "third_party/code_audit/lingbot-va/wan_va/configs/va_libero_train_cfg.py", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "Shared-H3 four-stream trainer", "locator": "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "revision": "working tree with cumulative checkpoint cadence test", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared H3 tail-2", "paper": "shared causal WAM", "upstream_code": "shared Wan blocks", "local": "unchanged H3 backbone port from the s2500 parent", "status": "INTENTIONAL_DEVIATION", "evidence": ["quantile_flowweight_lr1e5_tail2_s2500.pt"], "rationale": "The H3-for-Wan backbone replacement is fixed inside this scale experiment."}],
+    "data": [{"field": "dense window stream", "paper": "LIBERO demonstrations", "upstream_code": "dense post-training", "local": "60000 additional windows beginning at batch offset2500; cumulative80000 of 200779 windows", "status": "EQUIVALENT", "evidence": ["global_batch=8; steps=7500; sample_offset=2500"], "rationale": "The stream does not wrap during this run and continues immediately after the s2500 parent."}],
+    "action": [{"field": "action contract", "paper": "chunked action flow", "upstream_code": "quantile normalization", "local": "fixed q01/q99 normalization and horizon32", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json"], "rationale": "Unchanged from the parent."}],
+    "objective": [{"field": "weighted video/action flow matching", "paper": "causal world/action flow", "upstream_code": "timestep-weighted objective", "local": "fixed E30 weighted objective", "status": "EQUIVALENT", "evidence": ["--flow-match-loss-weighting"], "rationale": "Unchanged from the parent."}],
+    "optimization": [{"field": "scale budget", "paper": "long post-training", "upstream_code": "5000 steps at effective global batch80", "local": "7500 additional steps at global batch8; 60000 samples; 0.298835 additional effective epochs", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "This is an H3 backbone-port learning-curve probe, not an upstream reproduction; the stage format restores weights but not optimizer moments."}],
+    "evaluation": [{"field": "checkpoint ladder and promotion", "paper": "LIBERO success", "upstream_code": "closed-loop benchmark", "local": "save every cumulative1000 steps; paired val40 and causal sample40; fixed rollout required before promotion", "status": "INTENTIONAL_DEVIATION", "evidence": ["--checkpoint-every 1000; base_completed_steps=2500"], "rationale": "Intermediate immutable checkpoints expose non-monotonic causal action behavior and prevent endpoint-only selection."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed LingBot-VA commit"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["s2500 parent restore"]},
+    "data_contract": {"status": "PASS", "evidence": ["dense manifest and explicit offset"]},
+    "action_contract": {"status": "PASS", "evidence": ["fixed quantile stats"]},
+    "objective_contract": {"status": "PASS", "evidence": ["fixed weighted flow objective"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit 60000-sample budget and cumulative checkpoint cadence"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["paired milestone evaluator and fixed rollout protocol"]},
+    "gradient_path": {"status": "PASS", "evidence": ["finite s2500 H3/action gradients"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["s2500 completed"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["s2500 val40/sample40 restore"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["s2500 paired metrics"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["causal action MSE improved from 1.306988 to 1.231785"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["no positive s2500 closed-loop result yet"]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 7500,
+    "cumulative_optimizer_steps": 10000,
+    "training_samples": 60000,
+    "cumulative_training_samples": 80000,
+    "unique_windows": 200779,
+    "effective_epochs": 0.298835,
+    "cumulative_effective_epochs": 0.398447,
+    "gpu_count": 8,
+    "estimated_hours": 9.1
+  },
+  "decision": {
+    "status": "NO_GO_LONG",
+    "rationale": "The mechanism gate is positive but the closed-loop gate is still negative. The user explicitly authorized the cumulative-step10000 scale probe, so it runs as a preserved legacy long experiment with immutable 1000-step milestones; it cannot support an effectiveness claim until a fixed LIBERO rollout succeeds.",
+    "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --load-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s2500.pt --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s10000.pt --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s10000_train.json --steps 7500 --base-completed-steps 2500 --checkpoint-every 1000 --sample-offset 2500 --rotate-windows --random-timesteps --warmup-steps 0 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5 --weight-decay 0.01"
+  }
+}

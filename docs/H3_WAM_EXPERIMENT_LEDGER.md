@@ -290,3 +290,16 @@ video/action MSE `0.117352/1.167875`，但无泄漏 causal video/action MSE
 `0.419902/1.313663`；即视频和 teacher-forced action 随训练改善，而 causal action 相对
 step100 的 `1.295219` 暂时回退。这是扩大预算时必须持续监测的过拟合/训推偏移信号，不能仅凭
 训练 loss 宣称成功。
+
+## 2026-08-13 tail-2 累计 step10000 扩展
+
+tail-2 在累计 step2500 首次得到明确的无泄漏因果动作改善：video/action MSE
+`0.279897/1.231785`，相对未训练初始化分别改善约 `59.8%/5.75%`。用户据此明确要求将相同配方
+一步扩到累计 step10000。该实验从 s2500 权重继续 7500 optimizer steps，global batch8，新增
+60000 windows（`0.298835` effective epoch），累计80000 windows（`0.398447` epoch）。唯一变量
+仍是训练预算；优化器 moments 不包含在 stage 中，因此续训会重新初始化 AdamW 状态。
+
+检查点按**累计步数**保存 s3000、s4000、...、s9000，终点保存 s10000；32409 在旧的
+tail-2/tail-4 ladder 完成后自动消费全部里程碑，运行 val40 与无泄漏 causal sample40。因为 s2500
+尚无闭环 success，这条线是用户授权保留的 legacy scale probe，当前仍为 `NO_GO_LONG`；任何里程碑
+都必须通过固定 LIBERO success predicate 才能晋级。
