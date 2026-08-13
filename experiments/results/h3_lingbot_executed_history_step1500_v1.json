@@ -29,8 +29,24 @@
     "causal_video_relative_improvement_vs_history_step500": 0.010870783331085937
   },
   "offline_gate": "PASS_NEW_GLOBAL_CAUSAL_BEST",
-  "closed_loop": null,
-  "closed_loop_gate": "RUNNING_FIXED_TASK3_TRIAL0_REPLAN16",
+  "closed_loop": {
+    "suite": "libero_goal",
+    "task_id": 3,
+    "trial": 0,
+    "max_steps": 80,
+    "replan_steps": 16,
+    "success": false,
+    "mean_action_magnitude": 0.2393672287464142,
+    "action_saturation_fraction": 0.035416666666666666,
+    "max_object_joint_delta": 8.823711618137497e-17,
+    "eef_position_delta": [
+      0.33807897567749023,
+      0.003915142267942429,
+      0.02714359760284424
+    ],
+    "eef_path_length": 0.3826720714569092
+  },
+  "closed_loop_gate": "FAIL_NO_CONTACT",
   "training_permission": "GO_LONG",
   "effectiveness": "NOT_EVIDENCE_READY"
 }
