@@ -354,3 +354,10 @@ step3000 的 replan16 配对闭环同样为 `0/1`，80步、5次重规划，动�
 shift1 固定 video4、action50 的 sample40 最终为 `0.596650/1.286845`，相较 action4 的
 `0.596848/1.288768`，action 仅再改善约 `0.15%`，仍未过 `1.282267` 门。官方50步求解器
 不是主要失败原因，且成本约为4步的12.5倍，不作为当前默认部署配置。
+
+为确认 task3 是否属于单任务偶然失败，在空闲 `32611` 上启动同一 step3000、同一 Goal suite
+的 task `0/3/7/8`、各 trial0、replan16、80步探索性闭环。该评测不用于选择 checkpoint，也不
+冒充完整 benchmark；它只回答“当前模型是否在任一不同场景形成物体接触/成功”。若四任务仍为
+零成功且轨迹保持末端运动、物体零位移，则停止 scheduler、solver 和 replan 微调，把下一训练
+预算用于上游已明确存在而本地缺失的跨 replan observation/executed-action rolling history/KV
+合约及更强动作 carrier。长线 tail-2 和 frame-indexed epoch2 均继续独立运行。
