@@ -345,3 +345,8 @@ step3000 的固定 Goal task3/trial0、replan32 闭环随后完成：`0/1`，80�
 32步块的预测方向会反转。由于该 checkpoint 的离线因果动作显著强于 E30，补做同 checkpoint、
 同 task/trial、仅将执行周期改为 LingBot LIBERO 对应的16动作，检验更强模型与上游执行节奏的
 组合；该部署消融不改变训练结论。
+
+step3000 的 replan16 配对闭环同样为 `0/1`，80步、5次重规划，动作绝对值均值 `0.333`、
+饱和率 `9.69%`，最大物体位移约 `1.48e-16`。因此更强 checkpoint 与上游16动作执行周期的
+组合仍不能产生接触，执行周期再次排除。下一结构性整改应对齐上游 rolling KV/已执行动作历史，
+并增大或预训练动作 carrier；不再把 scheduler shift 或 replan cadence 作为主线。
