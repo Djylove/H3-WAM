@@ -1,0 +1,20 @@
+{
+  "event": "h3_lingbot_shared_tail2_step4000_v1",
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s10000_step004000.pt",
+  "teacher_forced_val40": {
+    "video_mse": 0.0966997466981411,
+    "action_mse": 0.5733186811208725
+  },
+  "causal_sample40": {
+    "video_mse": 0.26520462036132814,
+    "action_mse": 0.8317969679832459
+  },
+  "closed_loop_replan16": {
+    "suite": "libero_goal",
+    "task_id": 3,
+    "trial": 0,
+    "status": "QUEUED"
+  },
+  "decision": "GO_CANARY",
+  "rationale": "Causal action MSE improves 24.35% from step3000 while causal video remains stable, so run the fixed task3/trial0/replan16 closed-loop canary. Do not promote to GO_LONG without a real success."
+}

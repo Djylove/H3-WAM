@@ -361,3 +361,10 @@ shift1 固定 video4、action50 的 sample40 最终为 `0.596650/1.286845`，相
 零成功且轨迹保持末端运动、物体零位移，则停止 scheduler、solver 和 replan 微调，把下一训练
 预算用于上游已明确存在而本地缺失的跨 replan observation/executed-action rolling history/KV
 合约及更强动作 carrier。长线 tail-2 和 frame-indexed epoch2 均继续独立运行。
+
+累计 step4000 的配对结果已完成：teacher-forced video/action 为
+`0.096700/0.573319`，无泄漏 causal video/action 为 `0.265205/0.831797`。相对 step3000，
+causal action 从 `1.099539` 再改善约 `24.35%`，causal video 改善约 `1.35%`；这排除了
+“离线改善已在 step3000 饱和”，也进一步说明训练预算确实制约动作预测。按预注册的闭环门，
+step4000 晋级同一 Goal task3/trial0/replan16 的一次固定 canary，并排在上述四任务诊断之后自动
+执行。闭环成功前仍保持 `NO_GO_LONG`，不能用 MSE 代替成功率。
