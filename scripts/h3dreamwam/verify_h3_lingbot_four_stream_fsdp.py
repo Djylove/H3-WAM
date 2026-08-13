@@ -526,10 +526,6 @@ def prepare_real_batch(
     action_loss_mask = torch.ones(
         clean_action.shape[1], device=device, dtype=torch.bool
     )
-    if history_steps:
-        noisy_action[:, :history_steps] = clean_action[:, :history_steps]
-        initial_action[:, :history_steps] = clean_action[:, :history_steps]
-        action_loss_mask[:history_steps] = False
     if args.upstream_initial_action_anchor:
         initial_action[:, : args.actions_per_chunk] = 0.0
     action_sigma_per_token = action_noise_sigma.index_select(
@@ -537,6 +533,10 @@ def prepare_real_batch(
     )[None, :, None]
     noisy_action = (1.0 - action_sigma_per_token) * clean_action
     noisy_action += action_sigma_per_token * action_noise
+    if history_steps:
+        noisy_action[:, :history_steps] = clean_action[:, :history_steps]
+        initial_action[:, :history_steps] = clean_action[:, :history_steps]
+        action_loss_mask[:history_steps] = False
     context = conditioning["context"].to(device=device, dtype=torch.bfloat16)
     state_scale = (
         stats["state_max"].float() - stats["state_min"].float()
