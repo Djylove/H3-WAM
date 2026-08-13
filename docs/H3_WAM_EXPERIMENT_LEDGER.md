@@ -490,3 +490,10 @@ global batch128、2170 steps、277760 samples（`1.000169` epoch）、LR `1e-4` 
 - 它成为当前所有 shared-H3 里程碑的最优 causal checkpoint，并通过预注册离线晋级门。排队执行
   与 step500 完全相同的 Goal task3/trial0/replan16/80-step 固定闭环；在真实 success 或至少物体
   接触出现前，效果仍为 `NOT_EVIDENCE_READY`。
+
+同一时段完成 depth4-H3init 的真实机械 gate。首次运行在构造 `H3DoTWAM` 后才读取 H3 源 block，
+而构造函数已把源 block 移入 hub wrappers，导致源深度为0；修正初始化顺序并增加回归测试后重跑。
+修正后的 `[0,16,33,49]` 插值在2步内无 NaN/OOM、显存仍为 `17.516 GiB`，但第一步 action loss/
+gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数据、LR与容量的随机父线仅为
+约 `1.22–1.28/3.33–3.61`。因此 residual output scale `0.01` + LR `1e-4` 的直接 H3 插值初始化
+判定 `NO_GO`，不放行长训。任何 `0.001` 缩放或更低 LR 都必须另立稳定化消融，不能覆盖这条负结果。

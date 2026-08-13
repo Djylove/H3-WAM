@@ -5,37 +5,203 @@
   "single_variable": "Initialize the four-layer DoT attention, QK norms, FFN and time embedding from depth-sampled H3 blocks instead of random weights.",
   "parent_baseline": "h3dotwam_action_depth4_random_v1 at local commit 59fc07e: real-H3 2-step finite and strict restore PASS.",
   "references": [
-    {"kind": "paper", "title": "Fast-WAM: Do World Action Models Need Test-time Future Imagination?", "locator": "https://arxiv.org/abs/2603.16666", "revision": "arXiv:2603.16666", "official": true, "clean": true},
-    {"kind": "upstream_code", "title": "FastWAM official ActionDiT preprocessing", "locator": "https://github.com/yuantianyuan01/FastWAM/blob/45d8e1458921d83f8ad6cf9ce993d371208dabd0/scripts/preprocess_action_dit_backbone.py", "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0", "official": true, "clean": true},
-    {"kind": "local_implementation", "title": "H3 depth-sampled DoT initializer", "locator": "src/fastwam/models/h3dreamwam/initialization.py", "revision": "59fc07e", "official": false, "clean": true}
+    {
+      "kind": "paper",
+      "title": "Fast-WAM: Do World Action Models Need Test-time Future Imagination?",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "arXiv:2603.16666",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "FastWAM official ActionDiT preprocessing",
+      "locator": "https://github.com/yuantianyuan01/FastWAM/blob/45d8e1458921d83f8ad6cf9ce993d371208dabd0/scripts/preprocess_action_dit_backbone.py",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3 depth-sampled DoT initializer",
+      "locator": "src/fastwam/models/h3dreamwam/initialization.py",
+      "revision": "fb4657e",
+      "official": false,
+      "clean": true
+    }
   ],
   "alignment": {
-    "architecture": [{"field": "pretrained action backbone initialization", "paper": "video DiT initializes ActionDiT", "upstream_code": "same-depth Wan2.2 tensors resized sequentially; action encoder/head skipped", "local": "H3 blocks [0,16,33,49] initialize four-layer DoT tensors; action embedding/output skipped", "status": "INTENTIONAL_DEVIATION", "evidence": ["initialization.py; test_h3dreamwam_initialization.py"], "rationale": "H3 has 50 blocks while the bounded carrier has four, requiring a declared depth-sampling rule."}],
-    "data": [{"field": "dense windows", "paper": "dense robot windows", "upstream_code": "LeRobot dense indexing", "local": "v8 277713 frame-indexed windows", "status": "EQUIVALENT", "evidence": ["v8 candidate report"], "rationale": "Unchanged from random-depth4 parent."}],
-    "action": [{"field": "horizon and normalization", "paper": "32-step chunks", "upstream_code": "dataset normalization", "local": "parent horizon32 and stats", "status": "EQUIVALENT", "evidence": ["depth4 random dossier"], "rationale": "Unchanged."}],
-    "objective": [{"field": "action-only frozen-world objective", "paper": "world/action training", "upstream_code": "ActionDiT plus video hub", "local": "same frozen H3 as random-depth4 parent", "status": "INTENTIONAL_DEVIATION", "evidence": ["--last-h3-blocks 0"], "rationale": "Initialization is isolated from gradient scope."}],
-    "optimization": [{"field": "mechanical smoke", "paper": "multi-epoch", "upstream_code": "10 LIBERO epochs", "local": "2 steps, global batch8, 16 samples", "status": "INTENTIONAL_DEVIATION", "evidence": ["launch command"], "rationale": "This gate tests finite initialization and restore, not effectiveness."}],
-    "evaluation": [{"field": "restore gate", "paper": "benchmark success", "upstream_code": "LIBERO rollout", "local": "one episode-disjoint real-H3 forward after strict restore", "status": "INTENTIONAL_DEVIATION", "evidence": ["planned restore command"], "rationale": "Closed-loop is deferred until a paired learning curve beats random depth4."}]
+    "architecture": [
+      {
+        "field": "pretrained action backbone initialization",
+        "paper": "video DiT initializes ActionDiT",
+        "upstream_code": "same-depth Wan2.2 tensors resized sequentially; action encoder/head skipped",
+        "local": "H3 blocks [0,16,33,49] initialize four-layer DoT tensors; action embedding/output skipped",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "initialization.py; test_h3dreamwam_initialization.py"
+        ],
+        "rationale": "H3 has 50 blocks while the bounded carrier has four, requiring a declared depth-sampling rule."
+      }
+    ],
+    "data": [
+      {
+        "field": "dense windows",
+        "paper": "dense robot windows",
+        "upstream_code": "LeRobot dense indexing",
+        "local": "v8 277713 frame-indexed windows",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "v8 candidate report"
+        ],
+        "rationale": "Unchanged from random-depth4 parent."
+      }
+    ],
+    "action": [
+      {
+        "field": "horizon and normalization",
+        "paper": "32-step chunks",
+        "upstream_code": "dataset normalization",
+        "local": "parent horizon32 and stats",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "depth4 random dossier"
+        ],
+        "rationale": "Unchanged."
+      }
+    ],
+    "objective": [
+      {
+        "field": "action-only frozen-world objective",
+        "paper": "world/action training",
+        "upstream_code": "ActionDiT plus video hub",
+        "local": "same frozen H3 as random-depth4 parent",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "--last-h3-blocks 0"
+        ],
+        "rationale": "Initialization is isolated from gradient scope."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "mechanical smoke",
+        "paper": "multi-epoch",
+        "upstream_code": "10 LIBERO epochs",
+        "local": "2 steps, global batch8, 16 samples",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "launch command"
+        ],
+        "rationale": "This gate tests finite initialization and restore, not effectiveness."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "restore gate",
+        "paper": "benchmark success",
+        "upstream_code": "LIBERO rollout",
+        "local": "one episode-disjoint real-H3 forward after strict restore",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "planned restore command"
+        ],
+        "rationale": "Closed-loop is deferred until a paired learning curve beats random depth4."
+      }
+    ]
   },
   "gates": {
-    "source_identity": {"status": "PASS", "evidence": ["official FastWAM commit 45d8e145 and local 59fc07e"]},
-    "architecture_contract": {"status": "PASS", "evidence": ["fixed source indices [0,16,33,49], alpha scaling, random action embedding/output"]},
-    "data_contract": {"status": "PASS", "evidence": ["same v8 parent data"]},
-    "action_contract": {"status": "PASS", "evidence": ["same parent action contract"]},
-    "objective_contract": {"status": "PASS", "evidence": ["initialization is the only variable"]},
-    "optimization_contract": {"status": "PASS", "evidence": ["global batch8 x 2 steps = 16 samples"]},
-    "evaluation_contract": {"status": "PASS", "evidence": ["strict restore without CLI depth plus real val forward"]},
-    "gradient_path": {"status": "PASS", "evidence": ["unit test proves every initialized layer receives finite nonzero gradient"]},
-    "smoke_finite": {"status": "FAIL", "evidence": ["real-H3 smoke pending"]},
-    "checkpoint_restore": {"status": "FAIL", "evidence": ["real-H3 restore pending"]},
-    "parent_baseline": {"status": "PASS", "evidence": ["depth4-random smoke and restore artifact"]},
-    "mechanism_signal": {"status": "FAIL", "evidence": ["paired training pending"]},
-    "closed_loop_canary": {"status": "FAIL", "evidence": ["paired training pending"]}
+    "source_identity": {
+      "status": "PASS",
+      "evidence": [
+        "official FastWAM commit 45d8e145 and local 59fc07e"
+      ]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": [
+        "fixed source indices [0,16,33,49], alpha scaling, random action embedding/output"
+      ]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": [
+        "same v8 parent data"
+      ]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": [
+        "same parent action contract"
+      ]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": [
+        "initialization is the only variable"
+      ]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": [
+        "global batch8 x 2 steps = 16 samples"
+      ]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": [
+        "strict restore without CLI depth plus real val forward"
+      ]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": [
+        "unit test proves every initialized layer receives finite nonzero gradient"
+      ]
+    },
+    "smoke_finite": {
+      "status": "FAIL",
+      "evidence": [
+        "real-H3 retry at scale0.01/LR1e-4: action loss 2.584559 -> 382.745529; gradient norm 604 -> 9920 despite finite tensors"
+      ]
+    },
+    "checkpoint_restore": {
+      "status": "FAIL",
+      "evidence": [
+        "restore intentionally not promoted because the two-step optimization is numerically unstable"
+      ]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": [
+        "depth4-random smoke and restore artifact"
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": [
+        "paired training pending"
+      ]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": [
+        "paired training pending"
+      ]
+    }
   },
-  "budget": {"global_batch": 8, "optimizer_steps": 2, "training_samples": 16, "unique_windows": 277713, "effective_epochs": 0.0000576, "gpu_count": 8, "estimated_hours": 0.1},
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 2,
+    "training_samples": 16,
+    "unique_windows": 277713,
+    "effective_epochs": 5.76e-05,
+    "gpu_count": 8,
+    "estimated_hours": 0.1
+  },
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Run only the real-H3 finite-gradient, memory and restore gate while the evaluator is between checkpoint arrivals.",
-    "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/train_h3dotwam_fsdp.py --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v8_frameindexed_h3_cache --manifest /mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl --output /mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_h3init_s2.json --save-stage /mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_h3init_s2.pt --steps 2 --action-layers 4 --initialize-action-from-h3 --action-init-output-scale 0.01 --gradient-accumulation-steps 1 --sample-offset 0 --action-horizon 32 --learning-rate 1e-4 --last-h3-blocks 0 --video-loss-weight 1 --language-ranking-weight 0 --require-text-only-context --log-every 1"
+    "status": "NO_GO",
+    "rationale": "Direct H3 interpolation at the fixed random-parent LR is numerically unstable after one update. Do not allocate long training; any smaller output scale or LR must be a separate stabilization ablation.",
+    "launch_command": null
   }
 }

@@ -1,0 +1,45 @@
+{
+  "experiment": "h3dotwam_action_depth4_h3init_smoke_v1",
+  "classification": "controlled_ablation",
+  "source_identity": {
+    "upstream": "FastWAM",
+    "upstream_commit": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+    "local_commit": "fb4657e",
+    "alignment": "INTENTIONAL_DEVIATION"
+  },
+  "parent": "h3dotwam_action_depth4_random_smoke_v1",
+  "single_variable": "H3 depth-sampled interpolation initialization at residual output scale 0.01",
+  "initialization": {
+    "source_layer_indices": [
+      0,
+      16,
+      33,
+      49
+    ],
+    "copied_tensors": 34,
+    "resized_tensors": 34,
+    "zeroed_biases": 27,
+    "residual_output_scale": 0.01,
+    "alpha_scaling": true
+  },
+  "smoke": {
+    "global_batch": 8,
+    "optimizer_steps": 2,
+    "samples_seen": 16,
+    "learning_rate": 0.0001,
+    "action_losses": [
+      2.584558665752411,
+      382.7455291748047
+    ],
+    "gradient_norms": [
+      604.0,
+      9920.0
+    ],
+    "peak_reserved_gib": 17.515625,
+    "finite": true,
+    "numerically_stable": false
+  },
+  "gate": "FAIL_OPTIMIZATION_EXPLOSION",
+  "training_permission": "NO_GO",
+  "effectiveness": "NOT_EVIDENCE_READY"
+}
