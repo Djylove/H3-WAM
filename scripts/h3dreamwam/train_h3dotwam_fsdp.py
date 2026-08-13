@@ -490,6 +490,7 @@ def main() -> None:
 
     previous_dtype = torch.get_default_dtype()
     torch.set_default_dtype(torch.bfloat16)
+    action_initialization = None
     try:
         action_head = H3DoTActionHead(
             action_dim=7,
@@ -509,6 +510,16 @@ def main() -> None:
             action_num_heads=24,
             action_head_dim=128,
         )
+        if args.initialize_action_from_h3:
+            # H3DoTWAM transfers transformer_blocks into its FSDP hub wrappers,
+            # so copy pretrained tensors while the source stack is still
+            # present on the original H3 module.
+            action_initialization = initialize_dot_action_head_from_h3(
+                action_head,
+                h3,
+                residual_output_scale=args.action_init_output_scale,
+                alpha_scaling=True,
+            )
         model = H3DoTWAM(
             h3,
             action_head,
@@ -521,15 +532,6 @@ def main() -> None:
         )
     finally:
         torch.set_default_dtype(previous_dtype)
-
-    action_initialization = None
-    if args.initialize_action_from_h3:
-        action_initialization = initialize_dot_action_head_from_h3(
-            model.action_head,
-            h3,
-            residual_output_scale=args.action_init_output_scale,
-            alpha_scaling=True,
-        )
     action_initialization_metadata = (
         None
         if action_initialization is None

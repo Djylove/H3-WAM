@@ -180,6 +180,21 @@ class H3ActionInitializationTest(unittest.TestCase):
         report = initialize_dot_action_head_from_h3(action, h3)
         self.assertEqual(report.source_layer_indices, (4,))
 
+    def test_dot_initialization_requires_source_blocks_before_docking(self) -> None:
+        h3 = TinyH3(layers=2)
+        h3.transformer_blocks = torch.nn.ModuleList()
+        action = H3DoTActionHead(
+            action_dim=3,
+            hidden_dim=6,
+            ffn_dim=12,
+            num_heads=2,
+            head_dim=4,
+            num_layers=1,
+            frequency_dim=6,
+        )
+        with self.assertRaisesRegex(ValueError, "layer counts must be positive"):
+            initialize_dot_action_head_from_h3(action, h3)
+
 
 if __name__ == "__main__":
     unittest.main()
