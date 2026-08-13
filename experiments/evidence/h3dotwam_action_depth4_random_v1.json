@@ -25,9 +25,9 @@
       "kind": "local_implementation",
       "title": "H3 DoT trainer",
       "locator": "scripts/h3dreamwam/train_h3dotwam_fsdp.py",
-      "revision": "working tree pending commit",
+      "revision": "59fc07e",
       "official": false,
-      "clean": false
+      "clean": true
     }
   ],
   "alignment": {
@@ -160,15 +160,15 @@
       ]
     },
     "smoke_finite": {
-      "status": "FAIL",
+      "status": "PASS",
       "evidence": [
-        "real-H3 smoke pending"
+        "cloud 32409 depth4_random_s2: gradients 3.328125/3.609375 finite; peak reserved 17.515625 GiB"
       ]
     },
     "checkpoint_restore": {
-      "status": "FAIL",
+      "status": "PASS",
       "evidence": [
-        "real-H3 restore pending"
+        "checkpoint self-described action_layers=4; strict restore without CLI depth completed real-H3 val forward at action loss 1.013943"
       ]
     },
     "parent_baseline": {
@@ -191,17 +191,17 @@
     }
   },
   "budget": {
-    "global_batch": 8,
-    "optimizer_steps": 2,
-    "training_samples": 16,
+    "global_batch": 128,
+    "optimizer_steps": 2170,
+    "training_samples": 277760,
     "unique_windows": 277713,
-    "effective_epochs": 5.76e-05,
+    "effective_epochs": 1.000169,
     "gpu_count": 8,
-    "estimated_hours": 0.1
+    "estimated_hours": 16.5
   },
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Run real-H3 2-step and strict restore only; long budget remains gated.",
-    "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/train_h3dotwam_fsdp.py --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v8_frameindexed_h3_cache --manifest /mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl --output /mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_random_s2.json --save-stage /mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_random_s2.pt --steps 2 --action-layers 4 --gradient-accumulation-steps 1 --sample-offset 0 --action-horizon 32 --learning-rate 1e-4 --last-h3-blocks 0 --video-loss-weight 1 --language-ranking-weight 0 --require-text-only-context --log-every 1"
+    "status": "GO_LONG",
+    "rationale": "Real-H3 finite gradients, memory and strict restore passed. Queue the same M11 global-batch128 schedule with depth as the unique variable when a training node frees; retain 200-step checkpoints and asynchronous val gates.",
+    "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/train_h3dotwam_fsdp.py --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v8_frameindexed_h3_cache --manifest /mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl --output /mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_random_gb128_s2170.json --save-stage /mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_random_gb128_s2170.pt --checkpoint-every 200 --steps 2170 --action-layers 4 --gradient-accumulation-steps 16 --sample-offset 0 --action-horizon 32 --learning-rate 1e-4 --last-h3-blocks 0 --video-loss-weight 1 --language-ranking-weight 0 --lr-schedule cosine --require-text-only-context --log-every 1"
   }
 }

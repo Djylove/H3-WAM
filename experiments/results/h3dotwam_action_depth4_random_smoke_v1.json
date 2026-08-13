@@ -1,0 +1,31 @@
+{
+  "experiment": "h3dotwam_action_depth4_random_smoke_v1",
+  "classification": "controlled_ablation",
+  "source_identity": {
+    "upstream": "FastWAM",
+    "upstream_commit": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+    "local_commit": "59fc07e",
+    "alignment": "INTENTIONAL_DEVIATION"
+  },
+  "single_variable": "DoT action carrier and KV-fusion depth from one to four layers; random initialization retained",
+  "smoke": {
+    "checkpoint": "/mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_random_s2.pt",
+    "global_batch": 8,
+    "optimizer_steps": 2,
+    "samples_seen": 16,
+    "effective_epochs": 0.0000576,
+    "gradient_norms": [3.328125, 3.609375],
+    "peak_reserved_gib": 17.515625,
+    "finite": true
+  },
+  "restore": {
+    "action_layers_cli_argument": null,
+    "checkpoint_action_layers": 4,
+    "restored_action_layers": 4,
+    "mean_action_loss": 1.013942837715149,
+    "peak_reserved_gib": 14.224609375,
+    "pass": true
+  },
+  "training_permission": "GO_LONG",
+  "effectiveness": "NOT_EVIDENCE_READY"
+}

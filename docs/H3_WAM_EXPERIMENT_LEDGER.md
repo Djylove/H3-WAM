@@ -471,3 +471,11 @@ step8000。step9000/10000 继续完成预注册学习曲线；只有 causal 与�
 - 1层 carrier + KV fusion 为 `72.67M` 参数，4层为 `135.67M`。本实验是 H3 backbone port 的
   `controlled_ablation`，不是 FastWAM 官方复现；当前只具备 `GO_CANARY` 实现许可，效果仍为
   `NOT_EVIDENCE_READY`。
+
+真实 H3 depth4-random 2-step smoke 随后完成：global batch8、16 samples，两步 loss finite，梯度
+范数 `3.328/3.609`，每卡峰值 reserved `17.516 GiB`。保存的 stage 自描述
+`action_layers=4`；恢复命令不传 `--action-layers`，仍严格装载4层并完成真实 val forward，action
+loss `1.013943`、峰值 reserved `14.225 GiB`。因此容量线通过 finite-gradient、显存和 restore 门，
+训练许可提升为 `GO_LONG`，效果仍为 `NOT_EVIDENCE_READY`。正式父/子比较保持同一 v8 manifest、
+global batch128、2170 steps、277760 samples（`1.000169` epoch）、LR `1e-4` cosine、H3冻结，
+每200步保存；唯一架构变量为动作 carrier/KV fusion 深度1→4。
