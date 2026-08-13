@@ -375,3 +375,18 @@ teacher-forced video/action `0.095529/0.483439`，无泄漏 causal video/action
 `0.259440/0.719067`。相对 step4000，causal action 再改善约 `13.55%`、video 改善约
 `2.17%`，因此按同一门控晋级不改任务、不改 trial、不改执行周期的固定闭环 canary；成功前仍为
 `NO_GO_LONG`。
+
+## 2026-08-13 executed-action history 动作生成线
+
+step3000–5000 的因果 action MSE 持续改善而固定 task3 仍无接触，说明单纯延长冷启动训练不足。
+官方 LingBot-VA 固定 commit `7c6ffa9` 在执行后把真实 observation 与 executed actions 回写到
+rolling KV；本地此前每次 replan 冷启动。为隔离这个差异，新增16步已执行动作history：训练时只
+读取窗口起点之前的真实动作，作为固定clean token，后32步才计算action loss；部署时传入最近16步
+真实环境动作。当前阶段显式clean token重算attention，尚不声称等价于持久化KV的计算实现。
+
+history sidecar覆盖train+val全集1712 episodes、277713 actions、222929 windows，仅11MB；对实际
+train+val评测清单检查200819 windows，缺失为0。真实H3 2-step smoke的H3/action梯度分别为
+`1.608/51.239`、`2.397/62.664`，峰值reserved `41.06 GiB`；history checkpoint保存后严格restore
+并完成真实val forward。故放行100-step、global batch8 canary。其父权重固定为step5000，唯一
+变量为history条件；未满足因果action再改善至少2%、video退化不超过2%并产生真实物体接触前，
+不得扩到用户要求的3000-step长训。

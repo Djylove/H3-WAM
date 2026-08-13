@@ -25,17 +25,17 @@
     "objective_contract": {"status": "PASS", "evidence": ["history-exclusive action loss unit test"]},
     "optimization_contract": {"status": "PASS", "evidence": ["explicit 800-window canary budget"]},
     "evaluation_contract": {"status": "PASS", "evidence": ["fixed parent causal val40 and rollout"]},
-    "gradient_path": {"status": "FAIL", "evidence": ["pending real H3 2-step smoke"]},
-    "smoke_finite": {"status": "FAIL", "evidence": ["pending real H3 2-step smoke"]},
-    "checkpoint_restore": {"status": "FAIL", "evidence": ["pending history-stage restore"]},
+    "gradient_path": {"status": "PASS", "evidence": ["real H3 s2 h3/action grad norms 1.608/51.239 then 2.397/62.664"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["history16_from_s5000_smoke_s2.json; finite two-step losses; peak reserved 41.06 GiB"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["history16_from_s5000_smoke_s2.pt restored with executed_action_history_steps=16 and completed real val forward"]},
     "parent_baseline": {"status": "PASS", "evidence": ["step5000 paired offline and fixed rollout results"]},
     "mechanism_signal": {"status": "FAIL", "evidence": ["pending s100 causal val40"]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["pending only if offline gate passes"]}
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 200779, "effective_epochs": 0.003984, "gpu_count": 8, "estimated_hours": 0.13},
   "decision": {
-    "status": "NO_GO",
-    "rationale": "Code and data contracts are ready, but real-H3 gradient, finite and restore gates must pass before the 100-step canary launches.",
+    "status": "GO_CANARY",
+    "rationale": "All engineering gates pass on real H3 and the 1712-episode train+val sidecar audit reports zero missing windows. Launch exactly 100 steps; a separate dossier is required for the requested longer continuation.",
     "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --executed-action-history-steps 16 --executed-action-history-root /mnt/h3-wam/data/v7_executed_action_history --allow-history-bootstrap --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --load-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s10000_step005000.pt --save-stage /mnt/h3-wam/outputs/h3-lingbot-history/history16_from_s5000_s100.pt --output /mnt/h3-wam/outputs/h3-lingbot-history/history16_from_s5000_s100_train.json --steps 100 --sample-offset 5000 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5 --weight-decay 0.01"
   }
 }
