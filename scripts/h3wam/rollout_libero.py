@@ -278,6 +278,7 @@ def predict(
     episode_key: str,
     step: int,
     previous_action: np.ndarray,
+    executed_action_history: np.ndarray | None = None,
 ) -> tuple[np.ndarray, dict, float]:
     agentview = np.ascontiguousarray(obs["agentview_image"], dtype=np.uint8)
     wristview = np.ascontiguousarray(obs["robot0_eye_in_hand_image"], dtype=np.uint8)
@@ -290,6 +291,11 @@ def predict(
         "previous_environment_action": np.asarray(
             previous_action, dtype=np.float32
         ).tolist(),
+        "executed_action_history": (
+            []
+            if executed_action_history is None
+            else np.asarray(executed_action_history, dtype=np.float32).tolist()
+        ),
         # NumPy 1.x and 2.x array pickles are not mutually importable. Send a
         # stable bytes/list wire format across the two virtual environments.
         "agentview_bytes": agentview.tobytes(),
@@ -384,6 +390,7 @@ def run_episode(
     ensemble_prediction_counts = []
     done = bool(done)
     previous_action = np.asarray([0, 0, 0, 0, 0, 0, -1], dtype=np.float32)
+    executed_actions: list[np.ndarray] = []
     while step < max_steps and not done:
         if trajectory is not None:
             trajectory["step"].append(step)
@@ -418,6 +425,7 @@ def run_episode(
             episode_key,
             step,
             previous_action,
+            np.asarray(executed_actions[-16:], dtype=np.float32),
         )
         if trajectory is not None:
             trajectory["policy_actions"].append(actions.copy())
@@ -475,6 +483,7 @@ def run_episode(
                 frames.append(frame_from_observation(obs))
             obs, _, done, _ = env.step(action)
             previous_action = np.asarray(action, dtype=np.float32)
+            executed_actions.append(previous_action.copy())
             current_object_joints = object_joint_state(env)
             for name, initial in initial_object_joints.items():
                 current = np.asarray(current_object_joints[name])

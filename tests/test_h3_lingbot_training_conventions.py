@@ -1,11 +1,14 @@
 import unittest
 from unittest.mock import patch
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import torch
 
 from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import (
     flow_match_training_weight,
     is_checkpoint_milestone,
+    load_executed_action_history,
     normalize_action,
     prepend_initial_action_history,
     video_clean_from_velocity,
@@ -164,6 +167,62 @@ class H3LingBotTrainingConventionsTest(unittest.TestCase):
         torch.testing.assert_close(
             action_loss, (torch.tensor([1.0, 9.0]) * action_weights).mean()
         )
+
+    def test_executed_action_history_uses_only_preceding_actions(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "actions").mkdir()
+            actions = torch.arange(70, dtype=torch.float32).reshape(10, 7)
+            torch.save(
+                {"actions": actions},
+                root / "actions" / "libero_goal_ep000003.pt",
+            )
+            row = {"suite": "libero_goal", "episode": 3, "start": 6}
+            history = load_executed_action_history(
+                row, history_root=root, history_steps=4
+            )
+            torch.testing.assert_close(history, actions[2:6])
+
+    def test_executed_action_history_left_pads_episode_start(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "actions").mkdir()
+            actions = torch.arange(35, dtype=torch.float32).reshape(5, 7)
+            torch.save(
+                {"actions": actions},
+                root / "actions" / "libero_spatial_ep000001.pt",
+            )
+            row = {"suite": "libero_spatial", "episode": 1, "start": 2}
+            history = load_executed_action_history(
+                row, history_root=root, history_steps=4
+            )
+            torch.testing.assert_close(history[:2], torch.zeros(2, 7))
+            torch.testing.assert_close(history[2:], actions[:2])
+
+    def test_weighted_action_loss_excludes_history_tokens(self) -> None:
+        video_prediction = torch.zeros(1, 2, 1)
+        video_target = torch.zeros_like(video_prediction)
+        future = torch.tensor([False, True])
+        video_times = torch.tensor([0.9, 0.5])
+        video_indices = torch.tensor([0, 1])
+        action_prediction = torch.tensor([[[100.0], [100.0], [1.0], [3.0]]])
+        action_target = torch.zeros_like(action_prediction)
+        action_time = torch.tensor([0.5])
+        action_indices = torch.zeros(4, dtype=torch.long)
+        _, action_loss = weighted_video_action_losses(
+            video_prediction=video_prediction,
+            video_target=video_target,
+            future=future,
+            noisy_video_timesteps=video_times,
+            noisy_video_timestep_indices=video_indices,
+            action_prediction=action_prediction,
+            action_target=action_target,
+            action_time=action_time,
+            action_timestep_indices=action_indices,
+            action_loss_mask=torch.tensor([False, False, True, True]),
+        )
+        weight = flow_match_training_weight(torch.tensor([0.5]), shift=0.05)[0]
+        torch.testing.assert_close(action_loss, torch.tensor(5.0) * weight)
 
 
 if __name__ == "__main__":

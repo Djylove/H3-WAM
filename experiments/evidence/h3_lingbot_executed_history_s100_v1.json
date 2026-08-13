@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_executed_history_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Conditioning H3-WAM on the 16 actions actually executed before each replan reduces leak-free generated-action error and creates more goal-directed LIBERO contact than the cold-start step5000 parent.",
+  "single_variable": "Expose the 16 real actions immediately preceding each dense window as fixed clean history tokens, exclude them from action loss, and feed the last 16 executed environment actions through the same slots at deployment; all target data, weights, optimizer, sampler and rollout protocol remain fixed.",
+  "parent_baseline": "quantile_flowweight_lr1e5_tail2_s10000_step005000.pt; causal val40 video/action 0.259440/0.719067; fixed Goal task3 trial0 replan16 success 0/1 with max object delta 1.45e-16.",
+  "references": [
+    {"kind": "paper", "title": "LingBot-VA: Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "arXiv:2601.21998", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 shared four-stream executed-history port", "locator": "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "revision": "working tree before canary", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "rolling action context", "paper": "causal world/action history", "upstream_code": "after execution, client sends actions and observations to server; server updates action/video KV cache", "local": "16 executed actions are explicit fixed clean tokens on every replan; no persistent transformer KV yet", "status": "INTENTIONAL_DEVIATION", "evidence": ["third_party/code_audit/lingbot-va/evaluation/libero/client.py:105", "third_party/code_audit/lingbot-va/wan_va/wan_va_server.py:571", "scripts/h3dreamwam/serve_h3_lingbot_shared_fsdp.py"], "rationale": "Explicit clean-history tokens preserve the upstream information flow while H3 packed attention is recomputed instead of caching K/V."}],
+    "data": [{"field": "history source", "paper": "executed past trajectory", "upstream_code": "dataset prepends the action history frame and deployment feeds executed state", "local": "per-episode sidecars provide exactly actions[max(0,start-16):start], left-zero-padded only at episode start", "status": "EQUIVALENT", "evidence": ["scripts/h3dreamwam/build_executed_action_history.py", "tests/test_h3_lingbot_training_conventions.py"], "rationale": "No future action enters the history prefix; existing 200779 dense windows and episode-disjoint split are unchanged."}],
+    "action": [{"field": "history normalization and execution boundary", "paper": "causal action history", "upstream_code": "q01/q99 normalized action frames; executed action feedback", "local": "same locked q01/q99 transform; first16 tokens observed and omitted from returned next32 actions", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json", "scripts/h3dreamwam/serve_h3_lingbot_shared_fsdp.py"], "rationale": "Training and deployment share the same raw-environment-action to normalized-history boundary."}],
+    "objective": [{"field": "loss mask", "paper": "predict future conditioned on history", "upstream_code": "action mask gates action flow loss", "local": "weighted action flow loss is computed only over the 32 target tokens; history is fixed clean conditioning", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/train.py:287", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "tests/test_h3_lingbot_training_conventions.py"], "rationale": "Past executed actions cannot contribute a trivial reconstruction loss."}],
+    "optimization": [{"field": "canary budget", "paper": "post-training", "upstream_code": "5000 optimizer steps at effective global batch80", "local": "100 steps, global batch8, 800 sampled windows, LR1e-5, WD0.01, tail2, parent step5000", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "This is a mechanism canary. A separate dossier is required before any 3000-step continuation."}],
+    "evaluation": [{"field": "promotion", "paper": "closed-loop LIBERO success", "upstream_code": "rolling-history LIBERO client", "local": "paired causal val40 then fixed Goal task3/trial0/replan16; long training requires >=2% action improvement, <=2% video regression and real object contact", "status": "INTENTIONAL_DEVIATION", "evidence": ["parent_baseline", "scripts/h3dreamwam/rollout_h3dreamwam_fsdp.py"], "rationale": "The fixed parent protocol isolates the history mechanism before full benchmark spending."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["official HEAD and local vendor both 7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb on 2026-08-13"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["explicit 16-token clean history and shifted causal chunks"]},
+    "data_contract": {"status": "PASS", "evidence": ["sidecar extraction has no future indices; existing episode-disjoint manifest"]},
+    "action_contract": {"status": "PASS", "evidence": ["locked q01/q99 round-trip and execution-boundary code"]},
+    "objective_contract": {"status": "PASS", "evidence": ["history-exclusive action loss unit test"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit 800-window canary budget"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["fixed parent causal val40 and rollout"]},
+    "gradient_path": {"status": "FAIL", "evidence": ["pending real H3 2-step smoke"]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["pending real H3 2-step smoke"]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["pending history-stage restore"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["step5000 paired offline and fixed rollout results"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["pending s100 causal val40"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["pending only if offline gate passes"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 200779, "effective_epochs": 0.003984, "gpu_count": 8, "estimated_hours": 0.13},
+  "decision": {
+    "status": "NO_GO",
+    "rationale": "Code and data contracts are ready, but real-H3 gradient, finite and restore gates must pass before the 100-step canary launches.",
+    "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --executed-action-history-steps 16 --executed-action-history-root /mnt/h3-wam/data/v7_executed_action_history --allow-history-bootstrap --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --load-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s10000_step005000.pt --save-stage /mnt/h3-wam/outputs/h3-lingbot-history/history16_from_s5000_s100.pt --output /mnt/h3-wam/outputs/h3-lingbot-history/history16_from_s5000_s100_train.json --steps 100 --sample-offset 5000 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5 --weight-decay 0.01"
+  }
+}

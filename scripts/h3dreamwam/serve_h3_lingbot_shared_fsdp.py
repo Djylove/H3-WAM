@@ -142,6 +142,9 @@ def main() -> None:
     upstream_initial_action_anchor = payload.get(
         "upstream_initial_action_anchor", False
     )
+    executed_action_history_steps = int(
+        payload.get("executed_action_history_steps", 0)
+    )
     for index_text, state in payload["layers"].items():
         layer = model.module.shared_layers[int(index_text)]
         with FSDP.summon_full_params(layer, recurse=False, writeback=True):
@@ -215,7 +218,13 @@ def main() -> None:
             time.perf_counter() - encode_started,
         )
 
-    def policy_forward(task: str, first: torch.Tensor, state: torch.Tensor, seed: int):
+    def policy_forward(
+        task: str,
+        first: torch.Tensor,
+        state: torch.Tensor,
+        seed: int,
+        executed_environment_actions: torch.Tensor,
+    ):
         context_id, conditioning = load_context(task)
         _, channels, _, height, width = first.shape
         text_tags = torch.cat((conditioning["token_tags"], torch.ones(1, dtype=torch.long)))
@@ -235,14 +244,43 @@ def main() -> None:
             generator=generator, device=device,
         )
         initial_video = torch.cat((first_rows, patchify_video_latents(future_noise, patch_size)[None]), dim=1)
-        video_chunks, action_chunks = align_h3_action_chunk_ids(
+        video_chunks, target_action_chunks = align_h3_action_chunk_ids(
             video_frame_ids=video_position_ids[:, 0], action_horizon=args.action_horizon,
             actions_per_chunk=args.actions_per_chunk,
         )
+        history_steps = executed_action_history_steps
+        history_chunks = history_steps // args.actions_per_chunk
+        if history_steps:
+            video_chunks = video_chunks + history_chunks
+            action_chunks = torch.cat((
+                torch.div(
+                    torch.arange(history_steps, device=device),
+                    args.actions_per_chunk,
+                    rounding_mode="floor",
+                ),
+                target_action_chunks + history_chunks,
+            ))
+            history_positions = (
+                torch.arange(-history_steps, 0, device=device).float()
+                / args.actions_per_chunk
+            )
+            target_positions = (
+                torch.arange(args.action_horizon, device=device).float()
+                / args.actions_per_chunk
+            )
+            action_temporal_positions = torch.cat(
+                (history_positions, target_positions)
+            )
+        else:
+            action_chunks = target_action_chunks
+            action_temporal_positions = (
+                torch.arange(args.action_horizon, device=device).float()
+                / args.actions_per_chunk
+            )
         action_positions = torch.stack((
-            torch.arange(args.action_horizon, device=device).float() / args.actions_per_chunk,
-            torch.full((args.action_horizon,), -1.0, device=device),
-            torch.full((args.action_horizon,), -1.0, device=device),
+            action_temporal_positions,
+            torch.full_like(action_temporal_positions, -1.0),
+            torch.full_like(action_temporal_positions, -1.0),
         ), dim=-1)
         observed = torch.zeros(initial_video.shape[1], device=device, dtype=torch.bool)
         observed[:condition_rows] = True
@@ -270,10 +308,31 @@ def main() -> None:
 
         inference_started = time.perf_counter()
         initial_actions = torch.randn(
-            (1, args.action_horizon, 7), generator=generator, device=device
+            (1, history_steps + args.action_horizon, 7),
+            generator=generator,
+            device=device,
         )
+        observed_action_mask = torch.zeros(
+            history_steps + args.action_horizon, device=device, dtype=torch.bool
+        )
+        if history_steps:
+            executed = executed_environment_actions[-history_steps:].float()
+            if len(executed) < history_steps:
+                executed = torch.cat((
+                    torch.zeros(history_steps - len(executed), 7, device=device),
+                    executed,
+                ))
+            normalized_history = (
+                (executed - action_low.to(device))
+                / (action_high.to(device) - action_low.to(device)).clamp_min(1e-6)
+                * 2.0
+                - 1.0
+            ).clamp(-normalized_action_clip, normalized_action_clip)
+            initial_actions[:, :history_steps] = normalized_history
+            observed_action_mask[:history_steps] = True
         if upstream_initial_action_anchor:
             initial_actions[:, : args.actions_per_chunk] = 0.0
+            observed_action_mask[: args.actions_per_chunk] = True
         sampled = sample_h3_lingbot_chunk_causal(
             predict_velocity=predict, initial_video_rows=initial_video,
             observed_video_mask=observed, video_chunk_ids=video_chunks,
@@ -281,14 +340,9 @@ def main() -> None:
             action_chunk_ids=action_chunks,
             video_schedule=video_schedule,
             action_schedule=action_schedule,
-            observed_action_mask=(
-                torch.arange(args.action_horizon, device=device)
-                < args.actions_per_chunk
-                if upstream_initial_action_anchor
-                else None
-            ),
+            observed_action_mask=observed_action_mask,
         )
-        actions = sampled.actions[0]
+        actions = sampled.actions[0, history_steps:]
         if upstream_initial_action_anchor:
             actions = actions[args.actions_per_chunk :]
         torch.cuda.synchronize(device)
@@ -310,6 +364,7 @@ def main() -> None:
                 "normalized_action_clipping": args.clip_normalized_actions,
                 "normalized_action_clip_bound": normalized_action_clip,
                 "upstream_initial_action_anchor": upstream_initial_action_anchor,
+                "executed_action_history_steps": executed_action_history_steps,
             }, indent=2))
             connection = listener.accept()
         while True:
@@ -325,6 +380,13 @@ def main() -> None:
                 continue
             task = broadcast_object(request["task"] if rank == 0 else None, rank)
             seed = int(broadcast_object(request["seed"] if rank == 0 else None, rank))
+            executed_history_list = broadcast_object(
+                request.get("executed_action_history", []) if rank == 0 else None,
+                rank,
+            )
+            executed_history = torch.as_tensor(
+                executed_history_list, device=device, dtype=torch.float32
+            ).reshape(-1, 7)
             if rank == 0:
                 first, state, vae_seconds = encode_observation(request)
                 shapes = (tuple(first.shape), tuple(state.shape))
@@ -337,7 +399,9 @@ def main() -> None:
                 state = torch.empty(state_shape, device=device, dtype=torch.float32)
             dist.broadcast(first, src=0)
             dist.broadcast(state, src=0)
-            normalized, context_id, inference_seconds = policy_forward(task, first, state, seed)
+            normalized, context_id, inference_seconds = policy_forward(
+                task, first, state, seed, executed_history
+            )
             if rank == 0:
                 raw = normalized.float()
                 if args.clip_normalized_actions:

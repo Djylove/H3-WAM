@@ -32,6 +32,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tokens-per-frame", type=int, default=98)
     parser.add_argument("--action-horizon", type=int, default=8)
     parser.add_argument("--actions-per-chunk", type=int, default=4)
+    parser.add_argument(
+        "--executed-action-history-steps",
+        type=int,
+        default=0,
+        help=(
+            "Number of real actions immediately preceding each window to expose "
+            "as fixed clean history. These tokens are excluded from action loss."
+        ),
+    )
+    parser.add_argument(
+        "--executed-action-history-root",
+        type=Path,
+        help="Episode action sidecars produced by build_executed_action_history.py.",
+    )
+    parser.add_argument(
+        "--allow-history-bootstrap",
+        action="store_true",
+        help="Allow a history-conditioned run to initialize from a legacy history=0 stage.",
+    )
     parser.add_argument("--learning-rate", type=float, default=1.0e-6)
     parser.add_argument("--weight-decay", type=float, default=1.0e-2)
     parser.add_argument(
@@ -197,6 +216,7 @@ def weighted_video_action_losses(
     action_target: torch.Tensor,
     action_time: torch.Tensor,
     action_timestep_indices: torch.Tensor,
+    action_loss_mask: torch.Tensor | None = None,
     action_shift: float = 0.05,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Frame/token-wise official flow weighting for the two training losses."""
@@ -219,6 +239,14 @@ def weighted_video_action_losses(
     action_weight = flow_match_training_weight(
         1.0 - action_clean_time, shift=action_shift
     )
+    if action_loss_mask is not None:
+        action_loss_mask = action_loss_mask.reshape(-1).bool()
+        if action_loss_mask.shape != action_timestep_indices.shape:
+            raise ValueError("action loss mask must cover every action token")
+        if not bool(action_loss_mask.any()):
+            raise ValueError("action loss mask must select at least one token")
+        action_per_token = action_per_token[:, action_loss_mask]
+        action_weight = action_weight[action_loss_mask]
     return (
         (video_per_row * video_weight[None]).mean(),
         (action_per_token * action_weight[None]).mean(),
@@ -283,6 +311,34 @@ def prepend_initial_action_history(
         ),
         dim=0,
     )[:horizon]
+
+
+def load_executed_action_history(
+    row: dict,
+    *,
+    history_root: Path,
+    history_steps: int,
+) -> torch.Tensor:
+    """Load the real actions immediately preceding a dense training window."""
+
+    if history_steps <= 0:
+        return torch.empty(0, 7, dtype=torch.float32)
+    suite = str(row["suite"])
+    episode = int(row["episode"])
+    start = int(row["start"])
+    path = history_root.resolve() / "actions" / f"{suite}_ep{episode:06d}.pt"
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    actions = payload["actions"].float()
+    if actions.ndim != 2 or actions.shape[1] != 7:
+        raise ValueError(f"invalid action history sidecar shape: {actions.shape}")
+    if start < 0 or start > len(actions):
+        raise ValueError(f"window start {start} is outside episode length {len(actions)}")
+    history = actions[max(0, start - history_steps) : start]
+    if len(history) < history_steps:
+        history = torch.cat(
+            (torch.zeros(history_steps - len(history), 7), history), dim=0
+        )
+    return history
 
 
 def prepare_real_batch(
@@ -424,8 +480,26 @@ def prepare_real_batch(
                 + condition_sigma_rows * condition_noise
             )
 
-    raw_action = window["actions"][: args.action_horizon]
+    target_raw_action = window["actions"][: args.action_horizon]
+    history_steps = int(args.executed_action_history_steps)
+    if history_steps:
+        if args.executed_action_history_root is None:
+            raise ValueError(
+                "--executed-action-history-root is required when history is enabled"
+            )
+        history_raw_action = load_executed_action_history(
+            row,
+            history_root=args.executed_action_history_root,
+            history_steps=history_steps,
+        )
+        raw_action = torch.cat((history_raw_action, target_raw_action), dim=0)
+    else:
+        raw_action = target_raw_action
     if args.upstream_initial_action_anchor:
+        if history_steps:
+            raise ValueError(
+                "executed action history and initial zero anchor are separate contracts"
+            )
         raw_action = prepend_initial_action_history(
             raw_action,
             history_steps=args.actions_per_chunk,
@@ -438,10 +512,24 @@ def prepare_real_batch(
         quantile_stats=quantile_stats,
     ).to(device)
     clean_action = normalized_action[None]
+    if history_steps:
+        action_timestep_indices = torch.cat(
+            (
+                torch.zeros(history_steps, device=device, dtype=torch.long),
+                action_timestep_indices,
+            )
+        )
     action_noise = torch.randn(
         clean_action.shape, generator=sample_generator, device=device
     )
     initial_action = action_noise.clone()
+    action_loss_mask = torch.ones(
+        clean_action.shape[1], device=device, dtype=torch.bool
+    )
+    if history_steps:
+        noisy_action[:, :history_steps] = clean_action[:, :history_steps]
+        initial_action[:, :history_steps] = clean_action[:, :history_steps]
+        action_loss_mask[:history_steps] = False
     if args.upstream_initial_action_anchor:
         initial_action[:, : args.actions_per_chunk] = 0.0
     action_sigma_per_token = action_noise_sigma.index_select(
@@ -463,12 +551,29 @@ def prepare_real_batch(
     alignment_kwargs = {}
     if args.h3_physical_time_alignment:
         alignment_kwargs["h3_frame_count"] = int(window["h3_frame_count"])
-    video_chunks, action_chunks = align_chunk_ids(
+    video_chunks, target_action_chunks = align_chunk_ids(
         video_frame_ids=video_position_ids[:, 0],
         action_horizon=args.action_horizon,
         actions_per_chunk=args.actions_per_chunk,
         **alignment_kwargs,
     )
+    history_chunks = history_steps // args.actions_per_chunk
+    if history_steps:
+        if history_steps % args.actions_per_chunk:
+            raise ValueError("history steps must be divisible by actions-per-chunk")
+        video_chunks = video_chunks + history_chunks
+        action_chunks = torch.cat(
+            (
+                torch.div(
+                    torch.arange(history_steps, device=device),
+                    args.actions_per_chunk,
+                    rounding_mode="floor",
+                ),
+                target_action_chunks + history_chunks,
+            )
+        )
+    else:
+        action_chunks = target_action_chunks
     video_tokens = clean_video.shape[1]
     noisy_video_timestep_indices = torch.ones(
         video_tokens, device=device, dtype=torch.long
@@ -476,7 +581,7 @@ def prepare_real_batch(
     noisy_video_timestep_indices[:condition_rows] = 0
     future = torch.ones(video_tokens, device=device, dtype=torch.bool)
     future[:condition_rows] = False
-    action_temporal_positions = (
+    target_action_temporal_positions = (
         action_time_builder(
             video_frame_ids=video_position_ids[:, 0],
             action_horizon=args.action_horizon,
@@ -487,11 +592,21 @@ def prepare_real_batch(
         else torch.arange(args.action_horizon, device=device).float()
         / args.actions_per_chunk
     )
+    if history_steps:
+        history_temporal_positions = (
+            torch.arange(-history_steps, 0, device=device).float()
+            / args.actions_per_chunk
+        )
+        action_temporal_positions = torch.cat(
+            (history_temporal_positions, target_action_temporal_positions)
+        )
+    else:
+        action_temporal_positions = target_action_temporal_positions
     action_position_ids = torch.stack(
         (
             action_temporal_positions,
-            torch.full((args.action_horizon,), -1.0, device=device),
-            torch.full((args.action_horizon,), -1.0, device=device),
+            torch.full_like(action_temporal_positions, -1.0),
+            torch.full_like(action_temporal_positions, -1.0),
         ),
         dim=-1,
     )
@@ -517,6 +632,8 @@ def prepare_real_batch(
         "action_chunks": action_chunks,
         "action_time": action_time,
         "action_timestep_indices": action_timestep_indices,
+        "action_loss_mask": action_loss_mask,
+        "observed_action_mask": ~action_loss_mask,
         "context": context,
         "context_position_ids": context_position_ids,
         "state": state,
@@ -533,6 +650,15 @@ def main() -> None:
         raise ValueError("mask-clean-future is an evaluation-only intervention")
     if not 0.0 <= args.noisy_clean_video_prob <= 1.0:
         raise ValueError("noisy-clean-video-prob must be in [0,1]")
+    if args.executed_action_history_steps < 0:
+        raise ValueError("executed action history steps cannot be negative")
+    if args.executed_action_history_steps and args.data_root is None:
+        raise ValueError("executed action history requires a real cached dataset")
+    if (
+        args.executed_action_history_steps
+        and args.executed_action_history_steps % args.actions_per_chunk
+    ):
+        raise ValueError("history steps must be divisible by actions-per-chunk")
     if args.weight_decay < 0.0:
         raise ValueError("weight-decay must be non-negative")
     if args.action_train_shift <= 0.0 or args.action_infer_shift <= 0.0:
@@ -742,6 +868,21 @@ def main() -> None:
                 f"{checkpoint_action_anchor} != "
                 f"{args.upstream_initial_action_anchor}"
             )
+        checkpoint_history_steps = int(
+            payload.get("executed_action_history_steps", 0)
+        )
+        if checkpoint_history_steps != args.executed_action_history_steps:
+            bootstrap_ok = (
+                args.allow_history_bootstrap
+                and checkpoint_history_steps == 0
+                and args.executed_action_history_steps > 0
+            )
+            if not bootstrap_ok:
+                raise ValueError(
+                    "stage executed-action history contract mismatch: "
+                    f"{checkpoint_history_steps} != "
+                    f"{args.executed_action_history_steps}"
+                )
         checkpoint_physical_time = payload.get(
             "h3_physical_time_alignment", False
         )
@@ -960,6 +1101,7 @@ def main() -> None:
             "flow_match_loss_weighting": args.flow_match_loss_weighting,
             "action_train_shift": args.action_train_shift,
             "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
+            "executed_action_history_steps": args.executed_action_history_steps,
             "weight_decay": args.weight_decay,
             "completed_steps": int(completed_steps),
             "sample_offset": int(args.sample_offset),
@@ -1060,6 +1202,8 @@ def main() -> None:
             action_chunks = batch["action_chunks"]
             action_time = batch["action_time"]
             action_timestep_indices = batch["action_timestep_indices"]
+            action_loss_mask = batch["action_loss_mask"]
+            observed_action_mask = batch["observed_action_mask"]
             context = batch["context"]
             context_position_ids = batch["context_position_ids"]
             state = batch["state"]
@@ -1074,9 +1218,14 @@ def main() -> None:
                 clean_video = clean_video.clone()
                 clean_video[:, future] = 0.0
                 clean_video_input = clean_video
-                clean_action = torch.zeros_like(clean_action)
+                clean_action = clean_action.clone()
+                clean_action[:, action_loss_mask] = 0.0
         else:
             action_time = sigma
+            action_loss_mask = torch.ones(
+                clean_action.shape[1], device=device, dtype=torch.bool
+            )
+            observed_action_mask = ~action_loss_mask
         optimizer.zero_grad(set_to_none=True)
         forward_arguments = dict(
             noisy_video_rows=noisy_video,
@@ -1146,7 +1295,8 @@ def main() -> None:
                 }
             )
             action_loss = F.mse_loss(
-                second_output.action_velocity.float(), action_target.float()
+                second_output.action_velocity[:, action_loss_mask].float(),
+                action_target[:, action_loss_mask].float(),
             )
             action_loss.backward()
             split_backward = True
@@ -1209,25 +1359,15 @@ def main() -> None:
                 action_chunk_ids=action_chunks,
                 video_schedule=video_schedule,
                 action_schedule=action_schedule,
-                observed_action_mask=(
-                    torch.arange(args.action_horizon, device=device)
-                    < args.actions_per_chunk
-                    if args.upstream_initial_action_anchor
-                    else None
-                ),
+                observed_action_mask=observed_action_mask,
             )
             video_loss = F.mse_loss(
                 sampled.video_rows[:, future].float(),
                 clean_video[:, future].float(),
             )
-            action_eval_start = (
-                args.actions_per_chunk
-                if args.upstream_initial_action_anchor
-                else 0
-            )
             action_loss = F.mse_loss(
-                sampled.actions[:, action_eval_start:].float(),
-                clean_action[:, action_eval_start:].float(),
+                sampled.actions[:, action_loss_mask].float(),
+                clean_action[:, action_loss_mask].float(),
             )
         else:
             output = model(**forward_arguments)
@@ -1242,6 +1382,7 @@ def main() -> None:
                     action_target=action_target,
                     action_time=action_time,
                     action_timestep_indices=action_timestep_indices,
+                    action_loss_mask=action_loss_mask,
                     action_shift=args.action_train_shift,
                 )
             else:
@@ -1250,7 +1391,8 @@ def main() -> None:
                     video_target[:, future].float(),
                 )
                 action_loss = F.mse_loss(
-                    output.action_velocity.float(), action_target.float()
+                    output.action_velocity[:, action_loss_mask].float(),
+                    action_target[:, action_loss_mask].float(),
                 )
         loss = video_loss + action_loss
         valid_weight = float(has_sample)
@@ -1394,6 +1536,7 @@ def main() -> None:
             "action_train_shift": args.action_train_shift,
             "action_infer_shift": args.action_infer_shift,
             "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
+            "executed_action_history_steps": args.executed_action_history_steps,
             "weight_decay": args.weight_decay,
             "base_completed_steps": args.base_completed_steps,
             "completed_steps": args.base_completed_steps + args.steps,
