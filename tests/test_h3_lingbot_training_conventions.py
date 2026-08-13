@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -12,6 +13,27 @@ from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import (
 
 
 class H3LingBotTrainingConventionsTest(unittest.TestCase):
+    def test_official_optimizer_overrides_are_explicit(self) -> None:
+        from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import parse_args
+
+        with patch(
+            "sys.argv",
+            [
+                "verify",
+                "--model",
+                "/tmp/model",
+                "--output",
+                "/tmp/out.json",
+                "--learning-rate",
+                "1e-5",
+                "--weight-decay",
+                "0.1",
+            ],
+        ):
+            args = parse_args()
+        self.assertEqual(args.learning_rate, 1.0e-5)
+        self.assertEqual(args.weight_decay, 0.1)
+
     def test_initial_action_history_is_zero_before_quantile_normalization(self) -> None:
         action = torch.arange(42, dtype=torch.float32).reshape(6, 7)
         raw = prepend_initial_action_history(action, history_steps=4, horizon=8)

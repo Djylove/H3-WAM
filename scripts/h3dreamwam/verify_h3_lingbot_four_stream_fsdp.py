@@ -33,6 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--action-horizon", type=int, default=8)
     parser.add_argument("--actions-per-chunk", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=1.0e-6)
+    parser.add_argument("--weight-decay", type=float, default=1.0e-2)
     parser.add_argument("--warmup-steps", type=int, default=0)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--save-stage", type=Path)
@@ -493,6 +494,8 @@ def main() -> None:
         raise ValueError("mask-clean-future is an evaluation-only intervention")
     if not 0.0 <= args.noisy_clean_video_prob <= 1.0:
         raise ValueError("noisy-clean-video-prob must be in [0,1]")
+    if args.weight_decay < 0.0:
+        raise ValueError("weight-decay must be non-negative")
     if args.noisy_clean_video_prob > 0.0 and args.eval_only:
         raise ValueError("noisy clean video is a training-only intervention")
     if args.sample_eval and (not args.eval_only or not args.shared_backbone):
@@ -712,6 +715,12 @@ def main() -> None:
                 f"{checkpoint_loss_weighting} != "
                 f"{args.flow_match_loss_weighting}"
             )
+        checkpoint_weight_decay = payload.get("weight_decay", 1.0e-2)
+        if checkpoint_weight_decay != args.weight_decay:
+            raise ValueError(
+                "stage weight-decay contract mismatch: "
+                f"{checkpoint_weight_decay} != {args.weight_decay}"
+            )
         for index_text, layer_state in payload["layers"].items():
             layer = (
                 model.module.shared_layers[int(index_text)]
@@ -737,6 +746,7 @@ def main() -> None:
         trainable,
         lr=args.learning_rate,
         betas=(0.9, 0.95),
+        weight_decay=args.weight_decay,
         foreach=False,
     )
     scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -1237,6 +1247,7 @@ def main() -> None:
             "h3_physical_time_alignment": args.h3_physical_time_alignment,
             "flow_match_loss_weighting": args.flow_match_loss_weighting,
             "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
+            "weight_decay": args.weight_decay,
             "layers": {},
         }
         for index in range(50 - args.last_trainable_layers, 50):
@@ -1299,6 +1310,7 @@ def main() -> None:
             "h3_physical_time_alignment": args.h3_physical_time_alignment,
             "flow_match_loss_weighting": args.flow_match_loss_weighting,
             "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
+            "weight_decay": args.weight_decay,
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],
