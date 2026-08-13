@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_continue_s500_v1",
+  "classification": "bounded_scaling_canary",
+  "hypothesis": "E30 is undertrained: extending it from 100 to 500 cumulative optimizer steps on 3,200 unseen windows increases causal sample40 action improvement beyond 0.900% while preserving positive video improvement.",
+  "single_variable": "Continue the E30 checkpoint for 400 optimizer steps on manifest windows 800 through 3,999. Keep architecture, normalization, loss weighting, LR, weight decay, action horizon and sampler fixed; do not restart warmup.",
+  "parent_baseline": "E30 cumulative step100: causal sample40 video/action improvements 14.020%/0.900%; fixed task3 trial0 0/1.",
+  "references": [
+    {"kind": "upstream_code", "title": "LingBot-VA LIBERO training config", "locator": "third_party/code_audit/lingbot-va/wan_va/configs/va_libero_train_cfg.py", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_result", "title": "E30 official-LR canary", "locator": "experiments/results/h3_lingbot_shared_official_lr_s100_val40.json", "revision": "a52fe80", "official": false, "clean": true},
+    {"kind": "local_implementation", "title": "shared H3 four-stream trainer", "locator": "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "revision": "9487c63", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared backbone", "paper": "shared causal WAM", "upstream_code": "shared Wan blocks", "local": "fixed E30 H3 tail-2 port", "status": "INTENTIONAL_DEVIATION", "evidence": ["E30 stage"], "rationale": "No architecture variable changes within the ladder."}],
+    "data": [{"field": "new dense windows", "paper": "LIBERO demonstrations", "upstream_code": "long shuffled training", "local": "next 3,200 unique windows after E30's first 800", "status": "EQUIVALENT", "evidence": ["sample_offset=100 with world_size=8"], "rationale": "Avoids replaying the canary windows."}],
+    "action": [{"field": "action contract", "paper": "chunked actions", "upstream_code": "q01/q99 and horizon", "local": "fixed E30 quantile horizon32", "status": "EQUIVALENT", "evidence": ["E30 checkpoint contract"], "rationale": "No action variable changes."}],
+    "objective": [{"field": "flow objective", "paper": "flow matching", "upstream_code": "scheduler training_weight", "local": "fixed E30 per-token weighting", "status": "EQUIVALENT", "evidence": ["--flow-match-loss-weighting"], "rationale": "No loss variable changes."}],
+    "optimization": [{"field": "bounded continuation", "paper": "long post-training", "upstream_code": "5000 steps, LR1e-5, warmup10", "local": "cumulative500, LR1e-5, completed warmup, local-proven WD0.01", "status": "INTENTIONAL_DEVIATION", "evidence": ["E32 rejected WD0.1", "decision.launch_command"], "rationale": "A checkpoint ladder tests scale before authorizing the full 5000-step cost."}],
+    "evaluation": [{"field": "promotion", "paper": "closed-loop LIBERO", "upstream_code": "success predicate", "local": "paired raw/sample40, then fixed task3 only if causal action improves", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "Intermediate checkpoints prevent endpoint-only selection."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed LingBot commit"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["E30 stage"]},
+    "data_contract": {"status": "PASS", "evidence": ["explicit non-overlap offset"]},
+    "action_contract": {"status": "PASS", "evidence": ["checkpoint-carried quantiles"]},
+    "objective_contract": {"status": "PASS", "evidence": ["fixed E30 weighting"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["LR/WD/warmup explicit"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["same paired sample40"]},
+    "gradient_path": {"status": "PASS", "evidence": ["E30 finite H3/action gradients"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["E30 100-step run"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["E30 raw/sample/rollout restores"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E30 result"]},
+    "mechanism_signal": {"status": "PENDING", "evidence": []},
+    "closed_loop_canary": {"status": "PENDING", "evidence": []}
+  },
+  "budget": {"global_batch": 8, "additional_optimizer_steps": 400, "cumulative_optimizer_steps": 500, "additional_unique_windows": 3200, "cumulative_unique_windows": 4000, "cumulative_effective_epochs": 0.019922, "gpu_count": 8, "estimated_hours": 0.55},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Authorize only the cumulative step500 ladder point. Promote to step1000 if paired causal sample40 action exceeds E30's 0.900% with positive video improvement; otherwise stop scaling and change structure. Closed-loop success remains required for GO_LONG toward 2500/5000.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --load-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s100.pt --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s500_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s500.pt --steps 400 --sample-offset 100 --rotate-windows --random-timesteps --warmup-steps 0 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5 --weight-decay 0.01"
+  }
+}
