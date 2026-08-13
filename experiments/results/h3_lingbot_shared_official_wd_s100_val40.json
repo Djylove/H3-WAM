@@ -1,0 +1,35 @@
+{
+  "event": "h3_lingbot_shared_official_wd_s100",
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_wd01_tail2_s100.pt",
+  "training": {
+    "optimizer_steps": 100,
+    "global_batch": 8,
+    "unique_windows": 800,
+    "learning_rate": 1e-05,
+    "weight_decay": 0.1,
+    "elapsed_seconds": 461.40124219597783,
+    "peak_reserved_gib": 42.0234375,
+    "mean_weighted_video_loss": 0.17917640409708838,
+    "mean_weighted_action_loss": 1.245119340030069
+  },
+  "teacher_forced_val40": {
+    "initial_video_mse": 0.17002603001892566,
+    "trained_video_mse": 0.13992362692952157,
+    "video_improvement_percent": 17.70458504856779,
+    "initial_action_mse": 1.3043972849845886,
+    "trained_action_mse": 1.3435908764600755,
+    "action_improvement_percent": -3.0047280783745203
+  },
+  "causal_sample40": {
+    "sample_steps": 4,
+    "initial_video_mse": 0.6955631747841835,
+    "trained_video_mse": 0.6004115290939808,
+    "video_improvement_percent": 13.679799210147376,
+    "initial_action_mse": 1.3069883286952972,
+    "trained_action_mse": 1.344052454829216,
+    "action_improvement_percent": -2.8358421663120867
+  },
+  "closed_loop": null,
+  "decision": "NO_GO_LONG",
+  "rationale": "The upstream AdamW weight decay 0.1 preserves video learning but reverses both teacher-forced and causal action improvement under the bounded H3 tail-2 budget. It fails the preregistered E30 causal action gate, so no rollout or continuation is authorized."
+}

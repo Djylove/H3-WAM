@@ -19,8 +19,9 @@
   因此停止 gate-only 长训，转向 LingBot-VA 的完整 block-causal 双流接口。
 - shared-H3 已证明生成 video 可学（E22 严格无泄漏 video 改善 `12.696%`），但 action
   仅改善 `0.384%`。E30 对齐官方 `1e-5` LR 后，无泄漏 video/action 改善升至
-  `14.020%/0.900%`，但固定闭环仍 `0/1` 且无物体接触。主瓶颈已进一步收敛到动作历史/执行
-  协议，而不是 GPU 数量、采样步数或简单扩大训练步数。
+  `14.020%/0.900%`，但固定闭环仍 `0/1` 且无物体接触。E32 再对齐官方 AdamW
+  `weight_decay=0.1` 后，raw/causal action 反而退化 `3.005%/2.836%`；主瓶颈不是 GPU
+  数量、采样步数、简单扩大训练步数或继续照搬优化超参，而是动作专用建模与闭环目标绑定。
 
 ## 稳定实验记录
 
@@ -58,6 +59,7 @@
 | E29 | 官方 flow loss weighting s100 | E24 合约；训练时逐 video row/action token 使用 LingBot/DreamWAM scheduler `training_weight` | val40 video/action `0.165724/1.297436`；改善 `2.530%/0.534%` | 按门控不重跑 | action 未过 `0.926%` 门且比 E24 弱 `0.143` 个百分点；不晋级 sample/闭环 |
 | E30 | 官方 LR `1e-5` s100 | E29 合约；只将 LR 从 `1e-6` 对齐 LingBot LIBERO 配置 `1e-5` | raw val40 video/action 改善 `18.112%/3.067%`；无泄漏 sample40 改善 `14.020%/0.900%` | task3 trial0 `0/1`；最大物体位移 `8.08e-17` | 当前最强因果离线信号，但闭环不通过；保留优化配方，先修动作历史协议再扩训 |
 | E31 | 官方初始动作历史锚 s100 | E30 合约；原始域前置4步零动作，采样固定为历史，部署跳过执行 | raw改善 video/action `16.967%/1.322%`；无泄漏改善 `13.195%/0.653%` | 按门控不重跑 | 未超过 E30 的 `0.900%` causal action 门；合约保留，分支停止 |
+| E32 | 官方 AdamW weight decay `0.1` s100 | E30 合约；只将本地默认 `0.01` 对齐官方 `0.1` | raw video/action 改善 `17.705%/-3.005%`；无泄漏改善 `13.680%/-2.836%` | 按门控不重跑 | 两个动作指标均反向；`NO_GO_LONG`，本地短程局部解冻保留 `0.01` |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -187,15 +189,22 @@ E30 将唯一优化变量改为 LingBot-VA LIBERO 官方 `1e-5` learning rate，
 改善 `16.967%/1.322%`，但严格无泄漏只改善 `13.195%/0.653%`，低于 E30 的
 `14.020%/0.900%`。因此不做闭环、不加步数；协议实现保留，孤立假设判为失败。
 
+官方 LIBERO 配置还使用 AdamW `weight_decay=0.1`，而 E30 实际为 PyTorch 默认 `0.01`。
+E32 以此为唯一变量完成 100 steps：训练耗时 `461.4s`、峰值保留显存 `42.02 GiB`。
+固定 raw val40 的 video/action 改善为 `17.705%/-3.005%`，严格无泄漏 sample40 为
+`13.680%/-2.836%`。视频学习保留、动作学习却在两个独立协议上同时反向，未过预注册
+E30 `0.900%` 动作门，因此不做闭环、不续训。官方长程全参数配方的正则强度不能直接移植到
+当前 100-step H3 tail-2 局部解冻预算。
+
 ## 2026-08-13 长线实时状态
 
 | 线路 | 节点 | 训练规模 | 最后观测进度 | 保留原因 |
 |---|---|---|---:|---|
-| E31 action-anchor | `117.50.181.177:30907` | 100-step bounded canary | 已完成；causal action 改善 `0.653%`，未过门 | 分支停止，30907 已释放 |
+| E32 official weight decay | `117.50.181.177:30907` | 100-step bounded canary | 已完成；causal action 退化 `2.836%`，未过门 | 分支停止，30907/32409 已释放 |
 | M11 frame-indexed | `117.50.181.177:30234` | 2170 steps / 1 epoch | 已越过 step1800；最新已保存 step1800 | 仍在 8×A800 上约 100% 运行；step1600 val40 `0.108532`、task3 `0/10`，终点后核验 final |
 
-上述状态于 2026-08-13 09:00（Asia/Shanghai）用进程、GPU 和日志三重核对：E31 训练及
-配对 raw/sample40 已完成，30907/32409/32611 已释放；30234 继续 M11。恢复研究时仍必须
+上述状态于 2026-08-13（Asia/Shanghai）用进程、GPU 和日志三重核对：E32 训练及配对
+raw/sample40 已完成，30907/32409/32611 已释放；30234 继续 M11。恢复研究时仍必须
 先从日志和 checkpoint manifest 重新确认。
 
 ## 云端资产位置
@@ -253,7 +262,7 @@ steps 或 gate 数量来追逐噪声。E12 的正面价值是排除了“只补�
 1. 读取本账本和 `UPSTREAM_SOURCES.lock.json`，恢复固定上游 commit。
 2. 等 M11 到 step2170 后核验 final checkpoint、日志、resolved config 与数据 manifest hash；
    M13 已完成，不再重跑。
-3. E30 固定为当前官方优化协议基线；E31 未超过其 `0.900%` causal action 门，已停止。
+3. E30 固定为当前 shared-H3 优化基线；E31/E32 均未超过其 `0.900%` causal action 门，已停止。
 4. 下一证据审计转向动作专用建模：比较 LingBot/MiniWorld/DiT4DiT 的 action
    carrier 宽度、state 注入位置和 chunk 目标，不再从 video condition 侧做小修补。
 5. 新实验必须由作者开源代码中的明确差异驱动，且先交付配对基线、单变量门和

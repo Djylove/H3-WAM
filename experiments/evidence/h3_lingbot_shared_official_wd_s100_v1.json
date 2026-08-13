@@ -7,7 +7,7 @@
   "references": [
     {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
     {"kind": "upstream_code", "title": "Robbyant/lingbot-va LIBERO training config", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
-    {"kind": "local_implementation", "title": "fastwam_deploy shared H3 optimizer override", "locator": "/home/ubuntu/fastwam_deploy", "revision": "6bf09de plus working tree", "official": false, "clean": false}
+    {"kind": "local_implementation", "title": "fastwam_deploy shared H3 optimizer override", "locator": "/home/ubuntu/fastwam_deploy", "revision": "3b9e8fb", "official": false, "clean": true}
   ],
   "alignment": {
     "architecture": [{"field": "shared H3", "paper": "shared causal world/action blocks", "upstream_code": "shared Wan blocks", "local": "same E30 H3 tail-2 port", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "Backbone port stays fixed."}],
@@ -29,13 +29,13 @@
     "smoke_finite": {"status": "PASS", "evidence": ["two finite steps; peak reserved 41.04 GiB"]},
     "checkpoint_restore": {"status": "PASS", "evidence": ["fresh-process val8 video/action 0.170392/1.245655"]},
     "parent_baseline": {"status": "PASS", "evidence": ["E30 paired result"]},
-    "mechanism_signal": {"status": "PENDING", "evidence": []},
-    "closed_loop_canary": {"status": "PENDING", "evidence": []}
+    "mechanism_signal": {"status": "FAIL", "evidence": ["raw val40 action regressed 3.005%; causal sample40 action regressed 2.836%"]},
+    "closed_loop_canary": {"status": "NOT_RUN", "evidence": ["pre-registered causal action gate failed"]}
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Authorize tests and a real two-step smoke first. If finite gradients and fresh restore pass, run s100. Require causal sample40 action improvement above E30's 0.900% with positive video improvement before any rollout; otherwise stop.",
+    "status": "NO_GO_LONG",
+    "rationale": "The bounded s100 run and paired evaluations completed. Video improved 17.705% raw and 13.680% causally, but action regressed 3.005% raw and 2.836% causally. The E30 action gate failed, so no rollout or continuation is authorized; retain weight decay 0.01 for this local optimization regime.",
     "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_wd01_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_wd01_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5 --weight-decay 0.1"
   }
 }
