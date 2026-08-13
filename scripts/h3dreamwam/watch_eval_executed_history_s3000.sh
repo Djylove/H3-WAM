@@ -18,6 +18,10 @@ export PYTHONPATH="${PROJECT_ROOT}/third_party/diffusers_h3/src:${PROJECT_ROOT}/
 export TMPDIR="${TMP_ROOT}"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 
+if [[ -n "${WAIT_FOR_MARKER:-}" ]]; then
+  until [[ -e "${WAIT_FOR_MARKER}" ]]; do sleep 30; done
+fi
+
 wait_for_idle_gpus() {
   while [[ $(nvidia-smi --query-compute-apps=pid --format=csv,noheader | wc -l) -ne 0 ]]; do
     sleep 30
