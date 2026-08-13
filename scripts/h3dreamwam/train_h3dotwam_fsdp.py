@@ -68,6 +68,14 @@ def parse_args() -> argparse.Namespace:
         "--lr-schedule", choices=("constant", "cosine"), default="constant"
     )
     parser.add_argument("--action-horizon", type=int, default=32)
+    parser.add_argument(
+        "--action-layers",
+        type=int,
+        help=(
+            "Depth of the DoT action carrier. Defaults to the loaded stage's "
+            "self-described depth, or one for a new stage."
+        ),
+    )
     parser.add_argument("--learning-rate", type=float, default=1.0e-4)
     parser.add_argument("--h3-learning-rate", type=float, default=1.0e-6)
     parser.add_argument(
@@ -343,6 +351,8 @@ def main() -> None:
     )
     if args.steps <= 0 or not 1 <= args.action_horizon <= 32:
         raise ValueError("steps must be positive and action horizon must be in [1,32]")
+    if args.action_layers is not None and args.action_layers <= 0:
+        raise ValueError("action-layers must be positive")
     if args.gradient_accumulation_steps <= 0:
         raise ValueError("gradient-accumulation-steps must be positive")
     if (
@@ -440,6 +450,25 @@ def main() -> None:
         h3.proj_in.requires_grad_(True)
         h3.proj_out.requires_grad_(True)
 
+    stage_payload = None
+    if args.load_stage is not None:
+        stage_payload = torch.load(
+            args.load_stage.resolve(), map_location="cpu", weights_only=True
+        )
+        if stage_payload.get("format") != "h3dotwam_stage_v2":
+            raise ValueError("DoT stage checkpoint format mismatch")
+        stage_action_layers = int(
+            stage_payload.get("architecture", {}).get("action_layers", 1)
+        )
+        if args.action_layers is not None and args.action_layers != stage_action_layers:
+            raise ValueError(
+                "action-layers does not match loaded stage: "
+                f"requested {args.action_layers}, checkpoint {stage_action_layers}"
+            )
+        action_layers = stage_action_layers
+    else:
+        action_layers = 1 if args.action_layers is None else args.action_layers
+
     previous_dtype = torch.get_default_dtype()
     torch.set_default_dtype(torch.bfloat16)
     try:
@@ -449,13 +478,13 @@ def main() -> None:
             ffn_dim=4096,
             num_heads=24,
             head_dim=128,
-            num_layers=1,
+            num_layers=action_layers,
             frequency_dim=256,
             full_width_rmsnorm=True,
         )
         kv_fusion = H3DoTKVFusion(
             video_layers=50,
-            action_layers=1,
+            action_layers=action_layers,
             video_num_heads=56,
             video_head_dim=128,
             action_num_heads=24,
@@ -474,15 +503,13 @@ def main() -> None:
     finally:
         torch.set_default_dtype(previous_dtype)
 
-    if args.load_stage is not None:
-        payload = torch.load(
-            args.load_stage.resolve(), map_location="cpu", weights_only=True
+    if stage_payload is not None:
+        model.action_head.load_state_dict(stage_payload["action_head"], strict=True)
+        model.kv_fusion.load_state_dict(stage_payload["kv_fusion"], strict=True)
+        model.state_embedding.load_state_dict(
+            stage_payload["state_embedding"], strict=True
         )
-        if payload.get("format") != "h3dotwam_stage_v2":
-            raise ValueError("DoT stage checkpoint format mismatch")
-        model.action_head.load_state_dict(payload["action_head"], strict=True)
-        model.kv_fusion.load_state_dict(payload["kv_fusion"], strict=True)
-        model.state_embedding.load_state_dict(payload["state_embedding"], strict=True)
+        del stage_payload
 
     trainable_count = sum(
         parameter.numel() for parameter in model.parameters() if parameter.requires_grad
@@ -830,7 +857,7 @@ def main() -> None:
                     "format": "h3dotwam_stage_v2",
                     "architecture": {
                         "video_layers": 50,
-                        "action_layers": 1,
+                        "action_layers": action_layers,
                         "hidden_dim": 1024,
                         "video_num_heads": 56,
                         "video_head_dim": 128,
@@ -1204,6 +1231,7 @@ def main() -> None:
             "eval_only": args.eval_only,
             "sample_steps": args.sample_steps,
             "action_horizon": args.action_horizon,
+            "action_layers": action_layers,
             "learning_rate": args.learning_rate,
             "h3_learning_rate": args.h3_learning_rate,
             "h3_io_learning_rate": h3_io_learning_rate,

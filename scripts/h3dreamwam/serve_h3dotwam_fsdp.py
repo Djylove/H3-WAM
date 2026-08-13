@@ -107,6 +107,14 @@ def main() -> None:
 
     load_started = time.perf_counter()
     model_path = args.model.resolve()
+    stage = torch.load(
+        args.action_stage.resolve(), map_location="cpu", weights_only=True
+    )
+    if stage.get("format") != "h3dotwam_stage_v2":
+        raise ValueError("DoT stage checkpoint format mismatch")
+    action_layers = int(stage.get("architecture", {}).get("action_layers", 1))
+    if action_layers <= 0:
+        raise ValueError("checkpoint action_layers must be positive")
     h3 = MiniMaxH3Transformer3DModel.from_pretrained(
         model_path,
         subfolder="transformer",
@@ -128,13 +136,13 @@ def main() -> None:
             ffn_dim=4096,
             num_heads=24,
             head_dim=128,
-            num_layers=1,
+            num_layers=action_layers,
             frequency_dim=256,
             full_width_rmsnorm=True,
         )
         kv_fusion = H3DoTKVFusion(
             video_layers=50,
-            action_layers=1,
+            action_layers=action_layers,
             video_num_heads=56,
             video_head_dim=128,
             action_num_heads=24,
@@ -152,14 +160,10 @@ def main() -> None:
         )
     finally:
         torch.set_default_dtype(previous_dtype)
-    stage = torch.load(
-        args.action_stage.resolve(), map_location="cpu", weights_only=True
-    )
-    if stage.get("format") != "h3dotwam_stage_v2":
-        raise ValueError("DoT stage checkpoint format mismatch")
     model.action_head.load_state_dict(stage["action_head"], strict=True)
     model.kv_fusion.load_state_dict(stage["kv_fusion"], strict=True)
     model.state_embedding.load_state_dict(stage["state_embedding"], strict=True)
+    del stage
     model.requires_grad_(False)
     ignored_modules = [
         module

@@ -134,6 +134,46 @@ class H3DoTDockingTest(unittest.TestCase):
         output.square().mean().backward()
         self.assertGreater(float(head.layers[0].attn.to_q.weight.grad.abs().sum()), 0.0)
 
+    def test_deeper_action_carrier_consumes_one_fused_cache_per_layer(self) -> None:
+        action_layers = 4
+        fusion = H3DoTKVFusion(
+            video_layers=3,
+            action_layers=action_layers,
+            video_num_heads=2,
+            video_head_dim=4,
+            action_num_heads=2,
+            action_head_dim=4,
+        )
+        head = H3DoTActionHead(
+            action_dim=3,
+            hidden_dim=8,
+            ffn_dim=16,
+            num_heads=2,
+            head_dim=4,
+            num_layers=action_layers,
+            frequency_dim=4,
+        )
+        keys = torch.randn(3, 2, 6, 2, 4)
+        values = torch.randn_like(keys)
+        docked_keys, docked_values = fusion(
+            rotated_video_keys=keys,
+            video_values=values,
+            video_cos=torch.ones(6, 4),
+            video_sin=torch.zeros(6, 4),
+        )
+        self.assertEqual(docked_keys.shape, (action_layers, 2, 6, 2, 4))
+        output = head(
+            noisy_actions=torch.randn(2, 5, 3),
+            timestep=torch.tensor([100.0, 600.0]),
+            docked_keys=docked_keys,
+            docked_values=docked_values,
+        )
+        self.assertEqual(output.shape, (2, 5, 3))
+        output.square().mean().backward()
+        for layer in head.layers:
+            self.assertGreater(float(layer.attn.to_q.weight.grad.abs().sum()), 0.0)
+        self.assertGreater(float(fusion.layer_mix.grad.abs().sum()), 0.0)
+
     def test_action_loss_updates_layer_mixing_and_h3_cache(self) -> None:
         fusion = H3DoTKVFusion(
             video_layers=2,
