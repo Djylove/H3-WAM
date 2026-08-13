@@ -34,6 +34,24 @@ class H3LingBotTrainingConventionsTest(unittest.TestCase):
         self.assertEqual(args.learning_rate, 1.0e-5)
         self.assertEqual(args.weight_decay, 0.1)
 
+    def test_long_run_checkpoint_contract_is_explicit(self) -> None:
+        from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import parse_args
+
+        with patch(
+            "sys.argv",
+            [
+                "verify",
+                "--model", "/tmp/model",
+                "--output", "/tmp/out.json",
+                "--save-stage", "/tmp/stage.pt",
+                "--checkpoint-every", "500",
+                "--base-completed-steps", "500",
+            ],
+        ):
+            args = parse_args()
+        self.assertEqual(args.checkpoint_every, 500)
+        self.assertEqual(args.base_completed_steps, 500)
+
     def test_initial_action_history_is_zero_before_quantile_normalization(self) -> None:
         action = torch.arange(42, dtype=torch.float32).reshape(6, 7)
         raw = prepend_initial_action_history(action, history_steps=4, horizon=8)

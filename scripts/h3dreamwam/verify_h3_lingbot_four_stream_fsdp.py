@@ -38,6 +38,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--save-stage", type=Path)
     parser.add_argument("--load-stage", type=Path)
+    parser.add_argument("--checkpoint-every", type=int, default=0)
+    parser.add_argument("--base-completed-steps", type=int, default=0)
     parser.add_argument("--eval-only", action="store_true")
     parser.add_argument("--rotate-windows", action="store_true")
     parser.add_argument("--eval-all", action="store_true")
@@ -496,6 +498,10 @@ def main() -> None:
         raise ValueError("noisy-clean-video-prob must be in [0,1]")
     if args.weight_decay < 0.0:
         raise ValueError("weight-decay must be non-negative")
+    if args.checkpoint_every < 0 or args.base_completed_steps < 0:
+        raise ValueError("checkpoint cadence and base completed steps must be non-negative")
+    if args.checkpoint_every and args.save_stage is None:
+        raise ValueError("checkpoint-every requires save-stage")
     if args.noisy_clean_video_prob > 0.0 and args.eval_only:
         raise ValueError("noisy clean video is a training-only intervention")
     if args.sample_eval and (not args.eval_only or not args.shared_backbone):
@@ -881,6 +887,64 @@ def main() -> None:
 
     torch.cuda.reset_peak_memory_stats(device)
     history = []
+
+    def save_training_stage(path: Path, completed_steps: int) -> None:
+        stage = {
+            "format": (
+                "h3_lingbot_shared_four_stream_tail_v1"
+                if args.shared_backbone
+                else "h3_lingbot_four_stream_tail_v1"
+            ),
+            "last_trainable_layers": args.last_trainable_layers,
+            "warmup_steps": args.warmup_steps,
+            "action_normalization": args.action_normalization,
+            "action_quantile_stats": quantile_stats,
+            "per_chunk_action_timesteps": args.per_chunk_action_timesteps,
+            "noisy_clean_video_prob": args.noisy_clean_video_prob,
+            "detached_generated_video_conditioning": (
+                args.detached_generated_video_conditioning
+            ),
+            "h3_physical_time_alignment": args.h3_physical_time_alignment,
+            "flow_match_loss_weighting": args.flow_match_loss_weighting,
+            "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
+            "weight_decay": args.weight_decay,
+            "completed_steps": int(completed_steps),
+            "sample_offset": int(args.sample_offset),
+            "layers": {},
+        }
+        for index in range(50 - args.last_trainable_layers, 50):
+            layer = (
+                model.module.shared_layers[index]
+                if args.shared_backbone
+                else model.module.paired_layers[index]
+            )
+            with FSDP.summon_full_params(layer, recurse=False, writeback=False):
+                if rank == 0:
+                    stage["layers"][str(index)] = {
+                        key: value.detach().cpu().clone()
+                        for key, value in layer.module.state_dict().items()
+                    }
+        with FSDP.summon_full_params(model, recurse=False, writeback=False):
+            if rank == 0:
+                stage["h3_proj_out"] = {
+                    key: value.detach().cpu().clone()
+                    for key, value in model.module.h3.proj_out.state_dict().items()
+                }
+                if args.shared_backbone:
+                    stage["action_adapters"] = {
+                        key: value.detach().cpu().clone()
+                        for key, value in model.module.action_adapters.state_dict().items()
+                    }
+                else:
+                    stage["action_output"] = {
+                        key: value.detach().cpu().clone()
+                        for key, value in model.module.action_expert.output.state_dict().items()
+                    }
+        if rank == 0:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(f".{path.name}.{os.getpid()}.partial")
+            torch.save(stage, temporary)
+            os.replace(temporary, path)
     iterations = (
         math.ceil(
             (min(len(rows), args.eval_limit) if args.eval_limit else len(rows))
@@ -1218,6 +1282,17 @@ def main() -> None:
         history.append(item)
         if rank == 0:
             print(json.dumps(item), flush=True)
+        if (
+            args.checkpoint_every
+            and step % args.checkpoint_every == 0
+            and step < args.steps
+        ):
+            cumulative_step = args.base_completed_steps + step
+            milestone = args.save_stage.with_name(
+                f"{args.save_stage.stem}_step{cumulative_step:06d}"
+                f"{args.save_stage.suffix}"
+            )
+            save_training_stage(milestone, cumulative_step)
 
     dist.all_reduce(loss_sums)
     evaluated_tensor = torch.tensor(evaluated_samples, device=device, dtype=torch.long)
@@ -1229,58 +1304,10 @@ def main() -> None:
     )
 
     if args.save_stage is not None and not args.eval_only:
-        stage = {
-            "format": (
-                "h3_lingbot_shared_four_stream_tail_v1"
-                if args.shared_backbone
-                else "h3_lingbot_four_stream_tail_v1"
-            ),
-            "last_trainable_layers": args.last_trainable_layers,
-            "warmup_steps": args.warmup_steps,
-            "action_normalization": args.action_normalization,
-            "action_quantile_stats": quantile_stats,
-            "per_chunk_action_timesteps": args.per_chunk_action_timesteps,
-            "noisy_clean_video_prob": args.noisy_clean_video_prob,
-            "detached_generated_video_conditioning": (
-                args.detached_generated_video_conditioning
-            ),
-            "h3_physical_time_alignment": args.h3_physical_time_alignment,
-            "flow_match_loss_weighting": args.flow_match_loss_weighting,
-            "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
-            "weight_decay": args.weight_decay,
-            "layers": {},
-        }
-        for index in range(50 - args.last_trainable_layers, 50):
-            layer = (
-                model.module.shared_layers[index]
-                if args.shared_backbone
-                else model.module.paired_layers[index]
-            )
-            with FSDP.summon_full_params(layer, recurse=False, writeback=False):
-                if rank == 0:
-                    stage["layers"][str(index)] = {
-                        key: value.detach().cpu().clone()
-                        for key, value in layer.module.state_dict().items()
-                    }
-        with FSDP.summon_full_params(model, recurse=False, writeback=False):
-            if rank == 0:
-                stage["h3_proj_out"] = {
-                    key: value.detach().cpu().clone()
-                    for key, value in model.module.h3.proj_out.state_dict().items()
-                }
-                if args.shared_backbone:
-                    stage["action_adapters"] = {
-                        key: value.detach().cpu().clone()
-                        for key, value in model.module.action_adapters.state_dict().items()
-                    }
-                else:
-                    stage["action_output"] = {
-                        key: value.detach().cpu().clone()
-                        for key, value in model.module.action_expert.output.state_dict().items()
-                    }
-        if rank == 0:
-            args.save_stage.parent.mkdir(parents=True, exist_ok=True)
-            torch.save(stage, args.save_stage)
+        save_training_stage(
+            args.save_stage,
+            args.base_completed_steps + args.steps,
+        )
 
     if rank == 0:
         report = {
@@ -1311,6 +1338,9 @@ def main() -> None:
             "flow_match_loss_weighting": args.flow_match_loss_weighting,
             "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
             "weight_decay": args.weight_decay,
+            "base_completed_steps": args.base_completed_steps,
+            "completed_steps": args.base_completed_steps + args.steps,
+            "checkpoint_every": args.checkpoint_every,
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],
