@@ -27,7 +27,19 @@
     "causal_video_relative_change_vs_parent": 0.0023006912192165617
   },
   "offline_gate": "PASS",
-  "closed_loop_gate": "RUNNING",
+  "closed_loop": {
+    "suite": "libero_goal",
+    "task_id": 3,
+    "trial": 0,
+    "max_steps": 80,
+    "replan_steps": 16,
+    "success": false,
+    "mean_action_magnitude": 0.24824303090572358,
+    "action_saturation_fraction": 0.034375,
+    "max_object_joint_delta": 1.4564562121448243e-16,
+    "eef_position_delta": [0.0855, -0.0533, 0.0308]
+  },
+  "closed_loop_gate": "FAIL_NO_CONTACT",
   "training_permission": "GO_LONG",
   "effectiveness": "NOT_EVIDENCE_READY"
 }
