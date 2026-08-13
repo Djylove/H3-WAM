@@ -272,3 +272,21 @@ steps 或 gate 数量来追逐噪声。E12 的正面价值是排除了“只补�
    carrier 宽度、state 注入位置和 chunk 目标，不再从 video condition 侧做小修补。
 5. 新实验必须由作者开源代码中的明确差异驱动，且先交付配对基线、单变量门和
    2-step/restore smoke；未过 offline action 门不调度 LIBERO 闭环。
+
+## 2026-08-13 训练预算扩展
+
+用户明确要求优先检验“训练量不足”。在不修改数据、动作合约和核心目标的前提下，启动三条
+可区分结论的规模线，并保留一台独立评测节点：
+
+| 节点 | 实验 | 预算 | 里程碑/门禁 |
+|---|---|---:|---|
+| 30907 | shared-H3 tail-2 从累计 step500 续至2500 | global batch8，新增16000窗口，累计0.0996 epoch | step1000/1500/2000/2500；严格 causal sample40 和固定闭环决定是否继续 |
+| 32611 | shared-H3 tail-4 等预算对照 | global batch8，20000窗口，0.0996 epoch | step500/1000/1500/2000/2500；唯一变量为可训练H3尾层2→4 |
+| 30234 | M11 frame-indexed 第二完整epoch | global batch128，2170 steps，277760样本 | 每200步checkpoint；终点复用 val40 + Goal task3十次闭环 |
+| 32409 | shared-H3 checkpoint消费者 | 不训练 | 自动等待并依次评测tail-2/tail-4里程碑，防止只看终点 |
+
+启动后三条训练均进入真实GPU计算且首步 finite。tail-2 的 step500 配对结果为：teacher-forced
+video/action MSE `0.117352/1.167875`，但无泄漏 causal video/action MSE
+`0.419902/1.313663`；即视频和 teacher-forced action 随训练改善，而 causal action 相对
+step100 的 `1.295219` 暂时回退。这是扩大预算时必须持续监测的过拟合/训推偏移信号，不能仅凭
+训练 loss 宣称成功。
