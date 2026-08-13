@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_official_lr_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "The upstream LingBot-VA LIBERO learning rate of 1e-5 raises fixed val40 action improvement to at least 0.926% while preserving positive video improvement under the E29 weighted objective.",
+  "single_variable": "Increase AdamW learning rate from E29's 1e-6 to the official LingBot-VA LIBERO value 1e-5. Architecture, flow weighting, data, quantile action contract, seed, random timesteps, warmup, tail-2 trainability and 100-step budget stay fixed.",
+  "parent_baseline": "E29 weighted s100: initialization video/action 0.170026/1.304397; s100 0.165724/1.297436; action improvement 0.534%.",
+  "references": [
+    {"kind": "paper", "title": "Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va LIBERO training config", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy shared H3 port", "locator": "/home/ubuntu/fastwam_deploy", "revision": "9cd93f2", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared four-stream H3", "paper": "shared causal world/action blocks", "upstream_code": "shared Wan blocks", "local": "same E29 H3 tail-2 port", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "Backbone substitution is fixed across parent and canary."}],
+    "data": [{"field": "paired windows", "paper": "LIBERO demonstrations", "upstream_code": "dense latent/action segments", "local": "same first 800 episode-disjoint training windows and fixed val40", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"], "rationale": "No data variable changes."}],
+    "action": [{"field": "action contract", "paper": "chunked actions", "upstream_code": "q01/q99, seven active channels, shift0.05", "local": "same E29 q01/q99, seven channels, horizon32, shift0.05", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json"], "rationale": "No action variable changes."}],
+    "objective": [{"field": "flow objective", "paper": "flow-matching post-training", "upstream_code": "scheduler training_weight", "local": "same tested E29 per-row/per-token weighting", "status": "EQUIVALENT", "evidence": ["experiments/results/h3_lingbot_shared_flow_weight_s100_val40.json"], "rationale": "No objective variable changes."}],
+    "optimization": [{"field": "learning rate", "paper": "post-training", "upstream_code": "LIBERO config learning_rate=1e-5", "local": "AdamW lr1e-5, warmup10; 100-step mechanism canary", "status": "INTENTIONAL_DEVIATION", "evidence": ["third_party/code_audit/lingbot-va/wan_va/configs/va_libero_train_cfg.py:18", "decision.launch_command"], "rationale": "Learning rate is aligned; duration remains deliberately bounded before scale-up. Weight decay stays at the E29 value to preserve a single variable."}],
+    "evaluation": [{"field": "promotion", "paper": "closed-loop LIBERO", "upstream_code": "LIBERO success predicate", "local": "fixed raw val40 then causal sample/rollout only after threshold", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "A paired gate precedes expensive generation."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed clean LingBot commit"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["same E29 architecture"]},
+    "data_contract": {"status": "PASS", "evidence": ["same E29 manifests and first 800 windows"]},
+    "action_contract": {"status": "PASS", "evidence": ["same E29 quantile contract"]},
+    "objective_contract": {"status": "PASS", "evidence": ["same E29 weighted loss"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["official LR isolated as the only variable"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["same raw fixed val40"]},
+    "gradient_path": {"status": "PASS", "evidence": ["2-step H3 gradient 0.236/0.224; action gradient 9.819/17.200"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["2-step losses finite; peak reserved 41.04 GiB"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["stage restored in a fresh process; raw val8 video/action 0.170403/1.245824"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["E29 paired val40"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["lr1e-5 smoke is finite with non-zero H3 and action gradients"]},
+    "closed_loop_canary": {"status": "PENDING", "evidence": []}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Real 2-step finite/gradient and fresh-process restore gates pass at lr1e-5. Run the bounded s100 canary; promote beyond raw val40 only if action improvement reaches 0.926% and video remains better than initialization.",
+    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5"
+  }
+}
