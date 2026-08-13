@@ -27,16 +27,16 @@
     "optimization_contract": {"status": "PASS", "evidence": ["single-variable command fixes seed, LR, WD, warmup, steps and global batch"]},
     "evaluation_contract": {"status": "PASS", "evidence": ["pre-registered raw val40 and causal sample40 against E30"]},
     "gradient_path": {"status": "PASS", "evidence": ["unchanged E30 gradient path previously had non-zero H3/action gradients; nine local convention tests pass after scalar scheduler parameterization"]},
-    "smoke_finite": {"status": "PENDING", "evidence": ["100-step canary pending"]},
-    "checkpoint_restore": {"status": "PENDING", "evidence": ["new action_train_shift checkpoint contract pending cloud restore"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["100-step run completed finite in 470 seconds; peak reserved 42.02 GiB"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["fresh-process stage restore completed for val40 and sample40"]},
     "parent_baseline": {"status": "PASS", "evidence": ["experiments/results/h3_lingbot_shared_official_lr_s100_val40.json"]},
-    "mechanism_signal": {"status": "PENDING", "evidence": ["require causal action MSE <1.295219; meaningful promotion target is <=1.290651, a 1.25% improvement from initialization"]},
-    "closed_loop_canary": {"status": "PENDING", "evidence": ["run fixed task3 only if causal sample40 beats E30"]}
+    "mechanism_signal": {"status": "FAIL", "evidence": ["causal action MSE 1.288768 improves E30 by only 0.498% and misses the preregistered 1.282267 threshold"]},
+    "closed_loop_canary": {"status": "NOT_RUN", "evidence": ["pre-registered causal promotion gate failed"]}
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "This is a bounded single-variable test of a concrete train/inference support mismatch. Always run raw val40 and causal sample40. Promote to rollout only if causal action MSE is at most 1.282267, causal video MSE is at most 0.627947, raw action MSE is below 1.304397, and raw video MSE is at most 0.146192. Prefer shift1 over shift5 only if it wins on causal action MSE. A follow-up with video steps4/action steps50 is sampling sensitivity, not part of this training-variable gate.",
+    "status": "NO_GO",
+    "rationale": "The canary completed. Raw action MSE improved to 1.243479 and causal action MSE improved modestly to 1.288768, but the preregistered 1.282267 causal threshold failed. Do not continue this arm to 500 steps or closed-loop rollout; retain its bounded checkpoint while action50 sampling sensitivity finishes.",
     "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --action-train-shift 1.0 --action-infer-shift 0.05 --output /mnt/h3-wam/outputs/h3-lingbot-shared/action_shift1_lr1e5_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/action_shift1_lr1e5_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5 --weight-decay 0.01"
   }
 }

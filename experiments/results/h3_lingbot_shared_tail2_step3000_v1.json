@@ -1,0 +1,18 @@
+{
+  "event": "h3_lingbot_shared_tail2_step3000_v1",
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s10000_step003000.pt",
+  "teacher_forced_val40": {"video_mse": 0.09841475822031498, "action_mse": 0.8391488835215568},
+  "causal_sample40": {"video_mse": 0.2688331723213196, "action_mse": 1.0995394542813302},
+  "closed_loop_replan32": {
+    "suite": "libero_goal", "task_id": 3, "trial": 0, "successes": 0, "episodes": 1,
+    "steps": 80, "replans": 3, "mean_action_magnitude": 0.3179088830947876,
+    "action_saturation_fraction": 0.07638888888888888, "max_object_joint_delta": 1.4509335573287263e-16
+  },
+  "closed_loop_replan16": {
+    "suite": "libero_goal", "task_id": 3, "trial": 0, "successes": 0, "episodes": 1,
+    "steps": 80, "replans": 5, "mean_action_magnitude": 0.3330126523971558,
+    "action_saturation_fraction": 0.09687499999999999, "max_object_joint_delta": 1.4808846423436384e-16
+  },
+  "decision": "NO_GO_LONG",
+  "rationale": "Additional training strongly improves raw and causal offline MSE, but neither the original execution cadence nor LingBot's 16-action cadence produces object contact. Continue the user-authorized checkpoint ladder, but do not claim policy success; prioritize rolling history and action-carrier alignment."
+}
