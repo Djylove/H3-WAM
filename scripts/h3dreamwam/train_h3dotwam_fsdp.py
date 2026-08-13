@@ -76,6 +76,20 @@ def parse_args() -> argparse.Namespace:
             "self-described depth, or one for a new stage."
         ),
     )
+    parser.add_argument(
+        "--initialize-action-from-h3",
+        action="store_true",
+        help=(
+            "Initialize a new DoT carrier from uniformly depth-sampled H3 "
+            "blocks using FastWAM-style interpolation and alpha scaling."
+        ),
+    )
+    parser.add_argument(
+        "--action-init-output-scale",
+        type=float,
+        default=0.01,
+        help="Residual output scale for H3-initialized DoT attention/FFN routes.",
+    )
     parser.add_argument("--learning-rate", type=float, default=1.0e-4)
     parser.add_argument("--h3-learning-rate", type=float, default=1.0e-6)
     parser.add_argument(
@@ -353,6 +367,10 @@ def main() -> None:
         raise ValueError("steps must be positive and action horizon must be in [1,32]")
     if args.action_layers is not None and args.action_layers <= 0:
         raise ValueError("action-layers must be positive")
+    if not 0.0 < args.action_init_output_scale <= 1.0:
+        raise ValueError("action-init-output-scale must be in (0,1]")
+    if args.initialize_action_from_h3 and args.load_stage is not None:
+        raise ValueError("H3 action initialization requires a new action stage")
     if args.gradient_accumulation_steps <= 0:
         raise ValueError("gradient-accumulation-steps must be positive")
     if (
@@ -424,6 +442,7 @@ def main() -> None:
         expand_h3_rgb_flow_projections,
         build_h3dream_inference_schedule,
         h3dream_flow_training_weight,
+        initialize_dot_action_head_from_h3,
     )
     from fastwam.models.h3wam import build_h3_observation_attention_mask
     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -503,7 +522,37 @@ def main() -> None:
     finally:
         torch.set_default_dtype(previous_dtype)
 
+    action_initialization = None
+    if args.initialize_action_from_h3:
+        action_initialization = initialize_dot_action_head_from_h3(
+            model.action_head,
+            h3,
+            residual_output_scale=args.action_init_output_scale,
+            alpha_scaling=True,
+        )
+    action_initialization_metadata = (
+        None
+        if action_initialization is None
+        else {
+            "type": "h3_depth_sampled_fastwam_interpolation",
+            "h3_layers": action_initialization.h3_layers,
+            "source_layer_indices": list(
+                action_initialization.source_layer_indices
+            ),
+            "copied_tensors": action_initialization.copied_tensors,
+            "resized_tensors": action_initialization.resized_tensors,
+            "zeroed_biases": action_initialization.zeroed_biases,
+            "residual_output_scale": (
+                action_initialization.residual_output_scale
+            ),
+            "alpha_scaling": action_initialization.alpha_scaling,
+        }
+    )
+
     if stage_payload is not None:
+        action_initialization_metadata = stage_payload.get(
+            "action_initialization"
+        )
         model.action_head.load_state_dict(stage_payload["action_head"], strict=True)
         model.kv_fusion.load_state_dict(stage_payload["kv_fusion"], strict=True)
         model.state_embedding.load_state_dict(
@@ -864,6 +913,7 @@ def main() -> None:
                         "action_num_heads": 24,
                         "action_head_dim": 128,
                     },
+                    "action_initialization": action_initialization_metadata,
                     "action_head": clone_state(model.module.action_head),
                     "kv_fusion": clone_state(model.module.kv_fusion),
                     "state_embedding": clone_state(model.module.state_embedding),
@@ -1232,6 +1282,7 @@ def main() -> None:
             "sample_steps": args.sample_steps,
             "action_horizon": args.action_horizon,
             "action_layers": action_layers,
+            "action_initialization": action_initialization_metadata,
             "learning_rate": args.learning_rate,
             "h3_learning_rate": args.h3_learning_rate,
             "h3_io_learning_rate": h3_io_learning_rate,

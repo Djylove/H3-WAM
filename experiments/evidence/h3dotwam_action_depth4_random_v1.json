@@ -1,0 +1,207 @@
+{
+  "experiment_id": "h3dotwam_action_depth4_random_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Under the fixed dense frame-indexed contract, increasing only the random DoT carrier from one to four layers lowers episode-disjoint causal action error and yields more task-relevant closed-loop contact than the one-layer parent.",
+  "single_variable": "DoT action carrier and matching KV-fusion depth: 1 layer to 4 layers; initialization remains random.",
+  "parent_baseline": "M11 one-layer random DoT, same frozen H3 and v8 277713-window dataset; final fixed task3 rollout 0/10.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "Fast-WAM: Do World Action Models Need Test-time Future Imagination?",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "arXiv:2603.16666",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "FastWAM official implementation",
+      "locator": "https://github.com/yuantianyuan01/FastWAM",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3 DoT trainer",
+      "locator": "scripts/h3dreamwam/train_h3dotwam_fsdp.py",
+      "revision": "working tree pending commit",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "action carrier depth",
+        "paper": "deep ActionDiT",
+        "upstream_code": "30 layers, hidden1024, FFN4096, 24x128 attention",
+        "local": "4 layers, same width/FFN/attention, frozen H3",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "FastWAM configs/model/fastwam.yaml@45d8e145; train_h3dotwam_fsdp.py"
+        ],
+        "rationale": "Four layers is a bounded capacity probe before a 30-layer allocation."
+      }
+    ],
+    "data": [
+      {
+        "field": "dense windows",
+        "paper": "dense robot windows",
+        "upstream_code": "LeRobot dense indexing",
+        "local": "v8 277713 frame-indexed windows",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "v8 candidate report"
+        ],
+        "rationale": "Same audited parent data."
+      }
+    ],
+    "action": [
+      {
+        "field": "horizon/normalization",
+        "paper": "32-step chunks",
+        "upstream_code": "dataset normalization",
+        "local": "same parent horizon32 and stats",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "M11 resolved run"
+        ],
+        "rationale": "Unchanged."
+      }
+    ],
+    "objective": [
+      {
+        "field": "gradient path",
+        "paper": "world/action training",
+        "upstream_code": "ActionDiT plus video hub",
+        "local": "action-only-on-frozen-H3 features",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "--last-h3-blocks 0"
+        ],
+        "rationale": "Capacity is isolated on the action side."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "diagnostic budget",
+        "paper": "multi-epoch",
+        "upstream_code": "10 LIBERO epochs",
+        "local": "100-step smoke then bounded checkpoint ladder; exact long budget pending smoke throughput",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "launch command pending"
+        ],
+        "rationale": "Measure memory and throughput before allocating the full ladder."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "fixed gate",
+        "paper": "benchmark success",
+        "upstream_code": "LIBERO rollout",
+        "local": "episode-disjoint val40/causal sampling, then identical task3 trials",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "eval_h3dotwam_frameindexed_checkpoint.sh"
+        ],
+        "rationale": "Controlled early gate."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": [
+        "official FastWAM commit 45d8e145"
+      ]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": [
+        "multi-layer forward/gradient unit test"
+      ]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": [
+        "v8 audited candidate"
+      ]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": [
+        "unchanged M11 contract"
+      ]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": [
+        "single depth variable"
+      ]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": [
+        "2 optimizer steps, global batch8, 16 samples, 0.0000576 epoch; exact command frozen below"
+      ]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": [
+        "fixed parent evaluator"
+      ]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": [
+        "all four action layers and KV layer_mix receive finite gradients in unit tests"
+      ]
+    },
+    "smoke_finite": {
+      "status": "FAIL",
+      "evidence": [
+        "real-H3 smoke pending"
+      ]
+    },
+    "checkpoint_restore": {
+      "status": "FAIL",
+      "evidence": [
+        "real-H3 restore pending"
+      ]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": [
+        "M11 final2170 and 0/10"
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": [
+        "training pending"
+      ]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": [
+        "training pending"
+      ]
+    }
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 2,
+    "training_samples": 16,
+    "unique_windows": 277713,
+    "effective_epochs": 5.76e-05,
+    "gpu_count": 8,
+    "estimated_hours": 0.1
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Run real-H3 2-step and strict restore only; long budget remains gated.",
+    "launch_command": "PYTHONPATH=/mnt/h3-wam/project/third_party/diffusers_h3/src:/mnt/h3-wam/project/src:/mnt/h3-wam/project:/mnt/h3-wam/.venv/lib/python3.11/site-packages /mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/train_h3dotwam_fsdp.py --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v8_frameindexed_h3_cache --manifest /mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl --output /mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_random_s2.json --save-stage /mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_random_s2.pt --steps 2 --action-layers 4 --gradient-accumulation-steps 1 --sample-offset 0 --action-horizon 32 --learning-rate 1e-4 --last-h3-blocks 0 --video-loss-weight 1 --language-ranking-weight 0 --require-text-only-context --log-every 1"
+  }
+}

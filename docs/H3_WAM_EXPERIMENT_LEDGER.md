@@ -443,3 +443,31 @@ step8000。step9000/10000 继续完成预注册学习曲线；只有 causal 与�
   step1500/2000/2500/3000，以判断 history 曲线是否再次反转，而不是按 latest 选择 checkpoint。
 - 训练许可仍为 `GO_LONG`；效果结论仍为 `NOT_EVIDENCE_READY`。当前 history 最佳 checkpoint
   保持 step500。
+
+### 2026-08-13 — frame-indexed second-epoch step1400 probe
+
+- 第二个完整 frame-indexed epoch 在内部 step1400（本轮 `179200` samples，累计约
+  `1.645` effective epochs）做了一次只读、episode-disjoint val40 提前探针；action loss 为
+  `0.089823`。
+- 相对第一 epoch 终点 step2170 的 `0.109190` 改善 `17.74%`，相对第一 epoch step1600 的
+  `0.108532` 改善 `17.24%`。因此“第二 epoch 已明显过拟合/无继续价值”被当前证据否定，保持原定
+  2170-step 预算与终点 watcher。
+- 该探针没有重复闭环：第一 epoch step200/400/800/1600/final 各10次、累计50次固定 task3
+  rollout 已全部失败。第二 epoch 终点才复用同一10-trial协议；此前仍为
+  `NOT_EVIDENCE_READY`。
+
+### 2026-08-13 — deeper DoT carrier implementation gate
+
+- FastWAM 官方代码固定 commit `45d8e1458921d83f8ad6cf9ce993d371208dabd0` 的 resolved model
+  config 使用 30 层、hidden1024/FFN4096/24头×128 的 ActionDiT，并由 Wan2.2 video DiT 对动作
+  backbone 做顺序线性插值和 alpha scaling；只把 action encoder/head 保持随机。
+- 当前 H3 frame-indexed DoT 父线是 hidden1024/FFN4096/24头×128，但只有1层且随机初始化。
+  因此后续分成两个受控变量：先比较 `1层随机 → 4层随机`（容量），若机制门通过再比较
+  `4层随机 → 4层H3插值`（初始化），不得合并归因。
+- 已实现 checkpoint 自描述的任意 DoT 深度，以及 H3 50层到浅层 carrier 的均匀深度采样；4层固定
+  选取 `[0,16,33,49]`。插值复用现有 H3 ActionDiT/FastWAM 的逐维线性规则与 alpha scaling，
+  动作 encoder/head 保持随机。静态形状、每层梯度和初始化映射测试已通过；真实H3 2-step及严格
+  restore 仍是长训放行前的未解决门。
+- 1层 carrier + KV fusion 为 `72.67M` 参数，4层为 `135.67M`。本实验是 H3 backbone port 的
+  `controlled_ablation`，不是 FastWAM 官方复现；当前只具备 `GO_CANARY` 实现许可，效果仍为
+  `NOT_EVIDENCE_READY`。

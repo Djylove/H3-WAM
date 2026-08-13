@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from .action_expert import H3DreamActionExpert
+from .docking import H3DoTActionHead
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,18 @@ class H3ActionInitializationReport:
     zeroed_biases: int
     residual_gate_init: float
     residual_output_scale: float
+
+
+@dataclass(frozen=True)
+class H3DoTInitializationReport:
+    action_layers: int
+    h3_layers: int
+    source_layer_indices: tuple[int, ...]
+    copied_tensors: int
+    resized_tensors: int
+    zeroed_biases: int
+    residual_output_scale: float
+    alpha_scaling: bool
 
 
 def resize_tensor(source: torch.Tensor, target_shape: tuple[int, ...]) -> torch.Tensor:
@@ -234,4 +247,148 @@ def initialize_action_expert_from_h3(
         zeroed_biases=zeroed,
         residual_gate_init=float(residual_gate_init),
         residual_output_scale=float(residual_output_scale),
+    )
+
+
+def _uniform_source_layer_indices(
+    source_layers: int,
+    target_layers: int,
+) -> tuple[int, ...]:
+    """Select depth-covering source blocks for a shallower action carrier."""
+
+    if source_layers <= 0 or target_layers <= 0:
+        raise ValueError("source and target layer counts must be positive")
+    if target_layers > source_layers:
+        raise ValueError("DoT initialization cannot upsample the H3 block depth")
+    if target_layers == 1:
+        return (source_layers - 1,)
+    denominator = target_layers - 1
+    return tuple(
+        (index * (source_layers - 1) + denominator // 2) // denominator
+        for index in range(target_layers)
+    )
+
+
+def initialize_dot_action_head_from_h3(
+    action_head: H3DoTActionHead,
+    h3: nn.Module,
+    *,
+    residual_output_scale: float = 0.01,
+    alpha_scaling: bool = True,
+) -> H3DoTInitializationReport:
+    """Initialize a shallow DoT carrier from depth-spanning H3 blocks.
+
+    FastWAM initializes its ActionDiT backbone by linearly resizing the video
+    DiT tensors while leaving the action encoder and prediction head random.
+    H3 has 50 blocks whereas a diagnostic DoT carrier may be shallower, so we
+    deterministically sample blocks across the full H3 depth and apply the same
+    sequential interpolation/alpha-scaling rule. H3's SwiGLU input is averaged
+    into the DoT GELU input, matching the existing H3 ActionDiT port.
+    """
+
+    if not 0.0 < residual_output_scale <= 1.0:
+        raise ValueError("residual_output_scale must be in (0,1]")
+    h3_blocks = list(h3.transformer_blocks)
+    action_layers = list(action_head.layers)
+    source_indices = _uniform_source_layer_indices(
+        len(h3_blocks), len(action_layers)
+    )
+    copied = 0
+    resized = 0
+    zeroed = 0
+    with torch.no_grad():
+        resized += int(
+            _copy_resized(
+                action_head.time_embedding[0].weight,
+                h3.time_embedder.linear_1.weight,
+                alpha_scaling=alpha_scaling,
+            )
+        )
+        copied += 1
+        zeroed += _zero_bias(action_head.time_embedding[0])
+        resized += int(
+            _copy_resized(
+                action_head.time_embedding[2].weight,
+                h3.time_embedder.linear_2.weight,
+                alpha_scaling=alpha_scaling,
+            )
+        )
+        copied += 1
+        zeroed += _zero_bias(action_head.time_embedding[2])
+        # H3 has one AdaLN projection per source block but DoT shares a time
+        # projection across its layers. Keep that unmatched route at zero and
+        # let the copied residual bases enter through a stable constant gate,
+        # as in the existing 50-layer H3 ActionDiT initialization.
+        action_head.time_projection[-1].weight.zero_()
+        action_head.time_projection[-1].bias.zero_()
+        zeroed += 1
+        for action_layer, source_index in zip(
+            action_layers, source_indices, strict=True
+        ):
+            h3_block = h3_blocks[source_index]
+            for attribute, source in (
+                ("to_q", h3_block.attn.to_q.weight),
+                ("to_k", h3_block.attn.to_k.weight),
+                ("to_v", h3_block.attn.to_v.weight),
+                ("to_out", h3_block.attn.to_out[0].weight),
+            ):
+                target_module = getattr(action_layer.attn, attribute)
+                resized += int(
+                    _copy_resized(
+                        target_module.weight,
+                        source,
+                        alpha_scaling=alpha_scaling,
+                    )
+                )
+                copied += 1
+                zeroed += _zero_bias(target_module)
+            for attribute, source in (
+                ("norm_q", h3_block.attn.norm_q.weight),
+                ("norm_k", h3_block.attn.norm_k.weight),
+            ):
+                target = getattr(action_layer.attn, attribute).weight
+                resized += int(_copy_resized(target, source))
+                copied += 1
+
+            swiglu = h3_block.ff.net[0].proj.weight
+            gate, value = swiglu.chunk(2, dim=0)
+            merged_input = 0.5 * (gate.float() + value.float())
+            resized += int(
+                _copy_resized(
+                    action_layer.ffn[0].weight,
+                    merged_input,
+                    alpha_scaling=alpha_scaling,
+                )
+            )
+            copied += 1
+            zeroed += _zero_bias(action_layer.ffn[0])
+            resized += int(
+                _copy_resized(
+                    action_layer.ffn[2].weight,
+                    h3_block.ff.net[2].weight,
+                    alpha_scaling=alpha_scaling,
+                )
+            )
+            copied += 1
+            zeroed += _zero_bias(action_layer.ffn[2])
+
+            # H3-to-1024 interpolation produces large residual activations.
+            # Damping both output routes retained finite first-step gradients
+            # in the existing 50-layer H3 ActionDiT port. Keep it explicit in
+            # checkpoint metadata so an undamped variant remains separable.
+            action_layer.attn.to_out.weight.mul_(residual_output_scale)
+            action_layer.ffn[2].weight.mul_(residual_output_scale)
+            action_layer.modulation.zero_()
+            action_layer.modulation[:, 2].fill_(1.0)
+            action_layer.modulation[:, 5].fill_(1.0)
+
+    return H3DoTInitializationReport(
+        action_layers=len(action_layers),
+        h3_layers=len(h3_blocks),
+        source_layer_indices=source_indices,
+        copied_tensors=copied,
+        resized_tensors=resized,
+        zeroed_biases=zeroed,
+        residual_output_scale=float(residual_output_scale),
+        alpha_scaling=bool(alpha_scaling),
     )

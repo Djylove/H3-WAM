@@ -45,7 +45,9 @@ from .docking import (
 from .dot_model import H3DoTHubLayer, H3DoTWAM, H3DoTWAMOutput
 from .initialization import (
     H3ActionInitializationReport,
+    H3DoTInitializationReport,
     initialize_action_expert_from_h3,
+    initialize_dot_action_head_from_h3,
     resize_tensor,
 )
 from .sampling import (
@@ -79,6 +81,7 @@ __all__ = [
     "H3LingBotSharedOutput",
     "H3LingBotSharedWAM",
     "H3ActionInitializationReport",
+    "H3DoTInitializationReport",
     "H3DreamInferenceSchedule",
     "H3DreamJointSample",
     "H3LingBotCausalSample",
@@ -93,6 +96,7 @@ __all__ = [
     "shared_h3_four_stream_layer",
     "expand_h3_rgb_flow_projections",
     "initialize_action_expert_from_h3",
+    "initialize_dot_action_head_from_h3",
     "inverse_h3_rotary",
     "load_action_block_state",
     "h3dream_flow_training_weight",
