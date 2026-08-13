@@ -431,3 +431,15 @@ video/action 为 `0.252260/0.732903`：causal action 相对 step7000 的 `0.5189
 `41.24%`。这是同数据、同 sampler、仅预算增加下的明确训推偏移/过拟合曲线点。当前主线的
 causal 最优 checkpoint 暂锁为 step7000，不能以 `latest` 或 teacher-forced loss 自动选择
 step8000。step9000/10000 继续完成预注册学习曲线；只有 causal 与固定闭环证据能改变选择。
+
+### 2026-08-13 — executed-action history step1000 gate
+
+- 累计 step1000 的固定 val40 teacher-forced video/action MSE 为
+  `0.092413/0.443828`，4-step causal video/action MSE 为 `0.260282/0.604701`。
+- causal action 相对 history step500 的 `0.540989` 退化 `11.78%`；相对无 history 父权重
+  `0.633375` 仍改善 `4.53%`。causal video 相对父权重退化 `1.02%`，仍在原离线视频门内。
+- 该点没有超过 step500，也没有比当前无 history 主线 step7000 的 `0.518924` 更强，因此不重复
+  task3/trial0 闭环；step500 已证明该强度下策略会移动末端但不能产生物体接触。继续自动消费
+  step1500/2000/2500/3000，以判断 history 曲线是否再次反转，而不是按 latest 选择 checkpoint。
+- 训练许可仍为 `GO_LONG`；效果结论仍为 `NOT_EVIDENCE_READY`。当前 history 最佳 checkpoint
+  保持 step500。

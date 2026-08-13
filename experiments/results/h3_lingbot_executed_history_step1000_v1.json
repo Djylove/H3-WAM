@@ -1,0 +1,36 @@
+{
+  "experiment": "h3_lingbot_executed_history_step1000_v1",
+  "source_identity": {
+    "upstream": "LingBot-VA",
+    "upstream_commit": "7c6ffa9",
+    "local_mechanism": "explicit 16-step clean executed-action history with attention recomputation",
+    "alignment": "INTENTIONAL_DEVIATION"
+  },
+  "parent": {
+    "checkpoint": "quantile_flowweight_lr1e5_tail2_s10000_step005000.pt",
+    "causal_video_mse": 0.2576471,
+    "causal_action_mse": 0.6333747
+  },
+  "checkpoint": {
+    "path": "/mnt/h3-wam/outputs/h3-lingbot-history/history16_from_s5000_s3000_step001000.pt",
+    "cumulative_optimizer_steps": 1000,
+    "global_batch": 8,
+    "samples_seen": 8000,
+    "effective_epochs": 0.039844
+  },
+  "val40": {
+    "teacher_forced_video_mse": 0.09241330977529287,
+    "teacher_forced_action_mse": 0.44382820948958396,
+    "causal_video_mse": 0.26028153784573077,
+    "causal_action_mse": 0.6047012615948916,
+    "causal_action_relative_improvement_vs_parent": 0.04527248282398807,
+    "causal_action_relative_change_vs_step500": 0.11777246495650697,
+    "causal_video_relative_change_vs_parent": 0.010223061441797955
+  },
+  "offline_gate": "FAIL_VS_HISTORY_STEP500",
+  "closed_loop": null,
+  "closed_loop_gate": "NOT_RUN_REDUNDANT_BELOW_BEST",
+  "best_history_checkpoint": "history16_from_s5000_s3000_step000500.pt",
+  "training_permission": "GO_LONG",
+  "effectiveness": "NOT_EVIDENCE_READY"
+}
