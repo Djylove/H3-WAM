@@ -479,3 +479,14 @@ loss `1.013943`、峰值 reserved `14.225 GiB`。因此容量线通过 finite-gr
 训练许可提升为 `GO_LONG`，效果仍为 `NOT_EVIDENCE_READY`。正式父/子比较保持同一 v8 manifest、
 global batch128、2170 steps、277760 samples（`1.000169` epoch）、LR `1e-4` cosine、H3冻结，
 每200步保存；唯一架构变量为动作 carrier/KV fusion 深度1→4。
+
+### 2026-08-13 — executed-action history step1500 gate
+
+- 累计 step1500 的固定 val40 teacher-forced video/action 为 `0.091506/0.381671`，4-step causal
+  video/action 为 `0.255432/0.471264`。
+- causal action 相对 history step500 的 `0.540989` 改善 `12.89%`，相对 history step1000 的
+  `0.604701` 改善 `22.07%`，相对无 history 主线最佳 step7000 的 `0.518924` 改善 `9.18%`；
+  causal video 同时比 history step500 改善 `1.09%`。
+- 它成为当前所有 shared-H3 里程碑的最优 causal checkpoint，并通过预注册离线晋级门。排队执行
+  与 step500 完全相同的 Goal task3/trial0/replan16/80-step 固定闭环；在真实 success 或至少物体
+  接触出现前，效果仍为 `NOT_EVIDENCE_READY`。
