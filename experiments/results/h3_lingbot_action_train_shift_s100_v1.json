@@ -7,6 +7,7 @@
   "train_shift1_infer_shift0p05": {
     "teacher_forced_val40": {"video_mse": 0.13924379739910364, "action_mse": 1.243478848040104},
     "causal_action4_sample40": {"video_mse": 0.5968476079404355, "action_mse": 1.288768434524536},
+    "causal_action50_sample40": {"video_mse": 0.5966499999165535, "action_mse": 1.2868451625108719},
     "relative_to_parent_percent": {"raw_video": -0.0097146862, "raw_action": 1.6540954091, "causal_video": 0.2002118238, "causal_action": 0.4980606266},
     "promotion_gate": "FAIL"
   },
@@ -18,5 +19,5 @@
   },
   "preregistered_causal_action_threshold": 1.2822672183,
   "decision": "NO_GO_LONG",
-  "rationale": "Higher action training shift improves teacher-forced action MSE, but shift1 misses the causal promotion threshold and shift5 regresses causal action generation. Do not continue either arm to 500 steps; retain shift0.05 for the running scale line and move the main investigation to action history/carrier structure."
+  "rationale": "Higher action training shift improves teacher-forced action MSE, but shift1 misses the causal promotion threshold and shift5 regresses causal action generation. Raising only action solver steps from 4 to 50 improves shift1 causal action MSE by merely 0.149% and still misses the gate. Do not continue either arm to 500 steps; retain shift0.05 for the running scale line and move the main investigation to action history/carrier structure."
 }
