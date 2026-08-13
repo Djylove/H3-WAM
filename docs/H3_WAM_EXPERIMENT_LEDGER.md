@@ -425,3 +425,9 @@ action `0.719067` 再改善 `27.83%`，触发同一固定闭环。结果仍为 `
 `0.205`、饱和率 `1.25%`，物体最大位移仅 `5.20e-17`。这进一步证伪“继续压低当前 causal MSE
 即可自动产生接触”的假设。主线仍按用户要求保留到 step10000，但 step8000/9000 只消费离线
 causal 曲线，避免重复同一失败闭环；终点 step10000 再做固定闭环确认。
+
+累计 step8000 的 teacher-forced video/action MSE 继续降至 `0.093060/0.353209`，但 causal
+video/action 为 `0.252260/0.732903`：causal action 相对 step7000 的 `0.518924` 反弹
+`41.24%`。这是同数据、同 sampler、仅预算增加下的明确训推偏移/过拟合曲线点。当前主线的
+causal 最优 checkpoint 暂锁为 step7000，不能以 `latest` 或 teacher-forced loss 自动选择
+step8000。step9000/10000 继续完成预注册学习曲线；只有 causal 与固定闭环证据能改变选择。
