@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_executed_history_s3000_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "The executed-action-history causal metric may require more than 100 updates; a 3000-step budget ladder will reveal whether it improves, saturates, or continues degrading while the parent architecture and data remain fixed.",
+  "single_variable": "Increase only the optimizer budget of the existing 16-action-history intervention from 100 to 3000 cumulative steps.",
+  "parent_baseline": "history16_from_s5000_s100.pt and its paired val40 result: teacher-forced action MSE 0.524416, causal action MSE 0.695905.",
+  "references": [
+    {"kind": "paper", "title": "LingBot-VA: Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "arXiv:2601.21998", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 shared four-stream executed-history port", "locator": "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "revision": "ba1ffce518e3adee21a081e8ed7357547561da7c plus this dossier", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "rolling action context", "paper": "causal world/action history", "upstream_code": "executed actions update server history", "local": "16 fixed clean history tokens", "status": "INTENTIONAL_DEVIATION", "evidence": ["experiments/evidence/h3_lingbot_executed_history_s100_v1.json"], "rationale": "The already restored and gradient-tested H3 port is unchanged."}],
+    "data": [{"field": "history and target windows", "paper": "executed past trajectory", "upstream_code": "action history precedes target", "local": "1712 episode sidecars, 200779 train/val windows, no missing sidecars", "status": "EQUIVALENT", "evidence": ["scripts/h3dreamwam/build_executed_action_history.py"], "rationale": "The same episode-disjoint manifests and sidecars are reused."}],
+    "action": [{"field": "normalization and horizon", "paper": "causal action history", "upstream_code": "quantile-normalized executed history", "local": "q01/q99 history16 plus target32", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json"], "rationale": "No action-interface change from the s100 parent."}],
+    "objective": [{"field": "history-masked flow loss", "paper": "future conditioned on history", "upstream_code": "masked action flow loss", "local": "loss only on target32; history16 fixed", "status": "EQUIVALENT", "evidence": ["tests/test_h3_lingbot_training_conventions.py"], "rationale": "Objective is unchanged from the real-H3-tested canary."}],
+    "optimization": [{"field": "budget ladder", "paper": "5000 updates at effective global batch80", "upstream_code": "multi-thousand-step post-training", "local": "3000 cumulative updates at global batch8; checkpoints every500", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3dreamwam/launch_executed_history_s3000.sh"], "rationale": "A bounded diagnostic scale ladder tests the insufficient-training explanation under available compute."}],
+    "evaluation": [{"field": "paired learning curve", "paper": "closed-loop LIBERO", "upstream_code": "rolling-history rollout", "local": "episode-disjoint val40 teacher-forced and 4-step causal sampling at six checkpoints, then fixed rollout only for promising points", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3dreamwam/watch_eval_executed_history_s3000.sh"], "rationale": "Dense offline checkpoints identify trajectory before expensive closed-loop evaluation."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["official and vendored lingbot-va commit 7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["40 unit tests and real H3 two-step gradient run"]},
+    "data_contract": {"status": "PASS", "evidence": ["1712 episode sidecars and zero missing train/val windows"]},
+    "action_contract": {"status": "PASS", "evidence": ["locked q01/q99 transform and target-only output"]},
+    "objective_contract": {"status": "PASS", "evidence": ["history-exclusive loss test"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["3000 cumulative updates, checkpoint every500, approximately 4.1 hours"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["fixed val40 and causal sample40 evaluator"]},
+    "gradient_path": {"status": "PASS", "evidence": ["real H3 h3/action gradient norms nonzero and finite"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["history s100 completed finite; peak reserved 42.04 GiB"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["history s2 strict restore and s100 paired eval completed"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["s100 and parent step5000 paired val40 complete.json"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["s100 causal action relative improvement -9.87%; this is a diagnostic target, not a training blocker"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not run for s100 because causal metric regressed"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 3000, "training_samples": 24000, "unique_windows": 200779, "effective_epochs": 0.119534, "gpu_count": 8, "estimated_hours": 4.1},
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "Engineering, restore, parent and evaluation contracts pass. The bounded 3000-step ladder is authorized to test insufficient training; no effectiveness claim is authorized until causal and closed-loop gates pass.",
+    "launch_command": "bash scripts/h3dreamwam/launch_executed_history_s3000.sh"
+  }
+}

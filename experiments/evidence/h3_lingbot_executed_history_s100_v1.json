@@ -29,8 +29,8 @@
     "smoke_finite": {"status": "PASS", "evidence": ["history16_from_s5000_smoke_s2.json; finite two-step losses; peak reserved 41.06 GiB"]},
     "checkpoint_restore": {"status": "PASS", "evidence": ["history16_from_s5000_smoke_s2.pt restored with executed_action_history_steps=16 and completed real val forward"]},
     "parent_baseline": {"status": "PASS", "evidence": ["step5000 paired offline and fixed rollout results"]},
-    "mechanism_signal": {"status": "FAIL", "evidence": ["pending s100 causal val40"]},
-    "closed_loop_canary": {"status": "FAIL", "evidence": ["pending only if offline gate passes"]}
+    "mechanism_signal": {"status": "FAIL", "evidence": ["s100 paired val40: teacher-forced action MSE 0.613764 -> 0.524416, but causal action MSE 0.633375 -> 0.695905 (-9.87% relative improvement)"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not run because s100 causal metric regressed; this blocks an effectiveness claim, not bounded diagnostic continuation"]}
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 200779, "effective_epochs": 0.003984, "gpu_count": 8, "estimated_hours": 0.13},
   "decision": {

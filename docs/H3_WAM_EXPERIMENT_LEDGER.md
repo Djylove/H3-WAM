@@ -390,3 +390,13 @@ train+val评测清单检查200819 windows，缺失为0。真实H3 2-step smoke�
 并完成真实val forward。故放行100-step、global batch8 canary。其父权重固定为step5000，唯一
 变量为history条件；未满足因果action再改善至少2%、video退化不超过2%并产生真实物体接触前，
 不得扩到用户要求的3000-step长训。
+### 2026-08-13 — executed-action history budget ladder
+
+- The first 100 updates improved teacher-forced action MSE from `0.613764` to `0.524416`
+  (`+14.56%`) but regressed 4-step causal action MSE from `0.633375` to `0.695905`
+  (`-9.87%`); causal video MSE changed by only `+0.65%`.
+- This is evidence of train/inference mismatch, not evidence that 100 updates are a universal stopping
+  point. Continue the same single-variable intervention to 3000 cumulative updates, checkpointing every
+  500 updates and evaluating the full causal learning curve.
+- Training permission is `GO_LONG`; effectiveness remains `NOT_EVIDENCE_READY` until causal metrics and
+  a fixed LIBERO closed-loop gate pass.
