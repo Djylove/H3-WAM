@@ -1,0 +1,22 @@
+{
+  "event": "h3_lingbot_shared_execution_horizon",
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_tail2_s100.pt",
+  "suite": "libero_goal",
+  "task_id": 3,
+  "trial": 0,
+  "max_steps": 80,
+  "parent_replan32": {
+    "success": false,
+    "replans": 3,
+    "action_saturation_fraction": 0.10590277777777779,
+    "mean_action_magnitude": 0.36134083072344464,
+    "max_object_joint_delta": 8.076921879580461e-17
+  },
+  "arms": [
+    {"replan_steps": 4, "success": false, "replans": 20, "action_saturation_fraction": 0.12682291666666667, "mean_action_magnitude": 0.36444569677114486, "max_object_joint_delta": 1.4485957463943044e-16, "duration_seconds": 1517.4042945690453},
+    {"replan_steps": 8, "success": false, "replans": 10, "action_saturation_fraction": 0.1229166666666667, "mean_action_magnitude": 0.36554635465145113, "max_object_joint_delta": 7.96475506046193e-17, "duration_seconds": 813.5887366400566},
+    {"replan_steps": 16, "success": false, "replans": 5, "action_saturation_fraction": 0.12604166666666666, "mean_action_magnitude": 0.3726473867893219, "max_object_joint_delta": 1.4818333192445632e-16, "duration_seconds": 461.3799143229844}
+  ],
+  "decision": "NO_GO_LONG",
+  "rationale": "All shorter execution cadences remained 0/1 with no object contact, and action saturation increased from the replan32 parent. Open-loop execution horizon is not the simple cause of E30 failure."
+}

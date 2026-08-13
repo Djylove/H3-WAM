@@ -29,13 +29,13 @@
     "smoke_finite": {"status": "PASS", "evidence": ["E30 completed fixed rollout"]},
     "checkpoint_restore": {"status": "PASS", "evidence": ["E30 stage restored in prior rollout"]},
     "parent_baseline": {"status": "PASS", "evidence": ["E30 replan32 result"]},
-    "mechanism_signal": {"status": "PENDING", "evidence": []},
-    "closed_loop_canary": {"status": "PENDING", "evidence": []}
+    "mechanism_signal": {"status": "FAIL", "evidence": ["replan4/8/16 saturation 12.68%/12.29%/12.60% versus replan32 10.59%"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["replan4/8/16 all 0/1 with maximum object delta <=1.49e-16"]}
   },
   "budget": {"gpu_count_per_arm": 8, "arms": 3, "episodes_per_arm": 1, "max_steps": 80, "estimated_hours": 0.15},
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Run replan4/8/16 in parallel on the same E30 task3/trial0. Retain an execution horizon only if it succeeds or produces repeatable object contact with lower action saturation; success is required before any training-scale claim.",
+    "status": "NO_GO_LONG",
+    "rationale": "All three paired arms completed 80 steps and remained 0/1 without object contact. Saturation increased relative to replan32, so shorter execution cadence does not repair E30 and this deployment sweep stops.",
     "launch_command": "scripts/h3dreamwam/rollout_h3dreamwam_fsdp.py --lingbot-shared --replan-steps {4,8,16} --task-ids 3 --trial-indices 0 --max-steps 80"
   }
 }
