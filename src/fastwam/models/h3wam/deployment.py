@@ -196,14 +196,71 @@ def libero_environment_actions(
     return np.clip(actions, -1.0, 1.0).astype(np.float32)
 
 
+def libero_dataset_actions(
+    environment_actions: torch.Tensor | np.ndarray,
+) -> torch.Tensor:
+    """Convert LIBERO environment actions to the LeRobot dataset domain.
+
+    Motion channels already share the same numerical convention.  The gripper
+    does not: LIBERO uses ``-1=open, +1=close`` while the converted FastWAM
+    datasets use ``1=open, 0=close``.  Keeping the batched conversion here
+    avoids deployment paths accidentally applying dataset statistics directly
+    to environment-domain history.
+    """
+
+    actions = torch.as_tensor(environment_actions, dtype=torch.float32).clone()
+    if actions.ndim < 1 or actions.shape[-1] != 7:
+        raise ValueError(
+            f"expected environment actions [..., 7], got {tuple(actions.shape)}"
+        )
+    if not torch.isfinite(actions).all():
+        raise FloatingPointError("environment actions must be finite")
+    actions[..., -1] = (1.0 - actions[..., -1]) * 0.5
+    return actions
+
+
 def libero_dataset_action(environment_action: torch.Tensor | np.ndarray) -> torch.Tensor:
     """Convert one LIBERO environment action to the dataset gripper convention."""
 
-    action = torch.as_tensor(environment_action, dtype=torch.float32).clone()
+    action = libero_dataset_actions(environment_action)
     if action.shape != (7,):
         raise ValueError(f"expected one action [7], got {tuple(action.shape)}")
-    action[-1] = (1.0 - action[-1]) * 0.5
     return action
+
+
+def normalize_libero_environment_action_history(
+    environment_actions: torch.Tensor | np.ndarray,
+    valid_mask: torch.Tensor | np.ndarray,
+    action_minimum: torch.Tensor,
+    action_maximum: torch.Tensor,
+    *,
+    clip: float,
+) -> torch.Tensor:
+    """Normalize only valid executed actions for an online history prefix.
+
+    Left padding has no action semantics.  It stays numerically zero and must
+    be accompanied by the returned caller-owned validity mask instead of being
+    converted as if it were a LIBERO zero action (whose gripper value would be
+    a real half-open dataset action).
+    """
+
+    actions = torch.as_tensor(environment_actions, dtype=torch.float32)
+    valid = torch.as_tensor(valid_mask, dtype=torch.bool, device=actions.device)
+    if actions.ndim != 2 or actions.shape[-1] != 7:
+        raise ValueError(f"expected action history [T, 7], got {tuple(actions.shape)}")
+    if valid.shape != actions.shape[:1]:
+        raise ValueError("history validity mask must cover every action row")
+    if clip <= 0:
+        raise ValueError("history normalization clip must be positive")
+    normalized = torch.zeros_like(actions)
+    if bool(valid.any()):
+        dataset_actions = libero_dataset_actions(actions[valid])
+        normalized[valid] = minmax_normalize(
+            dataset_actions,
+            action_minimum.to(actions.device),
+            action_maximum.to(actions.device),
+        ).clamp(-float(clip), float(clip))
+    return normalized
 
 
 def load_cached_task_context(

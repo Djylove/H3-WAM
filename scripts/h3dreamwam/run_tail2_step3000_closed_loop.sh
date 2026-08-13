@@ -9,7 +9,7 @@ OUTPUT_DIR="${H3_WORKSPACE}/outputs/eval-lingbot-shared/scale-s10000/tail2_step0
 
 cd "${PROJECT_ROOT}"
 test -s "${STAGE}"
-if [[ -s "${OUTPUT_DIR}/results.json" ]]; then
+if "${PYTHON_BIN}" scripts/h3dreamwam/check_completed_rollout.py "${OUTPUT_DIR}/results.json" 2>/dev/null; then
   exit 0
 fi
 

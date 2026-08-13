@@ -47,7 +47,7 @@ export TRANSFORMERS_OFFLINE=1
 export NO_ALBUMENTATIONS_UPDATE=1
 
 # ============ WANDB ============
-export WANDB_API_KEY=${WANDB_API_KEY:-"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"}
+export WANDB_API_KEY=${WANDB_API_KEY:?Set WANDB_API_KEY in the environment before launching}
 export WANDB_ENTITY=${WANDB_ENTITY:-"elgceben"}
 
 # ============ PROXY (for DLC clusters behind firewall) ============

@@ -7,8 +7,10 @@ from fastwam.models.h3wam import (
     ActionEnsembler,
     action_denormalization_bounds,
     libero_dataset_action,
+    libero_dataset_actions,
     libero_environment_actions,
     libero_observation_state,
+    normalize_libero_environment_action_history,
     preprocess_libero_cameras,
     quaternion_to_axis_angle,
 )
@@ -124,6 +126,37 @@ class H3WAMDeploymentTest(unittest.TestCase):
         self.assertEqual(float(closed[-1]), 0.0)
         with self.assertRaises(ValueError):
             libero_dataset_action(np.zeros(6))
+
+    def test_batched_dataset_action_inverts_only_the_gripper(self):
+        environment = torch.tensor(
+            [[0.1, -0.2, 0.3, -0.4, 0.5, -0.6, -1.0], [0, 0, 0, 0, 0, 0, 1.0]]
+        )
+        dataset = libero_dataset_actions(environment)
+        torch.testing.assert_close(dataset[:, :6], environment[:, :6])
+        torch.testing.assert_close(dataset[:, -1], torch.tensor([1.0, 0.0]))
+
+    def test_online_history_matches_dataset_normalization_and_preserves_padding(self):
+        environment = torch.tensor(
+            [
+                [0, 0, 0, 0, 0, 0, 0],
+                [0.25, -0.5, 0, 0, 0, 0, -1],
+                [-0.25, 0.5, 0, 0, 0, 0, 1],
+            ],
+            dtype=torch.float32,
+        )
+        valid = torch.tensor([False, True, True])
+        low = torch.tensor([-1.0] * 6 + [0.0])
+        high = torch.tensor([1.0] * 7)
+        normalized = normalize_libero_environment_action_history(
+            environment, valid, low, high, clip=1.5
+        )
+        torch.testing.assert_close(normalized[0], torch.zeros(7))
+        expected = 2.0 * (libero_dataset_actions(environment[valid]) - low) / (
+            high - low
+        ) - 1.0
+        torch.testing.assert_close(normalized[valid], expected)
+        self.assertEqual(float(normalized[1, -1]), 1.0)
+        self.assertEqual(float(normalized[2, -1]), -1.0)
 
     def test_environment_action_temporal_median_rejects_single_spike(self):
         minimum = torch.tensor([-1.0] * 6 + [0.0])

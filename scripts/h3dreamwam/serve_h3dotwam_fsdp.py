@@ -112,6 +112,7 @@ def main() -> None:
     )
     if stage.get("format") != "h3dotwam_stage_v2":
         raise ValueError("DoT stage checkpoint format mismatch")
+    checkpoint_steps = stage.get("steps")
     action_layers = int(stage.get("architecture", {}).get("action_layers", 1))
     if action_layers <= 0:
         raise ValueError("checkpoint action_layers must be positive")
@@ -410,7 +411,7 @@ def main() -> None:
                         "world_size": world_size,
                         "sample_steps": args.sample_steps,
                         "action_horizon": args.action_horizon,
-                        "checkpoint_steps": stage.get("steps"),
+                        "checkpoint_steps": checkpoint_steps,
                         "h3_joint_stage": (
                             None
                             if args.h3_joint_stage is None

@@ -13,7 +13,7 @@ bash scripts/train_zero1.sh 8 task=robotwin_hierarchical_3cam_384_1e-4
 
 torchrun --standalone --nproc_per_node=8 scripts/precompute_text_embeds.py task=real_anygrasp_v2_hierarchical_1cam_384_1e-4
 
-export WANDB_API_KEY=b8182b57eaa10a6c93943291158ee2f086aae4eb
+: "${WANDB_API_KEY:?Set WANDB_API_KEY in the environment before launching}"
 
 export CUDA_VISIBLE_DEVICES=1,2
 
@@ -26,7 +26,7 @@ Host xingyu
 
 cd /mnt/cpfs/wxy/FastWAM && \
 bash scripts/train_zero1_dlc_multinode.sh \
-  --wandb-key b8182b57eaa10a6c93943291158ee2f086aae4eb \
+  --wandb-key <your_key> \
   task=robotwin_hierarchical_3cam_384_1e-4
 
 python scripts/test_hierarchical_generation.py \
@@ -45,7 +45,7 @@ python experiments/robotwin/eval_robotwin_single.py \
   # EVALUATION.attention_viz_max_plans=1
 cd /workspace/mnt/data/wxy/Hierarchical_WAM && \
 bash scripts/train_zero1_mobile_multinode.sh \
-  --wandb-key b8182b57eaa10a6c93943291158ee2f086aae4eb \
+  --wandb-key <your_key> \
   task=robotwin_hierarchical_3cam_384_1e-4
 
 python experiments/robotwin/run_robotwin_manager.py \
@@ -79,4 +79,3 @@ python experiments/robotwin/run_robotwin_manager.py \
 #   --conda-sh /mnt/cpfs/wxy/miniconda3/etc/profile.d/conda.sh \
 #   --conda-env fastwam \
 #   -- task=robotwin_hierarchical_3cam_384_1e-4
-

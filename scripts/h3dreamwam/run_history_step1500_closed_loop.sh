@@ -10,7 +10,7 @@ EVAL_LOCK="${H3_WORKSPACE}/tmp/h3-wam-eval-gpu.lock"
 
 cd "${PROJECT_ROOT}"
 test -s "${STAGE}"
-if [[ -s "${OUTPUT_DIR}/results.json" ]]; then
+if "${PYTHON_BIN}" scripts/h3dreamwam/check_completed_rollout.py "${OUTPUT_DIR}/results.json" 2>/dev/null; then
   exit 0
 fi
 

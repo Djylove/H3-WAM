@@ -159,13 +159,80 @@ def global_grad_norm(
     named_parameters: list[tuple[str, torch.nn.Parameter]],
     marker: str,
     device: torch.device,
+    *,
+    replicated_parameter_ids: set[int] | None = None,
 ) -> float:
+    replicated_parameter_ids = replicated_parameter_ids or set()
     total = torch.zeros((), device=device, dtype=torch.float32)
     for name, parameter in named_parameters:
         if marker in name and parameter.grad is not None:
-            total += parameter.grad.detach().float().square().sum()
+            contribution = parameter.grad.detach().float().square().sum()
+            if id(parameter) in replicated_parameter_ids:
+                contribution /= dist.get_world_size()
+            total += contribution
     dist.all_reduce(total)
     return float(total.sqrt())
+
+
+def synchronize_replicated_gradients(
+    parameters: list[torch.nn.Parameter],
+) -> None:
+    """Average gradients for trainable modules excluded from FSDP ownership."""
+
+    world_size = dist.get_world_size()
+    for parameter in parameters:
+        if not parameter.requires_grad:
+            continue
+        if parameter.grad is None:
+            raise RuntimeError("trainable replicated parameter has no gradient")
+        dist.all_reduce(parameter.grad, op=dist.ReduceOp.SUM)
+        parameter.grad.div_(world_size)
+
+
+def replicated_parameter_max_difference(
+    parameters: list[torch.nn.Parameter],
+    device: torch.device,
+) -> float:
+    """Return the maximum elementwise difference from rank 0."""
+
+    maximum = torch.zeros((), device=device, dtype=torch.float32)
+    for parameter in parameters:
+        reference = parameter.detach().clone()
+        dist.broadcast(reference, src=0)
+        maximum = torch.maximum(
+            maximum,
+            (parameter.detach() - reference).float().abs().max(),
+        )
+    dist.all_reduce(maximum, op=dist.ReduceOp.MAX)
+    return float(maximum)
+
+
+def clip_named_grad_norm_(
+    named_parameters: list[tuple[str, torch.nn.Parameter]],
+    markers: tuple[str, ...],
+    device: torch.device,
+    *,
+    replicated_parameter_ids: set[int],
+    max_norm: float,
+) -> float:
+    """Clip a mixed FSDP-sharded/replicated parameter group exactly once."""
+
+    total = torch.zeros((), device=device, dtype=torch.float32)
+    active: list[torch.nn.Parameter] = []
+    for name, parameter in named_parameters:
+        if not any(marker in name for marker in markers) or parameter.grad is None:
+            continue
+        active.append(parameter)
+        contribution = parameter.grad.detach().float().square().sum()
+        if id(parameter) in replicated_parameter_ids:
+            contribution /= dist.get_world_size()
+        total += contribution
+    dist.all_reduce(total, op=dist.ReduceOp.SUM)
+    norm = total.sqrt()
+    coefficient = torch.clamp(float(max_norm) / (norm + 1.0e-6), max=1.0)
+    for parameter in active:
+        parameter.grad.mul_(coefficient.to(parameter.grad.dtype))
+    return float(norm)
 
 
 def shifted_noise_sigma(uniform: torch.Tensor, shift: float) -> torch.Tensor:
@@ -293,7 +360,7 @@ def prepend_initial_action_history(
     history_steps: int,
     horizon: int,
 ) -> torch.Tensor:
-    """Match LingBot's raw-space zero action frame before normalization."""
+    """Legacy non-streaming approximation of LingBot's first action frame."""
 
     if action.ndim != 2 or action.shape[-1] != 7:
         raise ValueError(f"expected [T,7] actions, got {action.shape}")
@@ -318,11 +385,14 @@ def load_executed_action_history(
     *,
     history_root: Path,
     history_steps: int,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Load the real actions immediately preceding a dense training window."""
 
     if history_steps <= 0:
-        return torch.empty(0, 7, dtype=torch.float32)
+        return (
+            torch.empty(0, 7, dtype=torch.float32),
+            torch.empty(0, dtype=torch.bool),
+        )
     suite = str(row["suite"])
     episode = int(row["episode"])
     start = int(row["start"])
@@ -334,11 +404,14 @@ def load_executed_action_history(
     if start < 0 or start > len(actions):
         raise ValueError(f"window start {start} is outside episode length {len(actions)}")
     history = actions[max(0, start - history_steps) : start]
+    valid = torch.ones(len(history), dtype=torch.bool)
     if len(history) < history_steps:
+        missing = history_steps - len(history)
         history = torch.cat(
-            (torch.zeros(history_steps - len(history), 7), history), dim=0
+            (torch.zeros(missing, 7), history), dim=0
         )
-    return history
+        valid = torch.cat((torch.zeros(missing, dtype=torch.bool), valid))
+    return history, valid
 
 
 def prepare_real_batch(
@@ -370,6 +443,15 @@ def prepare_real_batch(
         map_location="cpu",
         weights_only=False,
     )
+    if conditioning.get("text_only") is not True:
+        raise ValueError(f"context {context_id!r} is not marked text_only=True")
+    if torch.any(conditioning["token_tags"] != 1):
+        raise ValueError(f"context {context_id!r} contains non-text token tags")
+    if "task" in conditioning and str(conditioning["task"]) != str(row["task"]):
+        raise ValueError(
+            f"context {context_id!r} task mismatch: "
+            f"{conditioning['task']!r} != {row['task']!r}"
+        )
     sample_generator = generator
     if deterministic_noise:
         sample_generator = torch.Generator(device=device).manual_seed(
@@ -481,13 +563,20 @@ def prepare_real_batch(
             )
 
     target_raw_action = window["actions"][: args.action_horizon]
+    target_action_valid = ~window.get(
+        "action_is_pad", torch.zeros(len(target_raw_action), dtype=torch.bool)
+    )[: len(target_raw_action)].bool()
+    if len(target_raw_action) != args.action_horizon or target_action_valid.shape != (
+        args.action_horizon,
+    ):
+        raise ValueError("cached target actions must cover the configured horizon")
     history_steps = int(args.executed_action_history_steps)
     if history_steps:
         if args.executed_action_history_root is None:
             raise ValueError(
                 "--executed-action-history-root is required when history is enabled"
             )
-        history_raw_action = load_executed_action_history(
+        history_raw_action, history_valid = load_executed_action_history(
             row,
             history_root=args.executed_action_history_root,
             history_steps=history_steps,
@@ -495,6 +584,7 @@ def prepare_real_batch(
         raw_action = torch.cat((history_raw_action, target_raw_action), dim=0)
     else:
         raw_action = target_raw_action
+        history_valid = torch.empty(0, dtype=torch.bool)
     if args.upstream_initial_action_anchor:
         if history_steps:
             raise ValueError(
@@ -523,9 +613,12 @@ def prepare_real_batch(
         clean_action.shape, generator=sample_generator, device=device
     )
     initial_action = action_noise.clone()
-    action_loss_mask = torch.ones(
-        clean_action.shape[1], device=device, dtype=torch.bool
-    )
+    action_loss_mask = torch.cat(
+        (
+            torch.zeros(history_steps, dtype=torch.bool),
+            target_action_valid,
+        )
+    ).to(device)
     if args.upstream_initial_action_anchor:
         initial_action[:, : args.actions_per_chunk] = 0.0
     action_sigma_per_token = action_noise_sigma.index_select(
@@ -536,7 +629,15 @@ def prepare_real_batch(
     if history_steps:
         noisy_action[:, :history_steps] = clean_action[:, :history_steps]
         initial_action[:, :history_steps] = clean_action[:, :history_steps]
-        action_loss_mask[:history_steps] = False
+    observed_action_mask = torch.zeros_like(action_loss_mask)
+    ignored_action_mask = torch.zeros_like(action_loss_mask)
+    ignored_action_mask[history_steps:] = ~target_action_valid.to(device)
+    clean_action_valid = action_loss_mask.clone()
+    if history_steps:
+        history_valid = history_valid.to(device)
+        observed_action_mask[:history_steps] = history_valid
+        ignored_action_mask[:history_steps] = ~history_valid
+        clean_action_valid[:history_steps] = history_valid
     context = conditioning["context"].to(device=device, dtype=torch.bfloat16)
     state_scale = (
         stats["state_max"].float() - stats["state_min"].float()
@@ -633,7 +734,9 @@ def prepare_real_batch(
         "action_time": action_time,
         "action_timestep_indices": action_timestep_indices,
         "action_loss_mask": action_loss_mask,
-        "observed_action_mask": ~action_loss_mask,
+        "observed_action_mask": observed_action_mask,
+        "ignored_action_mask": ignored_action_mask,
+        "clean_action_valid": clean_action_valid,
         "context": context,
         "context_position_ids": context_position_ids,
         "state": state,
@@ -671,6 +774,11 @@ def main() -> None:
         raise ValueError("noisy clean video is a training-only intervention")
     if args.sample_eval and (not args.eval_only or not args.shared_backbone):
         raise ValueError("sample-eval requires eval-only and shared-backbone")
+    if args.upstream_initial_action_anchor:
+        raise ValueError(
+            "upstream initial-action anchor requires LingBot-compatible "
+            "streaming frame/KV state and is unsupported by this cold-start trainer"
+        )
     if args.h3_physical_time_alignment and args.data_root is None:
         raise ValueError("H3 physical-time alignment requires a real cached window")
     if (
@@ -810,6 +918,15 @@ def main() -> None:
             cast_forward_inputs=True,
         ),
     )
+    replicated_trainable_parameters = [
+        parameter
+        for module in ignored_modules
+        for parameter in module.parameters()
+        if parameter.requires_grad
+    ]
+    replicated_parameter_ids = {
+        id(parameter) for parameter in replicated_trainable_parameters
+    }
     # Stable low-LR updates require FP32 optimizer storage after FSDP has
     # sharded the 33B/ActionDiT blocks. Forward compute remains BF16 through
     # MixedPrecision, matching the proven H3-DreamWAM training path.
@@ -822,14 +939,22 @@ def main() -> None:
     # dtype has been set. Otherwise a child may mark itself as root, or its
     # all-gather buffer may retain the pre-conversion BF16 dtype.
     model.check_is_root()
+    initial_replicated_difference = replicated_parameter_max_difference(
+        replicated_trainable_parameters, device
+    )
+    if initial_replicated_difference > 1.0e-6:
+        raise RuntimeError(
+            "replicated trainable parameters differ across ranks at startup: "
+            f"{initial_replicated_difference}"
+        )
     if args.load_stage is not None:
         payload = torch.load(
             args.load_stage.resolve(), map_location="cpu", weights_only=True
         )
         expected_format = (
-            "h3_lingbot_shared_four_stream_tail_v1"
+            "h3_lingbot_shared_four_stream_tail_v2"
             if args.shared_backbone
-            else "h3_lingbot_four_stream_tail_v1"
+            else "h3_lingbot_four_stream_tail_v2"
         )
         if payload.get("format") != expected_format:
             raise ValueError("four-stream stage checkpoint format mismatch")
@@ -1084,10 +1209,12 @@ def main() -> None:
     def save_training_stage(path: Path, completed_steps: int) -> None:
         stage = {
             "format": (
-                "h3_lingbot_shared_four_stream_tail_v1"
+                "h3_lingbot_shared_four_stream_tail_v2"
                 if args.shared_backbone
-                else "h3_lingbot_four_stream_tail_v1"
+                else "h3_lingbot_four_stream_tail_v2"
             ),
+            "distributed_gradient_contract": "replicated_trainable_sum_div_world_size_v1",
+            "history_codec_contract": "libero_environment_to_dataset_with_valid_mask_v1",
             "last_trainable_layers": args.last_trainable_layers,
             "warmup_steps": args.warmup_steps,
             "action_normalization": args.action_normalization,
@@ -1204,6 +1331,8 @@ def main() -> None:
             action_timestep_indices = batch["action_timestep_indices"]
             action_loss_mask = batch["action_loss_mask"]
             observed_action_mask = batch["observed_action_mask"]
+            ignored_action_mask = batch["ignored_action_mask"]
+            clean_action_valid = batch["clean_action_valid"]
             context = batch["context"]
             context_position_ids = batch["context_position_ids"]
             state = batch["state"]
@@ -1226,6 +1355,8 @@ def main() -> None:
                 clean_action.shape[1], device=device, dtype=torch.bool
             )
             observed_action_mask = ~action_loss_mask
+            ignored_action_mask = torch.zeros_like(action_loss_mask)
+            clean_action_valid = torch.ones_like(action_loss_mask)
         optimizer.zero_grad(set_to_none=True)
         forward_arguments = dict(
             noisy_video_rows=noisy_video,
@@ -1257,6 +1388,8 @@ def main() -> None:
                 clean_action_timestep_indices=torch.zeros_like(
                     action_timestep_indices
                 ),
+                clean_action_valid=clean_action_valid,
+                noisy_action_valid=~ignored_action_mask,
             )
         split_backward = False
         if args.detached_generated_video_conditioning and not args.eval_only:
@@ -1360,6 +1493,7 @@ def main() -> None:
                 video_schedule=video_schedule,
                 action_schedule=action_schedule,
                 observed_action_mask=observed_action_mask,
+                ignored_action_mask=ignored_action_mask,
             )
             video_loss = F.mse_loss(
                 sampled.video_rows[:, future].float(),
@@ -1405,13 +1539,19 @@ def main() -> None:
         if not args.eval_only and not split_backward:
             loss.backward()
         named = list(model.named_parameters())
+        if not args.eval_only:
+            synchronize_replicated_gradients(replicated_trainable_parameters)
         h3_gradient = 0.0 if args.eval_only else global_grad_norm(
-            named, ".h3_block.", device
+            named,
+            ".h3_block.",
+            device,
+            replicated_parameter_ids=replicated_parameter_ids,
         )
         action_gradient = 0.0 if args.eval_only else global_grad_norm(
             named,
             ".action_adapters." if args.shared_backbone else ".action_block.",
             device,
+            replicated_parameter_ids=replicated_parameter_ids,
         )
         required_gradients = (action_gradient,)
         if not args.freeze_shared_blocks:
@@ -1427,9 +1567,6 @@ def main() -> None:
         # Clip the two experts independently. A large freshly interpolated
         # ActionDiT norm must not suppress the pretrained H3 update (or the
         # reverse), and FSDP owns the global norm calculation for its shards.
-        all_with_grad = [
-            parameter for parameter in model.parameters() if parameter.grad is not None
-        ]
         expert_clip_norms = {}
         expert_markers = (
             {
@@ -1443,27 +1580,25 @@ def main() -> None:
             }
         )
         for expert, markers in expert_markers.items():
-            active_ids = {
-                id(parameter)
-                for name, parameter in named
-                if any(marker in name for marker in markers)
-                and parameter.grad is not None
-            }
-            hidden = [
-                (parameter, parameter.grad)
-                for parameter in all_with_grad
-                if id(parameter) not in active_ids
-            ]
-            for parameter, _ in hidden:
-                parameter.grad = None
-            expert_clip_norms[expert] = (
-                0.0 if args.eval_only else float(model.clip_grad_norm_(1.0))
+            expert_clip_norms[expert] = 0.0 if args.eval_only else clip_named_grad_norm_(
+                named,
+                markers,
+                device,
+                replicated_parameter_ids=replicated_parameter_ids,
+                max_norm=1.0,
             )
-            for parameter, gradient in hidden:
-                parameter.grad = gradient
         if not args.eval_only:
             optimizer.step()
             scheduler.step()
+            if step == 1:
+                difference = replicated_parameter_max_difference(
+                    replicated_trainable_parameters, device
+                )
+                if difference > 1.0e-6:
+                    raise RuntimeError(
+                        "replicated trainable parameters diverged after one step: "
+                        f"{difference}"
+                    )
         item = {
             "step": step,
             "loss": float(loss.detach()),

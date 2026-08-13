@@ -425,7 +425,7 @@ def run_episode(
             episode_key,
             step,
             previous_action,
-            np.asarray(executed_actions[-16:], dtype=np.float32),
+            np.asarray(executed_actions, dtype=np.float32),
         )
         if trajectory is not None:
             trajectory["policy_actions"].append(actions.copy())

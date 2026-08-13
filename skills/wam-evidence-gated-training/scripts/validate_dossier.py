@@ -20,9 +20,9 @@ CANARY_GATES = (
     "objective_contract", "optimization_contract", "evaluation_contract", "gradient_path",
 )
 LONG_GATES = CANARY_GATES + (
-    "smoke_finite", "checkpoint_restore", "parent_baseline", "mechanism_signal",
-    "closed_loop_canary",
+    "smoke_finite", "checkpoint_restore", "parent_baseline",
 )
+CLAIM_GATES = LONG_GATES + ("mechanism_signal", "closed_loop_canary")
 CLASSIFICATIONS = {
     "reproduction", "backbone_port", "controlled_ablation", "novel_composition"
 }
@@ -97,7 +97,12 @@ def validate(payload: dict, target: str) -> list[str]:
     if not isinstance(gates, dict):
         errors.append("gates must be an object")
         gates = {}
-    for name in CANARY_GATES if target == "canary" else LONG_GATES:
+    required_gates = {
+        "canary": CANARY_GATES,
+        "long": LONG_GATES,
+        "claim": CLAIM_GATES,
+    }[target]
+    for name in required_gates:
         gate = gates.get(name)
         if not isinstance(gate, dict):
             errors.append(f"missing gate {name}")
@@ -138,7 +143,11 @@ def validate(payload: dict, target: str) -> list[str]:
                 )
 
     decision = payload.get("decision")
-    expected_decision = "GO_CANARY" if target == "canary" else "GO_LONG"
+    expected_decision = {
+        "canary": "GO_CANARY",
+        "long": "GO_LONG",
+        "claim": "EVIDENCE_READY",
+    }[target]
     if not isinstance(decision, dict):
         errors.append("decision must be an object")
     else:
@@ -176,6 +185,14 @@ def self_test() -> None:
     errors = validate(payload, "long")
     if errors:
         raise AssertionError(errors)
+    payload["gates"]["mechanism_signal"] = {
+        "status": "FAIL", "evidence": ["diagnostic target"]
+    }
+    payload["gates"]["closed_loop_canary"] = {
+        "status": "FAIL", "evidence": ["not yet evaluated"]
+    }
+    if validate(payload, "long"):
+        raise AssertionError("effectiveness gates incorrectly blocked diagnostic long run")
     payload["alignment"]["data"][0]["status"] = "UNKNOWN"
     if not validate(payload, "long"):
         raise AssertionError("UNKNOWN alignment was not rejected")
@@ -185,7 +202,9 @@ def self_test() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("dossier", nargs="?", type=Path)
-    parser.add_argument("--target", choices=("canary", "long"), default="canary")
+    parser.add_argument(
+        "--target", choices=("canary", "long", "claim"), default="canary"
+    )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:

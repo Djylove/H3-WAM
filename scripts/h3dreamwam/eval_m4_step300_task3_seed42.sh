@@ -20,7 +20,7 @@ while ! mkdir "${LOCK_DIR}" 2>/dev/null; do
   sleep 10
 done
 trap 'rmdir "${LOCK_DIR}" 2>/dev/null || true' EXIT
-[[ -s "${OUTPUT_DIR}/results.json" ]] && exit 0
+"${PYTHON_BIN}" scripts/h3dreamwam/check_completed_rollout.py "${OUTPUT_DIR}/results.json" 2>/dev/null && exit 0
 export TMPDIR="${TMP_ROOT}"
 export PYTHONPATH="${PROJECT_ROOT}/third_party/diffusers_h3/src:${PROJECT_ROOT}/src:${H3_WORKSPACE}/.venv/lib/python3.11/site-packages"
 SIM_SITE_PACKAGES="${SIM_SITE_PACKAGES:-/tmp/h3-wam-libero-site}" \

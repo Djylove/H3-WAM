@@ -171,6 +171,7 @@ def sample_h3_lingbot_chunk_causal(
     video_schedule: H3DreamInferenceSchedule,
     action_schedule: H3DreamInferenceSchedule,
     observed_action_mask: torch.Tensor | None = None,
+    ignored_action_mask: torch.Tensor | None = None,
 ) -> H3LingBotCausalSample:
     """Generate interleaved video/action chunks without clean-future leakage.
 
@@ -202,6 +203,14 @@ def sample_h3_lingbot_chunk_causal(
         observed_action_mask = observed_action_mask.reshape(-1).bool()
     if observed_action_mask.shape != (action_length,):
         raise ValueError("observed action mask must cover every action row")
+    if ignored_action_mask is None:
+        ignored_action_mask = torch.zeros_like(action_chunk_ids, dtype=torch.bool)
+    else:
+        ignored_action_mask = ignored_action_mask.reshape(-1).bool()
+    if ignored_action_mask.shape != (action_length,):
+        raise ValueError("ignored action mask must cover every action row")
+    if bool((observed_action_mask & ignored_action_mask).any()):
+        raise ValueError("an action row cannot be both observed and ignored")
     if not bool(observed_video_mask.any()):
         raise ValueError("at least one observed video row is required")
     if int(video_chunk_ids.min()) < 0 or int(action_chunk_ids.min()) < 0:
@@ -250,7 +259,11 @@ def sample_h3_lingbot_chunk_causal(
             clean_video[:, video_selection] = video_rows[:, video_selection]
             clean_video_valid[video_selection] = True
 
-        action_selection = (action_chunk_ids == int(chunk)) & ~observed_action_mask
+        action_selection = (
+            (action_chunk_ids == int(chunk))
+            & ~observed_action_mask
+            & ~ignored_action_mask
+        )
         if bool(action_selection.any()):
             for action_sigma, action_delta in zip(
                 action_schedule.action_sigmas,

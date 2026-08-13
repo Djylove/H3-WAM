@@ -91,6 +91,7 @@ def main() -> None:
         libero_environment_actions,
         libero_observation_state,
         minmax_normalize,
+        normalize_libero_environment_action_history,
         preprocess_libero_cameras,
     )
     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -133,7 +134,7 @@ def main() -> None:
     model.float()
     model.check_is_root()
     payload = torch.load(args.stage.resolve(), map_location="cpu", weights_only=True)
-    if payload.get("format") != "h3_lingbot_shared_four_stream_tail_v1":
+    if payload.get("format") != "h3_lingbot_shared_four_stream_tail_v2":
         raise ValueError("incompatible shared-H3 stage")
     if payload.get("last_trainable_layers") != args.last_trainable_layers:
         raise ValueError("stage layer count mismatch")
@@ -142,6 +143,11 @@ def main() -> None:
     upstream_initial_action_anchor = payload.get(
         "upstream_initial_action_anchor", False
     )
+    if upstream_initial_action_anchor:
+        raise ValueError(
+            "legacy initial-action-anchor checkpoints require persistent "
+            "LingBot frame/KV state and cannot be served by this cold-start path"
+        )
     executed_action_history_steps = int(
         payload.get("executed_action_history_steps", 0)
     )
@@ -190,6 +196,10 @@ def main() -> None:
                 args.cache_root.resolve() / "contexts" / f"{context_id}.pt",
                 map_location="cpu", weights_only=False,
             )
+            if item.get("text_only") is not True:
+                raise ValueError(f"context {context_id!r} is not marked text_only=True")
+            if torch.any(item["token_tags"] != 1):
+                raise ValueError(f"context {context_id!r} contains non-text token tags")
             context_cache[context_id] = {
                 "context": item["context"].to(device=device, dtype=torch.bfloat16),
                 "token_tags": item["token_tags"].long(),
@@ -288,6 +298,10 @@ def main() -> None:
         video_time_indices[:condition_rows] = 0
         context_mask = torch.ones(conditioning["context"].shape[:2], device=device, dtype=torch.bool)
 
+        ignored_action_mask = torch.zeros(
+            history_steps + args.action_horizon, device=device, dtype=torch.bool
+        )
+
         def predict(video, clean_video, actions, clean_actions, video_time, action_sigma, clean_video_valid, clean_action_valid):
             output = model(
                 noisy_video_rows=video, clean_video_rows=clean_video,
@@ -303,6 +317,7 @@ def main() -> None:
                 context=conditioning["context"], context_position_ids=context_position_ids,
                 state=state.reshape(1, 8), context_mask=context_mask,
                 clean_video_valid=clean_video_valid, clean_action_valid=clean_action_valid,
+                noisy_action_valid=~ignored_action_mask,
             )
             return output.video_velocity_rows.float(), output.action_velocity.float()
 
@@ -317,22 +332,26 @@ def main() -> None:
         )
         if history_steps:
             executed = executed_environment_actions[-history_steps:].float()
+            history_valid = torch.ones(len(executed), device=device, dtype=torch.bool)
             if len(executed) < history_steps:
+                missing = history_steps - len(executed)
                 executed = torch.cat((
-                    torch.zeros(history_steps - len(executed), 7, device=device),
+                    torch.zeros(missing, 7, device=device),
                     executed,
                 ))
-            normalized_history = (
-                (executed - action_low.to(device))
-                / (action_high.to(device) - action_low.to(device)).clamp_min(1e-6)
-                * 2.0
-                - 1.0
-            ).clamp(-normalized_action_clip, normalized_action_clip)
+                history_valid = torch.cat(
+                    (torch.zeros(missing, device=device, dtype=torch.bool), history_valid)
+                )
+            normalized_history = normalize_libero_environment_action_history(
+                executed,
+                history_valid,
+                action_low,
+                action_high,
+                clip=normalized_action_clip,
+            )
             initial_actions[:, :history_steps] = normalized_history
-            observed_action_mask[:history_steps] = True
-        if upstream_initial_action_anchor:
-            initial_actions[:, : args.actions_per_chunk] = 0.0
-            observed_action_mask[: args.actions_per_chunk] = True
+            observed_action_mask[:history_steps] = history_valid
+            ignored_action_mask[:history_steps] = ~history_valid
         sampled = sample_h3_lingbot_chunk_causal(
             predict_velocity=predict, initial_video_rows=initial_video,
             observed_video_mask=observed, video_chunk_ids=video_chunks,
@@ -341,10 +360,13 @@ def main() -> None:
             video_schedule=video_schedule,
             action_schedule=action_schedule,
             observed_action_mask=observed_action_mask,
+            ignored_action_mask=ignored_action_mask,
         )
         actions = sampled.actions[0, history_steps:]
-        if upstream_initial_action_anchor:
-            actions = actions[args.actions_per_chunk :]
+        if actions.shape != (args.action_horizon, 7):
+            raise RuntimeError(
+                f"shared server must return [{args.action_horizon},7], got {tuple(actions.shape)}"
+            )
         torch.cuda.synchronize(device)
         return actions, context_id, time.perf_counter() - inference_started
 

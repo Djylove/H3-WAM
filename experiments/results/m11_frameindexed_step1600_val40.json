@@ -7,6 +7,8 @@
     "world_size": 8,
     "eval_only": true
   },
+  "evaluation_population": "training_population_overlap",
+  "episode_disjoint_held_out": false,
   "step200_action_mse": 0.151389,
   "step1600_action_mse": 0.10853167180903256,
   "relative_improvement_vs_step200_percent": 28.309407,
@@ -18,5 +20,5 @@
     "artifact": "/mnt/h3-wam/outputs/eval-frameindexed-dot/m11/step1600_gate/complete.json"
   },
   "decision": "KEEP_RUNNING_TO_PREREGISTERED_ENDPOINT",
-  "rationale": "Step1600 improves val40 action MSE by 28.31% over step200 but remains 0/10 on the same task3 closed-loop gate. Unlike the step200 no-contact behavior, several trials move bowls or plates substantially (maximum object joint delta 0.48965), so control has improved without completing the task. Preserve the pre-registered endpoint and do not equate either MSE or object contact with task success."
+  "rationale": "Step1600 improves action MSE by 28.31% over step200 on 40 windows that overlap the all-train frame-indexed population; this is a training-population learning metric, not held-out generalization. Closed-loop remains 0/10 on the same task3 gate. Several trials move bowls or plates substantially (maximum object joint delta 0.48965), so control changed without completing the task."
 }

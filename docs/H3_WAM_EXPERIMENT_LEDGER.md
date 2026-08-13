@@ -58,7 +58,7 @@
 | E28 | H3 physical-time alignment s100 | E24 合约；将 video chunk mask 和 action RoPE 对齐 H3 非均匀 VAE 物理时间 | val40 video/action `0.146827/1.298060`；改善 `1.867%/0.067%` | 按门控不重跑 | action 远低于预注册 `0.926%`；不晋级 no-leak sample40/闭环 |
 | E29 | 官方 flow loss weighting s100 | E24 合约；训练时逐 video row/action token 使用 LingBot/DreamWAM scheduler `training_weight` | val40 video/action `0.165724/1.297436`；改善 `2.530%/0.534%` | 按门控不重跑 | action 未过 `0.926%` 门且比 E24 弱 `0.143` 个百分点；不晋级 sample/闭环 |
 | E30 | 官方 LR `1e-5` s100 | E29 合约；只将 LR 从 `1e-6` 对齐 LingBot LIBERO 配置 `1e-5` | raw val40 video/action 改善 `18.112%/3.067%`；无泄漏 sample40 改善 `14.020%/0.900%` | task3 trial0 `0/1`；最大物体位移 `8.08e-17` | 当前最强因果离线信号，但闭环不通过；保留优化配方，先修动作历史协议再扩训 |
-| E31 | 官方初始动作历史锚 s100 | E30 合约；原始域前置4步零动作，采样固定为历史，部署跳过执行 | raw改善 video/action `16.967%/1.322%`；无泄漏改善 `13.195%/0.653%` | 按门控不重跑 | 未超过 E30 的 `0.900%` causal action 门；合约保留，分支停止 |
+| E31 | 初始动作锚的冷启动近似 s100 | E30 合约；每次窗口/重规划前置4步零动作 | raw改善 video/action `16.967%/1.322%`；无泄漏改善 `13.195%/0.653%` | 撤销上游对齐声明 | pinned LingBot 只在 `frame_st_id==0` 固定首帧并持续维护 KV；本地冷启动近似不等价，旧 checkpoint 已 fail closed |
 | E32 | 官方 AdamW weight decay `0.1` s100 | E30 合约；只将本地默认 `0.01` 对齐官方 `0.1` | raw video/action 改善 `17.705%/-3.005%`；无泄漏改善 `13.680%/-2.836%` | 按门控不重跑 | 两个动作指标均反向；`NO_GO_LONG`，本地短程局部解冻保留 `0.01` |
 | E33 | E30 execution cadence | checkpoint/horizon32 固定；replan 从32改为4/8/16 | 不适用 | 三臂均 `0/1`、最大物体位移 `≤1.49e-16` | saturation 升至 `12.29–12.68%`；开环长度不是简单主因，停止部署扫描 |
 
@@ -185,10 +185,11 @@ E30 将唯一优化变量改为 LingBot-VA LIBERO 官方 `1e-5` learning rate，
 逐行核对作者数据集、server 和 LIBERO client 后定位到下一处成套偏差：作者在原始动作域
 前置一帧（LIBERO 为4步）全零动作作为历史，采样时固定该帧为 clean condition，首次执行时
 跳过它；本地此前既没有训练锚，也直接执行 action0。E31 已把三处作为一个不可拆分的
-训练—推理合约实现，25 项测试通过；真实 H3 两步 smoke 的 H3/action 梯度为
+冷启动训练—推理近似实现，25 项测试通过；真实 H3 两步 smoke 的 H3/action 梯度为
 `0.327/10.633`、`0.236/15.739`，独立进程 restore val8 成功。最终 s100 raw video/action
 改善 `16.967%/1.322%`，但严格无泄漏只改善 `13.195%/0.653%`，低于 E30 的
-`14.020%/0.900%`。因此不做闭环、不加步数；协议实现保留，孤立假设判为失败。
+`14.020%/0.900%`。2026-08-13 复核上游 server/client 后确认该实现遗漏了 `frame_st_id` 与持久
+observation/action KV 生命周期，不能称为上游合同；训练器现拒绝该 flag，服务端拒绝旧 E31 stage。
 
 官方 LIBERO 配置还使用 AdamW `weight_decay=0.1`，而 E30 实际为 PyTorch 默认 `0.01`。
 E32 以此为唯一变量完成 100 steps：训练耗时 `461.4s`、峰值保留显存 `42.02 GiB`。
@@ -495,6 +496,12 @@ global batch128、2170 steps、277760 samples（`1.000169` epoch）、LR `1e-4` 
 从初始位姿净移动约 `(+0.338,+0.004,+0.027)m`，但最大物体关节位移仅 `8.82e-17`，没有接触。
 这说明 history 条件下的策略并非静止，且当前全局最佳 causal MSE 仍未转化为任务相关控制。
 step2000/2500/3000 继续用于完成预算学习曲线；除非出现新的机制变化，不逐点重复同一闭环。
+
+2026-08-13 代码审查确认该闭环把 LIBERO environment-domain history 直接用 dataset-domain
+quantile 归一化，夹爪 open/close 条件反转；episode 开头的左 padding 也被当成真实动作。因此上述
+`0/1` 与“无接触”只保留为旧实现实际输出，撤销其对 executed-history 机制的否定性推论。离线
+teacher-forced/causal 数值不经过 environment codec，可作为旧 checkpoint 的描述保留，但该 shared
+checkpoint 同时受 replicated-gradient 未同步影响，不能支持 global-batch-8 方法结论。
 
 同一时段完成 depth4-H3init 的真实机械 gate。首次运行在构造 `H3DoTWAM` 后才读取 H3 源 block，
 而构造函数已把源 block 移入 hub wrappers，导致源深度为0；修正初始化顺序并增加回归测试后重跑。

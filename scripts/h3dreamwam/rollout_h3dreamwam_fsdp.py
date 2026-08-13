@@ -45,6 +45,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env-resolution", type=int, default=256)
     parser.add_argument("--replan-steps", type=int, default=10)
     parser.add_argument("--action-horizon", type=int, default=32)
+    parser.add_argument("--actions-per-chunk", type=int, default=4)
+    parser.add_argument("--target-latent-frames", type=int, default=12)
+    parser.add_argument("--last-trainable-layers", type=int, default=2)
     parser.add_argument("--sample-steps", type=int, default=10)
     parser.add_argument("--video-sample-steps", type=int, default=0)
     parser.add_argument("--action-sample-steps", type=int, default=0)
@@ -87,9 +90,12 @@ def server_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
             "--port", str(port),
             "--ready-file", str(ready_file),
             "--action-horizon", str(args.action_horizon),
+            "--actions-per-chunk", str(args.actions_per_chunk),
+            "--target-latent-frames", str(args.target_latent_frames),
             "--sample-steps", str(args.sample_steps),
             "--video-sample-steps", str(args.video_sample_steps),
             "--action-sample-steps", str(args.action_sample_steps),
+            "--last-trainable-layers", str(args.last_trainable_layers),
             "--binarize-gripper" if args.binarize_gripper else "--no-binarize-gripper",
             "--clip-normalized-actions" if args.clip_normalized_actions else "--no-clip-normalized-actions",
         ]
@@ -156,6 +162,11 @@ def main() -> None:
     if args.lingbot_shared:
         if args.lingbot_shared_stage is None:
             raise ValueError("lingbot-shared requires --lingbot-shared-stage")
+        if args.action_median_window != 1 or args.action_scale != 1.0:
+            raise ValueError(
+                "shared-H3 does not implement action-median-window/action-scale; "
+                "refusing a silently ineffective sweep"
+            )
     elif args.action_stage is None:
         raise ValueError("non-LingBot rollout requires --action-stage")
     if min(
@@ -164,6 +175,9 @@ def main() -> None:
         args.max_steps,
         args.replan_steps,
         args.action_horizon,
+        args.actions_per_chunk,
+        args.target_latent_frames,
+        args.last_trainable_layers,
         args.sample_steps,
     ) <= 0:
         raise ValueError("positive rollout arguments are required")
@@ -251,6 +265,10 @@ def main() -> None:
         "action_sample_steps": args.action_sample_steps or args.sample_steps,
         "clip_normalized_actions": args.clip_normalized_actions,
         "fixed_noise_seed": args.fixed_noise_seed,
+        "status": "running",
+        "expected_tasks": len(task_ids),
+        "expected_episodes": len(task_ids) * len(trial_indices),
+        "finished_episodes": 0,
         "tasks": [],
     }
     started = time.perf_counter()
@@ -308,6 +326,7 @@ def main() -> None:
                         imageio.mimsave(video_path, frames, fps=20)
                         episode["video"] = str(video_path)
                     task_result["episodes"].append(episode)
+                    results["finished_episodes"] += 1
                     print(
                         json.dumps(
                             {
@@ -326,7 +345,7 @@ def main() -> None:
                         ),
                         flush=True,
                     )
-                    write_results(output_dir / "results.json", results)
+                    write_results(output_dir / "results.partial.json", results)
             finally:
                 env.close()
             task_result["successes"] = sum(
@@ -336,6 +355,7 @@ def main() -> None:
                 task_result["episodes"]
             )
             results["tasks"].append(task_result)
+            write_results(output_dir / "results.partial.json", results)
         episodes = [
             episode for task_result in results["tasks"]
             for episode in task_result["episodes"]
@@ -344,7 +364,13 @@ def main() -> None:
         results["episodes"] = len(episodes)
         results["success_rate"] = results["successes"] / max(len(episodes), 1)
         results["duration_seconds"] = time.perf_counter() - started
+        if len(results["tasks"]) != results["expected_tasks"] or (
+            len(episodes) != results["expected_episodes"]
+        ):
+            raise RuntimeError("rollout finished with an incomplete task/episode count")
+        results["status"] = "complete"
         write_results(output_dir / "results.json", results)
+        (output_dir / "results.partial.json").unlink(missing_ok=True)
         print(json.dumps({"summary": results}, indent=2), flush=True)
     finally:
         if connection is not None:

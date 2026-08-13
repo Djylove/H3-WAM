@@ -152,6 +152,42 @@ class H3DreamSamplingTest(unittest.TestCase):
         self.assertEqual(float(sample.actions[0, 0, 0]), 0.0)
         self.assertEqual(float(sample.actions[0, 1, 0]), 0.0)
 
+    def test_lingbot_sampler_never_generates_ignored_history_padding(self) -> None:
+        initial_video = torch.tensor([[[7.0], [8.0]]])
+        initial_actions = torch.tensor([[[0.0], [0.0], [9.0]]])
+        calls = []
+
+        def oracle(
+            video,
+            video_history,
+            actions,
+            action_history,
+            video_time,
+            action_sigma,
+            clean_video_valid,
+            clean_action_valid,
+        ):
+            del video_history, action_history, video_time, action_sigma
+            calls.append((clean_video_valid.clone(), clean_action_valid.clone()))
+            return torch.zeros_like(video), torch.ones_like(actions)
+
+        schedule = build_h3dream_inference_schedule(1, device="cpu")
+        sample = sample_h3_lingbot_chunk_causal(
+            oracle,
+            initial_video_rows=initial_video,
+            observed_video_mask=torch.tensor([True, False]),
+            video_chunk_ids=torch.tensor([1, 2]),
+            initial_actions=initial_actions,
+            action_chunk_ids=torch.tensor([0, 1, 2]),
+            observed_action_mask=torch.tensor([False, True, False]),
+            ignored_action_mask=torch.tensor([True, False, False]),
+            video_schedule=schedule,
+            action_schedule=schedule,
+        )
+        self.assertEqual(float(sample.actions[0, 0, 0]), 0.0)
+        self.assertFalse(bool(sample.clean_actions[0, 0, 0]))
+        self.assertTrue(all(not bool(valid[0]) for _, valid in calls))
+
 
 if __name__ == "__main__":
     unittest.main()

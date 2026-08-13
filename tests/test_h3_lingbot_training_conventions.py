@@ -178,10 +178,11 @@ class H3LingBotTrainingConventionsTest(unittest.TestCase):
                 root / "actions" / "libero_goal_ep000003.pt",
             )
             row = {"suite": "libero_goal", "episode": 3, "start": 6}
-            history = load_executed_action_history(
+            history, valid = load_executed_action_history(
                 row, history_root=root, history_steps=4
             )
             torch.testing.assert_close(history, actions[2:6])
+            torch.testing.assert_close(valid, torch.ones(4, dtype=torch.bool))
 
     def test_executed_action_history_left_pads_episode_start(self) -> None:
         with TemporaryDirectory() as directory:
@@ -193,11 +194,12 @@ class H3LingBotTrainingConventionsTest(unittest.TestCase):
                 root / "actions" / "libero_spatial_ep000001.pt",
             )
             row = {"suite": "libero_spatial", "episode": 1, "start": 2}
-            history = load_executed_action_history(
+            history, valid = load_executed_action_history(
                 row, history_root=root, history_steps=4
             )
             torch.testing.assert_close(history[:2], torch.zeros(2, 7))
             torch.testing.assert_close(history[2:], actions[:2])
+            torch.testing.assert_close(valid, torch.tensor([False, False, True, True]))
 
     def test_weighted_action_loss_excludes_history_tokens(self) -> None:
         video_prediction = torch.zeros(1, 2, 1)

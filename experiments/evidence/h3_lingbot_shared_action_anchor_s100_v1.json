@@ -11,8 +11,8 @@
   ],
   "alignment": {
     "architecture": [{"field": "shared four-stream H3", "paper": "shared causal world/action blocks", "upstream_code": "shared Wan blocks", "local": "same E30 H3 tail-2 port", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py"], "rationale": "H3 backbone substitution is fixed."}],
-    "data": [{"field": "initial action history", "paper": "causal history", "upstream_code": "dataset prepends frame_stride*4 zeros before normalization", "local": "prepend four raw zero actions before q01/q99 normalization", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/dataset/lerobot_latent_dataset.py:264", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "LIBERO config uses four actions per action frame; one frame is the initial history anchor."}],
-    "action": [{"field": "initial inference frame", "paper": "condition on action history", "upstream_code": "server fixes first action frame to zero and client skips it", "local": "sampler fixes first four actions as clean history and server removes them before returning", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/wan_va_server.py:526", "third_party/code_audit/lingbot-va/evaluation/libero/client.py:105", "src/fastwam/models/h3dreamwam/sampling.py"], "rationale": "Training and deployment now share the same history/execution boundary."}],
+    "data": [{"field": "initial action history", "paper": "causal history", "upstream_code": "dataset prepends frame_stride*4 zeros before normalization as the first frame of a streaming sequence", "local": "prepend four raw zero actions to every cold-start window", "status": "MISMATCH", "evidence": ["third_party/code_audit/lingbot-va/wan_va/dataset/lerobot_latent_dataset.py:264", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "The local window has no persistent frame index or KV lifecycle."}],
+    "action": [{"field": "initial inference frame", "paper": "condition on action history", "upstream_code": "server fixes the action frame only at frame_st_id==0, client skips it only on the first call, then updates persistent KV", "local": "every replan cold-starts, fixes four actions and removes them", "status": "MISMATCH", "evidence": ["third_party/code_audit/lingbot-va/wan_va/wan_va_server.py:526", "third_party/code_audit/lingbot-va/evaluation/libero/client.py:105", "src/fastwam/models/h3dreamwam/sampling.py"], "rationale": "Matching a prefix tensor is not equivalent to LingBot's streaming state machine."}],
     "objective": [{"field": "flow objective", "paper": "weighted flow matching", "upstream_code": "scheduler training_weight", "local": "same E30 per-row/per-token weighting", "status": "EQUIVALENT", "evidence": ["experiments/results/h3_lingbot_shared_official_lr_s100_val40.json"], "rationale": "No objective change."}],
     "optimization": [{"field": "budget", "paper": "full post-training", "upstream_code": "5000 steps, LR1e-5", "local": "100-step mechanism canary, LR1e-5", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Bounded test before scaling."}],
     "evaluation": [{"field": "promotion", "paper": "LIBERO success", "upstream_code": "closed-loop benchmark", "local": "raw val40, paired sample40, then fixed task3 trial0", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.rationale"], "rationale": "Staged gate minimizes low-value GPU use."}]
@@ -20,8 +20,8 @@
   "gates": {
     "source_identity": {"status": "PASS", "evidence": ["fixed clean LingBot commit 7c6ffa9"]},
     "architecture_contract": {"status": "PASS", "evidence": ["same E30 shared-H3 architecture"]},
-    "data_contract": {"status": "PASS", "evidence": ["same E30 windows plus upstream raw-space anchor"]},
-    "action_contract": {"status": "PASS", "evidence": ["training sampler and server share anchor flag"]},
+    "data_contract": {"status": "FAIL", "evidence": ["cold-start windows do not reproduce LingBot streaming frame identity"]},
+    "action_contract": {"status": "FAIL", "evidence": ["missing frame_st_id and persistent observation/action KV lifecycle"]},
     "objective_contract": {"status": "PASS", "evidence": ["same E30 weighted objective"]},
     "optimization_contract": {"status": "PASS", "evidence": ["same E30 LR and budget"]},
     "evaluation_contract": {"status": "PASS", "evidence": ["same fixed val40 and sample40"]},
@@ -35,7 +35,7 @@
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
   "decision": {
     "status": "NO_GO",
-    "rationale": "Tests, real-H3 smoke and restore passed, but paired causal sample40 improved video/action only 13.195%/0.653%, below E30's 14.020%/0.900%. Keep the upstream-correct history protocol in code, but do not run rollout or scale this isolated branch.",
-    "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --upstream-initial-action-anchor --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_anchor_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_anchor_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5"
+    "rationale": "Retrospective source audit found that the local cold-start anchor is not equivalent to LingBot's first-frame-only anchor plus persistent KV lifecycle. The trainer now rejects this flag and the server rejects the legacy stage; do not run rollout, resume or scale it.",
+    "launch_command": "BLOCKED: the legacy anchor command is intentionally rejected until persistent LingBot frame/KV state is implemented"
   }
 }
