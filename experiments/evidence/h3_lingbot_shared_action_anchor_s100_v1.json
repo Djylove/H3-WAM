@@ -29,13 +29,13 @@
     "smoke_finite": {"status": "PASS", "evidence": ["two finite steps; peak reserved 41.04 GiB"]},
     "checkpoint_restore": {"status": "PASS", "evidence": ["fresh-process val8 restored; video/action 0.170716/1.212366"]},
     "parent_baseline": {"status": "PASS", "evidence": ["E30 paired raw/sample and rollout"]},
-    "mechanism_signal": {"status": "PENDING", "evidence": []},
-    "closed_loop_canary": {"status": "PENDING", "evidence": []}
+    "mechanism_signal": {"status": "FAIL", "evidence": ["causal sample40 action improvement 0.653%, below E30 0.900%; video improvement also falls from 14.020% to 13.195%"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not run: pre-registered causal action gate failed"]}
   },
   "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.003984480248431112, "gpu_count": 8, "estimated_hours": 0.25},
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Authorize only tests and a two-step real-H3 smoke first. If finite gradients and fresh restore pass, run the paired s100 canary. Require causal sample40 action improvement greater than E30's 0.900% and positive video improvement before one fixed rollout; otherwise stop.",
+    "status": "NO_GO",
+    "rationale": "Tests, real-H3 smoke and restore passed, but paired causal sample40 improved video/action only 13.195%/0.653%, below E30's 14.020%/0.900%. Keep the upstream-correct history protocol in code, but do not run rollout or scale this isolated branch.",
     "launch_command": "/mnt/h3-wam/runtime/conda-py311/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py --shared-backbone --model /mnt/h3-wam/models/MiniMax-H3 --data-root /mnt/h3-wam/data/v7_dense_h3_cache --manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --action-normalization quantile --action-stats-json experiments/data/libero_v7_action_quantiles.json --flow-match-loss-weighting --upstream-initial-action-anchor --output /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_anchor_tail2_s100_train.json --save-stage /mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_anchor_tail2_s100.pt --steps 100 --rotate-windows --random-timesteps --warmup-steps 10 --last-trainable-layers 2 --action-horizon 32 --learning-rate 1e-5"
   }
 }

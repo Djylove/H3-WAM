@@ -1,0 +1,37 @@
+{
+  "event": "h3_lingbot_shared_action_anchor_s100",
+  "checkpoint": "/mnt/h3-wam/outputs/h3-lingbot-shared/quantile_flowweight_lr1e5_anchor_tail2_s100.pt",
+  "training": {
+    "optimizer_steps": 100,
+    "global_batch": 8,
+    "unique_windows": 800,
+    "elapsed_seconds": 461.6457631890662,
+    "peak_reserved_gib": 42.0234375,
+    "mean_weighted_video_loss": 0.18008537025994883,
+    "mean_weighted_action_loss": 1.2332249748207686
+  },
+  "teacher_forced_val40": {
+    "initial_video_mse": 0.17005341947078706,
+    "trained_video_mse": 0.14120072443038226,
+    "video_improvement_percent": 16.966842025,
+    "initial_action_mse": 1.2768722474575043,
+    "trained_action_mse": 1.2599892497062684,
+    "action_improvement_percent": 1.322215107
+  },
+  "causal_sample40": {
+    "sample_steps": 4,
+    "initial_video_mse": 0.6887355022132396,
+    "trained_video_mse": 0.5978562965989113,
+    "video_improvement_percent": 13.195080742,
+    "initial_action_mse": 1.2975060939788818,
+    "trained_action_mse": 1.2890345990657806,
+    "action_improvement_percent": 0.652905983
+  },
+  "promotion_gate": {
+    "required_action_improvement_percent": 0.9004607,
+    "passed": false
+  },
+  "closed_loop": "not run: pre-registered causal action gate failed",
+  "decision": "NO_GO_LONG",
+  "rationale": "The upstream history anchor is a correct interface contract, but under the paired s100 budget it weakens causal video/action improvements versus E30. Preserve the implementation and stop this isolated branch."
+}

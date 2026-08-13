@@ -57,6 +57,7 @@
 | E28 | H3 physical-time alignment s100 | E24 合约；将 video chunk mask 和 action RoPE 对齐 H3 非均匀 VAE 物理时间 | val40 video/action `0.146827/1.298060`；改善 `1.867%/0.067%` | 按门控不重跑 | action 远低于预注册 `0.926%`；不晋级 no-leak sample40/闭环 |
 | E29 | 官方 flow loss weighting s100 | E24 合约；训练时逐 video row/action token 使用 LingBot/DreamWAM scheduler `training_weight` | val40 video/action `0.165724/1.297436`；改善 `2.530%/0.534%` | 按门控不重跑 | action 未过 `0.926%` 门且比 E24 弱 `0.143` 个百分点；不晋级 sample/闭环 |
 | E30 | 官方 LR `1e-5` s100 | E29 合约；只将 LR 从 `1e-6` 对齐 LingBot LIBERO 配置 `1e-5` | raw val40 video/action 改善 `18.112%/3.067%`；无泄漏 sample40 改善 `14.020%/0.900%` | task3 trial0 `0/1`；最大物体位移 `8.08e-17` | 当前最强因果离线信号，但闭环不通过；保留优化配方，先修动作历史协议再扩训 |
+| E31 | 官方初始动作历史锚 s100 | E30 合约；原始域前置4步零动作，采样固定为历史，部署跳过执行 | raw改善 video/action `16.967%/1.322%`；无泄漏改善 `13.195%/0.653%` | 按门控不重跑 | 未超过 E30 的 `0.900%` causal action 门；合约保留，分支停止 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
@@ -182,19 +183,20 @@ E30 将唯一优化变量改为 LingBot-VA LIBERO 官方 `1e-5` learning rate，
 前置一帧（LIBERO 为4步）全零动作作为历史，采样时固定该帧为 clean condition，首次执行时
 跳过它；本地此前既没有训练锚，也直接执行 action0。E31 已把三处作为一个不可拆分的
 训练—推理合约实现，25 项测试通过；真实 H3 两步 smoke 的 H3/action 梯度为
-`0.327/10.633`、`0.236/15.739`，独立进程 restore val8 成功。只有 E31 的配对无泄漏动作
-改善超过 E30 的 `0.900%`，才允许再做一次固定闭环。
+`0.327/10.633`、`0.236/15.739`，独立进程 restore val8 成功。最终 s100 raw video/action
+改善 `16.967%/1.322%`，但严格无泄漏只改善 `13.195%/0.653%`，低于 E30 的
+`14.020%/0.900%`。因此不做闭环、不加步数；协议实现保留，孤立假设判为失败。
 
 ## 2026-08-13 长线实时状态
 
 | 线路 | 节点 | 训练规模 | 最后观测进度 | 保留原因 |
 |---|---|---|---:|---|
-| E31 action-anchor | `117.50.181.177:30907` | 100-step bounded canary | 真实2步 smoke/restore 已通过；s100运行中 | 单变量补齐作者初始动作历史/执行边界 |
+| E31 action-anchor | `117.50.181.177:30907` | 100-step bounded canary | 已完成；causal action 改善 `0.653%`，未过门 | 分支停止，30907 已释放 |
 | M11 frame-indexed | `117.50.181.177:30234` | 2170 steps / 1 epoch | 已越过 step1800；最新已保存 step1800 | 仍在 8×A800 上约 100% 运行；step1600 val40 `0.108532`、task3 `0/10`，终点后核验 final |
 
-上述状态于 2026-08-13 08:48（Asia/Shanghai）用进程、GPU 和日志三重核对：30907 运行
-E31 s100，32409/32611 并行计算 E31 未训练初始化的 raw/sample40 对照，30234 继续 M11；
-四个节点均有独立任务。恢复研究时仍必须先从日志和 checkpoint manifest 重新确认。
+上述状态于 2026-08-13 09:00（Asia/Shanghai）用进程、GPU 和日志三重核对：E31 训练及
+配对 raw/sample40 已完成，30907/32409/32611 已释放；30234 继续 M11。恢复研究时仍必须
+先从日志和 checkpoint manifest 重新确认。
 
 ## 云端资产位置
 
@@ -251,9 +253,8 @@ steps 或 gate 数量来追逐噪声。E12 的正面价值是排除了“只补�
 1. 读取本账本和 `UPSTREAM_SOURCES.lock.json`，恢复固定上游 commit。
 2. 等 M11 到 step2170 后核验 final checkpoint、日志、resolved config 与数据 manifest hash；
    M13 已完成，不再重跑。
-3. E30 固定为当前官方优化协议基线；E31 完成 s100 后先跑成对 raw/sample40，动作改善若不超过
-   E30 的 `0.900%` 就停止，不用闭环追结果。
-4. 若 E31 仍失败，下一证据审计转向动作专用建模：比较 LingBot/MiniWorld/DiT4DiT 的 action
+3. E30 固定为当前官方优化协议基线；E31 未超过其 `0.900%` causal action 门，已停止。
+4. 下一证据审计转向动作专用建模：比较 LingBot/MiniWorld/DiT4DiT 的 action
    carrier 宽度、state 注入位置和 chunk 目标，不再从 video condition 侧做小修补。
 5. 新实验必须由作者开源代码中的明确差异驱动，且先交付配对基线、单变量门和
    2-step/restore smoke；未过 offline action 门不调度 LIBERO 闭环。
