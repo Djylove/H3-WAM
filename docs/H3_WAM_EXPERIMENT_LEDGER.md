@@ -325,3 +325,16 @@ LIBERO 官方50步，作为独立采样敏感性复核。需要注意 `action_tr
 官方 loss weighting，因此本轮只能归因于“训练 scheduler”，不能单凭结果宣称高噪声覆盖就是
 唯一机制。预注册 dossier：
 `experiments/evidence/h3_lingbot_action_shift{1,5}_s100_v1.json`。
+
+两条 s100 canary 均完成。固定 raw val40 的 video/action：shift1 为
+`0.139244/1.243479`，shift5 为 `0.139366/1.230748`；相对 E30 shift0.05 的
+`0.139230/1.264393`，raw action 分别改善约 `1.65%/2.66%`。但统一4步无泄漏因果
+video/action 为 shift1 `0.596848/1.288768`、shift5 `0.592029/1.304205`；shift1 仅比 E30
+action `1.295219` 改善约 `0.50%`，未过预注册 `1.282267` 门，shift5 则退化约 `0.69%`。
+因此两臂均不续训到500步，尤其不能依据 raw 指标选择 shift5；训练期高噪声覆盖不是越大越好。
+固定 video4、action50 的采样复核仍在运行。
+
+同一时段，legacy tail-2 长线累计 step3000 的 raw video/action 已达
+`0.098415/0.839149`，因果 video/action 达 `0.268833/1.099539`；因果 action 相对 step2500
+的 `1.231785` 再改善约 `10.7%`。这支持“训练预算不足是重要因素”，但不替代 LIBERO 闭环
+success；step3000 是下一固定 task3/trial0 闭环的优先候选。
