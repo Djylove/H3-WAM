@@ -1,0 +1,162 @@
+{
+  "experiment_id": "h3_candidate_d_vs_d0_v4_paired_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "With identical five-block ActionDiT weights, data, seeds and optimization, block-aligned H3 K/V from layers 9/19/29/39/49 will learn more target-aligned visual conditioning than repeating layer49 into every block, without worsening action range or gripper control.",
+  "single_variable": "carrier_source_mode: Candidate D uses aligned_5layer; Candidate D0 repeats an independent clone of layer49 K/V into all five otherwise identical action blocks.",
+  "parent_baseline": "Candidate D0 repeat_layer49 trained concurrently from the same initialization and evaluated on the same v4 balanced-80 IDs at s10/s50/s250/s500/s963.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "DreamWAM",
+      "locator": "https://arxiv.org/abs/2608.04996",
+      "revision": "supplementary only",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Official DreamWAM repository",
+      "locator": "https://github.com/hustvl/DreamWAM.git",
+      "revision": "6e989facc0c452fd3488d75f60bc36411005558c",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3 Candidate D/D0 paired carrier",
+      "locator": "src/fastwam/models/h3wam/dreamwam_kv_carrier.py",
+      "revision": "e85c10c",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "D versus D0 trainable graph and initialization",
+        "paper": "supplementary motivation for per-block video K/V",
+        "upstream_code": "five DreamWAM action blocks consume per-block video K/V",
+        "local": "same state_dict keys, tensor values and parameter count; only carrier_source_mode differs",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "tests/test_h3_dreamwam_kv_carrier.py::H3DreamWAMKVCarrierPolicyTest::test_d0_repeats_layer49_with_independent_clones_and_same_parameters",
+          "tests/test_h3_dreamwam_kv_trainer.py::DreamWAMKVTrainingContractTest::test_d0_model_is_parameter_identical_single_variable_ablation"
+        ],
+        "rationale": "D0 is a local controlled parent, not an official DreamWAM configuration."
+      }
+    ],
+    "data": [
+      {
+        "field": "v4 episode-disjoint training and validation data",
+        "paper": "not used as the local LIBERO data contract",
+        "upstream_code": "not used as the local LIBERO data contract",
+        "local": "both arms use the same 7,710 train windows, cumulative disjoint stage slices and the same v4 balanced-80 IDs",
+        "status": "EXACT",
+        "evidence": [
+          "experiments/evidence/h3_int8_dreamwam_kv_candidate_d_mechanical_v1.json",
+          "experiments/evidence/h3_candidate_d_s1_restore_balanced80_v1.json"
+        ],
+        "rationale": "Data order, global batch and consumed sample IDs are matched between D and D0."
+      }
+    ],
+    "action": [
+      {
+        "field": "action/state normalization and horizon",
+        "paper": "supplementary only",
+        "upstream_code": "action expert module only",
+        "local": "7D horizon32, StarWAM minmax clip5, gripper last dimension",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+          "scripts/h3wam/evaluate_h3_dreamwam_kv_carrier.py"
+        ],
+        "rationale": "The carrier mode does not change the action contract."
+      }
+    ],
+    "objective": [
+      {
+        "field": "shifted flow loss and conditioning",
+        "paper": "supplementary only",
+        "upstream_code": "pinned DreamWAM action blocks",
+        "local": "identical continuous-FP32 shift5 flow loss, text, proprio and action noise; only H3 K/V source mapping differs",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+          "tests/test_h3_dreamwam_kv_trainer.py::DreamWAMKVTrainingContractTest::test_d0_checkpoint_contract_changes_only_derived_identity_and_mode"
+        ],
+        "rationale": "No auxiliary loss or parameter group is added to either arm."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "paired one-epoch learning curve",
+        "paper": "not used for the local budget",
+        "upstream_code": "not used for the local budget",
+        "local": "8 GPUs per arm, global batch8, AdamW, warmup1000, checkpoints s10/s50/s250/s500/s963, 7,704 unique samples per arm",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+          "tests/test_h3_dreamwam_kv_trainer.py::DreamWAMKVTrainingContractTest::test_three_stage_consumed_ids_remain_cumulative_and_block_old_overlap"
+        ],
+        "rationale": "The two arms use identical stage slices, topology, seeds and optimizer schedule."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "v4 balanced-80 paired evaluator",
+        "paper": "not used",
+        "upstream_code": "not used",
+        "local": "same 80 IDs, noise, seed42, batch1, shift5, ten-step Euler, language replacement and source-sample visual shuffle",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/evaluate_h3_dreamwam_kv_carrier.py",
+          "tests/test_h3_dreamwam_kv_evaluator.py"
+        ],
+        "rationale": "D and D0 are strictly paired to each other on v4; neither is strictly paired to the older R1/G v8 reports."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Official DreamWAM HEAD 6e989facc0c452fd3488d75f60bc36411005558c and local commit e85c10c."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["D/D0 state_dict and initialization identity tests pass."]},
+    "data_contract": {"status": "PASS", "evidence": ["8,560/8,560 cache audit; 7,710 train windows; 170 validation episodes; episode overlap 0."]},
+    "action_contract": {"status": "PASS", "evidence": ["Unchanged 7D horizon32 clip5 contract."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Same shifted-flow implementation and deterministic rank-distinct seeds."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Same 8-rank topology and cumulative disjoint sample-slice gate."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["v4 selected IDs SHA256 b507e1ff6031f01c88cd6181aaeb4cba33b76e2c67737a986bf764c76be87519."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Candidate D five-block/proprio gradients finite and non-zero; D0 uses the same trainable graph."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["Target evidence for D0 and the paired 8-rank run."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Candidate D schema-v2 fresh restore max_abs=0; D0 uses identical persistence code and will be independently checked at s10."]},
+    "parent_baseline": {"status": "FAIL", "evidence": ["D0 is code-complete but has no trained checkpoint yet; this paired canary creates it."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Target of paired s10/s50/s250/s500/s963 evaluation."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Not released until paired offline action/range/gripper/conditioning gates pass."]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 963,
+    "training_samples": 7704,
+    "unique_windows": 7710,
+    "effective_epochs": 0.9992217898832685,
+    "gpu_count": 16,
+    "estimated_hours": 3.0,
+    "paired_total_training_samples": 15408,
+    "checkpoint_steps": [10, 50, 250, 500, 963],
+    "checkpoint_storage_estimate_bytes": 20998793870
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The bounded paired run is needed to create the direct parent and a one-epoch learning curve; it cannot by itself support a closed-loop or cross-v8 effectiveness claim.",
+    "launch_command": "torchrun --standalone --nproc_per_node=8 scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py MANIFEST --source-manifest SOURCE --cache-root CACHE --kv-subdir h3_int8_dreamwam_kv_5x32_canary_v1 --enable-dreamwam-kv-carrier --verify-h3-checkpoint-sha256 --steps 10 --limit 80 --save-checkpoint CHECKPOINT_S10 --output REPORT_S10; add --enable-d0-repeat-layer49 only for the D0 arm"
+  },
+  "paired_gate": {
+    "progress_condition": "At the same checkpoint, D must improve at least one of physical MSE/ADE or gripper macro-F1 relative to D0 without worsening the other key action and range metrics; visual/language response must remain finite and non-collapsed.",
+    "stop_conditions": [
+      "non-finite or zero required gradient",
+      "checkpoint restore mismatch",
+      "sample overlap or duplicate consumed ID",
+      "persistent action-range explosion relative to D0",
+      "conditioning collapse confirmed across checkpoints"
+    ],
+    "claim_boundary": "This experiment can attribute aligned multi-layer K/V benefit versus repeat-layer49 on v4 only. It cannot establish superiority to R1/G v8 or LIBERO closed-loop success."
+  }
+}
