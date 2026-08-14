@@ -1,0 +1,174 @@
+{
+  "experiment_id": "h3_candidate_d_vs_d0_dense_v7_paired_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "On the same dense LIBERO windows, aligned H3 K/V from layers 9/19/29/39/49 will outperform repeating layer49 in at least one target-conditioned action metric without degrading physical error, gripper control or action range at the paired s963 gate.",
+  "single_variable": "carrier_source_mode: D uses aligned_5layer and D0 repeats independent clones of layer49; initialization, trainable graph, dense samples, noise, optimization and evaluation are identical.",
+  "parent_baseline": "A fresh D0 dense arm trained concurrently from seed42 on the same ordered 7,704 unique v7 windows; the historical sparse D0 s963 remains the separate density parent in h3_candidate_d0_dense_v7_v1.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "DreamWAM",
+      "locator": "https://arxiv.org/abs/2608.04996",
+      "revision": "supplementary only",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Official DreamWAM repository",
+      "locator": "https://github.com/hustvl/DreamWAM.git",
+      "revision": "6e989facc0c452fd3488d75f60bc36411005558c",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3 DreamWAM K/V carrier trainer and evaluator",
+      "locator": "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+      "revision": "96976ce",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "D versus D0 trainable graph and initialization",
+        "paper": "per-block video K/V motivates D; D0 is a local control",
+        "upstream_code": "five DreamWAM action blocks consume per-block video K/V",
+        "local": "identical state_dict keys, values and 349,944,839 trainable parameters; only carrier_source_mode differs",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "tests/test_h3_dreamwam_kv_carrier.py::H3DreamWAMKVCarrierPolicyTest::test_d0_repeats_layer49_with_independent_clones_and_same_parameters",
+          "tests/test_h3_dreamwam_kv_trainer.py::DreamWAMKVTrainingContractTest::test_d0_model_is_parameter_identical_single_variable_ablation"
+        ],
+        "rationale": "D0 is the direct local parent required to attribute the value of aligned multi-layer H3 K/V."
+      }
+    ],
+    "data": [
+      {
+        "field": "v7 dense episode-disjoint LIBERO windows",
+        "paper": "robot demonstration trajectories",
+        "upstream_code": "trajectory windows rather than five episode snapshots",
+        "local": "both arms consume the same ordered first 7,704 rows from 200,779 dense train windows over 1,542 episodes; validation has 22,150 rows over 170 disjoint episodes",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "/mnt/h3-wam/data/v7_multisuite_dense_candidate/candidate_report.json",
+          "experiments/dossiers/h3_candidate_d0_dense_v7_v1.json"
+        ],
+        "rationale": "The dense local split supplies full valid starts while keeping suites and episode split fixed."
+      }
+    ],
+    "action": [
+      {
+        "field": "action and state contract",
+        "paper": "supplementary only",
+        "upstream_code": "DreamWAM action expert interface",
+        "local": "7D horizon32, v7 train-only minmax clip5, gripper last dimension",
+        "status": "EXACT",
+        "evidence": [
+          "/mnt/h3-wam/data/v7_dense_h3_cache/stats.pt",
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py"
+        ],
+        "rationale": "Carrier source mode cannot change normalization, padding or action semantics."
+      }
+    ],
+    "objective": [
+      {
+        "field": "shifted-flow action objective",
+        "paper": "flow action expert",
+        "upstream_code": "pinned DreamWAM ActionDiT modules",
+        "local": "identical continuous-FP32 shift5 velocity loss, text, proprio, action noise and parameter groups",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+          "experiments/evidence/h3_candidate_d_vs_d0_v4_paired_final_v1.json"
+        ],
+        "rationale": "No auxiliary loss or different optimizer group is introduced."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "paired dense s963 budget",
+        "paper": "not used for this local carrier ablation",
+        "upstream_code": "AdamW plus warmup/cosine",
+        "local": "two concurrent 8-GPU arms, global batch8 per arm, seed42, warmup1000, scheduler horizon21700, milestones s10/s50/s250/s500/s963 and 7,704 unique samples per arm",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+          "experiments/evidence/h3_candidate_d_vs_d0_v4_paired_final_v1.json"
+        ],
+        "rationale": "The old paired run completed in about 20 minutes per arm; dense cache I/O is the only expected throughput difference."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "v7 balanced-80 and fixed closed-loop pair",
+        "paper": "LIBERO success predicate",
+        "upstream_code": "closed-loop rollout",
+        "local": "same v7 40x2 IDs, noise, seed42, shift5, ten-step Euler, language replacement and no-self-map visual shuffle; winner then runs goal0/spatial0 trial0",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "scripts/h3wam/evaluate_h3_dreamwam_kv_carrier.py",
+          "scripts/h3wam/rollout_libero.py",
+          "experiments/evidence/h3_candidate_d0_s963_closed_loop_canary_v1.json"
+        ],
+        "rationale": "Only the simulator predicate can pass the rollout gate; offline changes select which checkpoint is rolled out."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["DreamWAM 6e989facc0c452fd3488d75f60bc36411005558c is clean and byte-pinned."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["D/D0 parameter identity and carrier-only-difference tests pass."]},
+    "data_contract": {"status": "PASS", "evidence": ["200,779 unique train rows; 1,542/170 train/val episodes; episode overlap0; dense per-episode windows min43 median108.5 mean130.21 max473."]},
+    "action_contract": {"status": "PASS", "evidence": ["7D horizon32 and v7 train-only stats SHA256 6f7e9f4a2232a798e4e30ad26f5748e71aeeda7fa54cb6ea2d0a3ec7d290e814."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Same shift5 continuous-FP32 flow implementation for both arms."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Pre-registered identical disjoint slices: 80+320+1600+2000+3704=7704 samples per arm."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["v7 balanced-80 selected IDs SHA256 26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Both carrier modes produced finite non-zero gradients in all five action blocks and proprio path in the completed v4 paired run."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["Pending first v7 dense s10 stage after full cache audit."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Schema2 D and D0 v4 checkpoints independently restored with max_abs0; persistence code is unchanged."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["Historical paired v4 curve and sparse D0 0/2 rollout are fixed; fresh dense D0 is trained concurrently as the direct paired parent."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Pending paired dense learning curve and balanced-80 counterfactuals."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Pending dense offline winner; sparse D0 was 0/2."]}
+  },
+  "data_identity": {
+    "source_manifest_sha256": "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9",
+    "train_manifest_sha256": "b0d611c21059fa7da6fb08162b03efadd59aff68354bb101be41d3ae20d98eb1",
+    "validation_manifest_sha256": "4dde839b4c82f2439a82c4c8bd48f5d5c94c1fe3a71a7e8d23068386c3a2d31d",
+    "stats_sha256": "6f7e9f4a2232a798e4e30ad26f5748e71aeeda7fa54cb6ea2d0a3ec7d290e814",
+    "selected80_sha256": "26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42",
+    "kv_subdir": "h3_int8_dreamwam_kv_5x32_dense_v1",
+    "cache_items_required": 222929
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 963,
+    "training_samples": 7704,
+    "unique_windows": 200779,
+    "effective_epochs": 0.03837055070102172,
+    "gpu_count": 16,
+    "estimated_hours": 0.5,
+    "paired_total_training_samples": 15408,
+    "checkpoints": [10, 50, 250, 500, 963],
+    "winner_scale_steps": 25097,
+    "winner_scale_samples": 200776,
+    "winner_scale_estimated_hours_on_8_gpus": 8.5
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The cache already stores all five independent H3 layers, so adding the dense D arm costs only the paired action-expert training and directly prevents D0 from becoming an unchallenged carrier incumbent. Launch is conditional on a complete cache ID/schema/hash audit with zero partial/error files.",
+    "launch_command": "For each arm use 8 ranks in /mnt/h3-wam/candidate-d0-rollout-96976ce/project: /mnt/h3-wam/runtime/h3-int8-native/bin/python -m torch.distributed.run --standalone --nproc-per-node=8 scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --source-manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_all.jsonl --cache-root /mnt/h3-wam/data/v7_dense_h3_cache --kv-subdir h3_int8_dreamwam_kv_5x32_dense_v1 --enable-dreamwam-kv-carrier --verify-h3-checkpoint-sha256 --steps STAGE_STEPS --sample-offset STAGE_OFFSET --limit STAGE_LIMIT --per-device-batch-size 1 --gradient-accumulation-steps 1 --num-workers 0 --save-checkpoint OUTPUT --output REPORT; add --enable-d0-repeat-layer49 only to D0. Stages are s10=(10,0,80), s50=(40,80,320), s250=(200,400,1600), s500=(250,2000,2000), s963=(463,4000,3704), loading the immediately previous checkpoint after s10."
+  },
+  "paired_gate": {
+    "promote": "At the same checkpoint, a candidate must improve physical MSE/ADE or gripper macro-F1 without material regression in the other key action/range metric, retain finite non-collapsed language and visual counterfactual response, restore max_abs0, and then beat the sparse parent's fixed closed-loop interaction or success evidence.",
+    "stop": [
+      "non-finite or zero required gradient",
+      "checkpoint restore mismatch",
+      "duplicate or overlapping consumed sample ID",
+      "cache identity/schema/hash audit failure",
+      "confirmed conditioning collapse across checkpoints"
+    ],
+    "claim_boundary": "This selects a dense carrier challenger only. Neither arm is a carrier champion or H3-WAM success until it beats other code-backed carrier families and passes fixed closed-loop success."
+  }
+}
