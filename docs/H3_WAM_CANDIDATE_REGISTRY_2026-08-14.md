@@ -51,7 +51,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C00 | incumbent | D0 sparse s963 | DreamWAM + local H3 adapter | 无 | 历史稀疏基线 | offline pass / rollout `0/2` | NOT_EVIDENCE_READY |
 | C01 | carrier | D0 dense | DreamWAM | C00 | 5 windows/episode → dense starts | cache running | GO_CANARY |
 | C02 | carrier | D dense five-layer K/V | DreamWAM | C01 fresh-init twin | layer49 repeat → aligned layers 9/19/29/39/49 | cache running | GO_CANARY after full audit |
-| C03 | carrier/action | StarWAM dense full30 | StarWAM | C01 | official last-feature-conditioned 30-layer ActionDiT | source pass；dual H3 cache running；dossier pending | NO_GO until dossier |
+| C03 | carrier/action | StarWAM dense full30 s100 anchor | StarWAM | historical v8 StarWAM s100 | v8 frame-indexed → common v7 valid-window split/cache | dossier pass；dual H3 cache running；historical s850/s913 condition collapse | GO_CANARY s100 only；NO_GO_LONG |
 | C04 | action/co-training | FastWAM-H3 | FastWAM | fixed FastWAM Wan baseline + C03 interface baseline | Wan video expert → H3 while preserving official action path | source pass；adapter incomplete | PROBE_ONLY |
 | C05 | carrier | ImageWAM-H3 target image | ImageWAM | carrier winner | video K/V → H3 target-image/edit representation | source pass；adapter incomplete | PROBE_ONLY |
 | C06 | carrier/action | DiT4DiT-H3 | DiT4DiT | carrier winner | selected intermediate H3 features + official ActionDiT | source pass；dirty vendor audit pending | PROBE_ONLY |
@@ -74,7 +74,9 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 2. C01 与 C02 使用同初始化、同 dense 样本和同 s963 预算配对；立即做 balanced-80 和固定 2-task
    rollout。两者只是 carrier 赛道选拔。
 3. 同期只用 CPU/小 GPU 完成 C03/C04/C05 的 SOURCE/MECHANICAL dossier，不等待 C01/C02 结果才读代码。
-4. C03 与 C04 至少各有一个严格 dense s963 曲线后，才选 carrier/action 父模型；未比较前 C01 不称冠军。
+4. C03 只补一个严格 v7 `s1/s50/s100` 跨家族锚点：旧 v8 与 v7 train ID 重合 `90.07%`，旧线又在
+   `s850/s913` 复现条件坍塌，因此禁止无新机制地重跑 `s963`。C03 s100 只有保持视觉/语言依赖才进入
+   固定 rollout；C04 完成 adapter 后另立 dossier。未比较前 C01 不称冠军。
 5. 只有第一个固定闭环正例出现后，才将 C07/C08 上下文胜者和 C09 consequence 胜者逐级融合；若基础
    动作策略首步就选错目标，不能用 memory/TTT 掩盖基础策略失败。
 6. 一个节点保留评测或等价 GPU 配额；长训 checkpoint 每 500–1000 steps 保存并异步消费。

@@ -1,0 +1,271 @@
+{
+  "experiment_id": "h3_candidate_c03_starwam_dense_v7_s100_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "A fresh StarWAM full30 action expert on the common v7 valid-window split will retain the strong visual and language dependence seen at the historical s100 checkpoint while providing a directly comparable s100 anchor for the dense H3 carrier tournament; failure to retain either condition signal retires this branch.",
+  "single_variable": "Replace the historical v8 frame-indexed source/split and cache identity with the common v7 valid-window source/split and bit-parity dual-output cache; the frozen INT8-H3 feature adapter, RMS scale, full30 ActionDiT, objective, optimizer, schedule, seed and 800-sample budget stay fixed.",
+  "parent_baseline": "Historical H3-StarWAM v8 full30 chain: s100 retained visual/language response, but s850/s913 collapsed to near-zero visual response and more than 90% lower language response; it is a bounded parent, not a successful closed-loop policy.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "Fast-WAM: Can Video Generation Models Act as World-Action Models?",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "v1; conceptual background only, with StarWAM code authoritative for implementation",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Official StarWAM repository and LIBERO feature-conditioned recipe",
+      "locator": "third_party/StarWAM",
+      "revision": "cd76d96f273f81e228a05f40f9697fe2514e2356",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "Frozen INT8-H3 StarWAM ActionDiT port",
+      "locator": "scripts/h3wam/train_h3_int8_starwam_action.py",
+      "revision": "7f2d522 plus this dossier and registry diff",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "clean-observation feature carrier and 30-layer ActionDiT",
+        "paper": "A video-DiT observation representation conditions an independent action transformer.",
+        "upstream_code": "Trainable Wan2.2-TI2V-5B final-layer features are pooled to 32 tokens; ActionDiT is 30 layers, hidden1024, FFN4096 and 40x128 attention; feature timestep token is disabled.",
+        "local": "Frozen INT8 MiniMax-H3 layer49 condition tokens are pooled to 32, projected 5376 to 5120 and consumed by the byte-pinned full30 ActionDiT with no feature timestep token.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/StarWAM/starwam/wam/feature_conditioned_action_model.py",
+          "third_party/StarWAM/examples/libero/configs/recipes/starwam_libero_feature_conditioned_wan22_5b.yaml",
+          "src/fastwam/models/h3wam/starwam_feature_action.py"
+        ],
+        "rationale": "H3 replaces Wan2.2 by project design, and the backbone remains frozen because full-H3 action tuning has already regressed world-model capability; this is a backbone port, not an official reproduction."
+      },
+      {
+        "field": "H3 feature magnitude adapter",
+        "paper": "The original Wan feature width and scale enter the action context directly.",
+        "upstream_code": "No scalar feature rescaling is used because the Wan backbone and action context share the released representation scale.",
+        "local": "A fixed 0.009606920816877307 scalar matches audited H3 feature RMS 7322.443 to text-context RMS 70.346 before the learned projector.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "experiments/evidence/h3_int8_starwam_no_timestep_warmup_scale_ablation_v2.json"
+        ],
+        "rationale": "Raw H3 scale caused thousand-fold larger losses and unstable gradients; the paired scale gate established this as a necessary H3 docking adapter rather than a claimed StarWAM mechanism."
+      }
+    ],
+    "data": [
+      {
+        "field": "dual-camera current observation and dense action-window starts",
+        "paper": "LIBERO demonstrations with current observation conditioning.",
+        "upstream_code": "Primary and wrist cameras are horizontally concatenated; the action chunk is 32 raw control steps and feature_condition_input=observation uses only the current frame.",
+        "local": "The v7 cache encodes the same two horizontally concatenated cameras into first_frame_latents [1,24,1,14,28], pairs 32 raw 20Hz actions, and contains 200779 train windows from 1542 episodes with 22150 validation windows from 170 disjoint episodes.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "scripts/h3wam/precompute_libero_window.py",
+          "/mnt/h3-wam/data/v7_multisuite_dense_candidate/candidate_report.json",
+          "/mnt/h3-wam/data/v7_dense_h3_cache/windows/libero_10_ep000347_s000000.pt"
+        ],
+        "rationale": "Image pixels, current-observation semantics and action rate align; H3-specific latent encoding is accounted for under the architecture port."
+      },
+      {
+        "field": "replay-value audit against historical v8",
+        "paper": "Not applicable.",
+        "upstream_code": "Not applicable.",
+        "local": "180843 of 200779 v7 train IDs also occur in the v8 train split (90.0707%); 5579 of each run's first 7704 IDs overlap (Jaccard 0.567606).",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "repeat_audit in this dossier"
+        ],
+        "rationale": "The high overlap blocks another 963-step replay; only the 800-sample common-protocol anchor has enough incremental value to run."
+      }
+    ],
+    "action": [
+      {
+        "field": "action/state representation and normalization",
+        "paper": "Continuous chunked robot actions.",
+        "upstream_code": "7D horizon32 action, 8D proprio, train statistics min/max normalization clipped to [-5,5], with padded action masking.",
+        "local": "Exact 7D horizon32 and 8D proprio contract with v7 train-only min/max statistics, clip5 and the same pad mask behavior.",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_starwam_action.py",
+          "tests/test_h3_int8_starwam_action_trainer.py",
+          "/mnt/h3-wam/data/v7_dense_h3_cache/stats.pt"
+        ],
+        "rationale": "The backbone port does not change action semantics."
+      }
+    ],
+    "objective": [
+      {
+        "field": "action flow matching",
+        "paper": "Flow matching predicts continuous action chunks.",
+        "upstream_code": "Shift-5 scheduler and timestep-weighted masked velocity MSE from StarWAM modules.",
+        "local": "The trainer imports the scheduler and loss directly from the pinned StarWAM source and keeps continuous FP32 timesteps; auxiliary regression and paired-margin weights remain zero.",
+        "status": "EXACT",
+        "evidence": [
+          "third_party/StarWAM/starwam/modules/scheduler.py",
+          "third_party/StarWAM/starwam/training/loss.py",
+          "scripts/h3wam/train_h3_int8_starwam_action.py"
+        ],
+        "rationale": "No local auxiliary objective is enabled in C03."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "bounded common-protocol s100 anchor",
+        "paper": "The released StarWAM policy is trained for roughly 106850 optimizer steps and evaluated near step100000.",
+        "upstream_code": "AdamW LR1e-4, weight decay0.01, betas(0.9,0.95), clip1, BF16, warmup1000 and cosine decay; released global batch128.",
+        "local": "Eight A800 ranks, global batch8, seed42, warmup1000, cosine horizon21700 and exactly 100 optimizer steps over 800 unique v7 rows, with checkpoints s1/s50/s100.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/StarWAM/starwam/training/trainer.py",
+          "decision.launch_command"
+        ],
+        "rationale": "This is only a tournament anchor. Historical late conditioning collapse forbids automatic scale-up even though the official recipe is much longer."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "condition-aware offline gate followed by fixed closed-loop canary",
+        "paper": "LIBERO task success is the endpoint.",
+        "upstream_code": "50 trials per task, 10 tasks per suite, 10 action denoising steps and replan_steps10.",
+        "local": "At s1/s50/s100 use the fixed v7 balanced-80 same-noise evaluator with language replacement and no-self-map visual shuffle; only s100 may run the fixed goal0/spatial0 trial0 rollout if it retains condition dependence and action/gripper quality.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/evaluate_h3_int8_starwam_action.py",
+          "scripts/h3wam/rollout_libero.py",
+          "experiments/evidence/h3_r1_a2_f2_conditioning_collapse_v1.json"
+        ],
+        "rationale": "The bounded canary can reject the branch but cannot reproduce the paper's 2000-trial claim."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": [
+        "StarWAM cd76d96f273f81e228a05f40f9697fe2514e2356 is clean; ActionDiT and WanBlock byte hashes are enforced at import."
+      ]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Full30 H3 port dimensions and no-feature-timestep contract passed focused tests and real A800 forward/backward."
+      ]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": [
+        "v7 has 200779 unique train rows over 1542 episodes and 22150 validation rows over 170 disjoint episodes; two-camera first-frame and action/state tensors were inspected from a real cache item."
+      ]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": [
+        "7D horizon32, 8D proprio and train-only stats SHA256 6f7e9f4a2232a798e4e30ad26f5748e71aeeda7fa54cb6ea2d0a3ec7d290e814."
+      ]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Pinned StarWAM shift5 scheduler/loss; Candidate F and G weights are zero."
+      ]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Pre-registered disjoint slices s1=(8 rows), s50=(392 new rows), s100=(400 new rows), totaling 800 unique samples."
+      ]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Fixed balanced-80, seed42, shift5, 10-step same-noise language/visual counterfactual protocol and fixed two-task rollout adapter already exist and are tested."
+      ]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": [
+        "Historical full30 runs produced finite non-zero expert, feature-projector and proprio gradients; the v7 port changes only cache/data identity."
+      ]
+    },
+    "smoke_finite": {
+      "status": "PASS",
+      "evidence": [
+        "Historical split-native full30 s1-s100 completed 100/100 finite steps with peak reserved 17.457 GiB per GPU."
+      ]
+    },
+    "checkpoint_restore": {
+      "status": "PASS",
+      "evidence": [
+        "Schema2 historical s1/s50/s100 checkpoints restored in fresh processes with max_abs=0."
+      ]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": [
+        "experiments/evidence/h3_int8_starwam_split_native_full30_v1.json and experiments/evidence/h3_r1_a2_f2_conditioning_collapse_v1.json"
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": [
+        "Pending v7 s100; historical s850/s913 failed the condition-dependence gate."
+      ]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": [
+        "Historical StarWAM-H3 task0 s100 rollout did not establish success; v7 rollout is conditional on the offline gate."
+      ]
+    }
+  },
+  "data_identity": {
+    "source_manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_all.jsonl",
+    "source_manifest_sha256": "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9",
+    "train_manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl",
+    "train_manifest_sha256": "b0d611c21059fa7da6fb08162b03efadd59aff68354bb101be41d3ae20d98eb1",
+    "validation_manifest_sha256": "4dde839b4c82f2439a82c4c8bd48f5d5c94c1fe3a71a7e8d23068386c3a2d31d",
+    "stats_sha256": "6f7e9f4a2232a798e4e30ad26f5748e71aeeda7fa54cb6ea2d0a3ec7d290e814",
+    "feature_subdir": "h3_int8_starwam_last32_dense_v1",
+    "cache_items_required": 222929
+  },
+  "repeat_audit": {
+    "historical_v8_train_rows": 250035,
+    "v7_train_rows": 200779,
+    "v7_ids_present_in_v8_train": 180843,
+    "v7_overlap_fraction": 0.9007067472195798,
+    "first_7704_intersection": 5579,
+    "first_7704_jaccard": 0.5676060636890833,
+    "decision_effect": "Cap C03 at s100; do not repeat s963 without a new condition-preserving mechanism."
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 100,
+    "training_samples": 800,
+    "unique_windows": 200779,
+    "effective_epochs": 0.003984679668689854,
+    "gpu_count": 8,
+    "estimated_hours": 0.6,
+    "checkpoints": [1, 50, 100]
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "A short common-v7 anchor is justified for cross-family comparison, but the 90.07% dataset overlap and replicated late conditioning collapse make another 963-step baseline replay wasteful. Launch only after the StarWAM cache has a complete ID/schema audit; stop at s100 regardless of ordinary regression improvement.",
+    "launch_command": "On one 8xA800 node, run three strict stages with /mnt/h3-wam/runtime/h3-int8-native/bin/python -m torch.distributed.run --standalone --nproc-per-node=8 scripts/h3wam/train_h3_int8_starwam_action.py /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --source-manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_all.jsonl --cache-root /mnt/h3-wam/data/v7_dense_h3_cache --feature-subdir h3_int8_starwam_last32_dense_v1 --feature-input-scale 0.009606920816877307 --action-layers 30 --learning-rate 1e-4 --weight-decay 0.01 --warmup-steps 1000 --scheduler-horizon 21700 --action-shift 5 --verify-h3-checkpoint-sha256 --per-device-batch-size 1 --gradient-accumulation-steps 1 --num-workers 0. Stages: s1=(--steps 1 --sample-offset 0 --limit 8), s50=(--steps 49 --sample-offset 8 --limit 392 --load-checkpoint s1), s100=(--steps 50 --sample-offset 400 --limit 400 --load-checkpoint s50); save and fresh-restore each checkpoint, then evaluate s1/s50/s100 on the fixed v7 balanced-80 protocol."
+  },
+  "promotion_gate": {
+    "promote_to_rollout": "s100 must keep non-collapsed visual-shuffle and language-replacement action deltas, improve at least one physical or gripper metric over s1 without material regression in the other, keep every required gradient finite/non-zero and restore max_abs0.",
+    "stop": [
+      "feature-projector gradient is zero or non-finite",
+      "visual-shuffle response collapses to numerical noise",
+      "language response falls by more than 80% from s1 without a closed-loop gain",
+      "gripper macro-F1 materially regresses",
+      "any cache, sample-identity or restore contract fails"
+    ],
+    "long_training": "NO_GO irrespective of s100 ordinary action MSE; any extension requires a separately audited condition-preserving mechanism and a new dossier."
+  }
+}
