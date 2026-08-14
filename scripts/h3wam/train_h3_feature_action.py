@@ -186,12 +186,70 @@ def event_stage_for_start(start: int, boundaries: tuple[int, int, int]) -> int:
     return sum(int(start) >= boundary for boundary in boundaries)
 
 
+def episode_key(item: dict) -> str:
+    """Return a suite-qualified episode identity for multi-suite manifests."""
+
+    suite = str(item.get("suite", ""))
+    return f"{suite}:ep{int(item['episode']):06d}"
+
+
+def previous_window_id(item: dict) -> str:
+    """Preserve the manifest ID prefix when addressing the previous window."""
+
+    start = int(item["start"])
+    if start <= 0:
+        raise ValueError("the first window has no previous window id")
+    item_id = str(item["id"])
+    prefix, separator, encoded_start = item_id.rpartition("_s")
+    if not separator or not encoded_start.isdigit() or int(encoded_start) != start:
+        raise ValueError(f"window id/start contract mismatch: {item_id}/{start}")
+    return f"{prefix}_s{start - 1:06d}"
+
+
+def split_feature_items_by_episode(
+    items: list[dict], val_episodes_per_task: int
+) -> tuple[list[dict], list[dict]]:
+    """Split without colliding equal episode numbers from different suites.
+
+    An explicit train/val manifest split takes precedence. Older single-suite
+    manifests fall back to a deterministic per-task episode holdout.
+    """
+
+    explicit_validation = [
+        item for item in items if str(item.get("split", "")).lower() in {"val", "validation"}
+    ]
+    if explicit_validation:
+        train = [item for item in items if str(item.get("split", "train")).lower() == "train"]
+        if not train:
+            raise ValueError("explicit manifest split contains no training windows")
+        return train, explicit_validation
+    if val_episodes_per_task <= 0:
+        raise ValueError("val-episodes-per-task must be positive")
+
+    episodes_by_task: dict[tuple[str, str], set[str]] = {}
+    for item in items:
+        task_key = (
+            str(item.get("suite", "")),
+            str(item.get("task_group", item.get("task", ""))),
+        )
+        episodes_by_task.setdefault(task_key, set()).add(episode_key(item))
+    validation_episodes: set[str] = set()
+    for task_key, episodes in episodes_by_task.items():
+        ordered = sorted(episodes)
+        if len(ordered) <= val_episodes_per_task:
+            raise ValueError(f"not enough episodes to split task {task_key}")
+        validation_episodes.update(ordered[-val_episodes_per_task:])
+    train = [item for item in items if episode_key(item) not in validation_episodes]
+    validation = [item for item in items if episode_key(item) in validation_episodes]
+    return train, validation
+
+
 def build_event_stage_labels(
     items: list[dict], cache_root: Path, action_horizon: int = 32
-) -> tuple[dict[str, int], dict[int, tuple[int, int, int]]]:
-    grouped: dict[int, list[dict]] = {}
+) -> tuple[dict[str, int], dict[str, tuple[int, int, int]]]:
+    grouped: dict[str, list[dict]] = {}
     for item in items:
-        grouped.setdefault(int(item["episode"]), []).append(item)
+        grouped.setdefault(episode_key(item), []).append(item)
     labels: dict[str, int] = {}
     episode_boundaries = {}
     for episode, episode_items in grouped.items():
@@ -275,7 +333,7 @@ def main() -> None:
             "task labeling requires exactly one action mode per task: "
             f"expected {len(task_to_index)}, got {args.num_action_modes}"
         )
-    train_items, validation_items = helpers.split_by_episode(
+    train_items, validation_items = split_feature_items_by_episode(
         items, args.val_episodes_per_task
     )
     if args.train_episode is not None:
@@ -285,7 +343,7 @@ def main() -> None:
         ]
         if not train_items:
             raise ValueError("train-episode filters removed every training window")
-    training_episodes = sorted({int(item["episode"]) for item in train_items})
+    training_episodes = sorted({episode_key(item) for item in train_items})
     if len(validation_items) > args.validation_windows:
         indices = torch.linspace(
             0, len(validation_items) - 1, args.validation_windows
@@ -332,7 +390,7 @@ def main() -> None:
         # averaging trajectories with substantially different approaches.
         first_items = {
             episode: min(
-                (item for item in train_items if int(item["episode"]) == episode),
+                (item for item in train_items if episode_key(item) == episode),
                 key=lambda item: int(item["start"]),
             )
             for episode in training_episodes
@@ -619,7 +677,7 @@ def main() -> None:
                         [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
                     )
                 else:
-                    previous_id = f"ep{int(item['episode']):06d}_s{start - 1:06d}"
+                    previous_id = previous_window_id(item)
                     if preloaded_windows is None:
                         previous_window = torch.load(
                             args.cache_root / "windows" / f"{previous_id}.pt",
@@ -661,7 +719,7 @@ def main() -> None:
             states.append(state)
             features.append(feature)
             if item_modes is None:
-                modes.append(episode_modes.get(int(item["episode"]), -1))
+                modes.append(episode_modes.get(episode_key(item), -1))
             else:
                 modes.append(item_modes[str(item["id"])])
         return (

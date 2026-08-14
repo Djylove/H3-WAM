@@ -1,6 +1,11 @@
 # MiniMax H3-WAM：5090 快速验证记录
 
-更新时间：2026-08-05
+更新时间：2026-08-14
+
+> 2026-08-14 决策更新：本文件前半部分保留 5090 探索过程作为证据链；其中
+> “进入 BF16 H3 尾层解冻”已被后续云端因果评测否决，不再是当前路线。现行计划见
+> `docs/H3_INT8_ACTION_CLOUD_PLAN_2026-08-14.md`：迁移 5090 上已验证的量化 H3，冻结
+> video expert，把主要优化预算交给动作生成、历史上下文、连续纠错数据和闭环评测。
 
 ## 结论
 
@@ -475,19 +480,19 @@ validation loss 分别为 0.02968/0.02840。闭环选择仍不使用离线 loss 
 
 ## 下一步（按实验价值排序）
 
-1. 固定 task3 H3 9/10、task0 H3 9/10、第三任务 H3 10/10 为回归集；第三任务
-   zero-feature 为0/10且完整复测一致。下一阶段进入 BF16 H3 最后 2～4 层解冻，
-   不再继续增加 INT8 单任务 checkpoint。
-2. learned H3 feature gate 已替换人工 `switch_step=72`；下一步用多个任务的 teacher
-   intervention 区间重训 gate，并统计非目标物体位移，避免以碰撞换 success。
-3. 对新任务继续使用已验证的 teacher roll-in/intervention，从共同可达状态保存连续恢复
-   片段；不再使用「失败状态单点 relabel + 高 sample weight」。
-4. 加入 previous-action 和 2～4 帧视觉历史，并比较 H4/H8/H10，降低纯 phase 条件依赖并
-   找到动作块长度与重规划频率的最佳组合。
-5. 不直接把结构不兼容的官方 ActionDiT 塞进 H3 head；将其完整 action chunk 作为 teacher
-   做 H3 action-head distillation，再与当前 H8 regression head 配对比较。
-6. 在 80GB 卡上加载 BF16 H3，测试最后 2～4 个 block 解冻；这是当前明确超出 5090
-   能力的边界。
+1. 固定 task3 9/10、task0 9/10、push-plate 10/10 及三个 zero-feature 0/10 为回归集，
+   先在 A800 上复现相同 INT8 H3 特征与检查点；成功率允许最多相差 1/10。
+2. 在四套 LIBERO 的 277,713 个 stride-1 训练窗口上训练统一动作模型；先做严格配对的
+   H4/H8/H10、previous-action 和 2/4 帧历史筛选，不混入 H3 权重更新。
+3. 保留 DoT depth-1/depth-4 一整 epoch 配对实验；只有离线动作与闭环同时改善才继续加深，
+   不因 world/video loss 下降而晋级。
+4. 用多个任务的连续 teacher roll-in/intervention 训练 recovery 与 learned gate，并记录
+   非目标物体位移；禁止单点 relabel 伪装成恢复数据。
+5. regression 先学稳定均值，再尝试 FastWAM 风格 flow action 和完整 action-chunk teacher
+   distillation。DreamWAM 的结构化 future 作为辅助监督，不让它压过动作目标。
+6. BF16 H3 只保留为参考/teacher。除非冻结 H3 的动作路线在 held-out 闭环已经饱和且有
+   明确因果证据，否则不再解冻 H3 主干。
 
-快速判定标准：H3 必须在 LIBERO rollout 中超过小型 ActionDiT，且 4 步推理能被
-action chunk 执行时间覆盖。否则停止扩大 H3 训练，把它保留为辅助世界模型而非策略主干。
+快速判定标准：统一策略在三任务回归集至少 26/30，并在至少两个未训练任务各得到
+至少 1/10；否则不能宣称多任务泛化。任何分支若连续两个 checkpoint 的闭环 success、
+接触谓词和目标推进均不改善，则停止该分支，而不是继续堆训练步数。

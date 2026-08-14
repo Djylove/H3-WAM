@@ -74,6 +74,47 @@ class H3TrainingSplitTest(unittest.TestCase):
             (22, 56, 90),
         )
 
+    def test_feature_split_qualifies_episode_by_suite(self):
+        items = []
+        for suite in ("libero_goal", "libero_object"):
+            for episode in range(3):
+                items.append(
+                    {
+                        "id": f"{suite}_ep{episode:06d}_s000000",
+                        "suite": suite,
+                        "task": f"{suite}-task",
+                        "episode": episode,
+                        "start": 0,
+                    }
+                )
+        train, validation = FEATURE_MODULE.split_feature_items_by_episode(items, 1)
+        self.assertEqual(len(train), 4)
+        self.assertEqual(len(validation), 2)
+        self.assertEqual(
+            {FEATURE_MODULE.episode_key(item) for item in validation},
+            {"libero_goal:ep000002", "libero_object:ep000002"},
+        )
+
+    def test_explicit_feature_split_and_prefixed_previous_id(self):
+        train_item = {
+            "id": "libero_goal_ep000007_s000011",
+            "suite": "libero_goal",
+            "task": "task",
+            "episode": 7,
+            "start": 11,
+            "split": "train",
+        }
+        val_item = dict(train_item, id="libero_goal_ep000008_s000011", episode=8, split="val")
+        train, validation = FEATURE_MODULE.split_feature_items_by_episode(
+            [train_item, val_item], 1
+        )
+        self.assertEqual(train, [train_item])
+        self.assertEqual(validation, [val_item])
+        self.assertEqual(
+            FEATURE_MODULE.previous_window_id(train_item),
+            "libero_goal_ep000007_s000010",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

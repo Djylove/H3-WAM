@@ -38,6 +38,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=1,
+        help="Deterministically split the manifest across independent GPU workers.",
+    )
+    parser.add_argument(
+        "--shard-index",
+        type=int,
+        default=0,
+        help="Zero-based worker index in [0, num-shards).",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument(
@@ -75,8 +87,16 @@ def main() -> None:
         items = [json.loads(line) for line in handle if line.strip()]
     if args.limit is not None:
         items = items[: args.limit]
+    if args.num_shards <= 0:
+        raise ValueError("num-shards must be positive")
+    if not 0 <= args.shard_index < args.num_shards:
+        raise ValueError("shard-index must be in [0, num-shards)")
+    manifest_items = len(items)
+    items = items[args.shard_index :: args.num_shards]
     if not items:
-        raise ValueError("manifest contains no feature windows")
+        raise ValueError(
+            f"manifest shard {args.shard_index}/{args.num_shards} contains no feature windows"
+        )
     if args.h3_tail_delta is not None and args.h3_lora_checkpoint is not None:
         raise ValueError("use either an H3 tail delta or H3 LoRA, not both")
 
@@ -215,6 +235,9 @@ def main() -> None:
                 "h3_tail_delta_source_step": (
                     None if tail_delta_report is None else tail_delta_report.source_step
                 ),
+                "manifest_items": manifest_items,
+                "num_shards": int(args.num_shards),
+                "shard_index": int(args.shard_index),
             },
             output,
         )
@@ -226,6 +249,9 @@ def main() -> None:
                     {
                         "completed": completed,
                         "total": len(items),
+                        "manifest_items": manifest_items,
+                        "num_shards": args.num_shards,
+                        "shard_index": args.shard_index,
                         "elapsed_seconds": round(elapsed, 2),
                         "seconds_per_window": round(elapsed / completed, 3),
                         "peak_allocated_gib": torch.cuda.max_memory_allocated(device)
