@@ -4,13 +4,17 @@
 
 ## 当前决策
 
-主线采用本地 RTX 5090 已验证的同一个 MiniMax-H3 逻辑模型及官方量化权重：H3
-INT8 diffusion + NVFP4/AWQ text encoder + FP16 VAE。INT8 不是缩小网络，而是压缩
-权重表示；本地 H8 推理峰值约 24.96 GiB，已经证明能在 5090 部署。
+训练主线直接使用云端已经跑通的 native Diffusers/BF16 H3 环境，不依赖 ComfyUI
+server、workflow 或整套 Comfy 环境。H3 保持冻结，云端训练 ActionDiT、history encoder、
+recovery head 和 gate。这样可以立即使用 8×A800，而不等待量化运行时迁移。
 
-H3 在主线中冻结，负责首帧/文本条件下的世界表征；训练 FP32/BF16 的 ActionDiT、
-history encoder、recovery head 和 gate。BF16 H3 只作为 reference/teacher，不再把
-“world prediction 更好”等同于“动作更好”。云端 full-tail 1000-step 因果评测已经出现
+部署线采用本地 RTX 5090 已验证的同一个 MiniMax-H3 逻辑模型及官方量化权重：H3
+INT8 diffusion + NVFP4/AWQ text encoder + FP16 VAE。INT8 不是缩小网络，而是压缩
+权重表示；本地 H8 推理峰值约 24.96 GiB，已经证明能在 5090 部署。Comfy 代码在这条线
+只充当自定义 INT8/ConvRot checkpoint loader，不启动服务，也不参与动作模型训练。
+
+BF16 H3 不再更新权重，也不再把“world prediction 更好”等同于“动作更好”。云端
+full-tail 1000-step 因果评测已经出现
 video 改善而 causal action 退化；adapter-only 的 causal action 才有小幅正增益。这是冻结
 主干、集中优化动作的直接依据。
 
@@ -59,19 +63,23 @@ steps/8 GPU；MiniWorld 是 6→16→32→64 latent-frame 四阶段；LingBot LI
 
 ## 实验矩阵与门禁
 
-### A0：5090 → A800 迁移复现（Class A）
+### A0：BF16 训练 → INT8 部署兼容（Class A）
 
-- parent：本地 task0/task3/push-plate 三个 H8 策略和固定 context。
-- 唯一变化：硬件从 5090 变为 A800；权重 hash、代码 commit、输入和策略不变。
-- 门禁：feature cosine ≥ 0.999，normalized action MAE ≤ 0.02；三任务 10-trial
+- parent：云端 BF16 H3 + 动作 checkpoint；部署候选为本地 INT8 H3 + 同一动作 checkpoint。
+- 先用 100 个固定窗口做配对 feature/action 比较，再扩到 1,000 个；不传输 1.33 TiB
+  完整 INT8 cache。
+- 直换门禁：feature cosine ≥ 0.999，normalized action MAE ≤ 0.02；三任务 10-trial
   success 各自最多相差 1/10。
-- A0 未通过时，禁止用云端结果否定本地方案。
+- 未通过则只训练一个小 feature calibration projector，或在 5090 上做短程 INT8 adapter
+  校准；不回退到复制整套 Comfy 环境，不阻塞云端动作训练。
 
 ### A1：DoT 动作载体容量（Class C，已启动）
 
 - 配对：depth-1 与 depth-4；唯一变量 `action_layers`。
 - 两组均冻结 H3，global batch 128，2,170 steps，277,760 samples = 1.0002 epoch，
   每 200 step 保存。
+- 增加 depth-4/action-only 配对，唯一变量 `video_loss_weight: 1→0`；它直接检验视频
+  目标是否牵制动作，于 2026-08-14 在 `32409` 启动。
 - 晋级：held-out causal action、gripper/contact 指标和闭环 canary 同时不差；video loss
   只作诊断。若 depth-4 只让 video 更好，停止继续加深。
 
@@ -111,10 +119,10 @@ steps/8 GPU；MiniWorld 是 6→16→32→64 latent-frame 四阶段；LingBot LI
 | --- | --- | --- |
 | `30907` | DoT depth-4 跑满 1 epoch | 保留已投入的长线，作为容量上界 |
 | `30234` | DoT depth-1 严格配对 | 唯一变量对照，已于 2026-08-14 启动 |
-| `32611` | INT8 bundle、精确 5090 runtime、A0 parity、8-way feature precompute | 主线迁移与数据生产 |
+| `32611` | INT8 bundle、100/1,000-window A0 parity | 部署兼容线，不阻塞训练主线 |
 | `32409` | A0 闭环/离线评测；之后 A2/A3 独立分支 | 评测不与训练争卡，剩余卡做动作 sweep |
 
-8-way feature precompute 使用确定性分片：
+如果 A0 需要云端 INT8 feature，8-way precompute 使用确定性分片：
 
 ```bash
 for gpu in $(seq 0 7); do
