@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-12T22:30:00+08:00",
-  "policy": "Nested upstream repositories are local read-only mirrors and are not vendored. Clone each URL and checkout the recorded commit.",
+  "generated_at": "2026-08-14T13:00:00+08:00",
+  "policy": "Official upstream repositories are pinned by commit. StarWAM is a Git submodule because its ActionDiT source is executed directly; other entries may remain read-only local mirrors.",
   "sources": [
     {
       "name": "BadWAM",
@@ -26,6 +26,12 @@
       "url": "https://github.com/yuyangalin/ImageWAM.git",
       "commit": "5d4a341ed20a95cdb08f0293f3d44778b9a9e05a",
       "role": "image-conditioned WAM comparison"
+    },
+    {
+      "name": "StarWAM",
+      "url": "https://github.com/shaohua-pan/StarWAM.git",
+      "commit": "cd76d96f273f81e228a05f40f9697fe2514e2356",
+      "role": "feature-conditioned and MoT WAM reference"
     },
     {
       "name": "MiniWorld",

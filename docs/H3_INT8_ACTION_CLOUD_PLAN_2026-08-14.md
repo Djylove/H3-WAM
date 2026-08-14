@@ -4,14 +4,15 @@
 
 ## 当前决策
 
-训练主线直接使用云端已经跑通的 native Diffusers/BF16 H3 环境，不依赖 ComfyUI
-server、workflow 或整套 Comfy 环境。H3 保持冻结，云端训练 ActionDiT、history encoder、
-recovery head 和 gate。这样可以立即使用 8×A800，而不等待量化运行时迁移。
+训练主线切换为云端 standalone INT8 H3：冻结 H3 的 INT8 权重，只训练 BF16/FP32
+ActionDiT、history encoder、recovery head 和 gate。不安装或导入 ComfyUI，不启动 server、
+workflow 或 node；量化矩阵乘仅调用独立的 Apache-2.0 `comfy-kitchen` CUDA kernel。项目内
+原生实现负责 fused QKV、curve AdaLN、packed sequence 和多层特征输出。
 
-部署线采用本地 RTX 5090 已验证的同一个 MiniMax-H3 逻辑模型及官方量化权重：H3
-INT8 diffusion + NVFP4/AWQ text encoder + FP16 VAE。INT8 不是缩小网络，而是压缩
-权重表示；本地 H8 推理峰值约 24.96 GiB，已经证明能在 5090 部署。Comfy 代码在这条线
-只充当自定义 INT8/ConvRot checkpoint loader，不启动服务，也不参与动作模型训练。
+采用的 diffusion checkpoint 与本地 RTX 5090 已验证模型完全相同，云端 SHA256 已核对为
+`e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a`。INT8 不是缩小网络：
+它仍是 50 层 H3，含 200 个 ConvRot INT8 线性层，每层 qkv/out/fc1/fc2 各一个。云端
+PyTorch 2.10/cu130 独立环境和项目原生 loader 通过后，才放行动作长训。
 
 BF16 H3 不再更新权重，也不再把“world prediction 更好”等同于“动作更好”。云端
 full-tail 1000-step 因果评测已经出现
@@ -31,8 +32,9 @@ zero-feature 消融均为 0/10。当前不可证结论是：一个统一 H3-WAM 
 - 相比无 H3/zero-feature 对照，目标推进、接触率和 success 同向改善；
 - 5090 单次 replan 峰值不超过 30 GiB，动作计算能被 chunk 执行时间覆盖。
 
-满足前三项才把“多任务 H3-WAM 有效”标记为 `EVIDENCE_READY`。否则只保留“冻结 H3
-特征对三个任务有效”的窄结论。
+满足前三项才把“多任务 H3-WAM 有效”标记为 `EVIDENCE_READY`。最终项目目标是对
+LIBERO Spatial/Object/Goal/10 共 40 个任务、每任务 50 个固定初态完成 2,000 次 rollout
+并报告总成功率；canary 仅用于检查点筛选，不能替代完整 benchmark。
 
 ## 上游代码对齐
 
@@ -55,31 +57,34 @@ steps/8 GPU；MiniWorld 是 6→16→32→64 latent-frame 四阶段；LingBot LI
   窗口、1,712 个 episode；action horizon 32，不再使用每轨迹 5 帧抽样。
 - split：suite-qualified episode 隔离；显式 train/val manifest 优先。旧代码只按整数
   episode split 会让不同 suite 相互碰撞，已在 2026-08-14 修复并加入测试。
-- H3 feature：固定层 `(9,19,29,39,49)`，固定模型 hash、ComfyUI commit、timestep、
-  action horizon；不混用 BF16-H3 与 INT8-H3 cache。
+- H3 feature：历史回归固定层 `(9,19,29,39,49)`；统一主线固定第 49 层，并严格复用
+  StarWAM `adaptive_avg_pool1d` 得到 32 tokens。固定模型 hash、官方 packing revision、
+  timestep、action horizon；不混用 BF16-H3 与 INT8-H3 cache。
 - 量化模型身份：下载脚本内固定三文件 size/SHA256，完整校验前禁止训练。
-- 存储估算：单窗口 feature 约 5.03 MiB，全量约 1.33 TiB。活动 cache 上限 2 TiB；
-  大规模生成前先把 277k 小文件改为可索引 shard/mmap，避免共享文件系统 metadata 成为瓶颈。
+- 存储估算：`multi5/full98` 单窗口约 5.03 MiB，因此只生成三任务 18,463-window 子集，
+  约 90 GiB；四套 LIBERO 全量使用 `last32`，约 89 GiB。活动 cache 上限 2 TiB，完成后
+  校验文件数与 metadata，再打成 indexed shards 供长训读取。
 
 ## 实验矩阵与门禁
 
-### A0：BF16 训练 → INT8 部署兼容（Class A）
+### A0：standalone INT8 H3 骨干（Class A）
 
-- parent：云端 BF16 H3 + 动作 checkpoint；部署候选为本地 INT8 H3 + 同一动作 checkpoint。
-- 先用 100 个固定窗口做配对 feature/action 比较，再扩到 1,000 个；不传输 1.33 TiB
-  完整 INT8 cache。
-- 直换门禁：feature cosine ≥ 0.999，normalized action MAE ≤ 0.02；三任务 10-trial
-  success 各自最多相差 1/10。
-- 未通过则只训练一个小 feature calibration projector，或在 5090 上做短程 INT8 adapter
-  校准；不回退到复制整套 Comfy 环境，不阻塞云端动作训练。
+- checkpoint 门禁：size/SHA256、50 blocks、200 quantized linears、925/932 特征路径 tensor
+  全部映射；未映射的 7 个 tensor 只允许是当前动作训练不使用的 final video/audio head。
+- runtime 门禁：PyTorch 2.10/cu130 + `comfy-kitchen`，真实 qkv ConvRot kernel 输出 shape、
+  dtype 和 finite 全通过；环境中不得安装 ComfyUI。
+- 数值门禁：用同一 packed input 对 standalone 与本地已验证 H3 跑 block
+  `(9,19,29,39,49)`，逐层 feature cosine 与最终动作误差一并报告。未完成 parity 前仅
+  `GO_CANARY`，禁止宣称动作效果。
+- 真实单层 kernel 与完整 50 层 LIBERO-window forward 已通过：峰值 19.88 GiB，单窗口约
+  1.2 秒，输出 `(1,32,5376)`、finite。depth-1/action-only 在未形成 checkpoint 时停止；
+  只保留已到 step1600+ 的 depth-4 长线到预定终点。
 
-### A1：DoT 动作载体容量（Class C，已启动）
+### A1：DoT 动作载体容量（Class C，冻结历史结果）
 
 - 配对：depth-1 与 depth-4；唯一变量 `action_layers`。
-- 两组均冻结 H3，global batch 128，2,170 steps，277,760 samples = 1.0002 epoch，
-  每 200 step 保存。
-- 增加 depth-4/action-only 配对，唯一变量 `video_loss_weight: 1→0`；它直接检验视频
-  目标是否牵制动作，于 2026-08-14 在 `32409` 启动。
+- 原计划三组均冻结 H3、global batch 128、2,170 steps；新决策后不再为完成矩阵而消耗
+  两整台服务器。depth-1/action-only 的启动日志保留，但未生成 checkpoint，不作效果结论。
 - 晋级：held-out causal action、gripper/contact 指标和闭环 canary 同时不差；video loss
   只作诊断。若 depth-4 只让 video 更好，停止继续加深。
 
@@ -91,6 +96,17 @@ steps/8 GPU；MiniWorld 是 6→16→32→64 latent-frame 四阶段；LingBot LI
 - screening：2 epoch；batch 64 时约 8,679 optimizer steps。晋级分支续至 5 epoch，
   约 21,697 steps；每 1,000 step 保存，保留 best/last 和闭环晋级点。
 - history 必须来自观测与已执行动作，禁止用未来 demo phase 作为部署不可得捷径。
+
+此前动作路线不原样混跑，按证据分层复验：
+
+| 路线 | 已有证据 | 本轮决策 |
+| --- | --- | --- |
+| 冻结 H3 + chunk regression | 本地三个任务已有闭环正例，zero-feature 为 0/10 | 作为统一模型 parent，必须复现 |
+| FastWAM/DreamWAM ActionDiT flow | 公开实现的主动作目标；本项目曾受主干/数据混变量影响 | 固定 INT8 feature 后做唯一变量配对 |
+| DoT 单层/4层 action head | 离线 loss 明显下降，但早期闭环多为 0 | 保留正在跑的一 epoch 容量对照，不单凭 loss 晋级 |
+| LingBot executed history | teacher-forced 改善但 causal MSE 曾退化 9.87% | 只有无 history parent 先通过 causal gate 才重验 |
+| video/action 联合更新 H3 | 多次出现 video 改善、causal action 退化 | 停止作为主线；仅保留历史反例 |
+| H3 全量/尾层解冻 | 云端与本地均显示动作退化风险 | `NOT_RELEASED` |
 
 ### A3：动作目标（Class C）
 
@@ -113,31 +129,26 @@ steps/8 GPU；MiniWorld 是 6→16→32→64 latent-frame 四阶段；LingBot LI
 3. canary：至少两个 suite 各两个 held-out task，每任务 10 trials。
 4. 只有 canary 通过才跑 LIBERO 40 tasks × 50 trials；此前不浪费 rollout 预算。
 
-## 三台 8×A800 调度
+## 四台 8×A800 调度
 
 | 节点 | 当前/近期任务 | 原因 |
 | --- | --- | --- |
 | `30907` | DoT depth-4 跑满 1 epoch | 保留已投入的长线，作为容量上界 |
-| `30234` | DoT depth-1 严格配对 | 唯一变量对照，已于 2026-08-14 启动 |
-| `32611` | INT8 bundle、100/1,000-window A0 parity | 部署兼容线，不阻塞训练主线 |
-| `32409` | A0 闭环/离线评测；之后 A2/A3 独立分支 | 评测不与训练争卡，剩余卡做动作 sweep |
+| `30234` | 18,463 个历史三任务 `multi5/full98` INT8 feature | 复用本地 26/30 配方所需输入合同 |
+| `32611` | standalone INT8 runtime、原生骨干、真实 kernel/parity | kernel/full-forward 已过，继续 reference parity 与 restore |
+| `32409` | 277,713 个四套 LIBERO `last32` INT8 feature | StarWAM 风格统一动作主线的共享资产 |
 
-如果 A0 需要云端 INT8 feature，8-way precompute 使用确定性分片：
+8-way precompute 使用固定的 `/mnt` 环境和确定性分片：
 
 ```bash
-for gpu in $(seq 0 7); do
-  CUDA_VISIBLE_DEVICES=$gpu python scripts/h3wam/precompute_h3_video_features.py \
-    MANIFEST --cache-root CACHE --comfy-root COMFY \
-    --h3-checkpoint H3_INT8 --action-horizon 32 \
-    --output-subdir h3_video_features_int8_official \
-    --num-shards 8 --shard-index "$gpu" \
-    > "logs/features_shard${gpu}.log" 2>&1 &
-done
-wait
+scripts/h3wam/launch_h3_int8_feature_cache.sh \
+  MANIFEST OUTPUT_SUBDIR 49 32 8
 ```
 
-这条命令目前只放行小规模 parity/speed probe。全量 277,713 窗口在 shard/mmap
-落盘格式完成后再放行，防止制造 277k 个大文件拖垮 UPFS。
+环境固定在 `/mnt/h3-wam/runtime/h3-int8-native`。启动器显式移除会覆盖 torch-cu130 的
+`/usr/local/cuda/lib64`；该污染已在 `30234/32409` 复现为普通 BF16 GEMM/CUBLAS 失败。
+当前按原 loader 合同原子写 per-window 文件，完成后校验 count/hash，再打成 indexed shards；
+全量 `last32` 约 89 GiB，三任务 `multi5` 约 90 GiB，均低于 2 TiB 活动上限。
 
 ## 停止规则
 

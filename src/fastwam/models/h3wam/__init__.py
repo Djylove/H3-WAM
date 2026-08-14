@@ -64,6 +64,13 @@ from .official_joint import (
     H3OfficialFeatureCapture,
     build_h3_observation_attention_mask,
 )
+from .int8_linear import (
+    ConvRotInt8Linear,
+    INT8_TENSORWISE_FORMAT,
+    parse_int8_marker,
+)
+from .int8_backbone import H3Int8FeatureBackbone, H3Int8FeatureOutput
+from .starwam_feature_action import H3StarWAMFeatureActionPolicy
 __all__ = [
     "ActionEnsembler",
     "action_denormalization_bounds",
@@ -104,6 +111,12 @@ __all__ = [
     "H3BlockAttentionMask",
     "H3OfficialFeatureCapture",
     "build_h3_observation_attention_mask",
+    "ConvRotInt8Linear",
+    "INT8_TENSORWISE_FORMAT",
+    "parse_int8_marker",
+    "H3Int8FeatureBackbone",
+    "H3Int8FeatureOutput",
+    "H3StarWAMFeatureActionPolicy",
     "DEFAULT_OFFICIAL_H3_LORA_TARGETS",
     "inject_official_h3_lora",
     "load_cached_task_context",
