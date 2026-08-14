@@ -78,6 +78,8 @@
 | E37 | Candidate D DreamWAM 5-layer K/V carrier | 8,560-window cache 全量 audit；修复后 1 GPU × 1 sample × 1 step；无 checkpoint | loss `1.484375`；5 block/proprio gradients 全部有限非零；head update `1.19e-7` | 未放行 | cache/Data 与 trainability 机械门通过；`MECHANICS_PASS_ONLY / NOT_EVIDENCE_READY`，禁止据此长训或声称效果 |
 | E38 | Candidate D s1 save/restore + v4 balanced-80 adapter | schema-v2 1-step checkpoint；fresh restore；v4 40×2 evaluator | restore max-abs `0`；physical MSE `0.492577`；gripper macro-F1 `0.363093`；language relative-L2 `0.471810`；visual delta MSE `0.177422` | 未放行 | `MECHANICAL_GATE PASS / EVALUATOR_MECHANICS PASS`；v4/v8 IDs mismatch 且仅一步，`NOT_EFFECTIVENESS / NOT_STRICT_PAIRED_IDS` |
 | E39 | Candidate D/D0 v4 严格配对学习曲线 | 同初始化/样本顺序/8-rank；D 五层对齐，D0 重复 layer49；s10/s50/s250/s500/s963 | s963 D/D0 physical MSE `0.142015/0.110084`，ADE `0.945540/0.804093`，越界率 `6.13%/4.47%`，gripper macro-F1 `0.780779/0.784651` | 待最小 canary | 每臂累计7704唯一 IDs、restore max-abs `0`；两臂 visual shuffle 均显著恶化动作/夹爪；`REJECT_ALIGNED_5LAYER_AS_WINNER / PROMOTE_D0_S963_TO_MINIMAL_CLOSED_LOOP_CANARY` |
+| E40 | Candidate D0 s963 在线 K/V 与闭环 canary | INT8 H3 layer49 在线 K/V；goal0 80步、spatial0 120步；10-step flow | 训推 K/V bitwise exact；动作 saturation `0`；峰值 `30.61 GiB` | `0/2` | goal0 错推 bowl/plate、drawer delta0；spatial0 无接触；`FAIL_CLOSED_LOOP`，不跑 benchmark |
+| E41 | Candidate D0 v7 dense 数据线 | 架构/目标/优化不变；5 windows/episode → 200,779 dense train windows；32卡 cache | cache 生成中；v7 balanced-80 IDs `26b032...9c42` | 待评测 | 唯一变量是状态/接触密度；先等预算 s963，再到 s25097 近一轮；禁止在 dense 结果前再改架构 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 

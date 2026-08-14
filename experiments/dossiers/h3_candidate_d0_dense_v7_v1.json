@@ -1,0 +1,149 @@
+{
+  "experiment_id": "h3_candidate_d0_dense_v7_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Keeping the selected frozen-INT8-H3 layer49 carrier, D0 action expert, action contract and optimizer fixed while replacing five uniformly spaced windows per episode with dense episode-disjoint windows will improve contact-stage coverage and closed-loop LIBERO behavior.",
+  "single_variable": "Training-state density: v4 has exactly 5 windows per episode; v7 dense has 43-473 windows per episode (median 108.5, mean 130.21).",
+  "parent_baseline": "Candidate D0 s963 trained from seed42 on 7,704 unique v4 windows; offline balanced-80 winner but 0/2 fixed closed-loop canaries.",
+  "references": [
+    {
+      "kind": "upstream_code",
+      "title": "Pinned DreamWAM action carrier implementation",
+      "locator": "third_party/DreamWAM",
+      "revision": "6e989facc0c452fd3488d75f60bc36411005558c",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "Candidate D0 dense-data training and online rollout path",
+      "locator": "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+      "revision": "96976ce",
+      "official": false,
+      "clean": true
+    },
+    {
+      "kind": "paper",
+      "title": "DreamWAM",
+      "locator": "https://arxiv.org/abs/2608.04996",
+      "revision": "supplementary only",
+      "official": true,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "D0 frozen-H3 layer49 K/V carrier and five-block action expert",
+        "paper": "supplementary motivation only",
+        "upstream_code": "pinned DreamWAM ActionDiT/JointMoT sources",
+        "local": "identical D0 repeat_layer49 model_spec and initialization as the sparse parent",
+        "status": "EXACT",
+        "evidence": ["experiments/evidence/h3_candidate_d_vs_d0_v4_paired_final_v1.json"],
+        "rationale": "No architecture parameter, carrier mapping or trainable parameter group changes."
+      }
+    ],
+    "data": [
+      {
+        "field": "dense episode-disjoint LIBERO windows",
+        "paper": "robot demonstration trajectories",
+        "upstream_code": "trajectory windows rather than five episode snapshots",
+        "local": "200,779 train windows over 1,542 episodes and 22,150 validation windows over 170 disjoint episodes",
+        "status": "EQUIVALENT",
+        "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/candidate_report.json"],
+        "rationale": "This deliberately corrects the sparse local data approximation while retaining the same four suites and episode split."
+      }
+    ],
+    "action": [
+      {
+        "field": "state/action normalization and horizon",
+        "paper": "supplementary only",
+        "upstream_code": "unchanged action expert interface",
+        "local": "7D horizon32, v7 train-only minmax clip5, gripper last dimension",
+        "status": "EXACT",
+        "evidence": ["/mnt/h3-wam/data/v7_dense_h3_cache/stats.pt"],
+        "rationale": "Normalization is recomputed from the dense training split without validation leakage."
+      }
+    ],
+    "objective": [
+      {
+        "field": "shifted-flow objective",
+        "paper": "supplementary only",
+        "upstream_code": "DreamWAM action expert",
+        "local": "continuous FP32 shift5 flow, text, proprio and D0 layer49 K/V unchanged",
+        "status": "EXACT",
+        "evidence": ["scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py"],
+        "rationale": "The data rows are the only intended learning variable."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "equal-budget gate followed by near-one-dense-epoch scale",
+        "paper": "long action post-training",
+        "upstream_code": "AdamW plus warmup/cosine",
+        "local": "global batch8, seed42, s963 equal-sample checkpoint then s1000/s5000/s10000/s15000/s20000/s25097",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["decision.launch_command"],
+        "rationale": "s963 isolates density at the old sample budget; later milestones test whether contact coverage needs a full dense pass."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "dense balanced-80 plus fixed closed-loop canaries",
+        "paper": "LIBERO success predicate",
+        "upstream_code": "closed-loop rollout",
+        "local": "v7 40x2 IDs, same-noise language/visual shuffle, then the same goal0/spatial0 trial0 canaries",
+        "status": "EQUIVALENT",
+        "evidence": ["scripts/h3wam/evaluate_h3_dreamwam_kv_carrier.py", "scripts/h3wam/rollout_libero.py"],
+        "rationale": "Offline metrics gate checkpoints; only simulator success supports closed-loop claims."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["DreamWAM commit 6e989facc0c452fd3488d75f60bc36411005558c; local 96976ce."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["D0 s963 schema2 checkpoint and exact online adapter restore."]},
+    "data_contract": {"status": "PASS", "evidence": ["200,779 unique train rows; 1,542/170 train/val episodes; overlap0."]},
+    "action_contract": {"status": "PASS", "evidence": ["7D horizon32 and train-only v7 stats SHA256 6f7e9f4a2232a798e4e30ad26f5748e71aeeda7fa54cb6ea2d0a3ec7d290e814."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Unchanged shift5 continuous-FP32 flow."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Explicit disjoint stage slices totaling 200,776 samples and 25,097 steps."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["v7 balanced-80 selected IDs SHA256 26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42."]},
+    "gradient_path": {"status": "PASS", "evidence": ["D0 five action blocks and proprio gradients passed the paired parent run."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["Pending first dense-cache s1/s10 training smoke."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Schema2 D0 parent restore max_abs0; dense checkpoints use the same persistence path."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["D0 sparse s963 offline report and two fixed 0/1 closed-loop canaries."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Pending dense s963 balanced-80 and visual/language counterfactuals."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Sparse parent goal0/spatial0 are 0/2; dense checkpoints pending."]}
+  },
+  "data_identity": {
+    "source_manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_all.jsonl",
+    "source_manifest_sha256": "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9",
+    "train_manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl",
+    "train_manifest_sha256": "b0d611c21059fa7da6fb08162b03efadd59aff68354bb101be41d3ae20d98eb1",
+    "validation_manifest_sha256": "4dde839b4c82f2439a82c4c8bd48f5d5c94c1fe3a71a7e8d23068386c3a2d31d",
+    "stats_sha256": "6f7e9f4a2232a798e4e30ad26f5748e71aeeda7fa54cb6ea2d0a3ec7d290e814",
+    "selected80_sha256": "26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42",
+    "train_rows": 200779,
+    "planned_unique_samples": 200776,
+    "validation_rows": 22150
+  },
+  "budget": {
+    "gpu_count": 32,
+    "estimated_hours": 8.5,
+    "unique_windows": 200779,
+    "effective_epochs": 0.9999850586962784,
+    "cache_items": 222929,
+    "cache_gpu_count": 32,
+    "cache_expected_uncompressed_bytes": 1022691246080,
+    "cache_estimated_hours": 5.2,
+    "train_gpu_count": 8,
+    "global_batch": 8,
+    "optimizer_steps": 25097,
+    "training_samples": 200776,
+    "effective_dense_epochs": 0.9999850586962784,
+    "checkpoint_steps": [963, 1000, 5000, 10000, 15000, 20000, 25097]
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Online parity is exact and two sparse-data rollouts fail without numerical instability. Dense state/contact coverage is the highest-value controlled variable before any new architecture change.",
+    "launch_command": "32 shards: precompute_h3_int8_features.py manifest_all.jsonl --cache-root v7_dense_h3_cache --dreamwam-kv-carrier --dreamwam-kv-output-subdir h3_int8_dreamwam_kv_5x32_dense_v1 --num-shards 32 --shard-index SHARD; after full audit, train D0 with --enable-d0-repeat-layer49 and staged disjoint slices to s963 then s25097"
+  }
+}
