@@ -65,24 +65,25 @@
     "default_margin": 0.05,
     "extra_parameters": 0,
     "extra_action_dit_forward": 1,
+    "candidate_f_mutually_exclusive": true,
     "zero_gradient_gate_relaxed": false
   },
   "implementation": {
     "trainer": "scripts/h3wam/train_h3_int8_starwam_action.py",
-    "trainer_sha256": "e61625dc574e6706f37ed2e720c48f46a0aaa3b41b66f546cb34520ae015b99f",
+    "trainer_sha256": "40bb1575970fc0de7e726d249069262c2a34103c16e18a15a461ecfa0f256940",
     "tests": "tests/test_h3_int8_starwam_action_trainer.py",
-    "tests_sha256": "edc96f2b0966333729ab7ae9b6ef656355d18554bddb5ce68013a35dc675a84e"
+    "tests_sha256": "6a7f144cabb7765c2a9e4d878cf4f4a4bb0f87d4825cc4145c21154ba6c5cc40"
   },
   "test_runs": [
     {
       "command": ".venv/bin/pytest -q tests/test_h3_int8_starwam_action_trainer.py",
-      "result": "25 passed",
+      "result": "26 passed (covered again by the combined run)",
       "wall_time_seconds": 1.13
     },
     {
       "command": ".venv/bin/pytest -q tests/test_h3_int8_starwam_action_trainer.py tests/test_h3_starwam_feature_action.py",
-      "result": "30 passed",
-      "wall_time_seconds": 1.15
+      "result": "31 passed",
+      "wall_time_seconds": 1.13
     }
   ],
   "unresolved": [

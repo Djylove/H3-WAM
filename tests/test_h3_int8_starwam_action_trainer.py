@@ -416,6 +416,50 @@ class PairedVisualMarginComplementTest(unittest.TestCase):
             negative = MODULE.paired_visual_negative_features(local)
         torch.testing.assert_close(negative, torch.full_like(local, 7.0))
 
+    def test_distributed_sample_mapping_records_all_ranks_without_self_maps(self):
+        def fake_all_gather_object(outputs, value):
+            self.assertEqual(value, ["rank0-sample"])
+            outputs[:] = [["rank0-sample"], ["rank1-sample"], ["rank2-sample"]]
+
+        with (
+            patch.object(MODULE.dist, "is_initialized", return_value=True),
+            patch.object(MODULE.dist, "get_world_size", return_value=3),
+            patch.object(MODULE.dist, "all_gather_object", side_effect=fake_all_gather_object),
+        ):
+            mapping = MODULE.paired_visual_negative_sample_mapping(["rank0-sample"])
+        self.assertEqual(
+            mapping,
+            [
+                {
+                    "rank": 0,
+                    "positive_sample_id": "rank0-sample",
+                    "negative_sample_id": "rank1-sample",
+                },
+                {
+                    "rank": 1,
+                    "positive_sample_id": "rank1-sample",
+                    "negative_sample_id": "rank2-sample",
+                },
+                {
+                    "rank": 2,
+                    "positive_sample_id": "rank2-sample",
+                    "negative_sample_id": "rank0-sample",
+                },
+            ],
+        )
+
+    def test_distributed_sample_mapping_rejects_duplicate_ids(self):
+        def fake_all_gather_object(outputs, value):
+            outputs[:] = [value, value]
+
+        with (
+            patch.object(MODULE.dist, "is_initialized", return_value=True),
+            patch.object(MODULE.dist, "get_world_size", return_value=2),
+            patch.object(MODULE.dist, "all_gather_object", side_effect=fake_all_gather_object),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "not rank-unique"):
+                MODULE.paired_visual_negative_sample_mapping(["same-sample"])
+
     def test_hinge_ranks_correct_below_wrong_and_backpropagates(self):
         correct = torch.tensor(0.8, requires_grad=True)
         wrong = torch.tensor(0.9, requires_grad=True)
@@ -443,6 +487,7 @@ class PairedVisualMarginComplementTest(unittest.TestCase):
                 )
 
         batch = {
+            "sample_ids": ["sample-a", "sample-b"],
             "actions": torch.linspace(-1.0, 1.0, 2 * 4 * 3).reshape(2, 4, 3),
             "action_is_pad": torch.zeros(2, 4, dtype=torch.bool),
             "text_context": torch.zeros(2, 1, 2),
@@ -470,6 +515,7 @@ class PairedVisualMarginComplementTest(unittest.TestCase):
         )
         self.assertGreater(metrics["paired_visual_margin_loss"], 0.0)
         self.assertGreater(metrics["paired_visual_prediction_delta_mse"], 0.0)
+        self.assertEqual(len(metrics["paired_visual_negative_mapping"]), 2)
         self.assertAlmostEqual(
             metrics["loss"],
             metrics["flow_loss"] + metrics["weighted_paired_visual_margin_loss"],

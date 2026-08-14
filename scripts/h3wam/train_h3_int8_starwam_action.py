@@ -464,6 +464,50 @@ def paired_visual_negative_features(features: torch.Tensor) -> torch.Tensor:
     )
 
 
+def paired_visual_negative_sample_mapping(
+    sample_ids: list[str],
+) -> list[dict[str, object]]:
+    """Record the exact positive/negative sample routing used by Candidate G."""
+
+    if not sample_ids or len(sample_ids) != len(set(sample_ids)):
+        raise ValueError("paired visual sample IDs must be non-empty and unique")
+    if len(sample_ids) > 1:
+        negative_ids = sample_ids[-1:] + sample_ids[:-1]
+        mapping = [
+            {
+                "rank": dist.get_rank() if dist.is_initialized() else 0,
+                "positive_sample_id": positive,
+                "negative_sample_id": negative,
+            }
+            for positive, negative in zip(sample_ids, negative_ids, strict=True)
+        ]
+    elif dist.is_initialized() and dist.get_world_size() > 1:
+        gathered: list[list[str] | None] = [None] * dist.get_world_size()
+        dist.all_gather_object(gathered, list(sample_ids))
+        if any(item is None or len(item) != 1 for item in gathered):
+            raise RuntimeError("paired visual DDP sample-ID gather has an invalid shape")
+        gathered_ids = [str(item[0]) for item in gathered if item is not None]
+        if len(gathered_ids) != len(set(gathered_ids)):
+            raise RuntimeError("paired visual DDP sample IDs are not rank-unique")
+        mapping = [
+            {
+                "rank": rank,
+                "positive_sample_id": positive,
+                "negative_sample_id": gathered_ids[(rank + 1) % len(gathered_ids)],
+            }
+            for rank, positive in enumerate(gathered_ids)
+        ]
+    else:
+        raise ValueError(
+            "paired visual sample mapping needs local batch >=2 or distributed peers"
+        )
+    if any(
+        item["positive_sample_id"] == item["negative_sample_id"] for item in mapping
+    ):
+        raise RuntimeError("paired visual negative mapping contains a self-map")
+    return mapping
+
+
 def paired_visual_margin_loss(
     correct_flow_loss: torch.Tensor,
     wrong_visual_flow_loss: torch.Tensor,
@@ -491,7 +535,7 @@ def optimizer_step(
     clean_action_regression_weight: float = 0.0,
     paired_visual_margin_weight: float = 0.0,
     paired_visual_margin: float = 0.05,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     if (
         not math.isfinite(clean_action_regression_weight)
         or clean_action_regression_weight < 0
@@ -533,6 +577,9 @@ def optimizer_step(
         clean_action_regression_loss = flow_loss.detach().new_zeros(())
     if paired_visual_margin_weight > 0:
         wrong_visual_batch = dict(batch)
+        paired_visual_mapping = paired_visual_negative_sample_mapping(
+            batch["sample_ids"]
+        )
         wrong_visual_batch["features"] = paired_visual_negative_features(
             batch["features"]
         )
@@ -556,6 +603,7 @@ def optimizer_step(
         ).square().mean()
         auxiliary_losses.append(paired_visual_margin_weight * visual_margin_loss)
     else:
+        paired_visual_mapping = []
         wrong_visual_flow_loss = flow_loss.detach().new_zeros(())
         visual_margin_loss = flow_loss.detach().new_zeros(())
         visual_prediction_delta = flow_loss.detach().new_zeros(())
@@ -578,6 +626,7 @@ def optimizer_step(
         "paired_visual_prediction_delta_mse": float(
             visual_prediction_delta.detach()
         ),
+        "paired_visual_negative_mapping": paired_visual_mapping,
         "timestep_mean": float(timesteps.detach().float().mean()),
         "prediction_std": float(prediction.detach().float().std()),
     }
@@ -1111,6 +1160,11 @@ def main() -> None:
                     x["paired_visual_prediction_delta_mse"] for x in micro_metrics
                 )
                 / len(micro_metrics),
+                "paired_visual_negative_mapping": [
+                    mapping
+                    for metrics in micro_metrics
+                    for mapping in metrics["paired_visual_negative_mapping"]
+                ],
                 "timestep_mean": sum(x["timestep_mean"] for x in micro_metrics) / len(micro_metrics),
                 "prediction_std": sum(x["prediction_std"] for x in micro_metrics) / len(micro_metrics),
                 "expert_gradient_norm": expert_gradient,

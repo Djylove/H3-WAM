@@ -145,9 +145,10 @@ Candidate F 在 s850/step851 复现同一模式，说明 clean reconstruction �
 - hinge、wrong forward、同 flow noise/target、加入 total 并 backward：
   `train_h3_int8_starwam_action.py:467-561`。
 - checkpoint 写入 Candidate G 身份与所有 fixed inputs：
-  `train_h3_int8_starwam_action.py:719-740`。
+  `train_h3_int8_starwam_action.py:726-744`；Candidate F/G 同时开启会在 `:665-669` fail closed，
+  防止把两个变量静默混成一次实验。
 - 原来的 expert/projector/proprio 必须 finite 且严格 `>0` 的硬门完全保留：
-  `train_h3_int8_starwam_action.py:1059-1064`。
+  `train_h3_int8_starwam_action.py:1063-1068`。
 
 这是项目内 novel composition，不声称来自某篇论文或某个官方 repo。它由两类 code-backed 事实驱动：
 上游普遍把条件路由到 action，但没有 correct/wrong 约束；本项目 paired visual shuffle 已直接测到 action
@@ -163,7 +164,7 @@ Candidate F 在 s850/step851 复现同一模式，说明 clean reconstruction �
   tests/test_h3_starwam_feature_action.py
 ```
 
-结果：`30 passed`（Candidate G 单文件复跑为 `25 passed`；随后组合测试包含 5 个 policy tests）。覆盖：
+结果：`31 passed`（trainer 单文件 `26 passed`，另含 5 个 policy tests）。覆盖：
 
 - 默认关闭不改变原合同；
 - local cyclic negative 与 per-rank batch=1 的 DDP next-rank negative；
@@ -171,6 +172,7 @@ Candidate F 在 s850/step851 复现同一模式，说明 clean reconstruction �
 - hinge 正确方向与双分支梯度；
 - 两次 forward 的 noisy action bit-equivalent；
 - Candidate G 才增加 weighted loss；
+- Candidate F/G 不能静默叠加；
 - checkpoint contract；
 - 零梯度硬门没有被放宽。
 
