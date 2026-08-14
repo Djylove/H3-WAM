@@ -1,0 +1,147 @@
+{
+  "experiment_id": "h3_candidate_d_restore_canary_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "A real BF16 Candidate D checkpoint saved after one optimizer step restores into a fresh model with identical probe output and completed optimizer/scheduler state.",
+  "single_variable": "Enable the existing atomic checkpoint round-trip around the already-passed Candidate D one-step mechanical probe; model, sample, seed, objective and K/V cache remain unchanged.",
+  "parent_baseline": "Candidate D no-checkpoint mechanical probe at commit 07b4e29; report SHA256 7a5d4ada789cbf7ed468d0c39d6be584cb44780eb48e1d79f6fb2aee18d8cc69.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "DreamWAM",
+      "locator": "https://arxiv.org/abs/2608.04996",
+      "revision": "supplementary only",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Official DreamWAM repository",
+      "locator": "https://github.com/hustvl/DreamWAM.git",
+      "revision": "6e989facc0c452fd3488d75f60bc36411005558c",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3 Candidate D trainer",
+      "locator": "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+      "revision": "4d59400; trainer SHA256 dc016d5715afa9520ce9ba7f6d8a058f5f15c0187e172496876b400b667258cb",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "model and frozen H3 K/V carrier",
+        "paper": "DreamWAM action expert consumes video-model K/V",
+        "upstream_code": "pinned five-block DreamWAM ActionDiT source",
+        "local": "unchanged Candidate D five-layer H3 K/V carrier",
+        "status": "EXACT",
+        "evidence": [
+          "docs/H3_DREAMWAM_CARRIER_CANDIDATE_D_2026-08-14.md",
+          "experiments/evidence/h3_int8_dreamwam_kv_candidate_d_mechanical_v1.json"
+        ],
+        "rationale": "The restore canary does not change the already-audited model graph."
+      }
+    ],
+    "data": [
+      {
+        "field": "episode-disjoint cached H3 K/V split",
+        "paper": "not used to authorize this mechanical canary",
+        "upstream_code": "not used as a LIBERO data contract",
+        "local": "7,710 train windows from 1,542 episodes; source manifest SHA256 d343a360753bd01821fd87ed4a85ca9240ecf4794f8cf0c457921bac2dd3f0e3",
+        "status": "EXACT",
+        "evidence": [
+          "experiments/evidence/h3_int8_dreamwam_kv_candidate_d_mechanical_v1.json"
+        ],
+        "rationale": "The command reuses the same manifest, first sample and audited cache as the parent probe."
+      }
+    ],
+    "action": [
+      {
+        "field": "7D horizon-32 action and normalization contract",
+        "paper": "supplementary only",
+        "upstream_code": "DreamWAM action expert module does not define the local robot units",
+        "local": "StarWAM minmax clip5, shift5, continuous FP32 flow timestep",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+          "experiments/evidence/h3_int8_dreamwam_kv_candidate_d_mechanical_v1.json"
+        ],
+        "rationale": "Save/load does not alter action semantics or normalization."
+      }
+    ],
+    "objective": [
+      {
+        "field": "shifted flow loss and deterministic RNG",
+        "paper": "supplementary only",
+        "upstream_code": "DreamWAM modules provide the action expert blocks",
+        "local": "parent v2 continuous FP32 flow and rank-distinct RNG",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+          "tests/test_h3_dreamwam_kv_trainer.py"
+        ],
+        "rationale": "The canary adds persistence only."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "one-step optimizer and scheduler state",
+        "paper": "not used",
+        "upstream_code": "not used for local optimizer budget",
+        "local": "AdamW one step, global batch 1, warmup 1/1000, scheduler horizon 21,700",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+          "tests/test_h3_dreamwam_kv_trainer.py"
+        ],
+        "rationale": "The saved payload includes model, optimizer, scheduler and completed_steps."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "fresh restore probe",
+        "paper": "not used",
+        "upstream_code": "not used",
+        "local": "same cached sample, seed 9000043 and exact max_abs=0 requirement",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+          "tests/test_h3_dreamwam_kv_trainer.py"
+        ],
+        "rationale": "The restore-only command rebuilds a fresh model and requires exact output identity."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Official DreamWAM HEAD rechecked at 6e989facc0c452fd3488d75f60bc36411005558c on 2026-08-14."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Candidate D mechanical evidence and 12 local tests."]},
+    "data_contract": {"status": "PASS", "evidence": ["8,560/8,560 K/V cache audit; episode overlap 0."]},
+    "action_contract": {"status": "PASS", "evidence": ["Unchanged Candidate D contract and parent v2 normalization."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Finite one-step probe and deterministic flow tests."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Checkpoint schema stores optimizer, scheduler and completed_steps."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Fresh restore requires same sample identity and max_abs=0."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Five block gradient norms and proprio gradient were finite and non-zero in the parent probe."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["Target evidence of this canary; not required for GO_CANARY."]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["Target evidence of this canary; not required for GO_CANARY."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["No-checkpoint parent report SHA256 7a5d4ada789cbf7ed468d0c39d6be584cb44780eb48e1d79f6fb2aee18d8cc69."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Not an effectiveness experiment."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Not an effectiveness experiment."]}
+  },
+  "budget": {
+    "global_batch": 1,
+    "optimizer_steps": 1,
+    "training_samples": 1,
+    "unique_windows": 7710,
+    "effective_epochs": 0.00012970168612191958,
+    "gpu_count": 1,
+    "estimated_hours": 0.05
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "This bounded run resolves the only missing real-checkpoint restore evidence and cannot support an effectiveness claim.",
+    "launch_command": "CUDA_VISIBLE_DEVICES=0 python scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py /mnt/h3-wam/data/v4_multisuite_base/manifest_train.jsonl --source-manifest /mnt/h3-wam/data/v4_multisuite_base/manifest_all.jsonl --cache-root /mnt/h3-wam/data/v8_frameindexed_h3_cache --kv-subdir h3_int8_dreamwam_kv_5x32_canary_v1 --enable-dreamwam-kv-carrier --verify-h3-checkpoint-sha256 --steps 1 --limit 1 --num-workers 0 --save-checkpoint /mnt/h3-wam/candidate-d-restore-canary-4d59400/outputs/candidate_d_s1.pt --output /mnt/h3-wam/candidate-d-restore-canary-4d59400/evidence/train_s1.json"
+  }
+}
