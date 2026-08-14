@@ -76,11 +76,35 @@ class StarWAMFeaturePoolingTest(unittest.TestCase):
         with patch.object(sys, "argv", required):
             args = MODULE.parse_args()
         self.assertFalse(args.dreamwam_kv_carrier)
+        self.assertFalse(args.also_starwam_feature_cache)
         self.assertEqual(args.output_subdir, "h3_int8_last32_features")
         self.assertEqual(args.layers, (49,))
         self.assertEqual(
             args.dreamwam_kv_output_subdir, "h3_int8_dreamwam_kv_5x32"
         )
+
+    def test_dual_cache_flag_is_explicit(self):
+        import sys
+        from unittest.mock import patch
+
+        argv = [
+            "precompute",
+            "manifest.jsonl",
+            "--cache-root",
+            "cache",
+            "--h3-checkpoint",
+            "h3.safetensors",
+            "--dreamwam-kv-carrier",
+            "--also-starwam-feature-cache",
+            "--output-subdir",
+            "starwam_dense",
+        ]
+        with patch.object(sys, "argv", argv):
+            args = MODULE.parse_args()
+        self.assertTrue(args.dreamwam_kv_carrier)
+        self.assertTrue(args.also_starwam_feature_cache)
+        self.assertEqual(args.layers, (49,))
+        self.assertEqual(args.output_subdir, "starwam_dense")
 
 
 if __name__ == "__main__":

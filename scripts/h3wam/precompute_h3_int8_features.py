@@ -46,6 +46,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--also-starwam-feature-cache",
+        action="store_true",
+        help=(
+            "While writing DreamWAM K/V, also write the standard pooled hidden "
+            "feature cache selected by --layers/--output-subdir from the same H3 forward."
+        ),
+    )
+    parser.add_argument(
         "--dreamwam-kv-layers",
         type=int,
         nargs="+",
@@ -164,6 +172,8 @@ def main() -> None:
         raise ValueError("positive horizon, latent-frame and progress arguments are required")
     if args.num_shards <= 0 or not 0 <= args.shard_index < args.num_shards:
         raise ValueError("shard-index must be in [0,num-shards)")
+    if args.also_starwam_feature_cache and not args.dreamwam_kv_carrier:
+        raise ValueError("--also-starwam-feature-cache requires --dreamwam-kv-carrier")
 
     from diffusers.modular_pipelines.minimax_h3.before_denoise import (
         MiniMaxH3PrepareLayoutStep,
@@ -193,6 +203,15 @@ def main() -> None:
         else args.output_subdir
     )
     output_root.mkdir(parents=True, exist_ok=True)
+    starwam_output_root = (
+        cache_root / args.output_subdir
+        if args.also_starwam_feature_cache
+        else None
+    )
+    if starwam_output_root is not None:
+        if starwam_output_root == output_root:
+            raise ValueError("DreamWAM and StarWAM output subdirectories must differ")
+        starwam_output_root.mkdir(parents=True, exist_ok=True)
     layers = tuple(
         sorted(
             set(
@@ -207,15 +226,25 @@ def main() -> None:
     )
     if args.dreamwam_kv_carrier and args.capture_compatibility != "none":
         raise ValueError("DreamWAM K/V caches do not support historical feature alias mode")
+    feature_layers = tuple(sorted(set(int(layer) for layer in args.layers)))
     model = H3Int8FeatureBackbone.from_checkpoint(args.h3_checkpoint).to(device).eval()
 
     layouts: dict[tuple[str, int, int], dict[str, torch.Tensor | int]] = {}
     started = time.perf_counter()
     completed = 0
     written = 0
+    written_files = 0
     for row in rows:
         output = output_root / f"{row['id']}.pt"
-        if output.exists() and not args.overwrite:
+        starwam_output = (
+            starwam_output_root / f"{row['id']}.pt"
+            if starwam_output_root is not None
+            else None
+        )
+        required_outputs = [output]
+        if starwam_output is not None:
+            required_outputs.append(starwam_output)
+        if all(path.exists() for path in required_outputs) and not args.overwrite:
             completed += 1
             continue
         window = torch.load(
@@ -307,11 +336,15 @@ def main() -> None:
                 video_indices=layout["video_indices"],
                 audio_indices=layout["audio_indices"],
                 text_indices=layout["text_indices"],
-                capture_layers=() if args.dreamwam_kv_carrier else layers,
+                capture_layers=(
+                    feature_layers
+                    if (not args.dreamwam_kv_carrier or args.also_starwam_feature_cache)
+                    else ()
+                ),
                 capture_indices=(
-                    None
-                    if args.dreamwam_kv_carrier
-                    else layout["condition_indices"]
+                    layout["condition_indices"]
+                    if (not args.dreamwam_kv_carrier or args.also_starwam_feature_cache)
+                    else None
                 ),
                 capture_kv_layers=layers if args.dreamwam_kv_carrier else (),
                 kv_capture_indices=(
@@ -320,6 +353,7 @@ def main() -> None:
                     else None
                 ),
             )
+        cache_outputs: list[tuple[Path, dict[str, object]]] = []
         if args.dreamwam_kv_carrier:
             kv_cache = prepare_dreamwam_kv_cache(
                 result.captured_kv,
@@ -334,7 +368,7 @@ def main() -> None:
             if not all(torch.isfinite(tensor.float()).all() for tensor in finite_tensors):
                 raise RuntimeError(f"non-finite INT8 K/V for {row['id']}")
             first_k = kv_cache[layers[0]]["k"]
-            cache_body = {
+            cache_outputs.append((output, {
                 "schema": DREAMWAM_KV_SCHEMA,
                 "video_kv_cache": kv_cache,
                 "layers": layers,
@@ -343,10 +377,10 @@ def main() -> None:
                 "attn_head_dim": int(first_k.shape[2]),
                 "capture_token_strategy": "adaptive_avg_pool1d_sequence_v1",
                 "dreamwam_commit": DREAMWAM_COMMIT,
-            }
-        else:
+            }))
+        if not args.dreamwam_kv_carrier or args.also_starwam_feature_cache:
             features = torch.stack(
-                [result.captured_features[layer][0] for layer in layers], dim=0
+                [result.captured_features[layer][0] for layer in feature_layers], dim=0
             )
             features = apply_capture_compatibility(features, args.capture_compatibility)
             features = pool_feature_tokens(features, args.capture_token_count).to(
@@ -354,17 +388,18 @@ def main() -> None:
             )
             if not torch.isfinite(features).all():
                 raise RuntimeError(f"non-finite INT8 features for {row['id']}")
-            cache_body = {
+            feature_body = {
                 "features": features,
-                "layers": layers,
+                "layers": feature_layers,
                 "capture_token_count": int(features.shape[1]),
                 "capture_token_strategy": "starwam_adaptive_avg_pool1d_v1",
                 "capture_compatibility": args.capture_compatibility,
             }
-        temporary = output.with_name(f".{output.name}.{os.getpid()}.tmp")
-        torch.save(
-            {
-                **cache_body,
+            cache_outputs.append((
+                output if starwam_output is None else starwam_output,
+                feature_body,
+            ))
+        common_body = {
                 "episode": int(row["episode"]),
                 "start": int(row["start"]),
                 "suite": str(row["suite"]),
@@ -380,12 +415,20 @@ def main() -> None:
                 "manifest_items": manifest_items,
                 "num_shards": int(args.num_shards),
                 "shard_index": int(args.shard_index),
-            },
-            temporary,
-        )
-        os.replace(temporary, output)
+        }
+        wrote_window = False
+        for destination, cache_body in cache_outputs:
+            if destination.exists() and not args.overwrite:
+                continue
+            temporary = destination.with_name(
+                f".{destination.name}.{os.getpid()}.tmp"
+            )
+            torch.save({**cache_body, **common_body}, temporary)
+            os.replace(temporary, destination)
+            wrote_window = True
+            written_files += 1
         completed += 1
-        written += 1
+        written += int(wrote_window)
         if completed % args.progress_every == 0 or completed == len(rows):
             elapsed = time.perf_counter() - started
             print(
@@ -393,6 +436,7 @@ def main() -> None:
                     {
                         "completed": completed,
                         "written": written,
+                        "written_files": written_files,
                         "total": len(rows),
                         "shard_index": args.shard_index,
                         "elapsed_seconds": round(elapsed, 2),
