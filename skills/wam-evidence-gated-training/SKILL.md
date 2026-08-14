@@ -8,7 +8,9 @@ description: 审计并演化 World Action Model 研究：对齐作者官方代�
 把开源实现转成可审计的实验合同和可进化的候选池。证据门用于控制风险、区分“训练许可”和“效果结论”，不能把
 任意固定步数当作研究规律。机械 smoke、诊断性探索、规模化确认和对外结论使用不同门槛。已明确
 要求保留的长线实验继续运行。论文只作为方法意图、消融和代码缺失细节的辅助证据，不能代替
-可执行代码。“练蛊”表示让独立机制在相同合同下竞争，再融合胜者；不表示把所有技巧一次性堆入模型。
+可执行代码。“练蛊”表示从多个官方开源代码中移植独立机制，让它们在相同合同下竞争，再融合各赛道
+胜者；不表示围绕当前擂主反复调参，也不表示把所有技巧一次性堆入模型。当前擂主只是后续候选的父基线，
+不是预设的最终架构。
 
 ## 工作流
 
@@ -33,6 +35,30 @@ description: 审计并演化 World Action Model 研究：对齐作者官方代�
 - consequence/ranking：future state/representation、value、failure-aware、best-of-N；
 - deployment contract：sampler、clip、gripper、execution horizon、latency。
 
+#### 候选池宽度审计
+
+训练前维护一个 candidate registry，逐项列出当前发现的官方项目、固定 revision、开源级别、可迁移
+机制、所需数据、H3 端口状态、所属赛道和排除理由。先枚举所有本地已有且与当前瓶颈相关的
+`TRAINABLE` 来源，再选择实验；不能只把已经写好的本地变体列为候选。项目名和实验臂分开记录：一个
+项目可以贡献多个独立候选，一个本地候选也可以只移植某项目的一个机制。
+
+每个活跃赛道在选冠军前应有至少两个可比较候选；若只有一个满足来源和数据门，必须把其他来源缺失、
+不兼容或暂缓的原因写入 registry。未经比较的 incumbent 只能称为“当前擂主”，不能称为赛道冠军。
+发现新的可训练官方仓库或已有来源被遗漏时，先更新 registry 和资源路由，再决定是否占用 GPU。
+
+#### 代码移植阶梯
+
+对每个开源候选按以下顺序执行，不从论文摘要直接重写方法：
+
+1. 固定作者 dataloader、forward/loss、launcher、checkpoint 和 evaluator 的真实代码路径与 revision；
+2. 在可行时先运行作者发布 checkpoint/evaluator 或最小原 backbone smoke，建立来源父基线；不能运行时
+   明确记录缺失权重、数据或环境，而不是跳过对齐；
+3. 从执行代码提取最小机制接口，优先直接 import/vendor 固定源码，在 adapter 中完成 H3 维度、token、
+   RoPE、mask 和 timestep 转换；
+4. 将 H3 port 标为 `backbone_port`，用单元测试和真实一批 forward/backward 证明只有已声明接口变化；
+5. 在统一 dense 数据、动作合同、预算和 evaluator 下与当前擂主配对，不能以各项目自己的最好数字横比；
+6. 只有通过本赛道 paired/rollout gate 的机制才进入融合池。
+
 为每个候选写卡片：官方来源和 commit、可迁移的最小机制、父基线、唯一变量、不变量、所需数据、
 训练样本/effective epochs/墙钟/存储、机制指标、闭环指标和停止条件。按以下阶段晋级：
 
@@ -47,6 +73,10 @@ description: 审计并演化 World Action Model 研究：对齐作者官方代�
 保留至少一个不变基线和一个有充分预算的长线。不要用一批短 smoke 淘汰所有架构，也不要用不同
 数据、seed、预算的最高分拼“蛊王”。相同数学效果的候选应合并，例如额外 clean-x0 MSE 若可化为
 原 velocity error 的 timestep 重加权，就按 weighting ablation 处理，不声称新增能力。
+
+维护显式 fusion lineage，例如 `carrier冠军 -> +context冠军 -> +consequence冠军`。每个子节点只比父节点
+多一个已经独立晋级的机制，父节点权重、数据顺序、优化和 rollout 合同保持不变；若融合出现负交互，
+保留两个单项胜者并淘汰该组合，不能同时调 LR、sampler 或新 loss 掩盖归因。
 
 ### 3. 建立来源身份
 
@@ -223,6 +253,10 @@ global batch、采样器合同和总见样本数并明确记录差异。
 数据审计和恢复验证；只有存在独立评测资源时才可占满全部节点训练。吞吐尚未测得时先运行探针，
 用 `steps(E)=ceil(E×unique_train_windows/global_batch)` 和实测秒/step 计算墙钟。
 
+多节点并行优先分配给不同赛道或严格父子对照，不把所有节点用于当前擂主的相邻超参。缓存或数据准备
+占满 GPU 时，继续完成其他候选的 SOURCE/MECHANICAL gate、registry 和 adapter 测试；资源释放后按
+预注册优先级启动，而不是临时选择最容易运行的变体。
+
 ### 9. 回写经验并进化 skill
 
 每轮结束先把原始命令、commit、manifest/checkpoint hash、指标和失败分类写进项目 dossier；只有满足
@@ -252,13 +286,14 @@ global batch、采样器合同和总见样本数并明确记录差异。
 每次给用户的方案必须包含：
 
 1. 一句话可证伪假设；
-2. 来源/版本身份；
+2. candidate registry 摘要、所属赛道、来源/版本身份，以及未进入本轮来源的明确理由；
 3. 逐项差异矩阵及未解决项；
 4. 实际 global batch、样本数、effective epochs、预计墙钟；
 5. 父基线、唯一变量、晋级/停止门槛；
 6. 训练许可写 `GO_CANARY`、`GO_LONG` 或 `NO_GO`；效果结论另写 `EVIDENCE_READY` 或
    `NOT_EVIDENCE_READY`；
-7. 真实启动命令或明确说明尚未放行。
+7. 当前擂主、赛道冠军与 fusion lineage 的区别；
+8. 真实启动命令或明确说明尚未放行。
 
 若用户尚未提供数据规模、microbatch 或吞吐，相关字段写 `UNKNOWN`，同时给计算公式和取得真实值的
 探针；禁止为了满足输出格式编造数字。trial 数、置信区间和晋级阈值按 benchmark、基线方差和预算
