@@ -115,6 +115,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--action-median-window", type=int, default=1)
     parser.add_argument("--action-scale", type=float, default=1.0)
     parser.add_argument(
+        "--normalized-action-pre-clamp",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Clamp normalized action predictions to [-1,1] before "
+            "denormalization. Disabled by default for historical compatibility."
+        ),
+    )
+    parser.add_argument(
         "--history-adapter-scale",
         type=float,
         default=1.0,
@@ -1216,6 +1225,9 @@ def main() -> None:
                         "action_ensemble_size": len(local_action_members),
                         "world_size": world_size,
                         "load_seconds": load_seconds,
+                        "normalized_action_pre_clamp": (
+                            args.normalized_action_pre_clamp
+                        ),
                     }
                 ),
                 encoding="utf-8",
@@ -1229,6 +1241,9 @@ def main() -> None:
                         "action_ensemble_size": len(local_action_members),
                         "world_size": world_size,
                         "load_seconds": load_seconds,
+                        "normalized_action_pre_clamp": (
+                            args.normalized_action_pre_clamp
+                        ),
                     }
                 ),
                 flush=True,
@@ -1335,12 +1350,16 @@ def main() -> None:
                 previous_episode_key = episode_key
             if rank == 0:
                 normalized = normalized.clone()
-                environment_actions = libero_environment_actions(
+                environment_actions, decode_report = libero_environment_actions(
                     normalized,
                     stats["action_min"],
                     stats["action_max"],
                     binarize_gripper=args.binarize_gripper,
                     temporal_median_window=args.action_median_window,
+                    normalized_action_pre_clamp=(
+                        args.normalized_action_pre_clamp
+                    ),
+                    return_decode_report=True,
                 )
                 environment_actions[:, :6] = np.clip(
                     environment_actions[:, :6] * args.action_scale, -1.0, 1.0
@@ -1371,6 +1390,10 @@ def main() -> None:
                                 )
                             ),
                             "action_mode_probabilities": action_mode_probabilities,
+                            "normalized_action_pre_clamp": (
+                                args.normalized_action_pre_clamp
+                            ),
+                            "normalized_action_decode": decode_report,
                         },
                     }
                 )

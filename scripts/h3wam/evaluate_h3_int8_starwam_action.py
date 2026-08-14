@@ -60,6 +60,8 @@ EXPECTED_ACTION_SHIFT = 5.0
 EXPECTED_INFERENCE_STEPS = 10
 EXPECTED_BALANCED_VAL_TASKS = 40
 BALANCED_VAL_SELECTION_SALT = "h3-int8-starwam-balanced-val-v1"
+VISUAL_FEATURE_SHUFFLE_SALT = "h3-r1-visual-shuffle-v1"
+VISUAL_FEATURE_SHUFFLE_ITEMS = 80
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,7 @@ class EvalConfig:
     inference_steps: int = EXPECTED_INFERENCE_STEPS
     action_shift: float = EXPECTED_ACTION_SHIFT
     language_sensitivity: bool = False
+    visual_feature_shuffle: bool = False
 
 
 MODEL_SPEC_KEYS = {
@@ -206,6 +209,71 @@ def select_validation_rows(
     }
 
 
+def _salted_sample_rank(sample_id: str, salt: str) -> tuple[str, str]:
+    digest = hashlib.sha256()
+    digest.update(str(salt).encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(str(sample_id).encode("utf-8"))
+    return digest.hexdigest(), str(sample_id)
+
+
+def build_visual_feature_shuffle(
+    rows: list[dict[str, Any]],
+) -> tuple[dict[str, str], dict[str, Any]]:
+    """Build the pre-registered E1 permutation over the frozen 80 samples.
+
+    IDs are ranked independently of manifest order using the fixed E1 salt.
+    A circular right shift assigns each target the preceding ranked sample's
+    visual feature, preserving the selected feature marginal while forbidding
+    self-maps. Text, proprio, target actions and action noise are not involved.
+    """
+
+    if len(rows) != VISUAL_FEATURE_SHUFFLE_ITEMS:
+        raise ValueError(
+            "visual feature shuffle requires exactly "
+            f"{VISUAL_FEATURE_SHUFFLE_ITEMS} selected validation rows"
+        )
+    sample_ids = [str(row["id"]) for row in rows]
+    if len(set(sample_ids)) != len(sample_ids):
+        raise ValueError("visual feature shuffle requires unique sample ids")
+    ranked_ids = sorted(
+        sample_ids, key=lambda sample_id: _salted_sample_rank(
+            sample_id, VISUAL_FEATURE_SHUFFLE_SALT
+        )
+    )
+    shifted_source_ids = [ranked_ids[-1], *ranked_ids[:-1]]
+    mapping = dict(zip(ranked_ids, shifted_source_ids, strict=True))
+    self_maps = [target for target, source in mapping.items() if target == source]
+    if self_maps:
+        raise RuntimeError(f"visual feature shuffle produced self maps: {self_maps}")
+    pairs_in_selected_order = [
+        f"{sample_id}\0{mapping[sample_id]}" for sample_id in sample_ids
+    ]
+    canonical_pairs = [
+        f"{sample_id}\0{mapping[sample_id]}" for sample_id in sorted(sample_ids)
+    ]
+    return mapping, {
+        "enabled": True,
+        "salt": VISUAL_FEATURE_SHUFFLE_SALT,
+        "algorithm": "sha256_rank_then_circular_right_shift_1",
+        "selected_items": len(sample_ids),
+        "self_map_count": 0,
+        "selected_ids_sha256": sha256_strings(sample_ids),
+        "mapping_sha256": sha256_strings(canonical_pairs),
+        "ordered_mapping_sha256": sha256_strings(pairs_in_selected_order),
+        "mapping": [
+            {"target_sample_id": sample_id, "feature_source_sample_id": mapping[sample_id]}
+            for sample_id in sample_ids
+        ],
+        "fixed_conditioning": {
+            "text": "unchanged",
+            "proprio": "unchanged",
+            "action_target": "unchanged",
+            "initial_action_noise": "same_tensor_as_baseline",
+        },
+    }
+
+
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     path = Path(path).resolve()
     rows = [
@@ -313,7 +381,7 @@ def collate_eval_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
     replacement, replacement_mask = _pad_contexts(
         items, "replacement_text_context"
     )
-    return {
+    batch = {
         "sample_ids": [str(item["sample_id"]) for item in items],
         "tasks": [str(item["task"]) for item in items],
         "features": torch.stack([item["features"] for item in items]),
@@ -326,6 +394,17 @@ def collate_eval_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
         "replacement_text_context": replacement,
         "replacement_text_mask": replacement_mask,
     }
+    has_shuffled_features = ["shuffled_features" in item for item in items]
+    if any(has_shuffled_features):
+        if not all(has_shuffled_features):
+            raise ValueError("visual shuffle fields must be present for the full batch")
+        batch["shuffled_features"] = torch.stack(
+            [item["shuffled_features"] for item in items]
+        )
+        batch["visual_shuffle_source_ids"] = [
+            str(item["visual_shuffle_source_id"]) for item in items
+        ]
+    return batch
 
 
 class CachedLast32ValidationDataset(Dataset):
@@ -340,6 +419,7 @@ class CachedLast32ValidationDataset(Dataset):
         source_manifest_items: int,
         model_spec: dict[str, Any],
         action_horizon: int,
+        visual_feature_shuffle: dict[str, str] | None = None,
         limit: int = 0,
         sample_offset: int = 0,
     ) -> None:
@@ -359,6 +439,21 @@ class CachedLast32ValidationDataset(Dataset):
         self.proprio_dim = int(model_spec["proprio_dim"])
         self.h3_feature_dim = int(model_spec["h3_feature_dim"])
         self.context_dim = int(model_spec["context_dim"])
+        self.rows_by_id = {str(row["id"]): row for row in self.rows}
+        self.visual_feature_shuffle = visual_feature_shuffle
+        if visual_feature_shuffle is not None:
+            selected_ids = set(self.rows_by_id)
+            if set(visual_feature_shuffle) != selected_ids or set(
+                visual_feature_shuffle.values()
+            ) != selected_ids:
+                raise ValueError(
+                    "visual feature shuffle must be a permutation of selected ids"
+                )
+            if any(
+                target == source
+                for target, source in visual_feature_shuffle.items()
+            ):
+                raise ValueError("visual feature shuffle cannot contain self maps")
         stats = torch.load(
             self.cache_root / "stats.pt", map_location="cpu", weights_only=False
         )
@@ -405,17 +500,16 @@ class CachedLast32ValidationDataset(Dataset):
             )
         return context
 
-    def __getitem__(self, index: int) -> dict[str, Any]:
-        row = self.rows[index]
-        sample_id = str(row["id"])
-        context_id = str(row["context_id"])
+    def _load_features(
+        self, sample_id: str, expected_context_id: str
+    ) -> torch.Tensor:
         feature_path = self.feature_root / f"{sample_id}.pt"
         if not feature_path.is_file():
             raise FileNotFoundError(f"missing completed feature cache: {feature_path}")
         payload = torch.load(feature_path, map_location="cpu", weights_only=False)
         expected = {
             "layers": FEATURE_LAYERS,
-            "context_id": context_id,
+            "context_id": expected_context_id,
             "action_horizon": self.action_horizon,
             "capture_token_count": FEATURE_TOKENS,
             "capture_token_strategy": FEATURE_STRATEGY,
@@ -442,6 +536,13 @@ class CachedLast32ValidationDataset(Dataset):
             )
         if not torch.isfinite(features.float()).all():
             raise ValueError(f"non-finite feature cache for {sample_id}")
+        return features
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        row = self.rows[index]
+        sample_id = str(row["id"])
+        context_id = str(row["context_id"])
+        features = self._load_features(sample_id, context_id)
 
         window = torch.load(
             self.cache_root / "windows" / f"{sample_id}.pt",
@@ -460,7 +561,7 @@ class CachedLast32ValidationDataset(Dataset):
         if tuple(state.shape) != (self.proprio_dim,):
             raise ValueError(f"unexpected proprio shape for {sample_id}: {state.shape}")
         replacement_id = self.replacement_context[context_id]
-        return {
+        result = {
             "sample_id": sample_id,
             "task": str(row["task"]),
             "features": features,
@@ -473,6 +574,14 @@ class CachedLast32ValidationDataset(Dataset):
             "text_context": self._load_context(context_id),
             "replacement_text_context": self._load_context(replacement_id),
         }
+        if self.visual_feature_shuffle is not None:
+            source_id = self.visual_feature_shuffle[sample_id]
+            source_row = self.rows_by_id[source_id]
+            result["shuffled_features"] = self._load_features(
+                source_id, str(source_row["context_id"])
+            )
+            result["visual_shuffle_source_id"] = source_id
+        return result
 
 
 def _require_contract(
@@ -604,6 +713,10 @@ def move_batch(
         "replacement_text_context",
     ):
         result[key] = batch[key].to(device=device, dtype=dtype)
+    if "shuffled_features" in batch:
+        result["shuffled_features"] = batch["shuffled_features"].to(
+            device=device, dtype=dtype
+        )
     for key in ("action_is_pad", "text_mask", "replacement_text_mask"):
         result[key] = batch[key].to(device=device)
     return result
@@ -618,6 +731,7 @@ def sample_action_flow(
     inference_steps: int,
     initial_noise: torch.Tensor,
     replacement_language: bool = False,
+    replacement_visual: bool = False,
 ) -> torch.Tensor:
     actions = initial_noise.clone()
     timesteps, deltas = scheduler.build_inference_schedule(
@@ -627,12 +741,15 @@ def sample_action_flow(
         "replacement_text_context" if replacement_language else "text_context"
     )
     mask_key = "replacement_text_mask" if replacement_language else "text_mask"
+    feature_key = "shuffled_features" if replacement_visual else "features"
+    if replacement_visual and feature_key not in batch:
+        raise ValueError("replacement visual features are missing from evaluation batch")
     for timestep, delta in zip(timesteps, deltas, strict=True):
         velocity = model(
             actions,
             timestep.expand(actions.shape[0]),
             text_context=batch[text_key],
-            h3_features=batch["features"],
+            h3_features=batch[feature_key],
             proprio=batch["proprio"],
             text_mask=batch[mask_key],
         )
@@ -831,6 +948,42 @@ class LanguageSensitivityAccumulator:
         }
 
 
+DOMAIN_CHANGE_KEYS = (
+    "action_mse",
+    "action_mae",
+    "action_mse_per_dim",
+    "action_mae_per_dim",
+    "chunk_ade_l2",
+    "chunk_endpoint_l2",
+    "prediction_mean_per_dim",
+    "prediction_std_per_dim",
+    "prediction_std",
+)
+GRIPPER_CHANGE_KEYS = ("accuracy", "precision", "recall", "f1", "macro_f1")
+
+
+def metric_changes(
+    baseline: dict[str, Any], changed: dict[str, Any], keys: Iterable[str]
+) -> dict[str, Any]:
+    """Report changed-minus-baseline for pre-registered numeric metrics."""
+
+    result: dict[str, Any] = {}
+    for key in keys:
+        if key not in baseline or key not in changed:
+            raise KeyError(f"metric change key is missing: {key}")
+        before = baseline[key]
+        after = changed[key]
+        if isinstance(before, list) and isinstance(after, list):
+            if len(before) != len(after):
+                raise ValueError(f"metric list width differs for {key}")
+            result[key] = [float(a) - float(b) for b, a in zip(before, after)]
+        elif isinstance(before, (int, float)) and isinstance(after, (int, float)):
+            result[key] = float(after) - float(before)
+        else:
+            raise TypeError(f"metric change key is not numeric: {key}")
+    return result
+
+
 def _resolve_device_dtype(device_text: str) -> tuple[torch.device, torch.dtype]:
     device = torch.device(device_text)
     if device.type == "cuda" and not torch.cuda.is_available():
@@ -919,6 +1072,16 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
         limit=config.limit,
         sample_offset=config.sample_offset,
     )
+    visual_shuffle_mapping: dict[str, str] | None = None
+    visual_shuffle_contract: dict[str, Any] | None = None
+    if config.visual_feature_shuffle:
+        if config.samples_per_task != 2:
+            raise ValueError(
+                "visual feature shuffle requires --samples-per-task 2 over all 40 tasks"
+            )
+        visual_shuffle_mapping, visual_shuffle_contract = (
+            build_visual_feature_shuffle(selected_val_rows)
+        )
     hashes = {
         "source_manifest_sha256": sha256_file(source_manifest),
         "train_manifest_sha256": sha256_file(train_manifest),
@@ -943,6 +1106,7 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
         source_manifest_items=len(source_rows),
         model_spec=model_spec,
         action_horizon=action_horizon,
+        visual_feature_shuffle=visual_shuffle_mapping,
         limit=0,
         sample_offset=0,
     )
@@ -974,7 +1138,33 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
     physical_metrics = DomainMetricAccumulator(int(model_spec["action_dim"]))
     gripper = GripperSignAccumulator(int(model_spec["action_dim"]) - 1)
     language = LanguageSensitivityAccumulator() if config.language_sensitivity else None
+    shuffled_normalized_metrics = (
+        DomainMetricAccumulator(int(model_spec["action_dim"]))
+        if config.visual_feature_shuffle
+        else None
+    )
+    shuffled_physical_metrics = (
+        DomainMetricAccumulator(int(model_spec["action_dim"]))
+        if config.visual_feature_shuffle
+        else None
+    )
+    shuffled_gripper = (
+        GripperSignAccumulator(int(model_spec["action_dim"]) - 1)
+        if config.visual_feature_shuffle
+        else None
+    )
+    normalized_shuffle_delta = (
+        DomainMetricAccumulator(int(model_spec["action_dim"]))
+        if config.visual_feature_shuffle
+        else None
+    )
+    physical_shuffle_delta = (
+        DomainMetricAccumulator(int(model_spec["action_dim"]))
+        if config.visual_feature_shuffle
+        else None
+    )
     evaluated_sample_ids: list[str] = []
+    evaluated_visual_shuffle_pairs: list[str] = []
     evaluated_tasks: Counter[str] = Counter()
     with torch.no_grad():
         for batch_index, batch_cpu in enumerate(loader):
@@ -1003,6 +1193,58 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
                 batch["action_is_pad"],
             )
             gripper.update(prediction, batch["actions"], batch["action_is_pad"])
+            if config.visual_feature_shuffle:
+                if any(
+                    accumulator is None
+                    for accumulator in (
+                        shuffled_normalized_metrics,
+                        shuffled_physical_metrics,
+                        shuffled_gripper,
+                        normalized_shuffle_delta,
+                        physical_shuffle_delta,
+                    )
+                ):
+                    raise AssertionError("visual shuffle accumulators are missing")
+                shuffled_prediction = sample_action_flow(
+                    model,
+                    batch,
+                    scheduler,
+                    inference_steps=config.inference_steps,
+                    initial_noise=noise,
+                    replacement_visual=True,
+                )
+                shuffled_prediction_physical = denormalize_minmax_official(
+                    shuffled_prediction,
+                    dataset.action_min.to(device=device, dtype=dtype),
+                    dataset.action_max.to(device=device, dtype=dtype),
+                )
+                shuffled_normalized_metrics.update(
+                    shuffled_prediction, batch["actions"], batch["action_is_pad"]
+                )
+                shuffled_physical_metrics.update(
+                    shuffled_prediction_physical,
+                    batch["raw_actions"],
+                    batch["action_is_pad"],
+                )
+                shuffled_gripper.update(
+                    shuffled_prediction, batch["actions"], batch["action_is_pad"]
+                )
+                normalized_shuffle_delta.update(
+                    shuffled_prediction, prediction, batch["action_is_pad"]
+                )
+                physical_shuffle_delta.update(
+                    shuffled_prediction_physical,
+                    prediction_physical,
+                    batch["action_is_pad"],
+                )
+                evaluated_visual_shuffle_pairs.extend(
+                    f"{target_id}\0{source_id}"
+                    for target_id, source_id in zip(
+                        batch_cpu["sample_ids"],
+                        batch_cpu["visual_shuffle_source_ids"],
+                        strict=True,
+                    )
+                )
             if language is not None:
                 replacement = sample_action_flow(
                     model,
@@ -1018,6 +1260,60 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
 
     normalized_report = normalized_metrics.finalize()
     physical_report = physical_metrics.finalize()
+    gripper_report = gripper.finalize()
+    visual_shuffle_report: dict[str, Any] | None = None
+    if config.visual_feature_shuffle:
+        if visual_shuffle_contract is None or any(
+            accumulator is None
+            for accumulator in (
+                shuffled_normalized_metrics,
+                shuffled_physical_metrics,
+                shuffled_gripper,
+                normalized_shuffle_delta,
+                physical_shuffle_delta,
+            )
+        ):
+            raise AssertionError("visual shuffle report state is incomplete")
+        evaluated_mapping_sha256 = sha256_strings(evaluated_visual_shuffle_pairs)
+        if (
+            evaluated_mapping_sha256
+            != visual_shuffle_contract["ordered_mapping_sha256"]
+        ):
+            raise RuntimeError("evaluated visual shuffle differs from frozen mapping")
+        shuffled_normalized_report = shuffled_normalized_metrics.finalize()
+        shuffled_physical_report = shuffled_physical_metrics.finalize()
+        shuffled_gripper_report = shuffled_gripper.finalize()
+        visual_shuffle_report = {
+            "contract": visual_shuffle_contract,
+            "evaluated_mapping_sha256": evaluated_mapping_sha256,
+            "same_initial_action_noise": True,
+            "baseline_vs_shuffle_action_delta": {
+                "normalized_model_domain": normalized_shuffle_delta.finalize(),
+                "denormalized_official_minmax_clamp": physical_shuffle_delta.finalize(),
+            },
+            "shuffle_vs_target": {
+                "normalized_clip5_model_domain": shuffled_normalized_report,
+                "denormalized_official_minmax_clamp": shuffled_physical_report,
+                "gripper_sign": shuffled_gripper_report,
+            },
+            "metric_change_shuffle_minus_baseline": {
+                "normalized_clip5_model_domain": metric_changes(
+                    normalized_report,
+                    shuffled_normalized_report,
+                    DOMAIN_CHANGE_KEYS,
+                ),
+                "denormalized_official_minmax_clamp": metric_changes(
+                    physical_report,
+                    shuffled_physical_report,
+                    DOMAIN_CHANGE_KEYS,
+                ),
+                "gripper_sign": metric_changes(
+                    gripper_report,
+                    shuffled_gripper_report,
+                    GRIPPER_CHANGE_KEYS,
+                ),
+            },
+        }
     evaluated_ids_sha256 = sha256_strings(evaluated_sample_ids)
     if evaluated_ids_sha256 != selection["selected_ids_sha256"]:
         raise RuntimeError("evaluated sample order differs from frozen selection")
@@ -1075,14 +1371,16 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
             "batch_size": config.batch_size,
             "device": str(device),
             "dtype": str(dtype),
+            "visual_feature_shuffle": config.visual_feature_shuffle,
         },
         "metrics": {
             "normalized_clip5_model_domain": normalized_report,
             "denormalized_official_minmax_clamp": physical_report,
-            "gripper_sign": gripper.finalize(),
+            "gripper_sign": gripper_report,
             "language_replacement_sensitivity": (
                 None if language is None else language.finalize()
             ),
+            "visual_feature_shuffle": visual_shuffle_report,
         },
         "elapsed_seconds": time.perf_counter() - started,
     }
@@ -1114,6 +1412,14 @@ def parse_args() -> EvalConfig:
     parser.add_argument("--inference-steps", type=int, default=EXPECTED_INFERENCE_STEPS)
     parser.add_argument("--action-shift", type=float, default=EXPECTED_ACTION_SHIFT)
     parser.add_argument("--language-sensitivity", action="store_true")
+    parser.add_argument(
+        "--visual-feature-shuffle",
+        action="store_true",
+        help=(
+            "Run pre-registered E1 on the balanced 40x2 held-out selection: "
+            "same-noise baseline versus deterministic cross-sample H3 feature shuffle."
+        ),
+    )
     values = parser.parse_args()
     return EvalConfig(
         checkpoint=values.checkpoint,
@@ -1133,6 +1439,7 @@ def parse_args() -> EvalConfig:
         inference_steps=values.inference_steps,
         action_shift=values.action_shift,
         language_sensitivity=values.language_sensitivity,
+        visual_feature_shuffle=values.visual_feature_shuffle,
     )
 
 

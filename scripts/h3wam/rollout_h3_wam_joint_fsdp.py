@@ -97,6 +97,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixed-noise-seed", type=int)
     parser.add_argument("--action-median-window", type=int, default=1)
     parser.add_argument("--action-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--normalized-action-pre-clamp",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Clamp normalized policy actions to [-1,1] before denormalization. "
+            "Disabled by default for historical compatibility."
+        ),
+    )
     parser.add_argument("--history-adapter-scale", type=float, default=1.0)
     parser.add_argument(
         "--use-action-ensembler",
@@ -141,6 +150,9 @@ def server_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
         str(args.action_median_window),
         "--action-scale",
         str(args.action_scale),
+        "--normalized-action-pre-clamp"
+        if args.normalized_action_pre_clamp
+        else "--no-normalized-action-pre-clamp",
         "--history-adapter-scale",
         str(args.history_adapter_scale),
         "--event-stage-routing",
@@ -333,6 +345,7 @@ def main() -> None:
         "action_horizon": args.action_horizon,
         "flow_steps": args.flow_steps,
         "fixed_noise_seed": args.fixed_noise_seed,
+        "normalized_action_pre_clamp": args.normalized_action_pre_clamp,
         "use_action_ensembler": args.use_action_ensembler,
         "tasks": [],
     }

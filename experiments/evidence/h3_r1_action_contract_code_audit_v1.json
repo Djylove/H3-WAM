@@ -1,0 +1,132 @@
+{
+  "audit_id": "h3_r1_action_contract_code_audit_v1",
+  "date": "2026-08-14",
+  "classification": "controlled_ablation_design",
+  "scope": "R1 action-only-on-frozen-features; source-code audit only; no training launch",
+  "hypothesis": "R1 already matches the StarWAM/DreamWAM action-flow training contract; the first unresolved questions are whether ActionDiT uses sample-specific H3 visual conditioning and whether the rollout-only missing normalized-action pre-clamp hurts closed-loop control.",
+  "sources": [
+    {
+      "name": "StarWAM",
+      "url": "https://github.com/shaohua-pan/StarWAM.git",
+      "revision": "cd76d96f273f81e228a05f40f9697fe2514e2356",
+      "official": true,
+      "clean": true,
+      "openness": "TRAINABLE",
+      "role": "parent_method"
+    },
+    {
+      "name": "DreamWAM",
+      "url": "https://github.com/hustvl/DreamWAM.git",
+      "revision": "6e989facc0c452fd3488d75f60bc36411005558c",
+      "official": true,
+      "clean": true,
+      "openness": "TRAINABLE",
+      "role": "action_flow_and_carrier_cross_check"
+    },
+    {
+      "name": "MiniWorld",
+      "url": "https://github.com/zhao-yian/MiniWorld.git",
+      "revision": "e484206bbd4360ae56ed8abad51c83f2457ac092",
+      "official": true,
+      "clean": true,
+      "openness": "TRAINABLE",
+      "role": "world_model_only_not_action_policy"
+    }
+  ],
+  "parent_baseline": {
+    "experiment": "h3_int8_starwam_split_native_full30_v1",
+    "checkpoints": ["s1", "s50", "s100"],
+    "global_batch": 8,
+    "optimizer_steps": 100,
+    "training_samples": 800,
+    "unique_windows": 800,
+    "train_split_unique_windows": 250035,
+    "effective_epochs": 0.0031995520622672785,
+    "heldout": "40 tasks x 2 deterministic episode-disjoint windows; pending"
+  },
+  "matrix_summary": {
+    "exact": [
+      "7D x 32 action prediction",
+      "noise-minus-clean flow target",
+      "linear clean/noise mix",
+      "uniform shifted timestep distribution",
+      "action train and inference shift 5",
+      "bell-shaped per-sample importance weighting",
+      "action padding mask",
+      "Gaussian action initialization",
+      "10-step Euler integration",
+      "LIBERO minmax action/state contract",
+      "current proprio token",
+      "text-proprio-visual context order",
+      "bidirectional action self-attention"
+    ],
+    "equivalent": [
+      "H3 clean feature timestep 1 versus Wan clean feature timestep 0; both mean clean observation",
+      "seeded uniform timestep sampling versus unseeded uniform sampling; distribution is unchanged"
+    ],
+    "intentional_deviation": [
+      "H3/Qwen 5120-d text context replaces Wan/T5 4096-d context",
+      "frozen INT8 H3 layer49 cached tokens replace StarWAM's trainable Wan last-layer features",
+      "single final-layer feature context replaces DreamWAM's per-layer video K/V carrier",
+      "100-step 0.0032-epoch canary is far below upstream optimization budgets"
+    ],
+    "mismatch": [
+      "The offline evaluator follows StarWAM and clamps normalized action to [-1,1] before minmax denormalization, while the rollout helper denormalizes without pre-clamp and only clips after gripper conversion in physical action space."
+    ],
+    "not_applicable": [
+      "MiniWorld actions are video-prediction conditions rather than predicted action targets",
+      "MiniWorld diffusion-forcing timestep curriculum is a video objective",
+      "MiniWorld block-causal temporal mask is a video streaming mask, not an ActionDiT action-token mask"
+    ],
+    "unknown": [
+      "closed-loop success for split-native R1",
+      "magnitude of causal dependence on H3 visual features",
+      "closed-loop effect of the rollout normalized-action pre-clamp mismatch"
+    ]
+  },
+  "selected_experiments": [
+    {
+      "experiment_id": "r1_cond_visual_shuffle_v1",
+      "classification": "controlled_ablation",
+      "falsifiable_hypothesis": "If R1 uses sample-specific H3 visual information, a deterministic cross-sample visual-feature permutation with identical action noise will change predictions and worsen held-out action metrics.",
+      "single_variable": "Permute only h3_features across the frozen selected sample IDs using salt h3-r1-visual-shuffle-v1.",
+      "fixed": ["checkpoint", "selected sample ids", "text", "proprio", "target action", "initial action noise", "shift=5", "10 Euler steps"],
+      "training_samples": 0,
+      "gpu_count_now": 0,
+      "launch_command": null,
+      "implementation_status": "READY_NOT_LAUNCHED",
+      "implementation": "scripts/h3wam/evaluate_h3_int8_starwam_action.py --visual-feature-shuffle; requires --samples-per-task 2 and validates fixed 80-ID mapping plus same-noise paired reports.",
+      "tests": "29 passed, 2 subtests passed across evaluator, feature-action model and trainer tests",
+      "withheld_reason": "Do not start evaluation while the upstream agent is preparing the frozen baseline."
+    },
+    {
+      "experiment_id": "r1_rollout_preclip_v1",
+      "classification": "controlled_ablation",
+      "falsifiable_hypothesis": "If missing normalized-action pre-clamp amplifies out-of-domain flow samples, adding only StarWAM's clamp(-1,1) before rollout minmax denormalization will reduce abnormal or saturated actions and improve a fixed LIBERO canary.",
+      "single_variable": "Enable normalized_actions.clamp(-1,1) immediately before rollout minmax denormalization.",
+      "fixed": ["checkpoint", "observation", "text", "proprio", "policy and environment seeds", "replan", "action scale", "median window", "gripper binarization"],
+      "training_samples": 0,
+      "gpu_count_now": 0,
+      "launch_command": null,
+      "blocker": "Deployment helper needs an explicit recorded pre-clamp option and round-trip/unit tests before launch."
+    }
+  ],
+  "gates": {
+    "source_identity": "PASS",
+    "action_contract": "PASS",
+    "objective_contract": "PASS",
+    "training_and_offline_normalization_contract": "PASS",
+    "rollout_normalization_contract": "MISMATCH",
+    "conditioning_contract": "INTENTIONAL_DEVIATION",
+    "heldout_baseline": "PENDING",
+    "mechanism_signal": "PENDING",
+    "closed_loop_canary": "PENDING"
+  },
+  "decision": {
+    "training_permission": "NO_GO",
+    "effect_conclusion": "NOT_EVIDENCE_READY",
+    "rationale": "This is a no-GPU audit line. Complete the frozen held-out baseline, then run the paired visual-conditioning ablation and the rollout pre-clamp contract A/B before changing action-flow math or launching another training branch.",
+    "launch_command": null
+  },
+  "detail_document": "docs/H3_R1_ACTION_CONTRACT_CODE_AUDIT_2026-08-14.md"
+}

@@ -123,8 +123,131 @@ class BalancedValidationSelectionTest(unittest.TestCase):
                     )
 
 
+class VisualFeatureShuffleContractTest(unittest.TestCase):
+    @staticmethod
+    def _rows() -> list[dict]:
+        return [
+            {"id": f"sample_{index:03d}", "task": f"task_{index // 2:02d}"}
+            for index in range(MODULE.VISUAL_FEATURE_SHUFFLE_ITEMS)
+        ]
+
+    def test_fixed_salt_right_shift_is_order_independent_and_has_no_self_map(self):
+        rows = self._rows()
+        mapping, evidence = MODULE.build_visual_feature_shuffle(rows)
+        reversed_mapping, reversed_evidence = MODULE.build_visual_feature_shuffle(
+            list(reversed(rows))
+        )
+        self.assertEqual(mapping, reversed_mapping)
+        self.assertEqual(evidence["salt"], MODULE.VISUAL_FEATURE_SHUFFLE_SALT)
+        self.assertEqual(evidence["self_map_count"], 0)
+        self.assertEqual(set(mapping), set(mapping.values()))
+        self.assertTrue(all(target != source for target, source in mapping.items()))
+        ranked = sorted(
+            mapping,
+            key=lambda sample_id: MODULE._salted_sample_rank(
+                sample_id, MODULE.VISUAL_FEATURE_SHUFFLE_SALT
+            ),
+        )
+        self.assertEqual(mapping[ranked[0]], ranked[-1])
+        for index in range(1, len(ranked)):
+            self.assertEqual(mapping[ranked[index]], ranked[index - 1])
+        self.assertEqual(
+            evidence["mapping_sha256"],
+            MODULE.sha256_strings(
+                f"{sample_id}\0{mapping[sample_id]}"
+                for sample_id in sorted(mapping)
+            ),
+        )
+        self.assertEqual(
+            evidence["mapping_sha256"], reversed_evidence["mapping_sha256"]
+        )
+
+    def test_requires_exactly_frozen_eighty_unique_ids(self):
+        with self.assertRaisesRegex(ValueError, "exactly 80"):
+            MODULE.build_visual_feature_shuffle(self._rows()[:-1])
+        duplicated = self._rows()
+        duplicated[-1] = dict(duplicated[0])
+        with self.assertRaisesRegex(ValueError, "unique sample ids"):
+            MODULE.build_visual_feature_shuffle(duplicated)
+
+    def test_replacement_visual_changes_only_features_with_same_noise(self):
+        class RecordingModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.calls: list[dict[str, torch.Tensor]] = []
+
+            def forward(
+                self,
+                actions: torch.Tensor,
+                timestep: torch.Tensor,
+                *,
+                text_context: torch.Tensor,
+                h3_features: torch.Tensor,
+                proprio: torch.Tensor,
+                text_mask: torch.Tensor,
+            ) -> torch.Tensor:
+                self.calls.append(
+                    {
+                        "actions": actions.clone(),
+                        "timestep": timestep.clone(),
+                        "text_context": text_context.clone(),
+                        "h3_features": h3_features.clone(),
+                        "proprio": proprio.clone(),
+                        "text_mask": text_mask.clone(),
+                    }
+                )
+                return torch.zeros_like(actions)
+
+        batch = {
+            "features": torch.zeros(2, 1, 32, 4),
+            "shuffled_features": torch.ones(2, 1, 32, 4),
+            "text_context": torch.randn(2, 3, 6),
+            "text_mask": torch.ones(2, 3, dtype=torch.bool),
+            "proprio": torch.randn(2, 2),
+        }
+        initial_noise = torch.randn(2, 4, 3)
+        scheduler = MODULE.FlowMatchScheduler(num_train_timesteps=1000, shift=5.0)
+        baseline_model = RecordingModel()
+        shuffled_model = RecordingModel()
+        baseline = MODULE.sample_action_flow(
+            baseline_model,
+            batch,
+            scheduler,
+            inference_steps=2,
+            initial_noise=initial_noise,
+        )
+        shuffled = MODULE.sample_action_flow(
+            shuffled_model,
+            batch,
+            scheduler,
+            inference_steps=2,
+            initial_noise=initial_noise,
+            replacement_visual=True,
+        )
+        torch.testing.assert_close(baseline, initial_noise)
+        torch.testing.assert_close(shuffled, initial_noise)
+        self.assertEqual(len(baseline_model.calls), len(shuffled_model.calls))
+        for baseline_call, shuffled_call in zip(
+            baseline_model.calls, shuffled_model.calls, strict=True
+        ):
+            for key in (
+                "actions",
+                "timestep",
+                "text_context",
+                "proprio",
+                "text_mask",
+            ):
+                torch.testing.assert_close(baseline_call[key], shuffled_call[key])
+            torch.testing.assert_close(
+                baseline_call["h3_features"], batch["features"]
+            )
+            torch.testing.assert_close(
+                shuffled_call["h3_features"], batch["shuffled_features"]
+            )
+
+
 class SyntheticEvaluatorFixture:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, balanced_visual: bool = False) -> None:
         self.root = root
         self.cache_root = root / "cache"
         self.feature_subdir = "last32"
@@ -154,15 +277,39 @@ class SyntheticEvaluatorFixture:
             "feature_input_scale": 1.0,
         }
         self.action_horizon = 4
-        self.rows = [
-            self._row("train_a", 1, "task_a", "context_a"),
-            self._row("train_b", 2, "task_b", "context_b"),
-            self._row("val_a", 3, "task_a", "context_a"),
-            self._row("val_b", 4, "task_b", "context_b"),
-        ]
+        if balanced_visual:
+            self.train_rows = [
+                self._row(
+                    f"train_{task_index:02d}",
+                    task_index,
+                    f"task_{task_index:02d}",
+                    f"context_{task_index:02d}",
+                )
+                for task_index in range(MODULE.EXPECTED_BALANCED_VAL_TASKS)
+            ]
+            self.val_rows = [
+                self._row(
+                    f"val_{task_index:02d}_{sample_index}",
+                    100 + task_index * 2 + sample_index,
+                    f"task_{task_index:02d}",
+                    f"context_{task_index:02d}",
+                )
+                for task_index in range(MODULE.EXPECTED_BALANCED_VAL_TASKS)
+                for sample_index in range(2)
+            ]
+        else:
+            self.train_rows = [
+                self._row("train_a", 1, "task_a", "context_a"),
+                self._row("train_b", 2, "task_b", "context_b"),
+            ]
+            self.val_rows = [
+                self._row("val_a", 3, "task_a", "context_a"),
+                self._row("val_b", 4, "task_b", "context_b"),
+            ]
+        self.rows = [*self.train_rows, *self.val_rows]
         self._write_jsonl(self.source_manifest, self.rows)
-        self._write_jsonl(self.train_manifest, self.rows[:2])
-        self._write_jsonl(self.val_manifest, self.rows[2:])
+        self._write_jsonl(self.train_manifest, self.train_rows)
+        self._write_jsonl(self.val_manifest, self.val_rows)
         torch.save(
             {
                 "action_min": -torch.ones(3),
@@ -286,7 +433,7 @@ class SyntheticEvaluatorFixture:
             "source_manifest_sha256": MODULE.sha256_file(self.source_manifest),
             "source_manifest_items": len(self.rows),
             "split_manifest_sha256": MODULE.sha256_file(self.train_manifest),
-            "split_manifest_items": 2,
+            "split_manifest_items": len(self.train_rows),
             "stats_sha256": MODULE.sha256_file(self.cache_root / "stats.pt"),
             "action_normalization": "starwam_minmax_clip5",
             "state_normalization": "starwam_minmax_clip5",
@@ -347,6 +494,70 @@ class EvaluatorIntegrationTest(unittest.TestCase):
             self.assertTrue(sensitivity["same_noise"])
             self.assertTrue(fixture.output.is_file())
             self.assertEqual(json.loads(fixture.output.read_text()), report)
+
+    def test_visual_shuffle_runs_paired_same_noise_and_reports_metric_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = SyntheticEvaluatorFixture(
+                Path(directory), balanced_visual=True
+            )
+            report = MODULE.run_evaluation(
+                fixture.config(
+                    samples_per_task=2,
+                    batch_size=80,
+                    language_sensitivity=False,
+                    visual_feature_shuffle=True,
+                )
+            )
+            visual = report["metrics"]["visual_feature_shuffle"]
+            self.assertIsNotNone(visual)
+            contract = visual["contract"]
+            self.assertEqual(contract["salt"], MODULE.VISUAL_FEATURE_SHUFFLE_SALT)
+            self.assertEqual(contract["selected_items"], 80)
+            self.assertEqual(contract["self_map_count"], 0)
+            self.assertEqual(
+                visual["evaluated_mapping_sha256"],
+                contract["ordered_mapping_sha256"],
+            )
+            self.assertTrue(visual["same_initial_action_noise"])
+            self.assertEqual(
+                contract["fixed_conditioning"]["text"], "unchanged"
+            )
+            self.assertEqual(
+                contract["fixed_conditioning"]["proprio"], "unchanged"
+            )
+            mapping = contract["mapping"]
+            self.assertEqual(len(mapping), 80)
+            self.assertTrue(
+                all(
+                    item["target_sample_id"]
+                    != item["feature_source_sample_id"]
+                    for item in mapping
+                )
+            )
+            normalized_delta = visual["baseline_vs_shuffle_action_delta"][
+                "normalized_model_domain"
+            ]
+            self.assertEqual(normalized_delta["valid_steps"], 280)
+            self.assertGreater(normalized_delta["action_mse"], 0.0)
+            self.assertTrue(math.isfinite(normalized_delta["chunk_ade_l2"]))
+            metric_change = visual["metric_change_shuffle_minus_baseline"][
+                "normalized_clip5_model_domain"
+            ]
+            self.assertIn("action_mse", metric_change)
+            self.assertIn("action_mse_per_dim", metric_change)
+            self.assertEqual(len(metric_change["action_mse_per_dim"]), 3)
+            self.assertTrue(report["inference"]["visual_feature_shuffle"])
+
+    def test_visual_shuffle_rejects_non_balanced_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = SyntheticEvaluatorFixture(Path(directory))
+            with self.assertRaisesRegex(ValueError, "samples-per-task 2"):
+                MODULE.run_evaluation(
+                    fixture.config(
+                        language_sensitivity=False,
+                        visual_feature_shuffle=True,
+                    )
+                )
 
     def test_rejects_non_schema2_checkpoint_before_restore(self):
         with tempfile.TemporaryDirectory() as directory:

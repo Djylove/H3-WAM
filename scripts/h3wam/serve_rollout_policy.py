@@ -100,6 +100,15 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help="Scale the six LIBERO motion dimensions after denormalization.",
     )
+    parser.add_argument(
+        "--normalized-action-pre-clamp",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Clamp normalized action predictions to [-1,1] before "
+            "denormalization. Disabled by default for historical compatibility."
+        ),
+    )
     parser.add_argument("--sample-ensemble-size", type=int, default=1)
     parser.add_argument(
         "--h3-feature-ablation",
@@ -174,6 +183,7 @@ class BaselinePolicy(CachedContextMixin):
         self.binarize_gripper = args.binarize_gripper
         self.action_median_window = args.action_median_window
         self.action_scale = float(args.action_scale)
+        self.normalized_action_pre_clamp = bool(args.normalized_action_pre_clamp)
         if self.action_scale <= 0:
             raise ValueError("action-scale must be positive")
         self.sample_ensemble_size = args.sample_ensemble_size
@@ -233,12 +243,14 @@ class BaselinePolicy(CachedContextMixin):
                 ) * action_delta
         torch.cuda.synchronize(self.device)
         inference_seconds = time.perf_counter() - started
-        environment_actions = libero_environment_actions(
+        environment_actions, decode_report = libero_environment_actions(
             actions[0],
             self.stats["action_min"],
             self.stats["action_max"],
             binarize_gripper=self.binarize_gripper,
             temporal_median_window=self.action_median_window,
+            normalized_action_pre_clamp=self.normalized_action_pre_clamp,
+            return_decode_report=True,
         )
         environment_actions[:, :6] = np.clip(
             environment_actions[:, :6] * self.action_scale, -1.0, 1.0
@@ -249,6 +261,8 @@ class BaselinePolicy(CachedContextMixin):
             "environment_action_chunk": environment_actions.tolist(),
             "inference_seconds": inference_seconds,
             "peak_allocated_gib": torch.cuda.max_memory_allocated(self.device) / 2**30,
+            "normalized_action_pre_clamp": self.normalized_action_pre_clamp,
+            "normalized_action_decode": decode_report,
         }
 
 
@@ -325,6 +339,7 @@ class H3Policy(CachedContextMixin):
         self.horizon = args.action_horizon
         self.binarize_gripper = args.binarize_gripper
         self.action_median_window = args.action_median_window
+        self.normalized_action_pre_clamp = bool(args.normalized_action_pre_clamp)
         self.sample_ensemble_size = args.sample_ensemble_size
         self.context_mode = args.context_mode
         self._episode_contexts: dict[str, dict] = {}
@@ -514,12 +529,14 @@ class H3Policy(CachedContextMixin):
             normalized_actions = torch.stack(action_samples).mean(dim=0)
         torch.cuda.synchronize(self.device)
         sample_seconds = time.perf_counter() - sample_started
-        environment_actions = libero_environment_actions(
+        environment_actions, decode_report = libero_environment_actions(
             normalized_actions[0],
             self.stats["action_min"],
             self.stats["action_max"],
             binarize_gripper=self.binarize_gripper,
             temporal_median_window=self.action_median_window,
+            normalized_action_pre_clamp=self.normalized_action_pre_clamp,
+            return_decode_report=True,
         )
         return environment_actions, {
             "context_id": task_context["id"],
@@ -530,6 +547,8 @@ class H3Policy(CachedContextMixin):
             "inference_seconds": sample_seconds,
             "sample_ensemble_size": self.sample_ensemble_size,
             "peak_allocated_gib": torch.cuda.max_memory_allocated(self.device) / 2**30,
+            "normalized_action_pre_clamp": self.normalized_action_pre_clamp,
+            "normalized_action_decode": decode_report,
         }
 
 
@@ -842,6 +861,7 @@ class H3FeaturePolicy(CachedContextMixin):
         self.binarize_gripper = args.binarize_gripper
         self.action_median_window = args.action_median_window
         self.action_scale = float(args.action_scale)
+        self.normalized_action_pre_clamp = bool(args.normalized_action_pre_clamp)
         if self.action_scale <= 0:
             raise ValueError("action-scale must be positive")
         self.feature_ablation = args.h3_feature_ablation
@@ -1187,12 +1207,14 @@ class H3FeaturePolicy(CachedContextMixin):
             normalized_actions = action_output
         torch.cuda.synchronize(self.device)
         action_seconds = time.perf_counter() - action_started
-        environment_actions = libero_environment_actions(
+        environment_actions, decode_report = libero_environment_actions(
             normalized_actions[0],
             self.stats["action_min"],
             self.stats["action_max"],
             binarize_gripper=self.binarize_gripper,
             temporal_median_window=self.action_median_window,
+            normalized_action_pre_clamp=self.normalized_action_pre_clamp,
+            return_decode_report=True,
         )
         environment_actions[:, :6] = np.clip(
             environment_actions[:, :6] * self.action_scale, -1.0, 1.0
@@ -1228,6 +1250,8 @@ class H3FeaturePolicy(CachedContextMixin):
             "action_mode_probabilities": mode_probabilities,
             "action_mode_locked": self.lock_action_mode,
             "action_scale": self.action_scale,
+            "normalized_action_pre_clamp": self.normalized_action_pre_clamp,
+            "normalized_action_decode": decode_report,
             "action_head_ensemble_size": 1 + len(self.ensemble_members),
             "action_head_ensemble_mode": self.ensemble_mode,
             "action_head_switch_step": self.ensemble_switch_step,
@@ -1272,6 +1296,7 @@ def main() -> None:
                 "host": args.host,
                 "port": args.port,
                 "checkpoint": str(args.checkpoint.resolve()),
+                "normalized_action_pre_clamp": args.normalized_action_pre_clamp,
             },
             indent=2,
         )

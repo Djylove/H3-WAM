@@ -164,16 +164,40 @@ def libero_environment_actions(
     *,
     binarize_gripper: bool = False,
     temporal_median_window: int = 1,
-) -> np.ndarray:
+    normalized_action_pre_clamp: bool = False,
+    return_decode_report: bool = False,
+) -> np.ndarray | tuple[np.ndarray, dict[str, object]]:
     """Undo dataset normalization and convert its [0,1] gripper to LIBERO."""
 
+    normalized = normalized_actions.detach().cpu()
+    if normalized.ndim != 2 or normalized.shape[-1] != 7:
+        raise ValueError(f"expected actions [T, 7], got {tuple(normalized.shape)}")
+    finite = torch.isfinite(normalized)
+    out_of_bounds = finite & ((normalized < -1.0) | (normalized > 1.0))
+    finite_values = normalized[finite]
+    out_of_bounds_count = int(out_of_bounds.sum().item())
+    total_count = int(normalized.numel())
+    out_of_bounds_fraction = out_of_bounds_count / max(total_count, 1)
+    decode_report: dict[str, object] = {
+        "normalized_action_pre_clamp": bool(normalized_action_pre_clamp),
+        "normalized_action_pre_clamp_bounds": [-1.0, 1.0],
+        "normalized_action_out_of_bounds_count": out_of_bounds_count,
+        "normalized_action_total_count": total_count,
+        "normalized_action_out_of_bounds_fraction": out_of_bounds_fraction,
+        "normalized_action_clamped_fraction": (
+            out_of_bounds_fraction if normalized_action_pre_clamp else 0.0
+        ),
+        "normalized_action_max_abs_before_clamp": (
+            float(finite_values.abs().max().item()) if finite_values.numel() else None
+        ),
+    }
+    if normalized_action_pre_clamp:
+        normalized = normalized.clamp(-1.0, 1.0)
     actions = minmax_denormalize(
-        normalized_actions.detach().cpu(),
+        normalized,
         action_minimum.cpu(),
         action_maximum.cpu(),
     ).numpy()
-    if actions.ndim != 2 or actions.shape[-1] != 7:
-        raise ValueError(f"expected actions [T, 7], got {actions.shape}")
     # The FastWAM dataset uses 1=open and 0=close. LIBERO uses -1=open,
     # +1=close, hence -(2*x-1).
     actions[..., -1] = -(2.0 * actions[..., -1] - 1.0)
@@ -193,7 +217,10 @@ def libero_environment_actions(
         actions[..., -1] = np.sign(actions[..., -1])
     if not np.isfinite(actions).all():
         raise FloatingPointError("policy produced non-finite LIBERO actions")
-    return np.clip(actions, -1.0, 1.0).astype(np.float32)
+    environment_actions = np.clip(actions, -1.0, 1.0).astype(np.float32)
+    if return_decode_report:
+        return environment_actions, decode_report
+    return environment_actions
 
 
 def libero_dataset_actions(

@@ -120,6 +120,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--action-median-window", type=int, default=1)
     parser.add_argument("--action-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--normalized-action-pre-clamp",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Clamp normalized policy actions to [-1,1] before denormalization. "
+            "Disabled by default for historical compatibility."
+        ),
+    )
     parser.add_argument("--sample-ensemble-size", type=int, default=1)
     parser.add_argument(
         "--h3-feature-ablation", choices=("none", "zero"), default="none"
@@ -181,6 +190,9 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
         str(args.action_median_window),
         "--action-scale",
         str(args.action_scale),
+        "--normalized-action-pre-clamp"
+        if args.normalized_action_pre_clamp
+        else "--no-normalized-action-pre-clamp",
         "--sample-ensemble-size",
         str(args.sample_ensemble_size),
         "--h3-feature-ablation",
@@ -421,6 +433,9 @@ def run_episode(
     peak_allocated_gib = 0.0
     saturation_fractions = []
     mean_action_magnitudes = []
+    normalized_action_out_of_bounds_fractions = []
+    normalized_action_max_abs_before_clamp = []
+    normalized_action_pre_clamp = None
     context_id = None
     first_environment_action = None
     first_environment_action_chunk = None
@@ -511,6 +526,20 @@ def run_episode(
         )
         saturation_fractions.append(float((np.abs(actions[..., :6]) >= 0.999).mean()))
         mean_action_magnitudes.append(float(np.abs(actions[..., :6]).mean()))
+        normalized_action_pre_clamp = bool(
+            metadata.get("normalized_action_pre_clamp", False)
+        )
+        decode_report = metadata.get("normalized_action_decode") or {}
+        normalized_action_out_of_bounds_fractions.append(
+            float(decode_report.get("normalized_action_out_of_bounds_fraction", 0.0))
+        )
+        max_abs_before_clamp = decode_report.get(
+            "normalized_action_max_abs_before_clamp"
+        )
+        if max_abs_before_clamp is not None:
+            normalized_action_max_abs_before_clamp.append(
+                float(max_abs_before_clamp)
+            )
         replans += 1
         if action_ensembler is not None:
             action_ensembler.add_actions(actions, step)
@@ -581,6 +610,14 @@ def run_episode(
             / max(len(saturation_fractions), 1),
             "mean_action_magnitude": sum(mean_action_magnitudes)
             / max(len(mean_action_magnitudes), 1),
+            "normalized_action_pre_clamp": bool(normalized_action_pre_clamp),
+            "mean_normalized_action_out_of_bounds_fraction": sum(
+                normalized_action_out_of_bounds_fractions
+            )
+            / max(len(normalized_action_out_of_bounds_fractions), 1),
+            "max_normalized_action_abs_before_clamp": max(
+                normalized_action_max_abs_before_clamp, default=0.0
+            ),
             "use_action_ensembler": use_action_ensembler,
             "mean_temporal_ensemble_predictions": sum(ensemble_prediction_counts)
             / max(len(ensemble_prediction_counts), 1),
@@ -665,6 +702,7 @@ def main() -> None:
         "fixed_noise_seed": args.fixed_noise_seed,
         "action_median_window": args.action_median_window,
         "action_scale": args.action_scale,
+        "normalized_action_pre_clamp": args.normalized_action_pre_clamp,
         "sample_ensemble_size": args.sample_ensemble_size,
         "h3_feature_ablation": args.h3_feature_ablation,
         "h3_video_lora_checkpoint": (

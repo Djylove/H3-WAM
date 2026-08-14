@@ -118,6 +118,69 @@ class H3WAMDeploymentTest(unittest.TestCase):
         )
         self.assertEqual(abs(float(binary[0, -1])), 1.0)
 
+    def test_normalized_action_pre_clamp_round_trip_for_in_range_actions(self):
+        minimum = torch.tensor([-0.5] * 6 + [0.0])
+        maximum = torch.tensor([0.5] * 6 + [1.0])
+        normalized = torch.tensor(
+            [[-0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75]],
+            dtype=torch.float32,
+        )
+        environment, report = libero_environment_actions(
+            normalized,
+            minimum,
+            maximum,
+            normalized_action_pre_clamp=True,
+            return_decode_report=True,
+        )
+        dataset = libero_dataset_actions(environment)
+        round_trip = 2.0 * (dataset - minimum) / (maximum - minimum) - 1.0
+
+        torch.testing.assert_close(round_trip, normalized)
+        self.assertTrue(report["normalized_action_pre_clamp"])
+        self.assertEqual(report["normalized_action_out_of_bounds_count"], 0)
+        self.assertEqual(report["normalized_action_clamped_fraction"], 0.0)
+
+    def test_normalized_action_pre_clamp_changes_out_of_range_decode(self):
+        minimum = torch.tensor([-0.2] * 6 + [0.0])
+        maximum = torch.tensor([0.2] * 6 + [1.0])
+        normalized = torch.tensor([[2.0, 0, 0, 0, 0, 0, 0]])
+
+        legacy = libero_environment_actions(normalized, minimum, maximum)
+        clamped, report = libero_environment_actions(
+            normalized,
+            minimum,
+            maximum,
+            normalized_action_pre_clamp=True,
+            return_decode_report=True,
+        )
+
+        self.assertAlmostEqual(float(legacy[0, 0]), 0.4)
+        self.assertAlmostEqual(float(clamped[0, 0]), 0.2)
+        self.assertEqual(report["normalized_action_out_of_bounds_count"], 1)
+        self.assertAlmostEqual(
+            report["normalized_action_out_of_bounds_fraction"], 1.0 / 7.0
+        )
+        self.assertAlmostEqual(report["normalized_action_max_abs_before_clamp"], 2.0)
+
+    def test_normalized_action_pre_clamp_defaults_to_legacy_behavior(self):
+        minimum = torch.tensor([-0.2] * 6 + [0.0])
+        maximum = torch.tensor([0.2] * 6 + [1.0])
+        normalized = torch.tensor([[1.5, -1.5, 0, 0, 0, 0, 0]])
+
+        implicit = libero_environment_actions(normalized, minimum, maximum)
+        explicit, report = libero_environment_actions(
+            normalized,
+            minimum,
+            maximum,
+            normalized_action_pre_clamp=False,
+            return_decode_report=True,
+        )
+
+        np.testing.assert_array_equal(implicit, explicit)
+        self.assertFalse(report["normalized_action_pre_clamp"])
+        self.assertEqual(report["normalized_action_clamped_fraction"], 0.0)
+        self.assertEqual(report["normalized_action_out_of_bounds_count"], 2)
+
     def test_dataset_action_inverts_environment_gripper(self):
         opened = libero_dataset_action(np.array([0, 0, 0, 0, 0, 0, -1]))
         closed = libero_dataset_action(np.array([0, 0, 0, 0, 0, 0, 1]))
