@@ -1,0 +1,47 @@
+{
+  "event": "h3_int8_dual_cache_parity",
+  "date": "2026-08-14",
+  "classification": "cache_infrastructure_mechanical_evidence",
+  "effectiveness": "NOT_EVIDENCE_READY",
+  "code_identity": {
+    "commit": "3b858cc",
+    "script": "scripts/h3wam/precompute_h3_int8_features.py",
+    "script_sha256": "a7744d70d4064403d5d43fc1e20a09d29d6d749381f96a4657ff801d6f87cd36",
+    "deployed_sha256_match": true
+  },
+  "hypothesis": "One frozen INT8-H3 forward can emit both DreamWAM projected K/V and StarWAM pooled layer49 hidden features without changing either tensor relative to its single-output path.",
+  "sample": {
+    "id": "libero_10_ep000347_s000000",
+    "manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_all.jsonl",
+    "manifest_sha256": "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9"
+  },
+  "parity": {
+    "starwam_feature_shape": [1, 32, 5376],
+    "starwam_feature_layers": [49],
+    "feature_dual_vs_feature_only_bitwise_equal": true,
+    "feature_max_abs": 0.0,
+    "dreamwam_kv_layers": [9, 19, 29, 39, 49],
+    "kv_dual_vs_existing_production_bitwise_equal": true,
+    "kv_max_abs": 0.0
+  },
+  "tests": {
+    "command": "/home/ubuntu/miniconda3/envs/RoboDojo/bin/python3.11 -m unittest tests.test_h3_int8_precompute",
+    "result": "7 passed"
+  },
+  "production_switch": {
+    "nodes": 4,
+    "workers": 32,
+    "existing_kv_files_preserved_at_switch": 30005,
+    "dreamwam_output": "/mnt/h3-wam/data/v7_dense_h3_cache/h3_int8_dreamwam_kv_5x32_dense_v1",
+    "starwam_output": "/mnt/h3-wam/data/v7_dense_h3_cache/h3_int8_starwam_last32_dense_v1",
+    "resume_semantics": "A row is skipped only when both outputs exist. Existing K/V is never overwritten; missing StarWAM feature is filled from one new forward. Future rows write both outputs atomically.",
+    "initial_30s_starwam_rate_per_second": 9.16,
+    "error_logs": 0,
+    "active_gpu_processes": 32
+  },
+  "decision": {
+    "status": "MECHANICAL_PASS",
+    "supported": "C01/C02 DreamWAM carrier caches and C03 StarWAM dense feature caches can share one H3 preprocessing pass with exact tensor parity.",
+    "unsupported": "This does not compare action policies or establish any LIBERO effectiveness."
+  }
+}

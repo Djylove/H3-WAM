@@ -51,7 +51,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C00 | incumbent | D0 sparse s963 | DreamWAM + local H3 adapter | 无 | 历史稀疏基线 | offline pass / rollout `0/2` | NOT_EVIDENCE_READY |
 | C01 | carrier | D0 dense | DreamWAM | C00 | 5 windows/episode → dense starts | cache running | GO_CANARY |
 | C02 | carrier | D dense five-layer K/V | DreamWAM | C01 fresh-init twin | layer49 repeat → aligned layers 9/19/29/39/49 | cache running | GO_CANARY after full audit |
-| C03 | carrier/action | StarWAM dense full30 | StarWAM | C01 | official last-feature-conditioned 30-layer ActionDiT | source pass；dense cache/contract pending | NO_GO until dossier |
+| C03 | carrier/action | StarWAM dense full30 | StarWAM | C01 | official last-feature-conditioned 30-layer ActionDiT | source pass；dual H3 cache running；dossier pending | NO_GO until dossier |
 | C04 | action/co-training | FastWAM-H3 | FastWAM | fixed FastWAM Wan baseline + C03 interface baseline | Wan video expert → H3 while preserving official action path | source pass；adapter incomplete | PROBE_ONLY |
 | C05 | carrier | ImageWAM-H3 target image | ImageWAM | carrier winner | video K/V → H3 target-image/edit representation | source pass；adapter incomplete | PROBE_ONLY |
 | C06 | carrier/action | DiT4DiT-H3 | DiT4DiT | carrier winner | selected intermediate H3 features + official ActionDiT | source pass；dirty vendor audit pending | PROBE_ONLY |
@@ -69,6 +69,8 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 ## 第一轮赛程与资源顺序
 
 1. 完成 C01/C02 共用的 v7 五层 K/V cache 全量审计；缓存未完成前不启动正式训练。
+   同一次 H3 forward 还会写 C03 所需的 layer49 pooled feature；双输出与两条独立路径均已逐 bit 对齐，
+   证据见 `experiments/evidence/h3_int8_dual_cache_parity_v1.json`。
 2. C01 与 C02 使用同初始化、同 dense 样本和同 s963 预算配对；立即做 balanced-80 和固定 2-task
    rollout。两者只是 carrier 赛道选拔。
 3. 同期只用 CPU/小 GPU 完成 C03/C04/C05 的 SOURCE/MECHANICAL dossier，不等待 C01/C02 结果才读代码。
