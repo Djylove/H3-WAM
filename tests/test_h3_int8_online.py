@@ -119,14 +119,21 @@ class H3Int8OnlineFeatureProviderTest(unittest.TestCase):
         self.assertEqual(int(call["capture_indices"].numel()), 98)
         torch.testing.assert_close(call["token_tags"][:3], torch.tensor([1, 0, 1]))
 
-    def test_rejects_raw_or_misaligned_context(self):
+    def test_accepts_raw_or_refined_and_rejects_misaligned_context(self):
         provider = H3Int8OnlineFeatureProvider(
             _FakeBackbone(), H3Int8OnlineFeatureContract(), layout_functions=FAKE_LAYOUT
         )
         first = torch.zeros(1, 24, 1, 14, 28)
-        with self.assertRaisesRegex(ValueError, "refined H3 width 5376"):
-            provider(first, torch.zeros(1, 3, 5120), torch.ones(3, dtype=torch.long))
-        with self.assertRaisesRegex(ValueError, "cover every refined context row"):
+        raw = provider(
+            first, torch.zeros(1, 3, 5120), torch.ones(3, dtype=torch.long)
+        )
+        refined = provider(
+            first, torch.zeros(1, 3, 5376), torch.ones(3, dtype=torch.long)
+        )
+        self.assertEqual(raw.shape, refined.shape)
+        with self.assertRaisesRegex(ValueError, "raw 5120 or refined 5376"):
+            provider(first, torch.zeros(1, 3, 5119), torch.ones(3, dtype=torch.long))
+        with self.assertRaisesRegex(ValueError, "cover every encoder context row"):
             provider(first, torch.zeros(1, 3, 5376), torch.ones(2, dtype=torch.long))
 
     def test_standalone_vae_recipe_is_seeded_and_cpu_float32(self):

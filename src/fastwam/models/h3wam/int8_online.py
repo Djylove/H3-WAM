@@ -117,17 +117,17 @@ class H3Int8OnlineFeatureProvider(nn.Module):
     def forward(
         self,
         first_frame_latents: torch.Tensor,
-        refined_context: torch.Tensor,
+        encoder_context: torch.Tensor,
         text_token_tags: torch.Tensor,
     ) -> torch.Tensor:
         if tuple(first_frame_latents.shape[:3]) != (1, 24, 1):
             raise ValueError("first-frame latents must be [1,24,1,H,W]")
-        if refined_context.ndim != 3 or refined_context.shape[0] != 1:
-            raise ValueError("refined context must be [1,tokens,hidden]")
-        if refined_context.shape[-1] != 5376:
-            raise ValueError("historical online provider requires refined H3 width 5376")
-        if text_token_tags.ndim != 1 or text_token_tags.numel() != refined_context.shape[1]:
-            raise ValueError("text token tags must cover every refined context row")
+        if encoder_context.ndim != 3 or encoder_context.shape[0] != 1:
+            raise ValueError("encoder context must be [1,tokens,hidden]")
+        if encoder_context.shape[-1] not in (5120, 5376):
+            raise ValueError("H3 encoder context width must be raw 5120 or refined 5376")
+        if text_token_tags.ndim != 1 or text_token_tags.numel() != encoder_context.shape[1]:
+            raise ValueError("text token tags must cover every encoder context row")
 
         layout_functions = self.layout_functions or _official_layout_functions()
         device = first_frame_latents.device
@@ -189,7 +189,9 @@ class H3Int8OnlineFeatureProvider(nn.Module):
             audio_hidden_states=audio_rows,
             # Match the standalone offline cache path exactly: the stored
             # refined values are BF16, then promoted to FP32 before packing.
-            encoder_hidden_states=refined_context.to(
+            # Raw 5120-wide Qwen values are accepted too; the backbone applies
+            # its pinned condition projection and token refiner exactly once.
+            encoder_hidden_states=encoder_context.to(
                 device=device, dtype=torch.float32
             ),
             timestep=unique_timesteps.to(device),
