@@ -115,6 +115,19 @@ WAM 项目的方法边界见 [references/method-routing.md](references/method-ro
 
 若上述任何一项未知，不进入长训练。
 
+#### State-coverage gate
+
+不能用总 window 数掩盖每条轨迹的稀疏性。训练动作策略或准备闭环前，额外报告每 episode window 数的
+min/median/mean/max、相邻 start gap、首末 start span，以及 grasp/contact/release/success 前后的覆盖；
+至少展示一条完整 episode 的所有 start，不只展示全局直方图。把“每 episode 固定 K 个均匀快照”标为
+`sparse_state_coverage`，即使 episode/task 数很多也不能称为 dense。
+
+稀疏子集可以用于架构机械门或同数据的 representation/carrier 消融，但不能单独放行闭环 benchmark。
+进入策略规模化训练前，必须使用每个合法 start、或给出 stride 足以覆盖动作 horizon 与接触阶段的等价性
+证据。若稀疏模型离线改善而闭环无接触/目标错误，优先固定架构和推理合同，将数据密度作为唯一变量：
+先保存与稀疏父模型相同见样本数/steps 的 dense checkpoint，再继续预注册的 dense effective epoch；
+不能同时改模型、LR 或 sampler 来模糊归因。
+
 ### 6. 验证架构与梯度路径
 
 不能只看模块名称。执行最小测试证明：
@@ -231,6 +244,8 @@ global batch、采样器合同和总见样本数并明确记录差异。
 - evaluator 与 rollout 的 normalization、pre-clamp、gripper 和 horizon 必须逐项相同或做 A/B；
 - 依赖、PythonPath、device-current 等启动失败单列 infra，不计作 policy trial；
 - failure-aware 训练必须保存可复现的失败 observation/action/predicate/onset，不能只用 mp4 或把失败动作当 expert imitation。
+- “每 episode 五个均匀 start”可用于载体消融，不等于接触策略的 dense 训练；总样本数和 episode 数都
+  不能替代 per-episode state/contact coverage 审计。
 
 ## 输出要求
 
