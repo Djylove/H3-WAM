@@ -27,7 +27,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--policy",
-        choices=("h3", "h3_feature", "h3_feature_int8", "baseline"),
+        choices=(
+            "h3",
+            "h3_feature",
+            "h3_feature_int8",
+            "h3_starwam_int8",
+            "baseline",
+        ),
         required=True,
     )
     parser.add_argument("--checkpoint", type=Path, required=True)
@@ -91,6 +97,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--comfy-root", type=Path)
     parser.add_argument("--h3-checkpoint", type=Path)
     parser.add_argument("--h3-model", type=Path)
+    parser.add_argument(
+        "--starwam-source-manifest",
+        type=Path,
+        help="Frozen full cache manifest used to resolve R1 task text contexts.",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--target-latent-frames", type=int, default=12)
     parser.add_argument("--h3-feature-audio-horizon", type=int)
@@ -227,7 +238,7 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
             if args.text_encoder is None:
                 raise ValueError("online context modes require --text-encoder")
             command.extend(("--text-encoder", str(args.text_encoder.resolve())))
-    elif args.policy == "h3_feature_int8":
+    elif args.policy in ("h3_feature_int8", "h3_starwam_int8"):
         for flag, value in (
             ("--h3-checkpoint", args.h3_checkpoint),
             ("--h3-model", args.h3_model),
@@ -243,6 +254,17 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                 str(args.target_latent_frames),
             )
         )
+        if args.policy == "h3_starwam_int8":
+            if args.starwam_source_manifest is None:
+                raise ValueError(
+                    "h3_starwam_int8 rollout requires --starwam-source-manifest"
+                )
+            command.extend(
+                (
+                    "--starwam-source-manifest",
+                    str(args.starwam_source_manifest.resolve()),
+                )
+            )
         if args.h3_feature_audio_horizon is not None:
             command.extend(
                 (

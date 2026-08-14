@@ -23,7 +23,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--policy",
-        choices=("h3", "h3_feature", "h3_feature_int8", "baseline"),
+        choices=(
+            "h3",
+            "h3_feature",
+            "h3_feature_int8",
+            "h3_starwam_int8",
+            "baseline",
+        ),
         required=True,
     )
     parser.add_argument("--checkpoint", type=Path, required=True)
@@ -63,6 +69,11 @@ def parse_args() -> argparse.Namespace:
         "--h3-model",
         type=Path,
         help="Official MiniMax-H3 model root; INT8 live rollout loads its VAE.",
+    )
+    parser.add_argument(
+        "--starwam-source-manifest",
+        type=Path,
+        help="Frozen full cache manifest used to resolve R1 task text contexts.",
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--target-latent-frames", type=int, default=12)
@@ -1267,6 +1278,312 @@ class H3FeaturePolicy(CachedContextMixin):
         }
 
 
+class H3StarWAMInt8Policy:
+    """Online LIBERO adapter for schema-2 H3 + pinned StarWAM checkpoints.
+
+    This is deliberately separate from ``H3FeaturePolicy``: the latter restores
+    the historical shallow ``h3_feature_action`` schema, while R1 restores the
+    byte-pinned 30-layer StarWAM ActionDiT and its shift-5 Euler sampler.
+    """
+
+    def __init__(self, args: argparse.Namespace) -> None:
+        if args.h3_checkpoint is None or args.h3_model is None:
+            raise ValueError(
+                "h3_starwam_int8 requires --h3-checkpoint and --h3-model"
+            )
+        if args.starwam_source_manifest is None:
+            raise ValueError(
+                "h3_starwam_int8 requires --starwam-source-manifest"
+            )
+        if args.context_mode != "cached":
+            raise ValueError("h3_starwam_int8 requires cached text contexts")
+        if args.model_evaluations != 10:
+            raise ValueError("R1 StarWAM rollout is fixed to 10 Euler steps")
+        if args.h3_video_lora_checkpoint is not None or args.h3_tail_delta is not None:
+            raise ValueError("R1 standalone INT8 rollout does not accept H3 deltas")
+
+        self.device = torch.device(args.device)
+        if self.device.type != "cuda":
+            raise ValueError("h3_starwam_int8 requires a CUDA device")
+        torch.cuda.set_device(self.device)
+        self.dtype = torch.bfloat16
+        self.cache_root = args.cache_root.resolve()
+        self.source_manifest = args.starwam_source_manifest.resolve()
+        self.horizon = int(args.action_horizon)
+        self.inference_steps = int(args.model_evaluations)
+        self.binarize_gripper = bool(args.binarize_gripper)
+        self.action_median_window = int(args.action_median_window)
+        self.action_scale = float(args.action_scale)
+        self.normalized_action_pre_clamp = bool(
+            args.normalized_action_pre_clamp
+        )
+        self.sample_ensemble_size = int(args.sample_ensemble_size)
+        self.feature_ablation = str(args.h3_feature_ablation)
+        if self.action_scale <= 0:
+            raise ValueError("action-scale must be positive")
+
+        payload = torch.load(
+            args.checkpoint.resolve(), map_location="cpu", weights_only=True
+        )
+        if payload.get("schema_version") != 2:
+            raise ValueError("R1 rollout requires a schema-2 checkpoint")
+        contract = payload.get("contract")
+        if not isinstance(contract, dict):
+            raise ValueError("R1 checkpoint contract is missing")
+        if contract.get("feature_strategy") != "starwam_adaptive_avg_pool1d_v1":
+            raise ValueError("R1 checkpoint feature strategy mismatch")
+        if tuple(contract.get("feature_layers", ())) != (49,):
+            raise ValueError("R1 rollout currently requires last32 layer 49")
+        if int(contract.get("feature_tokens", -1)) != 32:
+            raise ValueError("R1 rollout requires 32 pooled visual tokens")
+        if float(contract.get("feature_timestep", -1.0)) != 1.0:
+            raise ValueError("R1 H3 feature timestep must be 1.0")
+        if float(contract.get("action_shift", -1.0)) != 5.0:
+            raise ValueError("R1 action shift must be 5")
+        trained_horizon = int(contract.get("action_horizon", -1))
+        if self.horizon <= 0 or self.horizon > trained_horizon:
+            raise ValueError("requested horizon exceeds the R1 training horizon")
+        model_spec = contract.get("model_spec")
+        if not isinstance(model_spec, dict):
+            raise ValueError("R1 checkpoint model_spec is missing")
+
+        from fastwam.models.h3wam import (
+            H3Int8FeatureBackbone,
+            H3Int8OnlineFeatureContract,
+            H3Int8OnlineFeatureProvider,
+            H3StarWAMFeatureActionPolicy,
+            encode_h3_vae_condition_standalone,
+        )
+        from diffusers import AutoencoderKLMiniMaxH3
+
+        self.action_model = H3StarWAMFeatureActionPolicy(
+            action_dim=int(model_spec["action_dim"]),
+            proprio_dim=int(model_spec["proprio_dim"]),
+            h3_feature_dim=int(model_spec["h3_feature_dim"]),
+            context_dim=int(model_spec["context_dim"]),
+            hidden_dim=int(model_spec["hidden_dim"]),
+            ffn_dim=int(model_spec["ffn_dim"]),
+            num_heads=int(model_spec["num_heads"]),
+            attn_head_dim=int(model_spec["attn_head_dim"]),
+            num_layers=int(model_spec["action_layers"]),
+            freq_dim=int(model_spec["freq_dim"]),
+            max_seq_len=int(model_spec["max_seq_len"]),
+            use_gradient_checkpointing=bool(model_spec["gradient_checkpointing"]),
+            include_feature_timestep=bool(model_spec["include_feature_timestep"]),
+            feature_timestep=float(model_spec["feature_timestep"]),
+            feature_input_scale=float(model_spec["feature_input_scale"]),
+        ).to(device=self.device, dtype=self.dtype)
+        self.action_model.load_state_dict(payload["model"], strict=True)
+        self.action_model.eval()
+        from starwam.modules.scheduler import FlowMatchScheduler
+
+        self.flow_scheduler = FlowMatchScheduler(
+            num_train_timesteps=1000, shift=5.0
+        )
+        self.h3_model = H3Int8FeatureBackbone.from_checkpoint(
+            args.h3_checkpoint.resolve()
+        ).to(self.device)
+        self.h3_model.requires_grad_(False).eval()
+        feature_audio_horizon = (
+            self.horizon
+            if args.h3_feature_audio_horizon is None
+            else int(args.h3_feature_audio_horizon)
+        )
+        self.int8_feature_provider = H3Int8OnlineFeatureProvider(
+            self.h3_model,
+            H3Int8OnlineFeatureContract(
+                layers=(49,),
+                action_horizon=feature_audio_horizon,
+                target_latent_frames=int(args.target_latent_frames),
+                video_timestep=0.0,
+                condition_video_timestep=0.999,
+                capture_compatibility="comfy_alias_v1",
+            ),
+        )
+        self.video_vae = AutoencoderKLMiniMaxH3.from_pretrained(
+            args.h3_model.resolve(),
+            subfolder="vae",
+            torch_dtype=torch.float32,
+            low_cpu_mem_usage=True,
+        ).to(self.device).eval()
+        self._encode_vae_condition = encode_h3_vae_condition_standalone
+
+        self.stats = torch.load(
+            self.cache_root / "stats.pt", map_location="cpu", weights_only=False
+        )
+        if tuple(self.stats["action_min"].shape) != (7,) or tuple(
+            self.stats["state_min"].shape
+        ) != (8,):
+            raise ValueError("R1 cache stats have an unexpected action/state shape")
+        self.task_context_ids = self._load_task_context_ids()
+        self._contexts: dict[str, dict] = {}
+        self.completed_steps = int(payload["completed_steps"])
+
+    def _load_task_context_ids(self) -> dict[str, str]:
+        task_context_ids: dict[str, set[str]] = {}
+        with self.source_manifest.open(encoding="utf-8") as handle:
+            for line in handle:
+                row = json.loads(line)
+                task_context_ids.setdefault(str(row["task"]), set()).add(
+                    str(row["context_id"])
+                )
+        ambiguous = {
+            task: sorted(context_ids)
+            for task, context_ids in task_context_ids.items()
+            if len(context_ids) != 1
+        }
+        if ambiguous:
+            raise ValueError(f"R1 task has ambiguous context IDs: {ambiguous}")
+        if not task_context_ids:
+            raise ValueError("R1 source manifest is empty")
+        return {
+            task: next(iter(context_ids))
+            for task, context_ids in task_context_ids.items()
+        }
+
+    def _task_context(self, task: str) -> dict:
+        if task not in self.task_context_ids:
+            raise ValueError(f"task is absent from the R1 source manifest: {task!r}")
+        if task not in self._contexts:
+            context_id = self.task_context_ids[task]
+            payload = torch.load(
+                self.cache_root / "contexts" / f"{context_id}.pt",
+                map_location="cpu",
+                weights_only=False,
+            )
+            if payload.get("text_only") is not True:
+                raise ValueError(f"R1 context is not text-only: {context_id}")
+            context = payload["context"]
+            if context.ndim != 3 or context.shape[0] != 1:
+                raise ValueError(f"unexpected R1 context shape: {context.shape}")
+            token_tags = payload.get("token_tags")
+            if token_tags is None or torch.any(token_tags != 1):
+                raise ValueError(f"R1 context has non-text token tags: {context_id}")
+            self._contexts[task] = {
+                "id": context_id,
+                "context": context.to(device=self.device, dtype=self.dtype),
+                "token_tags": token_tags.to(self.device),
+            }
+        return self._contexts[task]
+
+    @torch.inference_mode()
+    def predict(self, request: dict) -> tuple[np.ndarray, dict]:
+        from fastwam.models.h3wam import (
+            libero_environment_actions,
+            libero_observation_state,
+            minmax_normalize,
+            preprocess_libero_cameras,
+        )
+
+        task_context = self._task_context(str(request["task"]))
+        pixels = preprocess_libero_cameras(
+            request["agentview_image"], request["wristview_image"]
+        )
+        video = (
+            pixels.mul(255.0)
+            .round()
+            .to(torch.uint8)
+            .permute(0, 3, 1, 2)
+            .unsqueeze(2)
+            .to(self.device)
+        )
+        vae_started = time.perf_counter()
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            first_frame = self._encode_vae_condition(
+                self.video_vae,
+                video,
+                (0.485, 0.456, 0.406),
+                (0.229, 0.224, 0.225),
+            ).to(device=self.device, dtype=torch.float32)
+        torch.cuda.synchronize(self.device)
+        vae_seconds = time.perf_counter() - vae_started
+
+        h3_started = time.perf_counter()
+        features = self.int8_feature_provider(
+            first_frame,
+            task_context["context"],
+            task_context["token_tags"],
+        )
+        if self.feature_ablation == "zero":
+            features = torch.zeros_like(features)
+        torch.cuda.synchronize(self.device)
+        h3_seconds = time.perf_counter() - h3_started
+
+        state = minmax_normalize(
+            libero_observation_state(request),
+            self.stats["state_min"],
+            self.stats["state_max"],
+        ).clamp(-5.0, 5.0).reshape(1, 8).to(
+            device=self.device, dtype=self.dtype
+        )
+        text_mask = torch.ones(
+            task_context["context"].shape[:2],
+            device=self.device,
+            dtype=torch.bool,
+        )
+        action_started = time.perf_counter()
+        action_samples = []
+        for sample_index in range(self.sample_ensemble_size):
+            generator = torch.Generator(device=self.device).manual_seed(
+                int(request["seed"]) + sample_index
+            )
+            actions = torch.randn(
+                (1, self.horizon, 7),
+                device=self.device,
+                dtype=self.dtype,
+                generator=generator,
+            )
+            timesteps, deltas = self.flow_scheduler.build_inference_schedule(
+                self.inference_steps, self.device, self.dtype
+            )
+            for timestep, delta in zip(timesteps, deltas, strict=True):
+                velocity = self.action_model(
+                    actions,
+                    timestep.expand(1),
+                    text_context=task_context["context"],
+                    h3_features=features,
+                    proprio=state,
+                    text_mask=text_mask,
+                )
+                actions = self.flow_scheduler.step(velocity, delta, actions)
+            action_samples.append(actions)
+        normalized_actions = torch.stack(action_samples).mean(dim=0)
+        torch.cuda.synchronize(self.device)
+        action_seconds = time.perf_counter() - action_started
+
+        environment_actions, decode_report = libero_environment_actions(
+            normalized_actions[0],
+            self.stats["action_min"],
+            self.stats["action_max"],
+            binarize_gripper=self.binarize_gripper,
+            temporal_median_window=self.action_median_window,
+            normalized_action_pre_clamp=self.normalized_action_pre_clamp,
+            return_decode_report=True,
+        )
+        environment_actions[:, :6] = np.clip(
+            environment_actions[:, :6] * self.action_scale, -1.0, 1.0
+        )
+        return environment_actions, {
+            "context_id": task_context["id"],
+            "first_environment_action": environment_actions[0].tolist(),
+            "environment_action_chunk": environment_actions.tolist(),
+            "vae_encode_seconds": vae_seconds,
+            "h3_feature_seconds": h3_seconds,
+            "action_model_seconds": action_seconds,
+            "inference_seconds": h3_seconds + action_seconds,
+            "h3_feature_runtime": "int8",
+            "h3_feature_ablation": self.feature_ablation,
+            "action_objective": "pinned_starwam_weighted_masked_flow",
+            "action_flow_steps": self.inference_steps,
+            "checkpoint_completed_steps": self.completed_steps,
+            "sample_ensemble_size": self.sample_ensemble_size,
+            "action_scale": self.action_scale,
+            "normalized_action_pre_clamp": self.normalized_action_pre_clamp,
+            "normalized_action_decode": decode_report,
+            "peak_allocated_gib": torch.cuda.max_memory_allocated(self.device) / 2**30,
+        }
+
+
 def main() -> None:
     args = parse_args()
     if (
@@ -1285,6 +1602,8 @@ def main() -> None:
         policy = H3Policy(args)
     elif args.policy in ("h3_feature", "h3_feature_int8"):
         policy = H3FeaturePolicy(args)
+    elif args.policy == "h3_starwam_int8":
+        policy = H3StarWAMInt8Policy(args)
     else:
         policy = BaselinePolicy(args)
     listener = Listener((args.host, args.port), authkey=args.authkey.encode("utf-8"))

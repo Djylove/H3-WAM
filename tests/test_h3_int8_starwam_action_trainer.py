@@ -343,6 +343,54 @@ class FlowRegressionComplementTest(unittest.TestCase):
         self.assertEqual(complement["weight"], 1.0)
         self.assertEqual(complement["extra_parameters"], 0)
 
+    def test_fp32_timestep_avoids_bfloat16_zero_weight_endpoint(self):
+        scheduler = MODULE.FlowMatchScheduler(shift=5.0)
+        # Exact CUDA draw observed at the former deterministic step245 failure.
+        uniform = torch.tensor([0.9919270873], dtype=torch.float32)
+        sigma = scheduler._phi(uniform, scheduler.shift)
+        timestep = sigma * float(scheduler.num_train_timesteps)
+        self.assertEqual(timestep.dtype, torch.float32)
+        self.assertLess(float(timestep), 1000.0)
+        self.assertEqual(float(timestep.to(torch.bfloat16)), 1000.0)
+        self.assertGreater(float(scheduler.training_weight(timestep)), 0.0)
+        self.assertEqual(
+            float(scheduler.training_weight(timestep.to(torch.bfloat16))), 0.0
+        )
+
+        actions = torch.zeros(1, 2, 2, dtype=torch.bfloat16)
+        _, _, sampled_timestep = MODULE.deterministic_flow_batch(
+            actions, scheduler, seed=245_000_777
+        )
+        self.assertEqual(sampled_timestep.dtype, torch.float32)
+
+    def test_distributed_flow_seed_is_reproducible_and_rank_distinct(self):
+        rank0 = MODULE.distributed_flow_seed(
+            base_seed=42, completed_step=245, accumulation_index=0, rank=0
+        )
+        rank1 = MODULE.distributed_flow_seed(
+            base_seed=42, completed_step=245, accumulation_index=0, rank=1
+        )
+        self.assertNotEqual(rank0, rank1)
+        self.assertEqual(
+            rank0,
+            MODULE.distributed_flow_seed(
+                base_seed=42, completed_step=245, accumulation_index=0, rank=0
+            ),
+        )
+
+    def test_checkpoint_records_fp32_rank_distinct_flow_contract(self):
+        contract = MODULE.checkpoint_contract(
+            self.checkpoint_args(0.0), MODULE.ModelSpec(), self.checkpoint_dataset()
+        )
+        self.assertEqual(
+            contract["flow_timestep_contract"],
+            "continuous_fp32_no_bf16_endpoint_rounding_v2",
+        )
+        self.assertEqual(
+            contract["flow_rng_contract"],
+            "base_plus_step1000003_plus_rank10000019_v2",
+        )
+
 
 class StarWAMTrainerCheckpointTest(unittest.TestCase):
     def build_model(self):

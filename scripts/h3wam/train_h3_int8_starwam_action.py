@@ -344,13 +344,32 @@ def deterministic_flow_batch(
         actions.shape[0], device=actions.device, dtype=torch.float32, generator=generator
     )
     sigma = scheduler._phi(uniform, scheduler.shift)
-    timesteps = (sigma * scheduler.num_train_timesteps).to(actions.dtype)
+    # Keep the continuous timestep in FP32.  BF16 rounds values near 1000 to
+    # the exact endpoint, where StarWAM's importance weight is zero.  With a
+    # shared per-step seed this made every DDP rank deterministically produce
+    # zero gradients at the same optimizer step.
+    timesteps = sigma * float(scheduler.num_train_timesteps)
     noise = torch.randn(
         actions.shape, device=actions.device, dtype=actions.dtype, generator=generator
     )
     noisy = scheduler.add_noise(actions, noise, timesteps)
     target = scheduler.training_target(actions, noise, timesteps)
     return noisy, target, timesteps
+
+
+def distributed_flow_seed(
+    *, base_seed: int, completed_step: int, accumulation_index: int, rank: int
+) -> int:
+    """Deterministic but rank-distinct action-flow RNG contract."""
+
+    if min(completed_step, accumulation_index, rank) < 0:
+        raise ValueError("flow seed coordinates must be non-negative")
+    return (
+        int(base_seed)
+        + 1_000_003 * int(completed_step)
+        + 10_000_019 * int(rank)
+        + int(accumulation_index)
+    )
 
 
 def forward_policy(model: nn.Module, batch: dict[str, Any], noisy: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
@@ -575,6 +594,8 @@ def checkpoint_contract(
         "state_normalization": "starwam_minmax_clip5",
         "action_horizon": args.action_horizon,
         "action_shift": args.action_shift,
+        "flow_timestep_contract": "continuous_fp32_no_bf16_endpoint_rounding_v2",
+        "flow_rng_contract": "base_plus_step1000003_plus_rank10000019_v2",
         "lr_schedule": {
             "type": "linear_warmup_then_cosine",
             "base_learning_rate": args.learning_rate,
@@ -897,10 +918,11 @@ def main() -> None:
                         batch,
                         optimizer,
                         scheduler,
-                        seed=(
-                            args.seed
-                            + 1_000_003 * (completed_steps + local_step)
-                            + accumulation_index
+                        seed=distributed_flow_seed(
+                            base_seed=args.seed,
+                            completed_step=completed_steps + local_step,
+                            accumulation_index=accumulation_index,
+                            rank=rank,
                         ),
                         max_grad_norm=args.max_grad_norm,
                         gradient_accumulation_steps=args.gradient_accumulation_steps,
