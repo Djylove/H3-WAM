@@ -87,14 +87,10 @@ def h3_kv_cache_bytes(
     return layers * tokens * heads * head_dim * 2 * element_size
 
 
-def _storage_signature(tensor: torch.Tensor) -> tuple:
-    storage = tensor.untyped_storage()
-    return (
-        storage.data_ptr(),
-        tensor.storage_offset(),
-        tuple(tensor.shape),
-        tuple(tensor.stride()),
-    )
+def _storage_signature(tensor: torch.Tensor) -> int:
+    """Identify the underlying storage, including differently offset views."""
+
+    return tensor.untyped_storage().data_ptr()
 
 
 class H3DreamWAMKVCarrierPolicy(nn.Module):
@@ -118,6 +114,7 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
         super().__init__()
         self.enabled = bool(enabled)
         self.carrier_layers = tuple(int(index) for index in carrier_layers)
+        self.action_block_to_h3_layer = self.carrier_layers
         if not self.carrier_layers:
             raise ValueError("carrier_layers must not be empty")
         if tuple(sorted(set(self.carrier_layers))) != self.carrier_layers:

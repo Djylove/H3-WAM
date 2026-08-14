@@ -21,6 +21,9 @@ import torch.nn.functional as F
 AUDIO_CHANNELS = 2
 AUDIO_LATENT_CHANNELS = 32
 PATCH_SIZE = (1, 2, 2)
+DREAMWAM_KV_SCHEMA = "h3_dreamwam_kv_v1"
+DREAMWAM_KV_LAYERS = (9, 19, 29, 39, 49)
+DREAMWAM_COMMIT = "6e989facc0c452fd3488d75f60bc36411005558c"
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,7 +32,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--h3-checkpoint", type=Path, required=True)
     parser.add_argument("--output-subdir", default="h3_int8_last32_features")
+    parser.add_argument(
+        "--dreamwam-kv-output-subdir",
+        default="h3_int8_dreamwam_kv_5x32",
+    )
     parser.add_argument("--layers", type=int, nargs="+", default=(49,))
+    parser.add_argument(
+        "--dreamwam-kv-carrier",
+        action="store_true",
+        help=(
+            "Write the independent h3_dreamwam_kv_v1 schema instead of the "
+            "historical pooled hidden-feature schema. Disabled by default."
+        ),
+    )
+    parser.add_argument(
+        "--dreamwam-kv-layers",
+        type=int,
+        nargs="+",
+        default=DREAMWAM_KV_LAYERS,
+    )
     parser.add_argument("--capture-token-count", type=int, default=32)
     parser.add_argument("--action-horizon", type=int, default=32)
     parser.add_argument("--target-latent-frames", type=int, default=12)
@@ -76,6 +97,63 @@ def apply_capture_compatibility(features: torch.Tensor, mode: str) -> torch.Tens
     raise ValueError(f"unsupported capture compatibility mode {mode!r}")
 
 
+def pool_kv_tokens(tensor: torch.Tensor, token_count: int) -> torch.Tensor:
+    """Pool one H3 layer's projected K or V over sequence only."""
+
+    if tensor.ndim != 3:
+        raise ValueError("K/V tensor must be [tokens,heads,head_dim]")
+    if token_count <= 0 or tensor.shape[0] <= token_count:
+        return tensor
+    tokens, heads, head_dim = tensor.shape
+    flattened = tensor.reshape(tokens, heads * head_dim)
+    pooled = F.adaptive_avg_pool1d(
+        flattened.transpose(0, 1).unsqueeze(0), token_count
+    ).squeeze(0).transpose(0, 1)
+    return pooled.reshape(token_count, heads, head_dim)
+
+
+def prepare_dreamwam_kv_cache(
+    captured_kv: dict[int, dict[str, torch.Tensor]],
+    *,
+    layers: tuple[int, ...],
+    token_count: int,
+) -> dict[int, dict[str, torch.Tensor]]:
+    """Detach, pool and clone distinct per-layer K/V tensors for disk storage."""
+
+    if tuple(sorted(captured_kv)) != layers:
+        raise ValueError(
+            f"captured K/V layers differ from requested layers: "
+            f"{tuple(sorted(captured_kv))} vs {layers}"
+        )
+    result: dict[int, dict[str, torch.Tensor]] = {}
+    storage_pointers: set[int] = set()
+    expected_shape = None
+    for layer in layers:
+        item = captured_kv[layer]
+        if set(item) != {"k", "v"}:
+            raise ValueError(f"captured K/V layer {layer} must contain k and v")
+        result[layer] = {}
+        for name in ("k", "v"):
+            source = item[name]
+            if source.ndim != 4 or source.shape[0] != 1:
+                raise ValueError(
+                    f"captured layer {layer} {name} must be [1,tokens,heads,head_dim]"
+                )
+            tensor = pool_kv_tokens(source[0], token_count).to(
+                device="cpu", dtype=torch.bfloat16
+            ).clone()
+            if expected_shape is None:
+                expected_shape = tuple(tensor.shape)
+            elif tuple(tensor.shape) != expected_shape:
+                raise ValueError("all captured K/V tensors must share one shape")
+            pointer = tensor.untyped_storage().data_ptr()
+            if pointer in storage_pointers:
+                raise RuntimeError("DreamWAM K/V cache tensors unexpectedly alias storage")
+            storage_pointers.add(pointer)
+            result[layer][name] = tensor
+    return result
+
+
 def main() -> None:
     args = parse_args()
     if not 0.0 <= args.timestep <= 1.0:
@@ -109,9 +187,26 @@ def main() -> None:
     device = torch.device(args.device)
     torch.cuda.set_device(device)
     cache_root = args.cache_root.resolve()
-    output_root = cache_root / args.output_subdir
+    output_root = cache_root / (
+        args.dreamwam_kv_output_subdir
+        if args.dreamwam_kv_carrier
+        else args.output_subdir
+    )
     output_root.mkdir(parents=True, exist_ok=True)
-    layers = tuple(sorted(set(int(layer) for layer in args.layers)))
+    layers = tuple(
+        sorted(
+            set(
+                int(layer)
+                for layer in (
+                    args.dreamwam_kv_layers
+                    if args.dreamwam_kv_carrier
+                    else args.layers
+                )
+            )
+        )
+    )
+    if args.dreamwam_kv_carrier and args.capture_compatibility != "none":
+        raise ValueError("DreamWAM K/V caches do not support historical feature alias mode")
     model = H3Int8FeatureBackbone.from_checkpoint(args.h3_checkpoint).to(device).eval()
 
     layouts: dict[tuple[str, int, int], dict[str, torch.Tensor | int]] = {}
@@ -212,23 +307,64 @@ def main() -> None:
                 video_indices=layout["video_indices"],
                 audio_indices=layout["audio_indices"],
                 text_indices=layout["text_indices"],
-                capture_layers=layers,
-                capture_indices=layout["condition_indices"],
+                capture_layers=() if args.dreamwam_kv_carrier else layers,
+                capture_indices=(
+                    None
+                    if args.dreamwam_kv_carrier
+                    else layout["condition_indices"]
+                ),
+                capture_kv_layers=layers if args.dreamwam_kv_carrier else (),
+                kv_capture_indices=(
+                    layout["condition_indices"]
+                    if args.dreamwam_kv_carrier
+                    else None
+                ),
             )
-        features = torch.stack(
-            [result.captured_features[layer][0] for layer in layers], dim=0
-        )
-        features = apply_capture_compatibility(features, args.capture_compatibility)
-        features = pool_feature_tokens(features, args.capture_token_count).to(
-            device="cpu", dtype=torch.bfloat16
-        )
-        if not torch.isfinite(features).all():
-            raise RuntimeError(f"non-finite INT8 features for {row['id']}")
+        if args.dreamwam_kv_carrier:
+            kv_cache = prepare_dreamwam_kv_cache(
+                result.captured_kv,
+                layers=layers,
+                token_count=args.capture_token_count,
+            )
+            finite_tensors = [
+                tensor
+                for item in kv_cache.values()
+                for tensor in item.values()
+            ]
+            if not all(torch.isfinite(tensor.float()).all() for tensor in finite_tensors):
+                raise RuntimeError(f"non-finite INT8 K/V for {row['id']}")
+            first_k = kv_cache[layers[0]]["k"]
+            cache_body = {
+                "schema": DREAMWAM_KV_SCHEMA,
+                "video_kv_cache": kv_cache,
+                "layers": layers,
+                "capture_token_count": int(first_k.shape[0]),
+                "num_heads": int(first_k.shape[1]),
+                "attn_head_dim": int(first_k.shape[2]),
+                "capture_token_strategy": "adaptive_avg_pool1d_sequence_v1",
+                "dreamwam_commit": DREAMWAM_COMMIT,
+            }
+        else:
+            features = torch.stack(
+                [result.captured_features[layer][0] for layer in layers], dim=0
+            )
+            features = apply_capture_compatibility(features, args.capture_compatibility)
+            features = pool_feature_tokens(features, args.capture_token_count).to(
+                device="cpu", dtype=torch.bfloat16
+            )
+            if not torch.isfinite(features).all():
+                raise RuntimeError(f"non-finite INT8 features for {row['id']}")
+            cache_body = {
+                "features": features,
+                "layers": layers,
+                "capture_token_count": int(features.shape[1]),
+                "capture_token_strategy": "starwam_adaptive_avg_pool1d_v1",
+                "capture_compatibility": args.capture_compatibility,
+            }
         temporary = output.with_name(f".{output.name}.{os.getpid()}.tmp")
         torch.save(
             {
-                "features": features,
-                "layers": layers,
+                **cache_body,
                 "episode": int(row["episode"]),
                 "start": int(row["start"]),
                 "suite": str(row["suite"]),
@@ -238,9 +374,6 @@ def main() -> None:
                 "timestep": float(args.timestep),
                 "condition_video_timestep": float(args.condition_video_timestep),
                 "action_horizon": int(args.action_horizon),
-                "capture_token_count": int(features.shape[1]),
-                "capture_token_strategy": "starwam_adaptive_avg_pool1d_v1",
-                "capture_compatibility": args.capture_compatibility,
                 "backbone": "H3Int8FeatureBackbone",
                 "quantization": "int8_tensorwise_convrot",
                 "checkpoint": str(args.h3_checkpoint.resolve()),

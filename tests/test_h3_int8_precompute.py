@@ -37,6 +37,51 @@ class StarWAMFeaturePoolingTest(unittest.TestCase):
         features = torch.randn(5, 7, 3)
         self.assertIs(MODULE.apply_capture_compatibility(features, "none"), features)
 
+    def test_dreamwam_kv_pooling_preserves_heads_and_clones_every_layer(self):
+        captured = {
+            layer: {
+                "k": torch.randn(1, 11, 2, 4),
+                "v": torch.randn(1, 11, 2, 4),
+            }
+            for layer in (9, 19, 29, 39, 49)
+        }
+        output = MODULE.prepare_dreamwam_kv_cache(
+            captured,
+            layers=(9, 19, 29, 39, 49),
+            token_count=5,
+        )
+        pointers = []
+        for layer in (9, 19, 29, 39, 49):
+            for name in ("k", "v"):
+                self.assertEqual(tuple(output[layer][name].shape), (5, 2, 4))
+                self.assertEqual(output[layer][name].dtype, torch.bfloat16)
+                pointers.append(output[layer][name].untyped_storage().data_ptr())
+        self.assertEqual(len(pointers), len(set(pointers)))
+        before = output[19]["k"].clone()
+        output[9]["k"].add_(1)
+        torch.testing.assert_close(output[19]["k"], before)
+
+    def test_dreamwam_kv_capture_is_default_off(self):
+        import sys
+        from unittest.mock import patch
+
+        required = [
+            "precompute",
+            "manifest.jsonl",
+            "--cache-root",
+            "cache",
+            "--h3-checkpoint",
+            "h3.safetensors",
+        ]
+        with patch.object(sys, "argv", required):
+            args = MODULE.parse_args()
+        self.assertFalse(args.dreamwam_kv_carrier)
+        self.assertEqual(args.output_subdir, "h3_int8_last32_features")
+        self.assertEqual(args.layers, (49,))
+        self.assertEqual(
+            args.dreamwam_kv_output_subdir, "h3_int8_dreamwam_kv_5x32"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

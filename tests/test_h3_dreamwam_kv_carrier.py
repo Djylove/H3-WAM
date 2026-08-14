@@ -76,6 +76,11 @@ class H3DreamWAMKVCarrierPolicyTest(unittest.TestCase):
             changed_output = policy(video_kv_cache=changed, **inputs)
         self.assertFalse(torch.equal(output.detach(), changed_output))
 
+    def test_action_block_mapping_is_explicit(self):
+        policy = self.build_policy()
+        self.assertEqual(policy.action_block_to_h3_layer, (1, 3))
+        self.assertEqual(len(policy.action_expert.blocks), 2)
+
     def test_rejects_missing_or_repeated_last_layer_cache(self):
         policy = self.build_policy()
         inputs = self.inputs()
@@ -87,6 +92,13 @@ class H3DreamWAMKVCarrierPolicyTest(unittest.TestCase):
         repeated[3]["k"] = repeated[1]["k"]
         with self.assertRaisesRegex(ValueError, "layer-specific"):
             policy(video_kv_cache=repeated, **inputs)
+
+        shared = torch.randn(2, 6, 2, 4)
+        offset_alias = self.cache()
+        offset_alias[1]["k"] = shared[:, :5]
+        offset_alias[3]["k"] = shared[:, 1:]
+        with self.assertRaisesRegex(ValueError, "layer-specific"):
+            policy(video_kv_cache=offset_alias, **inputs)
 
     def test_cache_budget_is_explicit(self):
         self.assertEqual(
