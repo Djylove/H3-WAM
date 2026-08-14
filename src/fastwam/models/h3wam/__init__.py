@@ -78,6 +78,12 @@ from .int8_online import (
     encode_h3_vae_condition_standalone,
 )
 from .starwam_feature_action import H3StarWAMFeatureActionPolicy
+from .dreamwam_kv_carrier import (
+    DEFAULT_H3_CARRIER_LAYERS,
+    DREAMWAM_COMMIT,
+    H3DreamWAMKVCarrierPolicy,
+    h3_kv_cache_bytes,
+)
 __all__ = [
     "ActionEnsembler",
     "action_denormalization_bounds",
@@ -129,6 +135,10 @@ __all__ = [
     "apply_online_capture_compatibility",
     "encode_h3_vae_condition_standalone",
     "H3StarWAMFeatureActionPolicy",
+    "H3DreamWAMKVCarrierPolicy",
+    "DEFAULT_H3_CARRIER_LAYERS",
+    "DREAMWAM_COMMIT",
+    "h3_kv_cache_bytes",
     "DEFAULT_OFFICIAL_H3_LORA_TARGETS",
     "inject_official_h3_lora",
     "load_cached_task_context",

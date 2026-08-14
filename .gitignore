@@ -249,6 +249,7 @@ onelogger.log
 # committing nested Git repositories into this repository.
 third_party/BadWAM/
 third_party/DreamWAM/
+third_party/FACT/
 third_party/FastWAM/
 third_party/ImageWAM/
 third_party/MiniWorld/

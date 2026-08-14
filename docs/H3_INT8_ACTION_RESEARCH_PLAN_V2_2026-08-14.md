@@ -23,8 +23,11 @@
   `1,580,977,159`，可训练参数 `1,553,441,799`；BF16 单步峰值 `17.43 GiB/卡`，9.38 GB
   schema-2 checkpoint 在新进程中精确恢复（`max_abs=0`）。完整 30 层随后完成 8-GPU
   step1→10、fresh restore、严格续训 step11→20、fresh restore；scheduler 恢复到 step20，
-  最终 probe std `4.2995` 且 `max_abs=0`。当前状态为 `GO_MULTISTEP`，不是 `GO_LONG`；
-  还需完成全量 cache、held-out action evaluator 和 train/val loader smoke。
+  最终 probe std `4.2995` 且 `max_abs=0`。全量 cache 与 episode-disjoint evaluator 随后均已
+  完成。固定样本、噪声和 checkpoint 的 visual-shuffle 显示，s50 打乱 H3 特征后 physical MSE
+  恶化 `5.63%`、ADE 恶化 `3.27%`、gripper macro-F1 下降 `7.48pp`；s100 对应为
+  `3.02%/2.13%/-3.85pp`。因此 held-out 信号确实依赖样本特定的 H3 视觉表征，当前状态升级为
+  `GO_MEDIUM / WAIT_CLOSED_LOOP`；闭环前仍不把离线改善写成最终效果结论。
 - H3 last32 feature 的原始 RMS 为 `7322.443`，40 个任务文本 context RMS 为 `70.346`。
   预注册的 RMS-match scale 为 `0.009606920816877307`；配合官方 1,000-step warmup 后，2 层
   canary 的 loss 从 `1.359375` 降至 `1.1796875`，解决了未缩放输入导致的数值爆炸。
@@ -36,10 +39,14 @@
   overlap 均为 0，所有源窗口恰好分配一次。cache source manifest 与 split manifest 的
   hash/count 在 dataset、checkpoint 和评测报告中分开记录。
 - split-native R1 已完成 s1、s50、s100 训练和 fresh-process 精确恢复；三个点的
-  `restore_probe_max_abs` 均为 0，scheduler epoch 分别为 `1/50/100`。它们只消费 train split
-  且使用互不重叠的 800 个窗口；下一步用固定 salt、每任务 2 个样本的 80-window balanced
-  validation 做第一轮严格 held-out 筛选。全量 last32 cache 正由 8 个 worker 生产，完成前不把
-  训练集机械下降解释为泛化提升。
+  `restore_probe_max_abs` 均为 0，scheduler epoch 分别为 `1/50/100`，且只消费 train split 中
+  互不重叠的 800 个窗口。全量 last32 cache 已通过 `277,713/277,713` ID 集合校验，missing、
+  extra、tmp 均为 0。在固定 40 tasks×2 episode-disjoint windows 上，normalized MSE
+  `77.870→3.147→2.192`、physical MSE `0.5164→0.3946→0.3599`，说明训练产生了真实 held-out
+  信号；但 gripper macro-F1 在 s50 达到 `0.6091` 后于 s100 回退到 `0.5182`。相同样本、噪声和
+  checkpoint 的 visual-feature shuffle 已通过 paired gate：s50/s100 均在动作误差和 gripper
+  指标上退化，排除了 ActionDiT 完全绕过 H3 特征的解释。下一门槛是 medium checkpoint 的统一
+  LIBERO 闭环，而不是继续只看训练 loss。
 - 旧 DoT depth-4 在 held-out causal action 上优于 depth-1（step1600 为 `0.097112`，depth-1
   final 为 `0.109190`），但 task3 的 step1000 与 step1600 均为 `0/10` 闭环成功。因此它是
   “离线改善未转化为控制”的反例，不能晋级为当前动作主线。轨迹中 replan 接缝 L2 是
@@ -183,6 +190,19 @@ INT8 H3 从当前首帧提取视觉 token，配合直接任务文本、proprio �
   冷启动的“伪 LingBot history”。
 - recovery 数据必须是连续 teacher roll-in 到成功，gate 只读可观测 state/H3/history。
 - 状态：`NOT_RELEASED`。
+
+### R5：FACT causal consequence 与 failure-aware ranking
+
+- 官方父实现固定为 FACT `618a6c16868699b6d4138941de6a863589ac00dd`。先保留 R1 action
+  stage，增加只读 clean action 的 future H3/state/value consequence expert；用结构保证 future
+  target 不会泄漏给 action。
+- 闭环失败必须保存为带 observation/action/predicate/failure-onset 的 canonical episode。失败
+  episode 屏蔽 action imitation，但保留 consequence/value 监督；没有失败数据时不宣称
+  failure-aware 有效。
+- value 通过未见 episode 的成功/失败排序后，才允许 best-of-N（先 N=1 对 N=4）闭环 A/B；
+  FACT、DreamWAM carrier 和 FastWAM 目标先单独晋级，再两两融合。
+- 详细审计见 `docs/H3_FACT_CODE_AUDIT_AND_FUSION_PLAN_2026-08-14.md`。
+- 状态：`GO_CODE_AND_DATA_CONTRACT / NO_GO_LONG_TRAIN`。
 
 ## 评测和停止门槛
 

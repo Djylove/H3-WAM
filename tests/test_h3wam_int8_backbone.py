@@ -3,9 +3,12 @@ import unittest
 import torch
 
 from fastwam.models.h3wam.int8_backbone import (
+    HEADS,
+    HEAD_DIM,
     HIDDEN_SIZE,
     FrozenLinear,
     FrozenRMSNorm,
+    H3Int8Attention,
     _apply_rotary,
     _prepare_text_hidden_states,
 )
@@ -60,6 +63,24 @@ class H3Int8BackbonePrimitiveTest(unittest.TestCase):
             _prepare_text_hidden_states(
                 torch.zeros(1, 3, 8), projection, torch.nn.Identity()
             )
+
+    def test_attention_can_return_true_projected_kv_without_second_qkv(self):
+        attention = H3Int8Attention.__new__(H3Int8Attention)
+        torch.nn.Module.__init__(attention)
+        attention.qkv_proj = torch.nn.Linear(4, 3 * HEADS * HEAD_DIM, bias=False)
+        attention.out_proj = torch.nn.Linear(HEADS * HEAD_DIM, 4, bias=False)
+        attention.q_norm = torch.nn.Identity()
+        attention.k_norm = torch.nn.Identity()
+        source = torch.randn(1, 2, 4)
+
+        default_output = attention(source, None)
+        output, cache = attention(source, None, return_kv=True)
+
+        torch.testing.assert_close(output, default_output, rtol=0.0, atol=0.0)
+        self.assertEqual(tuple(output.shape), (1, 2, 4))
+        self.assertEqual(tuple(cache["k"].shape), (1, 2, HEADS, HEAD_DIM))
+        self.assertEqual(tuple(cache["v"].shape), (1, 2, HEADS, HEAD_DIM))
+        self.assertEqual(set(cache), {"k", "v"})
 
 
 if __name__ == "__main__":

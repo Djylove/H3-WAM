@@ -7,7 +7,7 @@ directly. No ComfyUI package, server, node registry or workflow is imported.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Collection
 
@@ -129,11 +129,11 @@ class H3Int8Attention(nn.Module):
         self.q_norm = reader.norm(f"{prefix}.q_norm")
         self.k_norm = reader.norm(f"{prefix}.k_norm")
 
-    def forward(
+    def project_qkv(
         self,
         x: torch.Tensor,
         rotary: tuple[torch.Tensor, torch.Tensor] | None,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         batch, sequence, _ = x.shape
         query, key, value = self.qkv_proj(x).chunk(3, dim=-1)
         query = self.q_norm(query.view(batch, sequence, HEADS, HEAD_DIM))
@@ -142,6 +142,15 @@ class H3Int8Attention(nn.Module):
         if rotary is not None:
             query = _apply_rotary(query, *rotary)
             key = _apply_rotary(key, *rotary)
+        return query, key, value
+
+    def attend_projected(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+    ) -> torch.Tensor:
+        batch, sequence = query.shape[:2]
         attended = F.scaled_dot_product_attention(
             query.transpose(1, 2),
             key.transpose(1, 2),
@@ -153,6 +162,19 @@ class H3Int8Attention(nn.Module):
             batch, sequence, HEADS * HEAD_DIM
         )
         return self.out_proj(attended)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        rotary: tuple[torch.Tensor, torch.Tensor] | None,
+        *,
+        return_kv: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        query, key, value = self.project_qkv(x, rotary)
+        output = self.attend_projected(query, key, value)
+        if return_kv:
+            return output, {"k": key, "v": value}
+        return output
 
 
 class H3Int8MLP(nn.Module):
@@ -211,25 +233,37 @@ class H3Int8Block(nn.Module):
         temb: torch.Tensor,
         adaln_indices: torch.Tensor,
         rotary: tuple[torch.Tensor, torch.Tensor],
-    ) -> torch.Tensor:
+        *,
+        return_kv: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         modulation = self.adaln(temb).view(-1, 6, HIDDEN_SIZE)
         shift_a, scale_a, gate_a, shift_m, scale_m, gate_m = modulation.unbind(1)
         shift_a = shift_a.index_select(0, adaln_indices).to(x.dtype)
         scale_a = scale_a.index_select(0, adaln_indices).to(x.dtype)
         gate_a = gate_a.index_select(0, adaln_indices).to(x.dtype)
         normed = self.norm1(x) * (1 + scale_a) + shift_a
-        x = x + gate_a * self.attn(normed, rotary)
+        attention = self.attn(normed, rotary, return_kv=return_kv)
+        if return_kv:
+            attention_output, layer_kv = attention
+        else:
+            attention_output = attention
+            layer_kv = None
+        x = x + gate_a * attention_output
         shift_m = shift_m.index_select(0, adaln_indices).to(x.dtype)
         scale_m = scale_m.index_select(0, adaln_indices).to(x.dtype)
         gate_m = gate_m.index_select(0, adaln_indices).to(x.dtype)
         normed = self.norm2(x) * (1 + scale_m) + shift_m
-        return x + gate_m * self.mlp(normed)
+        output = x + gate_m * self.mlp(normed)
+        if return_kv:
+            return output, layer_kv
+        return output
 
 
 @dataclass
 class H3Int8FeatureOutput:
     hidden_states: torch.Tensor
     captured_features: dict[int, torch.Tensor]
+    captured_kv: dict[int, dict[str, torch.Tensor]] = field(default_factory=dict)
 
 
 def _prepare_text_hidden_states(
@@ -319,6 +353,8 @@ class H3Int8FeatureBackbone(nn.Module):
         *,
         capture_layers: Collection[int] = (9, 19, 29, 39, 49),
         capture_indices: torch.Tensor | None = None,
+        capture_kv_layers: Collection[int] = (),
+        kv_capture_indices: torch.Tensor | None = None,
     ) -> H3Int8FeatureOutput:
         if hidden_states.shape[0] != 1:
             raise ValueError("the pruned H3 checkpoint supports one packed sequence")
@@ -330,8 +366,13 @@ class H3Int8FeatureBackbone(nn.Module):
         if tuple(token_tags.shape) != (sequence_length,):
             raise ValueError("token_tags must match the packed sequence")
         selected = {int(index) for index in capture_layers}
-        if not selected or min(selected) < 0 or max(selected) >= 50:
+        kv_selected = {int(index) for index in capture_kv_layers}
+        if selected and (min(selected) < 0 or max(selected) >= 50):
             raise ValueError("capture_layers must select H3 blocks in [0,49]")
+        if kv_selected and (min(kv_selected) < 0 or max(kv_selected) >= 50):
+            raise ValueError("capture_kv_layers must select H3 blocks in [0,49]")
+        if not selected and not kv_selected:
+            raise ValueError("at least one feature or K/V capture layer is required")
 
         video = self.video_patch_proj(hidden_states)
         audio = self.audio_patch_proj(audio_hidden_states)
@@ -357,8 +398,28 @@ class H3Int8FeatureBackbone(nn.Module):
         )
         rotary = _rotary_cos_sin(position_ids, self.rope_inv_freq)
         captures: dict[int, torch.Tensor] = {}
+        kv_captures: dict[int, dict[str, torch.Tensor]] = {}
         for index, block in enumerate(self.blocks):
-            packed = block(packed, temb, adaln_indices, rotary)
+            block_output = block(
+                packed,
+                temb,
+                adaln_indices,
+                rotary,
+                return_kv=index in kv_selected,
+            )
+            if index in kv_selected:
+                packed, layer_kv = block_output
+                kv_indices = (
+                    video_indices
+                    if kv_capture_indices is None
+                    else kv_capture_indices.to(device=packed.device, dtype=torch.long)
+                )
+                kv_captures[index] = {
+                    name: value.index_select(1, kv_indices)
+                    for name, value in layer_kv.items()
+                }
+            else:
+                packed = block_output
             if index in selected:
                 captures[index] = (
                     packed
@@ -367,4 +428,4 @@ class H3Int8FeatureBackbone(nn.Module):
                         1, capture_indices.to(device=packed.device, dtype=torch.long)
                     )
                 )
-        return H3Int8FeatureOutput(packed, captures)
+        return H3Int8FeatureOutput(packed, captures, kv_captures)

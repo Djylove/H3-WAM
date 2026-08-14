@@ -1,0 +1,143 @@
+{
+  "event": "h3_int8_starwam_visual_feature_shuffle_e1",
+  "date": "2026-08-14",
+  "experiment_class": "controlled_ablation",
+  "status": "completed_not_closed_loop_evidence",
+  "hypothesis": "With checkpoint, selected held-out rows, text, proprio, target actions and initial action noise frozen, a deterministic permutation of H3 visual features should change predicted actions and worsen target metrics if the action head uses task-relevant H3 visual conditioning.",
+  "source_identity": {
+    "isolated_root": "/mnt/h3-wam/offline-eval-strict-v1-20260814-1611",
+    "evaluator_sha256": "8a7c85fdc8c4b45e534f29b44641b7e0e044aa21002d15822605a9e5d17086e6",
+    "adapter_sha256": "391687222bff3a298375694fe3030826a7a39110f329635d2db447a4c29fc1fa",
+    "starwam_scheduler_sha256": "5f9df0c8be5380faf4cd61abb337b55eea68cc49c5bfcbdb8ee9b72a8e057796",
+    "remote_evaluator_tests": {"passed": 16, "failed": 0}
+  },
+  "parent_baseline": {
+    "evidence": "experiments/evidence/h3_int8_starwam_split_native_balanced_val_s1_s50_s100_v1.json",
+    "selected_ids_sha256": "75d888fbb4298bef3517b623c00861ac6fe036495dee3bf4f0c68b5c097c5f54",
+    "samples": 80,
+    "tasks": 40,
+    "samples_per_task": 2,
+    "source_manifest_sha256": "5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8",
+    "train_manifest_sha256": "a4ad2a7955f539c2f709912d423bfa892688885ed14144a9988595de14b8e78c",
+    "validation_manifest_sha256": "df0c6ab6efce8a89e5c249548a17a34f386b388b614b417ec531fb10113a4fa6",
+    "stats_sha256": "f940b481bb50fefe07ec0f976b6b745af2edd1e4bdc0f2c4eb35ef4f3fb2da15"
+  },
+  "single_variable": {
+    "name": "visual_feature_source",
+    "baseline": "each selected row uses its own cached H3 layer49 last32 feature",
+    "e1": "each selected row uses another selected row's feature under the fixed permutation",
+    "new_cli_flag": "--visual-feature-shuffle",
+    "fixed": {
+      "text": true,
+      "proprio": true,
+      "action_target": true,
+      "initial_action_noise": true,
+      "checkpoint": true,
+      "sample_order": true,
+      "batch_size": 1,
+      "seed": 42,
+      "flow_shift": 5.0,
+      "inference_steps": 10,
+      "language_sensitivity": true
+    }
+  },
+  "shuffle_contract": {
+    "salt": "h3-r1-visual-shuffle-v1",
+    "algorithm": "sha256_rank_then_circular_right_shift_1",
+    "self_map_count": 0,
+    "mapping_sha256": "c34c2e9027386671e5ebde47b36919169358518fc3f5a4a4c94b55e94de81ad8",
+    "ordered_mapping_sha256": "e79427de0ab5b1087952553b075b65b9828237bb682e79e0821c827c781a2afe",
+    "evaluated_mapping_sha256": "e79427de0ab5b1087952553b075b65b9828237bb682e79e0821c827c781a2afe"
+  },
+  "paired_invariant_audit": {
+    "same_checkpoint_hash": true,
+    "same_complete_data_object": true,
+    "same_selected_ids": true,
+    "same_baseline_normalized_metrics_exact": true,
+    "same_baseline_physical_metrics_exact": true,
+    "same_baseline_gripper_metrics_exact": true,
+    "same_language_sensitivity_metrics_exact": true,
+    "fresh_restore_max_abs_zero": true,
+    "same_initial_action_noise": true,
+    "window_overlap": 0,
+    "episode_overlap": 0
+  },
+  "command_delta_from_parent_baseline": [
+    "--output .../results/s<STEP>_visual_shuffle_e1.json",
+    "--visual-feature-shuffle"
+  ],
+  "results": [
+    {
+      "step": 1,
+      "checkpoint_sha256": "a91765e66ae7e8beae0f02dbdbb748d086893425fdba43370eabe951ffeaa0fa",
+      "result": "/mnt/h3-wam/offline-eval-strict-v1-20260814-1611/results/s1_visual_shuffle_e1.json",
+      "result_sha256": "a00b0ced32f0ef07468dc8e27f111fc90da1e512bbdf8e8cd93cadff8bcd02b9",
+      "baseline_vs_shuffle_action_delta": {
+        "normalized": {"mse": 8.385117929891544, "mae": 2.2316213133473877, "ade_l2": 7.218267416498195, "endpoint_l2": 7.291512533804036},
+        "physical": {"mse": 0.26764440476428836, "mae": 0.19838034316735953, "ade_l2": 1.147976471988412, "endpoint_l2": 1.2739409080805735}
+      },
+      "shuffle_minus_baseline_target_metrics": {
+        "normalized": {"mse": 0.5625655229080593, "mae": 0.017175199163143695, "ade_l2": 0.07021873132666911, "endpoint_l2": -0.05632154457853744},
+        "physical": {"mse": -0.0012445520223853812, "mae": -0.0017370549339165153, "ade_l2": -0.007232653893688656, "endpoint_l2": 0.029922447760263537},
+        "gripper": {"accuracy": 0.0, "f1": 0.0, "macro_f1": 0.0}
+      },
+      "relative_physical_change_percent": {"mse": -0.24101988964890608, "ade_l2": -0.38652658790422556, "endpoint_l2": 1.6717296068997802},
+      "h3_condition_sensitivity": "Large raw action delta, but almost no coherent target degradation after physical clamp; s1 is visually sensitive yet pathological/saturated, so sensitivity is not task-useful evidence.",
+      "elapsed_seconds": 154.87379974802025
+    },
+    {
+      "step": 50,
+      "checkpoint_sha256": "090097c819ec344c4e2deba317254e64e94ba8913cacf02656139b026c8aa0c7",
+      "result": "/mnt/h3-wam/offline-eval-strict-v1-20260814-1611/results/s50_visual_shuffle_e1.json",
+      "result_sha256": "a626f102397a8e843aae333bfc51ec281faa50570d7acbdfa904d6351d3c0a19",
+      "baseline_vs_shuffle_action_delta": {
+        "normalized": {"mse": 3.449527951533481, "mae": 1.4478935651137625, "ade_l2": 4.584472166186039, "endpoint_l2": 4.60007883213571},
+        "physical": {"mse": 0.3837003988113173, "mae": 0.4030966553287982, "ade_l2": 1.5251387999590291, "endpoint_l2": 1.480539999449634}
+      },
+      "shuffle_minus_baseline_target_metrics": {
+        "normalized": {"mse": 0.36716108487012766, "mae": 0.0844469212200214, "ade_l2": 0.25926539385008773, "endpoint_l2": 0.23655757477678652},
+        "physical": {"mse": 0.02222043382363853, "mae": 0.017774894274161124, "ade_l2": 0.05280512683954064, "endpoint_l2": 0.027478642502196005},
+        "gripper": {"accuracy": -0.07407407407407407, "f1": -0.08257260335056493, "macro_f1": -0.07481117519285152}
+      },
+      "relative_physical_change_percent": {"mse": 5.631830007954513, "ade_l2": 3.273461739394984, "endpoint_l2": 1.6170912740655785},
+      "h3_condition_sensitivity": "Strongest task-useful visual dependence: shuffle causes the largest physical action delta and consistently worsens regression and gripper metrics.",
+      "elapsed_seconds": 156.95182575902436
+    },
+    {
+      "step": 100,
+      "checkpoint_sha256": "c8b0c8804f5ecedcfb3ca39d7a360e750e4d3f801397b82fa4e3b766b9927a29",
+      "result": "/mnt/h3-wam/offline-eval-strict-v1-20260814-1611/results/s100_visual_shuffle_e1.json",
+      "result_sha256": "b6e9dad9e42a531257beb7d320cda76ba466753429c93ea22ca62861cf27e097",
+      "baseline_vs_shuffle_action_delta": {
+        "normalized": {"mse": 1.4433676614083049, "mae": 0.9196232723390825, "ade_l2": 2.9536635923548453, "endpoint_l2": 2.9800688659012433},
+        "physical": {"mse": 0.2238708866216218, "mae": 0.29119305599844103, "ade_l2": 1.1355701301658823, "endpoint_l2": 1.1122945615320603}
+      },
+      "shuffle_minus_baseline_target_metrics": {
+        "normalized": {"mse": 0.22939430445772135, "mae": 0.049662238496110955, "ade_l2": 0.1925948630714509, "endpoint_l2": 0.10581435037260922},
+        "physical": {"mse": 0.010864492405828263, "mae": 0.0103874749577475, "ade_l2": 0.03254162825340545, "endpoint_l2": 0.021411548076153863},
+        "gripper": {"accuracy": -0.03747795414462085, "f1": -0.03216536235929468, "macro_f1": -0.038527190308493386}
+      },
+      "relative_physical_change_percent": {"mse": 3.0188539695563934, "ade_l2": 2.1282626669491354, "endpoint_l2": 1.3021631262532667},
+      "h3_condition_sensitivity": "Clear task-useful visual dependence, but weaker than s50 by raw action delta and target degradation; s100 may be more robust or rely more on non-visual conditions.",
+      "elapsed_seconds": 154.8566187119577
+    }
+  ],
+  "failures": [
+    {
+      "stage": "launcher_preflight_attempt_1",
+      "classification": "preflight_self_match",
+      "detail": "broad pgrep pattern matched the launcher command text itself and safely aborted before process creation",
+      "data_or_model_failure": false,
+      "resolution": "restricted the read-only preflight to Python training/rollout processes; E1 then launched with no artifact collision"
+    }
+  ],
+  "decision": {
+    "paired_gate": "PASS for s50 and s100: nonzero paired action deltas and consistent target degradation establish task-useful H3 visual conditioning on the frozen held-out sample",
+    "s1": "diagnostic only: raw visual sensitivity is high but target effect is incoherent under saturation",
+    "best_visual_dependence": "s50",
+    "best_baseline_regression": "s100",
+    "unresolved": "The reduction in visual-shuffle effect from s50 to s100 cannot distinguish beneficial robustness from increasing reliance on language/proprio without further controlled ablations or closed-loop evaluation.",
+    "effect_conclusion": "NOT_EVIDENCE_READY: E1 is offline paired mechanism evidence, not LIBERO closed-loop success evidence",
+    "training_permission": "No training or rollout was launched by E1"
+  }
+}

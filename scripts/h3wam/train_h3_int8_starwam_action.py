@@ -113,6 +113,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-heads", type=int, default=40)
     parser.add_argument("--attn-head-dim", type=int, default=128)
     parser.add_argument("--action-shift", type=float, default=5.0)
+    parser.add_argument(
+        "--clean-action-regression-weight",
+        type=float,
+        default=0.0,
+        help=(
+            "Candidate F only: add masked clean-action reconstruction MSE from "
+            "the same flow prediction. Zero preserves the pinned R1 objective."
+        ),
+    )
     parser.add_argument("--feature-input-scale", type=float, default=1.0)
     parser.add_argument("--no-gradient-checkpointing", action="store_true")
     parser.add_argument("--restore-check-only", action="store_true")
@@ -355,6 +364,46 @@ def forward_policy(model: nn.Module, batch: dict[str, Any], noisy: torch.Tensor,
     )
 
 
+def reconstruct_clean_action_from_flow(
+    noisy_actions: torch.Tensor,
+    predicted_velocity: torch.Tensor,
+    timesteps: torch.Tensor,
+    scheduler: FlowMatchScheduler,
+) -> torch.Tensor:
+    """Recover x0 from FastWAM/StarWAM's v=noise-clean parameterization."""
+
+    if noisy_actions.shape != predicted_velocity.shape or noisy_actions.ndim != 3:
+        raise ValueError("flow clean reconstruction requires matching [B,T,D] tensors")
+    if timesteps.ndim != 1 or timesteps.shape[0] != noisy_actions.shape[0]:
+        raise ValueError("flow clean reconstruction requires one timestep per batch item")
+    sigma = scheduler.timestep_to_sigma(timesteps).to(
+        device=noisy_actions.device, dtype=noisy_actions.dtype
+    )
+    return noisy_actions - sigma[:, None, None] * predicted_velocity
+
+
+def masked_chunk_regression_loss(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    action_is_pad: torch.Tensor | None,
+) -> torch.Tensor:
+    """Direct clean-action chunk MSE with the released action padding contract."""
+
+    if prediction.shape != target.shape or prediction.ndim != 3:
+        raise ValueError("chunk regression requires matching [B,T,D] tensors")
+    element_loss = (prediction.float() - target.float()).square()
+    if action_is_pad is None:
+        return element_loss.mean(dim=(1, 2)).mean()
+    if tuple(action_is_pad.shape) != tuple(prediction.shape[:2]):
+        raise ValueError("action padding mask must match [B,T]")
+    valid = (~action_is_pad.bool()).to(element_loss).unsqueeze(-1)
+    valid = valid.expand_as(element_loss)
+    per_sample = (element_loss * valid).sum(dim=(1, 2)) / valid.sum(
+        dim=(1, 2)
+    ).clamp_min(1.0)
+    return per_sample.mean()
+
+
 def optimizer_step(
     model: nn.Module,
     batch: dict[str, Any],
@@ -364,21 +413,50 @@ def optimizer_step(
     seed: int,
     max_grad_norm: float,
     gradient_accumulation_steps: int = 1,
+    clean_action_regression_weight: float = 0.0,
 ) -> dict[str, float]:
+    if (
+        not math.isfinite(clean_action_regression_weight)
+        or clean_action_regression_weight < 0
+    ):
+        raise ValueError("clean action regression weight must be finite and non-negative")
     noisy, target, timesteps = deterministic_flow_batch(
         batch["actions"], scheduler, seed=seed
     )
     prediction = forward_policy(model, batch, noisy, timesteps)
-    loss = flow_matching_loss(
+    flow_loss = flow_matching_loss(
         prediction,
         target,
         timesteps,
         scheduler,
         is_pad_mask=batch["action_is_pad"],
-    ) / gradient_accumulation_steps
-    loss.backward()
+    )
+    if clean_action_regression_weight > 0:
+        predicted_clean_action = reconstruct_clean_action_from_flow(
+            noisy, prediction, timesteps, scheduler
+        )
+        clean_action_regression_loss = masked_chunk_regression_loss(
+            predicted_clean_action,
+            batch["actions"],
+            batch["action_is_pad"],
+        )
+        total_loss = (
+            flow_loss
+            + clean_action_regression_weight * clean_action_regression_loss
+        )
+    else:
+        clean_action_regression_loss = flow_loss.detach().new_zeros(())
+        total_loss = flow_loss
+    (total_loss / gradient_accumulation_steps).backward()
     return {
-        "loss": float(loss.detach()) * gradient_accumulation_steps,
+        "loss": float(total_loss.detach()),
+        "flow_loss": float(flow_loss.detach()),
+        "clean_action_regression_loss": float(
+            clean_action_regression_loss.detach()
+        ),
+        "weighted_clean_action_regression_loss": float(
+            clean_action_regression_weight * clean_action_regression_loss.detach()
+        ),
         "timestep_mean": float(timesteps.detach().float().mean()),
         "prediction_std": float(prediction.detach().float().std()),
     }
@@ -463,7 +541,7 @@ def build_lr_scheduler(
 def checkpoint_contract(
     args: argparse.Namespace, spec: ModelSpec, dataset: CachedLast32Dataset
 ) -> dict[str, Any]:
-    return {
+    contract = {
         "starwam_commit": STARWAM_COMMIT,
         "starwam_action_dit_sha256": STARWAM_ACTION_DIT_SHA256,
         "starwam_wan_block_sha256": STARWAM_WAN_BLOCK_SHA256,
@@ -506,6 +584,18 @@ def checkpoint_contract(
         },
         "model_spec": asdict(spec),
     }
+    if args.clean_action_regression_weight > 0:
+        contract["clean_action_regression_complement"] = {
+            "candidate": "F",
+            "weight": args.clean_action_regression_weight,
+            "base_target": "noise_minus_clean_action",
+            "clean_reconstruction": "noisy_action_minus_sigma_times_predicted_velocity",
+            "loss": "masked_clean_action_chunk_mse",
+            "same_forward": True,
+            "same_flow_noise": True,
+            "extra_parameters": 0,
+        }
+    return contract
 
 
 def _contract_mismatch(expected: dict[str, Any], actual: dict[str, Any]) -> list[str]:
@@ -615,6 +705,8 @@ def main() -> None:
         or args.min_learning_rate < 0
         or args.min_learning_rate > args.learning_rate
         or args.warmup_steps < 0
+        or not math.isfinite(args.clean_action_regression_weight)
+        or args.clean_action_regression_weight < 0
         or not math.isfinite(args.feature_input_scale)
         or args.feature_input_scale <= 0
     ):
@@ -812,6 +904,9 @@ def main() -> None:
                         ),
                         max_grad_norm=args.max_grad_norm,
                         gradient_accumulation_steps=args.gradient_accumulation_steps,
+                        clean_action_regression_weight=(
+                            args.clean_action_regression_weight
+                        ),
                     )
                 )
             expert_gradient = module_grad_norm(unwrapped_model.action_expert)
@@ -838,6 +933,17 @@ def main() -> None:
             item = {
                 "step": completed_steps + local_step,
                 "loss": sum(x["loss"] for x in micro_metrics) / len(micro_metrics),
+                "flow_loss": sum(x["flow_loss"] for x in micro_metrics)
+                / len(micro_metrics),
+                "clean_action_regression_loss": sum(
+                    x["clean_action_regression_loss"] for x in micro_metrics
+                )
+                / len(micro_metrics),
+                "weighted_clean_action_regression_loss": sum(
+                    x["weighted_clean_action_regression_loss"]
+                    for x in micro_metrics
+                )
+                / len(micro_metrics),
                 "timestep_mean": sum(x["timestep_mean"] for x in micro_metrics) / len(micro_metrics),
                 "prediction_std": sum(x["prediction_std"] for x in micro_metrics) / len(micro_metrics),
                 "expert_gradient_norm": expert_gradient,
@@ -919,6 +1025,13 @@ def main() -> None:
             "total_parameters": total_parameters,
             "trainable_parameters": trainable_parameters,
             "model_spec": asdict(spec),
+            "action_objective": {
+                "base": "pinned_starwam_weighted_masked_flow",
+                "clean_action_regression_weight": (
+                    args.clean_action_regression_weight
+                ),
+                "candidate_f_enabled": args.clean_action_regression_weight > 0,
+            },
             "contract": contract,
             "h3_checkpoint_path": str(checkpoint_path),
             "h3_checkpoint_sha256_verified": actual_h3_sha256,

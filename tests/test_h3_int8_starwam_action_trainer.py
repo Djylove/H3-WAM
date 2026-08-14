@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import patch
 
 import torch
 
@@ -152,6 +153,195 @@ class CachedLast32DatasetTest(unittest.TestCase):
                     "features",
                     source_manifest=source_manifest,
                 )
+
+
+class FlowRegressionComplementTest(unittest.TestCase):
+    @staticmethod
+    def checkpoint_args(weight: float) -> Namespace:
+        return Namespace(
+            expected_h3_checkpoint_sha256="h3",
+            feature_subdir="features",
+            action_horizon=32,
+            action_shift=5.0,
+            learning_rate=1.0e-4,
+            min_learning_rate=1.0e-6,
+            warmup_steps=1000,
+            scheduler_horizon=21700,
+            clean_action_regression_weight=weight,
+        )
+
+    @staticmethod
+    def checkpoint_dataset() -> Namespace:
+        return Namespace(
+            source_manifest_sha256="source",
+            source_manifest_items=2,
+            manifest_sha256="split",
+            manifest_items=1,
+            stats_sha256="stats",
+        )
+
+    def test_cli_is_default_off_and_weight_is_explicit(self):
+        required = [
+            "trainer",
+            "manifest.jsonl",
+            "--cache-root",
+            "cache",
+            "--output",
+            "report.json",
+        ]
+        with patch.object(sys, "argv", required):
+            self.assertEqual(MODULE.parse_args().clean_action_regression_weight, 0.0)
+        with patch.object(
+            sys,
+            "argv",
+            [*required, "--clean-action-regression-weight", "1.0"],
+        ):
+            self.assertEqual(MODULE.parse_args().clean_action_regression_weight, 1.0)
+
+    def test_clean_reconstruction_is_exact_for_fastwam_velocity_target(self):
+        scheduler = MODULE.FlowMatchScheduler(shift=5.0)
+        clean = torch.tensor(
+            [
+                [[-0.5, 0.25], [0.1, 0.8]],
+                [[0.3, -0.2], [0.7, -0.9]],
+            ],
+            dtype=torch.float32,
+        )
+        noise = torch.tensor(
+            [
+                [[0.9, -0.1], [-0.4, 0.2]],
+                [[-0.6, 0.5], [0.2, 0.4]],
+            ],
+            dtype=torch.float32,
+        )
+        timesteps = torch.tensor([250.0, 750.0])
+        noisy = scheduler.add_noise(clean, noise, timesteps)
+        velocity = scheduler.training_target(clean, noise, timesteps)
+        reconstructed = MODULE.reconstruct_clean_action_from_flow(
+            noisy, velocity, timesteps, scheduler
+        )
+        torch.testing.assert_close(reconstructed, clean)
+        loss = MODULE.masked_chunk_regression_loss(
+            reconstructed, clean, torch.zeros(2, 2, dtype=torch.bool)
+        )
+        self.assertLess(float(loss), 1.0e-12)
+
+    def test_clean_regression_is_sigma_squared_velocity_error_and_masks_padding(self):
+        scheduler = MODULE.FlowMatchScheduler(shift=5.0)
+        clean = torch.zeros(2, 2, 2)
+        noise = torch.ones_like(clean)
+        timesteps = torch.tensor([250.0, 750.0])
+        noisy = scheduler.add_noise(clean, noise, timesteps)
+        target_velocity = scheduler.training_target(clean, noise, timesteps)
+        velocity_error = torch.tensor(
+            [
+                [[1.0, -2.0], [1000.0, 1000.0]],
+                [[0.5, -0.5], [2.0, -1.0]],
+            ]
+        )
+        prediction = target_velocity + velocity_error
+        reconstructed = MODULE.reconstruct_clean_action_from_flow(
+            noisy, prediction, timesteps, scheduler
+        )
+        is_pad = torch.tensor([[False, True], [False, False]])
+        actual = MODULE.masked_chunk_regression_loss(
+            reconstructed, clean, is_pad
+        )
+        sigma = timesteps / 1000.0
+        expected_elements = sigma[:, None, None].square() * velocity_error.square()
+        valid = (~is_pad).unsqueeze(-1).expand_as(expected_elements)
+        expected = torch.stack(
+            [expected_elements[index][valid[index]].mean() for index in range(2)]
+        ).mean()
+        torch.testing.assert_close(actual, expected)
+
+    def test_default_off_preserves_flow_and_enabled_reports_additive_loss(self):
+        class TinyPolicy(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.scale = torch.nn.Parameter(torch.tensor(0.25))
+
+            def forward(self, noisy_actions, timestep, **conditioning):
+                del timestep, conditioning
+                return noisy_actions * self.scale
+
+        batch = {
+            "actions": torch.linspace(-1.0, 1.0, 2 * 4 * 3).reshape(2, 4, 3),
+            "action_is_pad": torch.tensor(
+                [[False, False, False, True], [False, False, False, False]]
+            ),
+            "text_context": torch.zeros(2, 1, 2),
+            "text_mask": torch.ones(2, 1, dtype=torch.bool),
+            "features": torch.zeros(2, 1, 2, 2),
+            "proprio": torch.zeros(2, 2),
+        }
+        scheduler = MODULE.FlowMatchScheduler(shift=5.0)
+        default_model = TinyPolicy()
+        default_optimizer = torch.optim.AdamW(default_model.parameters(), lr=1e-4)
+        default_metrics = MODULE.optimizer_step(
+            default_model,
+            batch,
+            default_optimizer,
+            scheduler,
+            seed=123,
+            max_grad_norm=1.0,
+        )
+        self.assertEqual(default_metrics["loss"], default_metrics["flow_loss"])
+        self.assertEqual(default_metrics["clean_action_regression_loss"], 0.0)
+        self.assertEqual(
+            default_metrics["weighted_clean_action_regression_loss"], 0.0
+        )
+
+        enabled_model = TinyPolicy()
+        enabled_optimizer = torch.optim.AdamW(enabled_model.parameters(), lr=1e-4)
+        enabled_metrics = MODULE.optimizer_step(
+            enabled_model,
+            batch,
+            enabled_optimizer,
+            scheduler,
+            seed=123,
+            max_grad_norm=1.0,
+            clean_action_regression_weight=1.0,
+        )
+        self.assertGreater(enabled_metrics["clean_action_regression_loss"], 0.0)
+        self.assertAlmostEqual(
+            enabled_metrics["loss"],
+            enabled_metrics["flow_loss"]
+            + enabled_metrics["weighted_clean_action_regression_loss"],
+            places=6,
+        )
+        self.assertNotEqual(
+            float(default_model.scale.grad), float(enabled_model.scale.grad)
+        )
+
+    def test_negative_complement_weight_is_rejected(self):
+        model = torch.nn.Linear(1, 1)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+        with self.assertRaisesRegex(ValueError, "finite and non-negative"):
+            MODULE.optimizer_step(
+                model,
+                {"actions": torch.zeros(1, 1, 1)},
+                optimizer,
+                MODULE.FlowMatchScheduler(shift=5.0),
+                seed=1,
+                max_grad_norm=1.0,
+                clean_action_regression_weight=-1.0,
+            )
+
+    def test_checkpoint_contract_is_unchanged_off_and_records_enabled_weight(self):
+        spec = MODULE.ModelSpec()
+        default_contract = MODULE.checkpoint_contract(
+            self.checkpoint_args(0.0), spec, self.checkpoint_dataset()
+        )
+        self.assertNotIn("clean_action_regression_complement", default_contract)
+
+        enabled_contract = MODULE.checkpoint_contract(
+            self.checkpoint_args(1.0), spec, self.checkpoint_dataset()
+        )
+        complement = enabled_contract["clean_action_regression_complement"]
+        self.assertEqual(complement["candidate"], "F")
+        self.assertEqual(complement["weight"], 1.0)
+        self.assertEqual(complement["extra_parameters"], 0)
 
 
 class StarWAMTrainerCheckpointTest(unittest.TestCase):

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-14T13:00:00+08:00",
+  "generated_at": "2026-08-14T16:10:00+08:00",
   "policy": "Official upstream repositories are pinned by commit. StarWAM is a Git submodule because its ActionDiT source is executed directly; other entries may remain read-only local mirrors.",
   "sources": [
     {
@@ -14,6 +14,12 @@
       "url": "https://github.com/hustvl/DreamWAM.git",
       "commit": "6e989facc0c452fd3488d75f60bc36411005558c",
       "role": "structured-future supervision reference"
+    },
+    {
+      "name": "FACT",
+      "url": "https://github.com/Bariona/FACT.git",
+      "commit": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "role": "failure-aware causal action-consequence and best-of-N reference"
     },
     {
       "name": "FastWAM",

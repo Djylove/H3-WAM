@@ -1,0 +1,167 @@
+{
+  "event": "h3_int8_starwam_split_native_balanced_val_comparison",
+  "date": "2026-08-14",
+  "status": "completed_not_closed_loop_evidence",
+  "classification": "causal-action-on-frozen-cached-h3-features",
+  "remote_identity": {
+    "host": "117.50.181.177",
+    "port": 32611,
+    "isolated_root": "/mnt/h3-wam/offline-eval-strict-v1-20260814-1611",
+    "project": "/mnt/h3-wam/offline-eval-strict-v1-20260814-1611/project",
+    "evaluator_sha256": "8a7c85fdc8c4b45e534f29b44641b7e0e044aa21002d15822605a9e5d17086e6",
+    "test_sha256": "6808a27107a38b2bdc3ce85ea950f3e9dba6a11edbe42fb7e2d695f7e6677953",
+    "adapter_sha256": "391687222bff3a298375694fe3030826a7a39110f329635d2db447a4c29fc1fa",
+    "scheduler_sha256": "5f9df0c8be5380faf4cd61abb337b55eea68cc49c5bfcbdb8ee9b72a8e057796",
+    "remote_evaluator_tests": {
+      "passed": 16,
+      "failed": 0
+    }
+  },
+  "cache_audit": {
+    "generation_host_port": "117.50.181.177:32409",
+    "manifest": "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl",
+    "manifest_sha256": "5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8",
+    "manifest_rows": 277713,
+    "manifest_unique_ids": 277713,
+    "feature_root": "/mnt/h3-wam/data/v8_frameindexed_h3_cache/h3_int8_libero40_last32_starwam",
+    "pt_files": 277713,
+    "missing": 0,
+    "extra": 0,
+    "temporary": 0,
+    "other": 0,
+    "sorted_manifest_ids_sha256": "7538b95c74f5a175af872864af3d06173adc7649ae0c6dfe405132f116d7dda0",
+    "sorted_feature_ids_sha256": "7538b95c74f5a175af872864af3d06173adc7649ae0c6dfe405132f116d7dda0",
+    "shard_completed": [34715, 34714, 34714, 34714, 34714, 34714, 34714, 34714],
+    "shard_written_sum": 277713,
+    "metadata_samples": 16,
+    "metadata_errors": 0,
+    "metadata_contract": {
+      "layers": [49],
+      "shape": [1, 32, 5376],
+      "capture_token_strategy": "starwam_adaptive_avg_pool1d_v1",
+      "backbone": "H3Int8FeatureBackbone",
+      "quantization": "int8_tensorwise_convrot",
+      "timestep": 1.0,
+      "finite": true
+    },
+    "status": "PASS"
+  },
+  "frozen_data_contract": {
+    "source_manifest_sha256": "5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8",
+    "source_items": 277713,
+    "train_manifest_sha256": "a4ad2a7955f539c2f709912d423bfa892688885ed14144a9988595de14b8e78c",
+    "train_items": 250035,
+    "validation_manifest_sha256": "df0c6ab6efce8a89e5c249548a17a34f386b388b614b417ec531fb10113a4fa6",
+    "validation_items": 27678,
+    "stats_sha256": "f940b481bb50fefe07ec0f976b6b745af2edd1e4bdc0f2c4eb35ef4f3fb2da15",
+    "window_overlap": 0,
+    "episode_overlap": 0,
+    "selection": {
+      "salt": "h3-int8-starwam-balanced-val-v1",
+      "samples_per_task": 2,
+      "tasks": 40,
+      "selected_items": 80,
+      "all_task_counts": 2,
+      "selected_ids_sha256": "75d888fbb4298bef3517b623c00861ac6fe036495dee3bf4f0c68b5c097c5f54"
+    }
+  },
+  "frozen_inference_contract": {
+    "scheduler": "pinned StarWAM FlowMatchScheduler",
+    "shift": 5.0,
+    "steps": 10,
+    "integrator": "Euler sample += velocity * delta",
+    "seed": 42,
+    "batch_size": 1,
+    "language_sensitivity": true,
+    "visual_feature_shuffle": false,
+    "device_mapping": {
+      "s1": "physical GPU0",
+      "s50": "physical GPU1",
+      "s100": "physical GPU2"
+    }
+  },
+  "command_template": [
+    "CUDA_VISIBLE_DEVICES=<GPU>",
+    "PYTHONPATH=/mnt/h3-wam/offline-eval-strict-v1-20260814-1611/project/src",
+    "/mnt/h3-wam/runtime/h3-int8-native/bin/python",
+    "scripts/h3wam/evaluate_h3_int8_starwam_action.py",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s<STEP>.pt",
+    "--source-manifest /mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl",
+    "--train-manifest /mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/episode_disjoint_v1/manifest_train_episode_disjoint.jsonl",
+    "--val-manifest /mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/episode_disjoint_v1/manifest_val_episode_disjoint.jsonl",
+    "--cache-root /mnt/h3-wam/data/v8_frameindexed_h3_cache",
+    "--feature-subdir h3_int8_libero40_last32_starwam",
+    "--output /mnt/h3-wam/offline-eval-strict-v1-20260814-1611/results/s<STEP>_balanced_val_n2.json",
+    "--samples-per-task 2",
+    "--batch-size 1",
+    "--num-workers 0",
+    "--device cuda:0",
+    "--seed 42",
+    "--inference-steps 10",
+    "--action-shift 5",
+    "--language-sensitivity"
+  ],
+  "results": [
+    {
+      "step": 1,
+      "checkpoint_sha256": "a91765e66ae7e8beae0f02dbdbb748d086893425fdba43370eabe951ffeaa0fa",
+      "checkpoint_bytes": 9376878533,
+      "restore_probe_max_abs": 0.0,
+      "result": "/mnt/h3-wam/offline-eval-strict-v1-20260814-1611/results/s1_balanced_val_n2.json",
+      "result_sha256": "ea52c3eb895f5cdd507a4e92367c96a1615f6138f8516e6fbe359c1a1f15bb52",
+      "normalized": {"mse": 77.86999616560999, "mae": 6.929864183244732, "ade_l2": 23.208049131973212, "endpoint_l2": 23.576206322790732, "prediction_std": 8.786258369119944},
+      "physical": {"mse": 0.5163690117850114, "mae": 0.5857629422788266, "ade_l2": 1.871191819663588, "endpoint_l2": 1.7899095425937133, "prediction_std": 0.7201348098608855},
+      "gripper": {"accuracy": 0.4193121693121693, "f1": 0.5908667287977633, "macro_f1": 0.2954333643988816},
+      "language": {"mean_abs_delta": 0.9314558971555925, "rms_delta": 1.3138714199751946, "relative_l2_delta": 0.14939873022725944},
+      "elapsed_seconds": 120.00870774895884
+    },
+    {
+      "step": 50,
+      "checkpoint_sha256": "090097c819ec344c4e2deba317254e64e94ba8913cacf02656139b026c8aa0c7",
+      "checkpoint_bytes": 9376881857,
+      "restore_probe_max_abs": 0.0,
+      "result": "/mnt/h3-wam/offline-eval-strict-v1-20260814-1611/results/s50_balanced_val_n2.json",
+      "result_sha256": "b3ce1dbd4687d8304725372845a610b3429f9fe1f56b9c59e78762c19c3ebd01",
+      "normalized": {"mse": 3.1471930364233414, "mae": 1.4028552096927458, "ade_l2": 4.475252529518149, "endpoint_l2": 4.68250695930321, "prediction_std": 1.7577127251394853},
+      "physical": {"mse": 0.39455086166048914, "mae": 0.48726946522469305, "ade_l2": 1.6131279679871964, "endpoint_l2": 1.699263544543847, "prediction_std": 0.5893103228530374},
+      "gripper": {"accuracy": 0.6164021164021164, "f1": 0.5556690500510726, "macro_f1": 0.6090990711853501},
+      "language": {"mean_abs_delta": 0.5774245123984562, "rms_delta": 0.744794725977848, "relative_l2_delta": 0.42311534754789165},
+      "elapsed_seconds": 120.0447738339426
+    },
+    {
+      "step": 100,
+      "checkpoint_sha256": "c8b0c8804f5ecedcfb3ca39d7a360e750e4d3f801397b82fa4e3b766b9927a29",
+      "checkpoint_bytes": 9376885181,
+      "restore_probe_max_abs": 0.0,
+      "result": "/mnt/h3-wam/offline-eval-strict-v1-20260814-1611/results/s100_balanced_val_n2.json",
+      "result_sha256": "7c4802766d2de6c8b3d1c36df4e5af58401fa079ac85940ea8e4f4f0df81bc01",
+      "normalized": {"mse": 2.192003703493739, "mae": 1.1630971566890103, "ade_l2": 3.741715000616236, "endpoint_l2": 3.903883108393886, "prediction_std": 1.4488160184569996},
+      "physical": {"mse": 0.3598879745556142, "mae": 0.46040098911630445, "ade_l2": 1.5290231210066696, "endpoint_l2": 1.644306127586459, "prediction_std": 0.5988689863031983},
+      "gripper": {"accuracy": 0.5304232804232805, "f1": 0.594903004944846, "macro_f1": 0.5182171028919301},
+      "language": {"mean_abs_delta": 0.41217689485326464, "rms_delta": 0.5239098729241786, "relative_l2_delta": 0.35834341661198665},
+      "elapsed_seconds": 120.061137237004
+    }
+  ],
+  "failures": [
+    {
+      "stage": "cache_audit_attempt_1",
+      "classification": "audit_command_quoting_error",
+      "detail": "remote Python expression was shell-dequoted to row[id], raising KeyError on built-in id",
+      "data_or_model_failure": false,
+      "resolution": "reran the same read-only audit with quote-safe variable assignment; audit passed"
+    },
+    {
+      "stage": "isolated_file_transfer_attempt_1",
+      "classification": "transport_tool_missing",
+      "detail": "local scp executable was unavailable",
+      "data_or_model_failure": false,
+      "resolution": "used tar over the existing SSH transport and verified all destination SHA256 hashes"
+    }
+  ],
+  "comparison": {
+    "overall_regression": "s1 > s50 > s100 error; s100 is best on normalized and physical MSE/MAE/ADE/endpoint",
+    "gripper": "s50 is best on accuracy and macro-F1; s100 regresses from s50, so action components do not improve uniformly",
+    "language": "all checkpoints are language-sensitive under same-noise replacement; magnitude alone is not semantic correctness",
+    "claim": "NOT_EVIDENCE_READY: fixed held-out offline evidence only; no LIBERO closed-loop success result"
+  }
+}

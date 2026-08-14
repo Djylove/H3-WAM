@@ -1,0 +1,155 @@
+{
+  "experiment_id": "h3_int8_starwam_candidate_f_flow_regression_s100_v1",
+  "classification": "novel_composition",
+  "hypothesis": "Adding a same-forward clean-action reconstruction loss to the pinned weighted FastWAM/StarWAM flow loss will emphasize high-noise action states and improve frozen held-out chunk action quality without weakening visual conditioning.",
+  "single_variable": "clean_action_regression_weight changes from 0.0 in parent R1 to 1.0; H3 features, model, train split, sample order, flow noise, optimizer, scheduler and evaluation are fixed.",
+  "parent_baseline": "h3_int8_starwam_split_native_full30_v1 s100: 30-layer ActionDiT, 800 unique train windows, 0.0031995520622672785 effective epoch, exact restore PASS; frozen balanced-80 effectiveness is pending.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "Fast-WAM",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "v1 supplemental only; implementation claims come from code",
+      "official": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "FastWAM official implementation",
+      "locator": "https://github.com/yuantianyuan01/FastWAM",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0 read through immutable git show because vendor checkout is dirty",
+      "official": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "DiT4DiT official implementation cross-check",
+      "locator": "https://github.com/Mondo-Robotics/DiT4DiT",
+      "revision": "66a6f3a12e2c8740157c1e478795952c040d31dd read through immutable git show",
+      "official": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3 INT8 StarWAM action trainer Candidate F",
+      "locator": "scripts/h3wam/train_h3_int8_starwam_action.py",
+      "revision": "trainer sha256 9e567e41f9a8b7b7a6fcabc8e3812c96db3e54cb7bc4b764a0c584d9f9052999; focused test sha256 ab7b840a1015fc2381d02e8d5e61fab3ef24fde85f2d9d29c50da8f903e265d6; reviewed 2026-08-14",
+      "official": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "H3 frozen-feature 30-layer ActionDiT",
+        "paper": "FastWAM joint video/action carrier",
+        "upstream_code": "FastWAM ActionDiT flow carrier",
+        "local": "Parent R1 architecture and parameter count unchanged; auxiliary loss uses the existing prediction",
+        "status": "EXACT",
+        "evidence": ["checkpoint contract adds extra_parameters=0 only when Candidate F is enabled", "tests/test_h3_int8_starwam_action_trainer.py"],
+        "rationale": "Exact relative to the parent controlled baseline; this is not a claim that H3 equals Wan2.2."
+      }
+    ],
+    "data": [
+      {
+        "field": "episode-disjoint dense LIBERO train windows",
+        "paper": "dense robot windows",
+        "upstream_code": "FastWAM uses dense stride-1 32-action chunks across four LIBERO suites",
+        "local": "Same parent source/train manifests and exact s1/s50/s100 offsets; no additional data",
+        "status": "EXACT",
+        "evidence": ["source sha256 5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8", "train sha256 a4ad2a7955f539c2f709912d423bfa892688885ed14144a9988595de14b8e78c"],
+        "rationale": "No data variable changes."
+      }
+    ],
+    "action": [
+      {
+        "field": "7D x 32 action chunk and 8D current proprio",
+        "paper": "continuous action chunks",
+        "upstream_code": "FastWAM fastwam.py lines 301-323 and 352-366",
+        "local": "Parent R1 minmax/padding/action-horizon contract unchanged",
+        "status": "EXACT",
+        "evidence": ["docs/H3_R1_CANDIDATE_F_FASTWAM_FLOW_REGRESSION_2026-08-14.md", "trainer focused tests"],
+        "rationale": "No action representation or rollout horizon variable changes."
+      }
+    ],
+    "objective": [
+      {
+        "field": "weighted masked flow plus same-forward clean chunk MSE",
+        "paper": "FastWAM action flow matching",
+        "upstream_code": "Official FastWAM is pure weighted masked velocity MSE and contains no policy regression complement",
+        "local": "L_total=L_flow+1.0*masked_MSE(x_t-sigma*v_pred,x0)",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["FastWAM commit 45d8e145 fastwam.py lines 470-477 and 550-568", "CPU test proves L_clean equals sigma squared velocity error and reuses padding mask"],
+        "rationale": "Novel composition tests high-noise reweighting without a new head, forward or noise draw; it must not be described as an upstream reproduction."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "paired s1/s50/s100 bounded canary",
+        "paper": "upstream methods use much longer optimization",
+        "upstream_code": "FastWAM AdamW training and DiT4DiT 100000-step configuration",
+        "local": "Same R1 8-GPU global-batch-8, seed42, LR/scheduler/clip and strict resume; only loss weight differs",
+        "status": "EXACT",
+        "evidence": ["experiments/evidence/h3_int8_starwam_split_native_full30_v1.json", "canary_stages below"],
+        "rationale": "Exact relative to the parent paired canary, not equivalent to upstream convergence budgets."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "frozen paired balanced-80 action evaluation and visual shuffle retention",
+        "paper": "closed-loop success is the final measure",
+        "upstream_code": "FastWAM predicts a full chunk and executes only a replan prefix",
+        "local": "Same 40-task x2 episode-disjoint sample IDs and action noise as parent; no rollout before offline gates",
+        "status": "EXACT",
+        "evidence": ["validation sha256 df0c6ab6efce8a89e5c249548a17a34f386b388b614b417ec531fb10113a4fa6", "scripts/h3wam/evaluate_h3_int8_starwam_action.py"],
+        "rationale": "The paired evaluation protocol is fixed; effectiveness results are not yet available."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FastWAM and DiT4DiT official origins and fixed commits recorded; immutable git show used for dirty vendors"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["No new module, parameter, forward or H3 path"]},
+    "data_contract": {"status": "PASS", "evidence": ["250035 train windows, 27678 validation windows, episode overlap0, exact manifest hashes"]},
+    "action_contract": {"status": "PASS", "evidence": ["7D x32, pad mask, minmax and current proprio unchanged"]},
+    "objective_contract": {"status": "PASS", "evidence": ["Candidate F math explicit; default0 preserves parent flow loss; weight1 is sole variable"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Exact parent stage offsets, global batch, seed and checkpoint schedule pre-registered"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Frozen balanced-80 IDs/noise and stop thresholds pre-registered before launch"]},
+    "gradient_path": {"status": "PASS", "evidence": ["CPU focused test shows enabled auxiliary loss changes the gradient while parent full30 three-path gradient gate remains fixed"]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["Candidate F GPU smoke deliberately not launched"]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["Candidate F checkpoint does not exist; parent schema2 restore is proven"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["experiments/evidence/h3_int8_starwam_split_native_full30_v1.json"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Candidate F balanced-80 comparison pending"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Not authorized before offline mechanism gate"]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 100,
+    "training_samples": 800,
+    "unique_windows": 800,
+    "effective_epochs": 0.0031995520622672785,
+    "gpu_count": 8,
+    "estimated_hours": 0.5
+  },
+  "canary_stages": [
+    {"name": "s1", "load_checkpoint": null, "steps": 1, "sample_offset": 0, "limit": 8, "save_checkpoint": "candidate_f_s1.pt"},
+    {"name": "s50", "load_checkpoint": "candidate_f_s1.pt", "steps": 49, "sample_offset": 8, "limit": 504, "save_checkpoint": "candidate_f_s50.pt"},
+    {"name": "s100", "load_checkpoint": "candidate_f_s50.pt", "steps": 50, "sample_offset": 512, "limit": 512, "save_checkpoint": "candidate_f_s100.pt"}
+  ],
+  "fixed_runtime": {
+    "source_manifest": "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl",
+    "train_manifest": "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/episode_disjoint_v1/manifest_train_episode_disjoint.jsonl",
+    "validation_manifest": "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/episode_disjoint_v1/manifest_val_episode_disjoint.jsonl",
+    "cache_root": "/mnt/h3-wam/data/v8_frameindexed_h3_cache",
+    "feature_subdir": "h3_int8_libero40_last32_starwam",
+    "clean_action_regression_weight": 1.0,
+    "seed": 42
+  },
+  "success_criteria": {
+    "mechanical": ["all steps finite", "ActionDiT/feature-projector/proprio gradients positive", "fresh restore max_abs=0 at s1/s50/s100", "800 unique sample IDs with cross-stage overlap0"],
+    "offline_effect": ["Candidate F s100 improves normalized action MSE or chunk ADE and does not regress the other", "gripper macro-F1 does not regress", "visual-shuffle sensitivity retains at least 80 percent of parent R1 once E1 is available"],
+    "failure_action": "Any base action regression or visual-conditioning collapse sets NO_GO_LONG; do not compensate with a task-specific head."
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The source, contracts, sole objective variable and CPU gradient path are fixed. Only the paired s1/s50/s100 canary is authorized; no effectiveness or closed-loop claim is made.",
+    "launch_command": "READY_NOT_LAUNCHED: repeat the parent R1 8-GPU s1/s50/s100 chain with the fixed_runtime and canary_stages above, adding only --clean-action-regression-weight 1.0; stop after fresh restore and balanced-80 evaluation."
+  },
+  "launch_state": "WITHHELD_BY_CURRENT_TASK_NO_GPU_LAUNCH",
+  "detail_document": "docs/H3_R1_CANDIDATE_F_FASTWAM_FLOW_REGRESSION_2026-08-14.md"
+}
