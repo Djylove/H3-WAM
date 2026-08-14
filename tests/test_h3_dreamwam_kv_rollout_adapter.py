@@ -30,6 +30,11 @@ ROLLOUT = load_script(
 
 
 class H3DreamWAMKVRolloutAdapterTest(unittest.TestCase):
+    def test_server_prefers_project_vendored_starwam_when_present(self):
+        expected = ROOT / "third_party" / "StarWAM"
+        self.assertTrue(expected.is_dir())
+        self.assertIn(str(expected), sys.path)
+
     def test_server_parser_exposes_d0_policy_and_manifest(self):
         argv = [
             "serve",

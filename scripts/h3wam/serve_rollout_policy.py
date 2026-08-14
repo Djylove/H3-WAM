@@ -18,6 +18,9 @@ import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
+VENDORED_STARWAM_ROOT = REPO_ROOT / "third_party" / "StarWAM"
+if VENDORED_STARWAM_ROOT.is_dir():
+    sys.path.insert(0, str(VENDORED_STARWAM_ROOT))
 
 
 def parse_args() -> argparse.Namespace:
