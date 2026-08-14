@@ -1,0 +1,114 @@
+{
+  "event": "h3_dense_tournament_pipeline_armed",
+  "date": "2026-08-14",
+  "status": "RUNNING_CACHE_THEN_GATED_TRAIN_AND_EVAL",
+  "effectiveness": "NOT_EVIDENCE_READY",
+  "code_identity": {
+    "git_commit": "64ec27b",
+    "remote": "https://github.com/Djylove/H3-WAM.git",
+    "branch": "main",
+    "h3_checkpoint_sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+    "source_manifest_sha256": "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9",
+    "train_manifest_sha256": "b0d611c21059fa7da6fb08162b03efadd59aff68354bb101be41d3ae20d98eb1",
+    "validation_manifest_sha256": "4dde839b4c82f2439a82c4c8bd48f5d5c94c1fe3a71a7e8d23068386c3a2d31d"
+  },
+  "cache": {
+    "workers": 32,
+    "nodes": 4,
+    "workers_per_node": 8,
+    "producer_error_logs": 0,
+    "snapshot": {
+      "time_utc": "2026-08-14T13:21:46+00:00",
+      "dreamwam_kv_files": 30002,
+      "starwam_feature_files": 14623,
+      "temporary_files": 3,
+      "required_each": 222929,
+      "free_tib": 24.366978645324707
+    },
+    "observed_throughput_windows_per_second": 8.4,
+    "rough_remaining_hours_at_snapshot": 6.9,
+    "watcher": {
+      "node_port": 30907,
+      "pid": 621602,
+      "script": "scripts/h3wam/watch_and_audit_dense_dual_cache.sh",
+      "log": "/mnt/h3-wam/dense-d0-v1-96976ce/cache_generation/full_audit/watch.log",
+      "ready_marker": "/mnt/h3-wam/dense-d0-v1-96976ce/cache_generation/full_audit/DUAL_CACHE_AUDIT_READY.json",
+      "behavior": "Require two stable complete counts with no partial/error files, then run full DreamWAM K/V and StarWAM feature ID/metadata/tensor/checkpoint audits; never launch through an invalid audit."
+    }
+  },
+  "c03_replay_audit": {
+    "v7_train_ids_present_in_historical_v8": 180843,
+    "v7_train_rows": 200779,
+    "overlap_fraction": 0.9007067472195798,
+    "first_7704_intersection": 5579,
+    "decision": "Run only a common-protocol s1/s50/s100 anchor; NO_GO_LONG because historical s850/s913 replicated conditioning collapse."
+  },
+  "training_watchers": [
+    {
+      "candidate": "D0",
+      "node_port": 30907,
+      "pid": 621633,
+      "gpu_count_after_ready": 8,
+      "milestones": [10, 50, 250, 500, 963],
+      "training_samples": 7704,
+      "permission": "GO_CANARY_TO_S963_ONLY"
+    },
+    {
+      "candidate": "D",
+      "node_port": 32611,
+      "pid": 183082,
+      "gpu_count_after_ready": 8,
+      "milestones": [10, 50, 250, 500, 963],
+      "training_samples": 7704,
+      "permission": "GO_CANARY_TO_S963_ONLY"
+    },
+    {
+      "candidate": "C03 StarWAM",
+      "node_port": 32409,
+      "pid": 548283,
+      "gpu_count_after_ready": 8,
+      "milestones": [1, 50, 100],
+      "training_samples": 800,
+      "permission": "GO_CANARY_TO_S100_ONLY_NO_GO_LONG"
+    }
+  ],
+  "evaluation_watchers": [
+    {
+      "candidate": "D",
+      "node_port": 30234,
+      "pid": 7879,
+      "gpu_index": 0
+    },
+    {
+      "candidate": "D0",
+      "node_port": 30234,
+      "pid": 7884,
+      "gpu_index": 1
+    },
+    {
+      "candidate": "C03 StarWAM",
+      "node_port": 30234,
+      "pid": 7889,
+      "gpu_index": 2
+    }
+  ],
+  "evaluation_contract": {
+    "selection": "v7 deterministic balanced 40 tasks x 2 windows",
+    "selected_ids_sha256": "26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42",
+    "seed": 42,
+    "action_shift": 5.0,
+    "inference_steps": 10,
+    "same_noise": true,
+    "counterfactuals": [
+      "language replacement",
+      "no-self-map visual shuffle"
+    ],
+    "scope": "Offline reports are generated automatically; promotion and closed-loop launch remain evidence-gated decisions."
+  },
+  "verification": {
+    "focused_tests": "43 passed",
+    "dossier": "experiments/dossiers/h3_candidate_c03_starwam_dense_v7_s100_v1.json",
+    "dossier_canary_validation": "PASS",
+    "deployed_file_hashes_match_local": true
+  }
+}

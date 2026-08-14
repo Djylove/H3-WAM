@@ -81,6 +81,7 @@
 | E40 | Candidate D0 s963 在线 K/V 与闭环 canary | INT8 H3 layer49 在线 K/V；goal0 80步、spatial0 120步；10-step flow | 训推 K/V bitwise exact；动作 saturation `0`；峰值 `30.61 GiB` | `0/2` | goal0 错推 bowl/plate、drawer delta0；spatial0 无接触；`FAIL_CLOSED_LOOP`，不跑 benchmark |
 | E41 | Candidate D0 v7 dense 数据线 | 架构/目标/优化不变；5 windows/episode → 200,779 dense train windows；32卡 cache | cache 生成中；v7 balanced-80 IDs `26b032...9c42` | 待评测 | 唯一变量是状态/接触密度；先等预算 s963，再到 s25097 近一轮；禁止在 dense 结果前再改架构 |
 | E42 | H3 INT8 双输出 dense cache | 同一次 H3 forward 写 DreamWAM 五层 K/V 与 StarWAM layer49 pooled hidden；单样本与两条独立路径比对 | feature/KV 均 bitwise equal、max-abs `0`；32 workers；切换时保留30,005份K/V；初始补写约`9.16 samples/s` | 不适用 | `MECHANICAL_PASS`；避免为 C03 再完整跑一遍22万样本，但不构成任何策略效果证据 |
+| E43 | dense carrier 三线流水线 | 32卡双 cache → 双全量 audit → D/D0 各8卡 s963；C03 8卡 s100；第四节点逐 checkpoint balanced-80 | 已 armed；快照 K/V `30,002`、StarWAM `14,623`、错误0；D/D0/C03 与三条评测 watcher 均等待 audit READY | 待评测 | v7/v8 train ID 重合 `90.07%`，故 C03 锁死 s100、禁止重复 s963；D/D0 严格唯一变量配对，任何线均未获得长训或效果声明许可 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
