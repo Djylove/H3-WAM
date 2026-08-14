@@ -15,8 +15,10 @@
   严格同 step 父对照中 physical MSE、gripper macro-F1、语言与相对视觉敏感度均无净增益；
   判定 `FAIL_PAIRED_GATE`，不扩 s100/长训/rollout。
 - Candidate D 的五层 DreamWAM K/V cache 已完成 8,560/8,560 全量审计，且唯一授权的修复后
-  单步 probe 通过有限非零梯度与参数更新门；仅判定 `MECHANICS_PASS_ONLY`，未保存 checkpoint，
-  无 parent paired baseline 或效果结论，不放行长训。
+  单步 probe 通过有限非零梯度与参数更新门。后续 D/D0 严格配对近一轮实验全部完成：D 在
+  s10–s500 的 physical MSE/ADE 领先，但 s963 被重复 layer49 的 D0 全面反超。两臂从 s250
+  起均形成持续的目标对齐 visual-shuffle 惩罚，证明冻结 H3 条件加独立动作专家路线具备离线
+  机制信号；淘汰“五层对齐必然更优”的假设，选择 D0 s963 进入最小闭环 canary。
 - 已证明 H3 表征可以训练出显著下降的动作离线损失，但尚未证明通用 H3-WAM 闭环策略成立。
 - dense 数据修正显著改善离线误差，M13 step400 达到 `0.122312`，但固定四任务仍为 `0/4`。
 - 冻结 H3 的 head-only 路线语言区分度很弱，correct/wrong instruction 动作余弦约 `0.994`。
@@ -75,6 +77,7 @@
 | E36 | Candidate G paired visual margin | 8-rank wrong-H3 hinge；s1→s50；同 step baseline s50 | G/parent physical MSE `0.412425/0.405095`；visual relative scale `1.063807/1.064937` | 未放行 | 机械门通过，但 gripper macro-F1 低3.04%、语言略低；`FAIL_PAIRED_GATE`，不扩训 |
 | E37 | Candidate D DreamWAM 5-layer K/V carrier | 8,560-window cache 全量 audit；修复后 1 GPU × 1 sample × 1 step；无 checkpoint | loss `1.484375`；5 block/proprio gradients 全部有限非零；head update `1.19e-7` | 未放行 | cache/Data 与 trainability 机械门通过；`MECHANICS_PASS_ONLY / NOT_EVIDENCE_READY`，禁止据此长训或声称效果 |
 | E38 | Candidate D s1 save/restore + v4 balanced-80 adapter | schema-v2 1-step checkpoint；fresh restore；v4 40×2 evaluator | restore max-abs `0`；physical MSE `0.492577`；gripper macro-F1 `0.363093`；language relative-L2 `0.471810`；visual delta MSE `0.177422` | 未放行 | `MECHANICAL_GATE PASS / EVALUATOR_MECHANICS PASS`；v4/v8 IDs mismatch 且仅一步，`NOT_EFFECTIVENESS / NOT_STRICT_PAIRED_IDS` |
+| E39 | Candidate D/D0 v4 严格配对学习曲线 | 同初始化/样本顺序/8-rank；D 五层对齐，D0 重复 layer49；s10/s50/s250/s500/s963 | s963 D/D0 physical MSE `0.142015/0.110084`，ADE `0.945540/0.804093`，越界率 `6.13%/4.47%`，gripper macro-F1 `0.780779/0.784651` | 待最小 canary | 每臂累计7704唯一 IDs、restore max-abs `0`；两臂 visual shuffle 均显著恶化动作/夹爪；`REJECT_ALIGNED_5LAYER_AS_WINNER / PROMOTE_D0_S963_TO_MINIMAL_CLOSED_LOOP_CANARY` |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 

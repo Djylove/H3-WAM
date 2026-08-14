@@ -1,0 +1,264 @@
+{
+  "experiment_id": "h3_candidate_d_vs_d0_v4_paired_final_v1",
+  "parent_dossier": "experiments/dossiers/h3_candidate_d_vs_d0_v4_paired_v1.json",
+  "classification": "controlled_ablation_interim_result",
+  "single_variable": "carrier_source_mode: D=aligned_5layer, D0=repeat_layer49",
+  "source_revision": "58fc1b9",
+  "claim_boundary": "Strictly paired offline evidence on the v4 balanced-80 protocol only. This is not a comparison to R1/G v8 and is not LIBERO closed-loop success evidence.",
+  "identity": {
+    "h3_checkpoint_sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+    "selected_ids_sha256": "b507e1ff6031f01c88cd6181aaeb4cba33b76e2c67737a986bf764c76be87519",
+    "cache_audit_aggregate_sha256": "4d4e7aee64d7167f7fba6982ee182d4fb927ac74c2a3f0698fe15e2b8de80461",
+    "world_size_per_arm": 8,
+    "global_batch_per_arm": 8,
+    "same_initialization_and_trainable_parameters": true,
+    "same_sample_order": true
+  },
+  "checkpoint_and_data_gates": {
+    "s10": {
+      "completed_steps": 10,
+      "cumulative_samples_per_arm": 80,
+      "unique_samples_per_arm": 80,
+      "consumed_ids_sha256_both_arms": "c13a6a2091a3c939b4456a882e2052b17033d3594dac9c66feea7ce5e5152f84",
+      "rng_ranks_per_checkpoint": 8,
+      "fresh_distributed_restore_max_abs_both_arms": 0.0,
+      "d_checkpoint_sha256": "6f3dedee41bfa96d62983c2a70502468ead826e38438793780430cbee619f6ab",
+      "d0_checkpoint_sha256": "047034ab9ce9cd48c9b3f4a82f2e94fe2554655e2172d0ac64551abeddd74360"
+    },
+    "s50": {
+      "completed_steps": 50,
+      "cumulative_samples_per_arm": 400,
+      "unique_samples_per_arm": 400,
+      "consumed_ids_sha256_both_arms": "036d67bed224275a9b9ffe4dc55084fd49294c7b572bd13a27e1ce5e92f82258",
+      "rng_ranks_per_checkpoint": 8,
+      "fresh_distributed_restore_max_abs_both_arms": 0.0,
+      "d_checkpoint_sha256": "ff2bad34caef78a7e2573b799e4a8445da218abc50b9adf25a9522cc7e7d61d6",
+      "d0_checkpoint_sha256": "2c85ba8dd6ba47b614d17ffd62fa6e0638cf22590764df6a55e38ca45f94acd8"
+    },
+    "s250": {
+      "completed_steps": 250,
+      "cumulative_samples_per_arm": 2000,
+      "unique_samples_per_arm": 2000,
+      "consumed_ids_sha256_both_arms": "a69dce78eb6489b36c8afd4070f85761d31daf443cdac11e608b98a86019f36b",
+      "rng_ranks_per_checkpoint": 8,
+      "fresh_distributed_restore_max_abs_both_arms": 0.0,
+      "d_checkpoint_sha256": "d30ab2f719e915ebbb09f9d4d55c23f42250cf61df29fc5b012940b8fb01aef7",
+      "d0_checkpoint_sha256": "bd82ddd4236897f23d4a281b777d4b445be000525891b467d83bcde5b2a9cb5a"
+    },
+    "s500": {
+      "completed_steps": 500,
+      "cumulative_samples_per_arm": 4000,
+      "unique_samples_per_arm": 4000,
+      "consumed_ids_sha256_both_arms": "c76361086b6f56d15bd2f533f157b4a86a087ba1dee71289e4817dfa4f6c09a8",
+      "rng_ranks_per_checkpoint": 8,
+      "fresh_distributed_restore_max_abs_both_arms": 0.0,
+      "d_checkpoint_sha256": "1b429c0f2fe574929888389e74be4c643ca93a1ee3d9bdbce9f79f4fa020d64d",
+      "d0_checkpoint_sha256": "2aa79a41de71b3ffb7e8c49b0cf24c1b1fade6d3739994c4c8321d20144b5930"
+    },
+    "s963": {
+      "completed_steps": 963,
+      "cumulative_samples_per_arm": 7704,
+      "unique_samples_per_arm": 7704,
+      "consumed_ids_sha256_both_arms": "afbd06159b5b9e34bb86a0e5fd0f66e1768da93010b7b3e0aa57c1dfbfcf9655",
+      "rng_ranks_per_checkpoint": 8,
+      "fresh_distributed_restore_max_abs_both_arms": 0.0,
+      "d_checkpoint_sha256": "34522bee1bc959c5462d1f852ca507e7173c0fff5d863e756b9a00b5d3364404",
+      "d0_checkpoint_sha256": "3b2f0a4746763f7b3328d8a4ddee0df27e46ad58f29aa71ad0a90fe8156152f8",
+      "d_checkpoint_bytes": 2100239779,
+      "d0_checkpoint_bytes": 2100240406,
+      "d_train_report_sha256": "15d30405cda03b64b2e8e55dff23e247d97f28ce32ca7151bad83350f638c2e1",
+      "d0_train_report_sha256": "aabc084f13df46d786df2dc16979beafd0323269cde56742d0c370b5fe860feb",
+      "partial_files_both_arms": 0
+    },
+    "sampler_cursor_restorable": false,
+    "resume_mode": "explicit non-overlapping stage slices with cumulative consumed-ID validation"
+  },
+  "balanced80_results": {
+    "s10": {
+      "d": {
+        "physical_action_mse": 0.48312492063364193,
+        "physical_chunk_ade_l2": 1.7961787291413558,
+        "physical_chunk_endpoint_l2": 1.754938319977598,
+        "gripper_macro_f1": 0.3758957052378531,
+        "language_relative_l2": 0.4774030287896671,
+        "visual_shuffle_action_delta_normalized_mse": 0.17727055685203855,
+        "visual_shuffle_minus_baseline_physical_mse": -0.0011651446918092279
+      },
+      "d0": {
+        "physical_action_mse": 0.5675139497900253,
+        "physical_chunk_ade_l2": 1.9496179759095251,
+        "physical_chunk_endpoint_l2": 1.9229806830107943,
+        "gripper_macro_f1": 0.3216873028341999,
+        "language_relative_l2": 0.31823371196694894,
+        "visual_shuffle_action_delta_normalized_mse": 0.8722474673062347,
+        "visual_shuffle_minus_baseline_physical_mse": 0.004441408635050603
+      },
+      "d_evaluation_sha256": "65d8b279cc6f958e6d5fefd96cae166ff197e32c791e6788549d1f3715556455",
+      "d0_evaluation_sha256": "6e8b9953c90dd83ea1873b07c957bb1ff11bcac2594ae5b8b335a91ee1de085d"
+    },
+    "s50": {
+      "d": {
+        "normalized_action_mse": 1.560213738081867,
+        "normalized_prediction_outside_unit_fraction": 0.36417410714285714,
+        "normalized_prediction_max_abs": 6.75,
+        "physical_action_mse": 0.34636764303028095,
+        "physical_chunk_ade_l2": 1.5084081983622157,
+        "physical_chunk_endpoint_l2": 1.4327757923336901,
+        "gripper_macro_f1": 0.48398384707937075,
+        "language_relative_l2": 0.5326124444900616,
+        "visual_shuffle_action_delta_normalized_mse": 0.13937590226107985,
+        "visual_shuffle_minus_baseline_physical_mse": -0.0030009968306071166,
+        "visual_shuffle_minus_baseline_gripper_macro_f1": -0.010226636026829161
+      },
+      "d0": {
+        "normalized_action_mse": 2.0903688004388123,
+        "normalized_prediction_outside_unit_fraction": 0.4451450892857143,
+        "normalized_prediction_max_abs": 6.90625,
+        "physical_action_mse": 0.39815468772526075,
+        "physical_chunk_ade_l2": 1.6202401665880117,
+        "physical_chunk_endpoint_l2": 1.5408239122819776,
+        "gripper_macro_f1": 0.44985537460570746,
+        "language_relative_l2": 0.5462313132735713,
+        "visual_shuffle_action_delta_normalized_mse": 0.7832864442736276,
+        "visual_shuffle_minus_baseline_physical_mse": -0.0029883152855160744,
+        "visual_shuffle_minus_baseline_gripper_macro_f1": 0.07307475631707916
+      },
+      "d_evaluation_sha256": "bf9a06b283f8a9034e6289eafcb39f7835f16b30aae2bf52a8b9872bc8375eb3",
+      "d0_evaluation_sha256": "c0c081e1e66226be4fc6321b8b5d9db96aedd70cf2873e1941ea7682c4d6195f"
+    },
+    "s250": {
+      "d": {
+        "normalized_action_mse": 0.4543302762202237,
+        "normalized_prediction_outside_unit_fraction": 0.07779017857142857,
+        "normalized_prediction_max_abs": 3.359375,
+        "physical_action_mse": 0.17327088606971627,
+        "physical_chunk_ade_l2": 1.0409718935778791,
+        "physical_chunk_endpoint_l2": 1.0644243822627257,
+        "gripper_macro_f1": 0.5606167119652519,
+        "language_relative_l2": 0.54917351989164,
+        "visual_shuffle_action_delta_normalized_mse": 0.028869194201631997,
+        "visual_shuffle_minus_baseline_physical_mse": 0.006317064990954718,
+        "visual_shuffle_minus_baseline_gripper_macro_f1": -0.02113554884830693
+      },
+      "d0": {
+        "normalized_action_mse": 0.686940726231504,
+        "normalized_prediction_outside_unit_fraction": 0.18537946428571428,
+        "normalized_prediction_max_abs": 3.625,
+        "physical_action_mse": 0.23820912019594484,
+        "physical_chunk_ade_l2": 1.2253976234384214,
+        "physical_chunk_endpoint_l2": 1.1999010962044387,
+        "gripper_macro_f1": 0.5840000000000001,
+        "language_relative_l2": 0.5327372839057347,
+        "visual_shuffle_action_delta_normalized_mse": 0.26440221030348504,
+        "visual_shuffle_minus_baseline_physical_mse": -0.00020514482665540124,
+        "visual_shuffle_minus_baseline_gripper_macro_f1": -0.02452239815899382
+      },
+      "d_evaluation_sha256": "c14e68b10b3403ebb60c2c7e29a594d1faae320c591609cd14ba3ac546e44d78",
+      "d0_evaluation_sha256": "403aa56dd0a5157474329a17b71fc2c540d82bba1d2fcb53c7893efa2437c27a"
+    },
+    "s500": {
+      "d": {
+        "normalized_action_mse": 0.37888877201888005,
+        "normalized_prediction_outside_unit_fraction": 0.06612723214285714,
+        "normalized_prediction_max_abs": 2.859375,
+        "physical_action_mse": 0.1551159433872044,
+        "physical_chunk_ade_l2": 0.9808662358988764,
+        "physical_chunk_endpoint_l2": 0.9821123159995576,
+        "gripper_macro_f1": 0.5518927838897438,
+        "language_relative_l2": 0.3303806109307955,
+        "visual_shuffle_action_delta_normalized_mse": 0.07897850969574002,
+        "visual_shuffle_minus_baseline_physical_mse": 0.02433195832335125,
+        "visual_shuffle_minus_baseline_gripper_macro_f1": -0.10416620487556333
+      },
+      "d0": {
+        "normalized_action_mse": 0.35298517086792863,
+        "normalized_prediction_outside_unit_fraction": 0.049553571428571426,
+        "normalized_prediction_max_abs": 2.796875,
+        "physical_action_mse": 0.16616987958396165,
+        "physical_chunk_ade_l2": 1.0176987019873995,
+        "physical_chunk_endpoint_l2": 0.9861476526528454,
+        "gripper_macro_f1": 0.6353927697428701,
+        "language_relative_l2": 0.28299037539496064,
+        "visual_shuffle_action_delta_normalized_mse": 0.15823609113973103,
+        "visual_shuffle_minus_baseline_physical_mse": 0.027318951733676433,
+        "visual_shuffle_minus_baseline_gripper_macro_f1": -0.12940617285996392
+      },
+      "d_evaluation_sha256": "ef5884892bc4f5d825dc49f59d9306eb3731c66a57aac838b6b15c5d4a79f1b5",
+      "d0_evaluation_sha256": "46af386af762b4ca1d4cd7e2ef6d1939548c41c1108af18f4da519ebf902dfaa"
+    },
+    "s963": {
+      "d": {
+        "normalized_action_mse": 0.26581055853734403,
+        "normalized_prediction_outside_unit_fraction": 0.061328125,
+        "normalized_prediction_max_abs": 2.015625,
+        "physical_action_mse": 0.14201504227002196,
+        "physical_chunk_ade_l2": 0.9455398681310868,
+        "physical_chunk_endpoint_l2": 0.9808288914858865,
+        "gripper_accuracy": 0.780859375,
+        "gripper_macro_f1": 0.7807790604437448,
+        "language_mean_abs_prediction_delta": 0.035982588359287804,
+        "language_relative_l2": 0.10616537871066875,
+        "visual_shuffle_action_delta_normalized_mse": 0.17721050759819262,
+        "visual_shuffle_action_delta_physical_mse": 0.06337619999955807,
+        "visual_shuffle_minus_baseline_physical_mse": 0.041615148358479404,
+        "visual_shuffle_minus_baseline_gripper_macro_f1": -0.2547409066738594
+      },
+      "d0": {
+        "normalized_action_mse": 0.21910375401820537,
+        "normalized_prediction_outside_unit_fraction": 0.044698660714285715,
+        "normalized_prediction_max_abs": 1.90625,
+        "physical_action_mse": 0.11008405396560517,
+        "physical_chunk_ade_l2": 0.8040932255210788,
+        "physical_chunk_endpoint_l2": 0.7974666464463211,
+        "gripper_accuracy": 0.784765625,
+        "gripper_macro_f1": 0.7846512406873829,
+        "language_mean_abs_prediction_delta": 0.05310802161693573,
+        "language_relative_l2": 0.16621771541380703,
+        "visual_shuffle_action_delta_normalized_mse": 0.15023970724300853,
+        "visual_shuffle_action_delta_physical_mse": 0.057112676051578354,
+        "visual_shuffle_minus_baseline_physical_mse": 0.03967914815459933,
+        "visual_shuffle_minus_baseline_gripper_macro_f1": -0.25782266801726816
+      },
+      "d_evaluation_sha256": "e57bf38e02beffa10fa9aacb5c58ed0d855257352ef06a32a40bd64ccf1172be",
+      "d0_evaluation_sha256": "656e18b204a25fc1f61cfbe0b7adf83d35113308cde1ad1477f2411310c0ccbf"
+    }
+  },
+  "interim_comparison": {
+    "s50_d_vs_d0_physical_mse_relative_reduction": 0.13006765031663897,
+    "s50_d_vs_d0_physical_ade_relative_reduction": 0.06902184659530922,
+    "s50_d_vs_d0_oob_fraction_relative_reduction": 0.18189795662529773,
+    "s50_d_vs_d0_gripper_macro_f1_relative_increase": 0.07586543231494448,
+    "s250_d_vs_d0_physical_mse_relative_reduction": 0.2726101925602681,
+    "s250_d_vs_d0_physical_ade_relative_reduction": 0.15050276443580032,
+    "s250_d_vs_d0_oob_fraction_relative_reduction": 0.580373269114991,
+    "s250_d_vs_d0_gripper_macro_f1_relative_change": -0.04003987677182912,
+    "s500_d_vs_d0_physical_mse_relative_reduction": 0.06652190050587325,
+    "s500_d_vs_d0_physical_ade_relative_reduction": 0.03619191615022726,
+    "s500_d_vs_d0_normalized_mse_relative_change": -0.07338438917209752,
+    "s500_d_vs_d0_oob_fraction_relative_change": -0.33445945945945943,
+    "s500_d_vs_d0_gripper_macro_f1_relative_change": -0.13141475608373213,
+    "s963_d0_vs_d_physical_mse_relative_reduction": 0.22484229694277338,
+    "s963_d0_vs_d_physical_ade_relative_reduction": 0.14959352574903623,
+    "s963_d0_vs_d_normalized_mse_relative_reduction": 0.17571463216566235,
+    "s963_d0_vs_d_oob_fraction_relative_reduction": 0.2711555959963603,
+    "s963_d0_vs_d_gripper_macro_f1_relative_increase": 0.004959380239318167,
+    "paired_action_signal": "PASS_FOR_BOTH_CANDIDATES",
+    "target_aligned_visual_mechanism": "PASS_PERSISTENT_S250_S500_S963",
+    "aligned_5layer_hypothesis": "REJECT_AS_WINNER",
+    "selected_offline_candidate": "D0_s963",
+    "rationale": "D leads D0 on physical MSE/ADE at s10/s50/s250/s500, but the margin contracts and by s963 D0 is better on normalized and physical action error, range and gripper. Both candidates develop persistent target-aligned visual-shuffle penalties from s250 onward. Therefore H3 conditioning and the action-expert route pass the offline mechanism gate, while aligned multi-layer K/V does not beat repeating layer49 after a near-full epoch."
+  },
+  "remote_artifacts": {
+    "root": "/mnt/h3-wam/candidate-d-paired-v1-58fc1b9",
+    "d_s50_eval": "/mnt/h3-wam/candidate-d-paired-v1-58fc1b9/D/evidence/balanced80_s50.json",
+    "d0_s50_eval": "/mnt/h3-wam/candidate-d-paired-v1-58fc1b9/D0/evidence/balanced80_s50.json"
+  },
+  "decision": {
+    "status": "PROMOTE_D0_S963_TO_MINIMAL_CLOSED_LOOP_CANARY",
+    "selected_checkpoint": "/mnt/h3-wam/candidate-d-paired-v1-58fc1b9/D0/outputs/d0_s963.pt",
+    "rejected_claim": "Aligned five-layer H3 K/V is superior to repeat-layer49.",
+    "supported_claim": "Frozen INT8 H3 layer49 features plus a separately trained DreamWAM-style action expert learn target-useful visual conditioning and substantially improve the fixed v4 offline action/range/gripper metrics over the learning curve.",
+    "remaining_boundary": "No LIBERO success-rate or cross-v8 superiority claim exists until the selected D0 checkpoint runs through the fixed closed-loop policy adapter and simulator success predicate."
+  },
+  "next_gate": "Implement or verify the Candidate D0 inference/rollout adapter, run one fixed LIBERO canary with pre-clamp action telemetry, and expand only after a successful or diagnostically meaningful controlled rollout."
+}
