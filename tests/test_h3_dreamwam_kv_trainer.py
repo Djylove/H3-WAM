@@ -197,6 +197,42 @@ class DreamWAMKVTrainingContractTest(unittest.TestCase):
             self.assertGreater(float(block.self_attn.q.weight.grad.norm()), 0.0)
         self.assertGreater(float(model.proprio_encoder.weight.grad.norm()), 0.0)
 
+    def test_bf16_forward_autocast_preserves_fp32_flow_timestep(self):
+        class TimeEmbeddingProbe(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.time_embedding = torch.nn.Linear(1, 2).to(torch.bfloat16)
+                self.seen_timestep_dtype = None
+
+            def forward(
+                self,
+                noisy,
+                timestep,
+                *,
+                text_context,
+                proprio,
+                video_kv_cache,
+                text_mask,
+            ):
+                del text_context, proprio, video_kv_cache, text_mask
+                self.seen_timestep_dtype = timestep.dtype
+                embedded = self.time_embedding(timestep[:, None])
+                return embedded[:, None, :].expand_as(noisy)
+
+        model = TimeEmbeddingProbe()
+        noisy = torch.randn(1, 4, 2, dtype=torch.bfloat16)
+        timesteps = torch.tensor([999.25], dtype=torch.float32)
+        batch = {
+            "text_context": torch.empty(1, 0, 1, dtype=torch.bfloat16),
+            "proprio": torch.empty(1, 0, dtype=torch.bfloat16),
+            "video_kv_cache": {},
+            "text_mask": torch.empty(1, 0, dtype=torch.bool),
+        }
+        prediction = MODULE.forward_policy(model, batch, noisy, timesteps)
+        self.assertEqual(model.seen_timestep_dtype, torch.float32)
+        self.assertEqual(prediction.dtype, torch.bfloat16)
+        self.assertEqual(tuple(prediction.shape), tuple(noisy.shape))
+
     def test_checkpoint_round_trip_and_contract_mismatch(self):
         torch.manual_seed(13)
         spec, model = self.build_model()

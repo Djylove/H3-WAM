@@ -1,0 +1,154 @@
+{
+  "experiment_id": "h3_int8_dreamwam_kv_candidate_d_mechanical_v1",
+  "date": "2026-08-14",
+  "classification": "backbone_port",
+  "hypothesis": "Five DreamWAM ActionDiT blocks can consume distinct frozen INT8 H3 K/V from layers 9, 19, 29, 39 and 49 and complete a finite optimizer step without changing the parent action-flow contract.",
+  "single_variable": "Replace the repeated H3 last-layer hidden-state context carrier with five layer-specific cached H3 K/V inputs to five pinned DreamWAM ActionDiT blocks.",
+  "parent_baseline": "H3 INT8 StarWAM last32 action-only-on-frozen-features; no effectiveness comparison was run in this mechanical probe.",
+  "repository_base_commit": "4f469eb2b522223116e90ab8f802a04ba0c34e27",
+  "minimum_required_commit": "c51c1c2",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "DreamWAM",
+      "locator": "https://arxiv.org/abs/2608.04996",
+      "revision": "paper-only supplementary evidence",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Official DreamWAM repository",
+      "locator": "third_party/DreamWAM",
+      "revision": "6e989facc0c452fd3488d75f60bc36411005558c",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3 DreamWAM K/V carrier trainer",
+      "locator": "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py",
+      "revision": "base 4f469eb2 plus audited autocast repair; sha256 9666d84d1af9bdbe76e538cd2f1b33c27195da42f8df3067987d81eaed9dd588",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "source_pins": {
+    "dreamwam_layers_sha256": "3cd38ad24eff05e748d9353af3f39200e93b16b6d07d22f153ccef0f36becd96",
+    "dreamwam_experts_sha256": "9ba51dbb15b8df8e4ff01c5a08acf443a950c422544e4497d13e0e2658bd489c",
+    "dreamwam_mot_sha256": "5467d135287a6e77074cb653fc3d72218490fcfa40ac486b61d5cc5975ab6c01",
+    "carrier_sha256": "96cb5df3f92a23668c8baf250281265e87c17305b2bb773ef9702b5fba9a829d",
+    "trainer_sha256": "9666d84d1af9bdbe76e538cd2f1b33c27195da42f8df3067987d81eaed9dd588",
+    "trainer_test_sha256": "856ad893dd81ebbdd3e9e232c8db95b2fba455bc0245bb8a85ff770024950fde",
+    "parent_trainer_sha256": "364969c49bfe86a22c02c9ffa715f9045f1406cfbb18147fcdeb842752e78930",
+    "precompute_sha256": "7248e32807bd6250d75cf9ff05be57b27caa27c3512da541329dbe4a4c8638db",
+    "cache_auditor_sha256": "22817d9702480071c4f382672d30ccf7b3341940bec977eee4e2c1867b96372b",
+    "int8_backbone_sha256": "e3d61ad00c6de6fa15f6554b63bdc824df60cb1830f97ed615d9d0ea017bb283"
+  },
+  "data_identity": {
+    "source_manifest": "/mnt/h3-wam/data/v4_multisuite_base/manifest_all.jsonl",
+    "source_manifest_sha256": "d343a360753bd01821fd87ed4a85ca9240ecf4794f8cf0c457921bac2dd3f0e3",
+    "source_windows": 8560,
+    "train_windows": 7710,
+    "validation_windows": 850,
+    "train_manifest_sha256": "5ff4136b3a2a5a7237e1a330e7c9ebbeef6d0a226e59a94c2e9341709c8acb37",
+    "train_episodes": 1542,
+    "validation_episodes": 170,
+    "episode_overlap": 0,
+    "h3_checkpoint_sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
+  },
+  "cache_audit": {
+    "status": "PASS",
+    "schema": "h3_dreamwam_kv_v1",
+    "root": "/mnt/h3-wam/data/v8_frameindexed_h3_cache/h3_int8_dreamwam_kv_5x32_canary_v1",
+    "layers": [9, 19, 29, 39, 49],
+    "tensor_shape_per_k_or_v": [32, 56, 128],
+    "dtype": "torch.bfloat16",
+    "completed_files": 8560,
+    "missing": 0,
+    "extra": 0,
+    "temporary": 0,
+    "duplicate_ids": 0,
+    "tensor_or_metadata_errors": 0,
+    "per_shard_files": [1070, 1070, 1070, 1070, 1070, 1070, 1070, 1070],
+    "aggregate_cache_sha256": "4d4e7aee64d7167f7fba6982ee182d4fb927ac74c2a3f0698fe15e2b8de80461",
+    "total_bytes": 39314799920,
+    "audit_elapsed_seconds": 201.57528937293682,
+    "audit_report_sha256": "3dedf027d90dc9b9ae4640f61944f8e6d18594bce044e41b7ff5d86dd10d4ed2",
+    "audit_log_sha256": "a196f443a6d7c1810cb5693452b96660c9fac68db6701f3734707e886d9d0df3",
+    "audit_exit": 0
+  },
+  "cache_generation": {
+    "workers": 8,
+    "files_per_worker": 1070,
+    "wall_seconds": 2829.52,
+    "aggregate_files_per_second": 3.025,
+    "peak_allocated_gib_per_worker_range": [20.083, 20.084],
+    "worker_log_sha256": [
+      "d43836af1230c2254fef55f22670d5cfa32e80a5b5732499df19d1b4359c62d9",
+      "0283996faeda5d6905f64d26b7f242e2b9078e24f8c5c1d58dbdeb9f0c4eb95a",
+      "71fca9428bfbba3d29259b96c53a4bf20493930335d0433313f182fff1ab312a",
+      "51eddae381169b27b8890f6b772508097e6c59a73ceeed170a2c4a9a9da50f82",
+      "27b344a016b163e23cafd789b80eddf7786dab11ed24ad9de60e11a9467f8bde",
+      "d9845f6f42e9417aa578f0d324d5510c1ac0afa35c513dc2e784aa013f1ab7f8",
+      "43ec97efb66631d0a92a6bec7e733eb45c2e140b131e4d70c7cc761d6f2a0e36",
+      "b34548241dc17a6caf76805772b8f0ad2b2db1ecb7a567b0bce5810eb02f2d88"
+    ]
+  },
+  "repair_history": {
+    "first_probe_status": "FAILED_MECHANICALLY_BEFORE_REPORT",
+    "first_probe_error": "DreamWAM FP32 sinusoidal timestep embedding reached a BF16 Linear without a mixed-precision forward context.",
+    "first_probe_log_sha256": "520adb7b0cddcb8014351cb1bad3610241f8b71ecfc539b8f19b582a3da96618",
+    "repair": "Wrap only the Candidate D model forward boundary in BF16 autocast while preserving the source flow timestep as FP32; pinned DreamWAM code is unchanged.",
+    "remote_exact_tests": "6 passed in 7.068s",
+    "remote_test_log_sha256": "a8ff0f4c924cbadf09a044a98f142a53a0d1d71324e2e436a6fccbd43928c8f7"
+  },
+  "mechanical_probe": {
+    "status": "PASS",
+    "scope": "exactly one authorized repair retry; one GPU, one sample, one optimizer step, no checkpoint",
+    "report": "/mnt/h3-wam/logs/candidate-d-kv-canary-v1/mechanical_probe_repair_4f469eb_autocast.json",
+    "report_sha256": "7a5d4ada789cbf7ed468d0c39d6be584cb44780eb48e1d79f6fb2aee18d8cc69",
+    "log_sha256": "a230cd9800359f24c9cb1fe615afc20992f1f6df1f101f72d4bbe693bf863d16",
+    "environment_sha256": "0db560e5ab1d29c656c289b0f3e4b0b26b1ff1c8c3388e337f469b505749d55b",
+    "exit": 0,
+    "elapsed_seconds": 7.5762199950404465,
+    "peak_allocated_gib": 3.28482723236084,
+    "peak_reserved_gib": 3.439453125,
+    "loss": 1.484375,
+    "prediction_std": 1.3749589920043945,
+    "block_gradient_norms": [73.11035919189453, 68.56132507324219, 73.5351333618164, 68.22770690917969, 78.6728515625],
+    "proprio_gradient_norm": 0.28097015619277954,
+    "head_update_max_abs": 1.1920928955078125e-7,
+    "saved_checkpoint": null,
+    "checkpoint_or_partial_files_created": 0
+  },
+  "budget": {
+    "global_batch": 1,
+    "optimizer_steps": 1,
+    "training_samples": 1,
+    "unique_windows": 1,
+    "effective_epochs": 0.00012970168612191958,
+    "gpu_count": 1,
+    "gpu_hours": 0.0021045055541779017
+  },
+  "gates": {
+    "source_identity": "PASS",
+    "architecture_contract": "PASS",
+    "data_contract": "PASS",
+    "action_contract": "PASS",
+    "objective_contract": "PASS",
+    "gradient_path": "PASS",
+    "smoke_finite": "PASS",
+    "checkpoint_restore": "NOT_RUN_NO_CHECKPOINT_BY_DESIGN",
+    "parent_baseline": "NOT_RUN",
+    "mechanism_signal": "NOT_RUN",
+    "closed_loop_canary": "NOT_RUN"
+  },
+  "decision": {
+    "status": "MECHANICS_PASS_ONLY",
+    "training_permission": "NO_LONG_TRAIN_AUTHORIZED",
+    "effectiveness": "NOT_EVIDENCE_READY",
+    "rationale": "The cache and one-step trainability contracts pass. One sample and one optimizer step cannot establish an offline metric gain, mechanism benefit, checkpoint restore, or closed-loop success.",
+    "launch_command": null
+  }
+}

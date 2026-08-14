@@ -39,6 +39,8 @@
    阻止 action-prior bypass；不得先堆 world loss、history、LoRA 或多种正则后再归因。
 4. 以固定 commit 的真实 forward/loss/optimizer/evaluator 和原始实验 artifact 决定是否放行；论文
    只用于从官方方法中选择下一单变量候选，不能替代上述证据。
+5. 新增辅助损失必须与未启用它的同 step 父配置做 paired comparison；候选自身早晚曲线不能归因。
+   反事实响应同时看绝对值和相对输出尺度，避免把整体动作幅值变化误判成条件依赖增强。
 
 ## 项目替换规则
 

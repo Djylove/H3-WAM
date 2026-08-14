@@ -17,6 +17,7 @@ import os
 import random
 import sys
 import time
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -381,14 +382,26 @@ def forward_policy(
     noisy: torch.Tensor,
     timesteps: torch.Tensor,
 ) -> torch.Tensor:
-    return model(
-        noisy,
-        timesteps,
-        text_context=batch["text_context"],
-        proprio=batch["proprio"],
-        video_kv_cache=batch["video_kv_cache"],
-        text_mask=batch["text_mask"],
+    # The audited flow contract keeps continuous timesteps in FP32 so values
+    # near 1000 are not rounded onto the zero-weight endpoint.  DreamWAM's
+    # author implementation derives its sinusoidal embedding in that input
+    # dtype, while this trainer stores the ActionDiT weights in BF16.  Use the
+    # standard mixed-precision forward boundary to bridge the first Linear;
+    # do not quantize the source timestep or patch the pinned author code.
+    autocast_context = (
+        torch.autocast(device_type=noisy.device.type, dtype=torch.bfloat16)
+        if noisy.dtype == torch.bfloat16 and noisy.device.type in {"cpu", "cuda"}
+        else nullcontext()
     )
+    with autocast_context:
+        return model(
+            noisy,
+            timesteps,
+            text_context=batch["text_context"],
+            proprio=batch["proprio"],
+            video_kv_cache=batch["video_kv_cache"],
+            text_mask=batch["text_mask"],
+        )
 
 
 def move_batch(

@@ -1,0 +1,144 @@
+{
+  "event": "h3_r1_candidate_g_s50_balanced80",
+  "date": "2026-08-14",
+  "classification": "controlled_ablation_novel_composition",
+  "training_permission": "NO_GO_S100_NO_GO_LONG",
+  "effectiveness": "NOT_EVIDENCE_READY",
+  "decision": "FAIL_PAIRED_GATE_NO_ATTRIBUTABLE_S50_BENEFIT",
+  "rollout": "NOT_RELEASED",
+  "identity": {
+    "commit": "4f469eb2b522223116e90ab8f802a04ba0c34e27",
+    "trainer_sha256": "364969c49bfe86a22c02c9ffa715f9045f1406cfbb18147fcdeb842752e78930",
+    "evaluator_sha256": "c142c8cbc1a2bf53a00141b234bca9cbe79d0a8fa1ea7171b1c88c17ce90294c",
+    "evaluator_parent_a2_f2_sha256": "8a7c85fdc8c4b45e534f29b44641b7e0e044aa21002d15822605a9e5d17086e6",
+    "evaluator_delta": "Only adds pre-clamp prediction_outside_unit_count/fraction and prediction_max_abs; inference and existing metrics are unchanged."
+  },
+  "remote_evidence": {
+    "root": "/mnt/h3-wam/candidate-g-canary-4f469eb/evidence/g2_balanced80_lang_visual_shuffle",
+    "comparison_path": "/mnt/h3-wam/candidate-g-canary-4f469eb/evidence/g2_balanced80_lang_visual_shuffle/G2_COMPARISON.json",
+    "comparison_sha256": "49ba5a2421ad253af3fe39772292e34a54cb2adfcb63cd892357f11a369af58d",
+    "g_s1_result": {
+      "path": "/mnt/h3-wam/candidate-g-canary-4f469eb/evidence/g2_balanced80_lang_visual_shuffle/results/g_s1_balanced80_lang_visual_shuffle.json",
+      "sha256": "711f8e12e25a7607ef6abef9949b40826af5c3eeee2f90b4f9954ceac4c29e3d",
+      "checkpoint_sha256": "d2eca684b2c7bb2c5062d302b3b76a926829420057704eeb92238ccd9b603428"
+    },
+    "g_s50_result": {
+      "path": "/mnt/h3-wam/candidate-g-canary-4f469eb/evidence/g2_balanced80_lang_visual_shuffle/results/g_s50_balanced80_lang_visual_shuffle.json",
+      "sha256": "fe20dcadcca1c58c410ca9ab367efd417688ae071079cf4bfdca341b931c43ab",
+      "checkpoint_sha256": "b6025483be982a9adf8e01b806617faf3f6117d58460eb82e9753f244cd6fccb"
+    },
+    "baseline_v2_s50_result": {
+      "path": "/mnt/h3-wam/candidate-g-canary-4f469eb/evidence/g2_balanced80_lang_visual_shuffle/results/baseline_v2_s50_balanced80_lang_visual_shuffle.json",
+      "sha256": "61649278bae02885b101bcd1a5948ac24f3ba5aaa138eaacf842652d30aa899f",
+      "checkpoint_sha256": "b72c954744ea5b2b9f5f71d793f1a8d12f1389438ee986e7ddad75cb0c9b9ac1"
+    }
+  },
+  "protocol": {
+    "tasks": 40,
+    "samples_per_task": 2,
+    "items": 80,
+    "episode_disjoint": true,
+    "seed": 42,
+    "action_shift": 5.0,
+    "inference_steps": 10,
+    "language_sensitivity": true,
+    "visual_feature_shuffle": true,
+    "selected_ids_sha256": "75d888fbb4298bef3517b623c00861ac6fe036495dee3bf4f0c68b5c097c5f54",
+    "visual_mapping_sha256": "c34c2e9027386671e5ebde47b36919169358518fc3f5a4a4c94b55e94de81ad8",
+    "ordered_mapping_sha256": "e79427de0ab5b1087952553b075b65b9828237bb682e79e0821c827c781a2afe",
+    "visual_self_map_count": 0
+  },
+  "training_audit": {
+    "s1_to_s50_total_unique_samples": 400,
+    "cross_stage_sample_overlap": 0,
+    "continuation_steps": 49,
+    "margin_active_count": 28,
+    "margin_active_rate": 0.5714285714285714,
+    "correct_better_than_wrong_count": 22,
+    "wrong_better_than_correct_count": 27,
+    "wrong_minus_correct": {
+      "min": -28.5,
+      "max": 75.0,
+      "mean": 1.195850605867347,
+      "median": -0.234375
+    },
+    "prediction_delta_mse": {
+      "min": 0.703222393989563,
+      "max": 23.633642196655273,
+      "mean": 5.758709920912373,
+      "median": 3.868758201599121
+    },
+    "gradient_min": {
+      "expert": 2120.496337890625,
+      "feature_projector": 1191.508544921875,
+      "proprio": 1.6235860586166382
+    },
+    "all_steps_finite_positive_required_grads": true,
+    "all_steps_no_self_map": true,
+    "all_steps_negative_is_permutation": true,
+    "s1_fresh_restore_max_abs": 0.0,
+    "s50_fresh_restore_max_abs": 0.0
+  },
+  "metrics": {
+    "g_s1": {
+      "physical_mse": 0.5163931541609355,
+      "physical_ade": 1.8712205422012302,
+      "physical_endpoint": 1.7887913680649317,
+      "gripper_macro_f1": 0.2954333643988816,
+      "language_mean_abs_delta": 0.931288969309512,
+      "visual_shuffle_physical_mse_delta": 0.2675265566051442,
+      "preclip_outside_unit_fraction": 0.8919753086419753,
+      "preclip_max_abs": 25.75
+    },
+    "baseline_v2_s50": {
+      "physical_mse": 0.40509526171540083,
+      "physical_ade": 1.635828985945176,
+      "physical_endpoint": 1.7295119375449612,
+      "gripper_accuracy": 0.599647266313933,
+      "gripper_f1": 0.581180811808118,
+      "gripper_macro_f1": 0.598867432931086,
+      "language_mean_abs_delta": 0.5557691190128033,
+      "language_relative_l2_delta": 0.40441729374600616,
+      "visual_shuffle_normalized_mse_delta": 3.588212776183249,
+      "visual_shuffle_physical_mse_delta": 0.397365047037226,
+      "visual_relative_scale": 1.0649365680974892,
+      "preclip_outside_unit_fraction": 0.5670823885109599,
+      "preclip_max_abs": 7.875
+    },
+    "candidate_g_s50": {
+      "physical_mse": 0.4124252524052226,
+      "physical_ade": 1.6513432121965537,
+      "physical_endpoint": 1.7396597080611358,
+      "gripper_accuracy": 0.5806878306878307,
+      "gripper_f1": 0.5838074398249452,
+      "gripper_macro_f1": 0.5806642707787543,
+      "language_mean_abs_delta": 0.5500320027054152,
+      "language_relative_l2_delta": 0.3961551194825943,
+      "visual_shuffle_normalized_mse_delta": 3.674957634967724,
+      "visual_shuffle_physical_mse_delta": 0.4004890569723893,
+      "visual_relative_scale": 1.0638071336738701,
+      "preclip_outside_unit_fraction": 0.5773494583018393,
+      "preclip_max_abs": 7.59375
+    }
+  },
+  "candidate_g_s50_relative_to_baseline_s50": {
+    "physical_mse": 0.01809448636545998,
+    "physical_ade": 0.009484014762346076,
+    "physical_endpoint": 0.005867418602833865,
+    "gripper_accuracy": -0.03161764705882346,
+    "gripper_f1": 0.004519467889270974,
+    "gripper_macro_f1": -0.03039597939603849,
+    "language_mean_abs_delta": -0.010322841106355155,
+    "language_relative_l2_delta": -0.02042982432052203,
+    "visual_shuffle_normalized_mse_delta": 0.02417494842007245,
+    "visual_shuffle_physical_mse_delta": 0.00786181361057305,
+    "visual_relative_scale": -0.0010605649739653038,
+    "preclip_outside_unit_fraction": 0.01810507608574921
+  },
+  "interpretation": {
+    "mechanics": "PASS",
+    "within_candidate_curve": "G s1 to s50 improves ordinary training metrics and retains conditioning, but this comparison cannot attribute benefit to the margin.",
+    "paired_s50": "FAIL: G s50 slightly regresses physical, gripper macro-F1, language sensitivity and pre-clamp range versus baseline-v2 s50; visual relative scale is unchanged.",
+    "decision": "Do not start s100, long training or rollout."
+  }
+}

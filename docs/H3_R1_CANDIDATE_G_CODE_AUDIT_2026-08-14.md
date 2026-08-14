@@ -2,7 +2,7 @@
 
 日期：2026-08-14  
 实验类别：`controlled_ablation`（Candidate G 本身是 `novel_composition`，不是任何上游的官方复现）  
-训练许可：`NO_GO`（本轮只完成代码、损失反传和合同测试，未放行 GPU 训练）  
+训练许可：`S50 COMPLETED / NO_GO_S100 / NO_GO_LONG`
 效果结论：`NOT_EVIDENCE_READY`
 
 ## 可证伪假设
@@ -201,4 +201,45 @@ global batch、样本数、effective epochs 和墙钟尚未注册，均为 `UNKN
 在固定 balanced-80 的 early/late checkpoints 同时报 physical、gripper、visual shuffle、language
 replacement，再决定是否进入 rollout。
 
-尚未放行，因此没有真实训练启动命令；本轮也没有启动任何 GPU 训练。
+以上为启动前审计的历史状态；后续已在独立合同下完成 s1/s50 canary，结果由下节覆盖。
+
+## s50 canary 与严格父对照结果
+
+运行根：`/mnt/h3-wam/candidate-g-canary-4f469eb`。执行 commit
+`4f469eb2b522223116e90ab8f802a04ba0c34e27`，trainer SHA256
+`364969c49bfe86a22c02c9ffa715f9045f1406cfbb18147fcdeb842752e78930`。s1 与 s50 checkpoint
+fresh restore 均为 `max_abs=0`；s1 的 8 个样本与续训 step2–50 的 392 个样本无重叠。
+
+49 个续训步全部满足 expert/feature-projector/proprio 梯度 finite 且严格为正，最小值分别为
+`2120.496/1191.509/1.623586`。每一步 8-rank negative 都是完整 permutation 且无 self-map。
+hinge margin 激活 `28/49=57.14%`；`wrong-correct` flow loss 均值 `+1.195851`、中位数
+`-0.234375`，正确视觉只在 `22/49` 步严格优于错误视觉，说明损失机械有效但 s50 尚未学会稳定排序。
+
+评测使用与 A2/F2 相同的 balanced-80、episode-disjoint、seed42、shift5、10-step Euler、固定
+visual shuffle 和 language replacement。evaluator SHA256
+`c142c8cbc1a2bf53a00141b234bca9cbe79d0a8fa1ea7171b1c88c17ce90294c` 相对 A2/F2 版本只增加
+裁剪前范围统计，不改变 forward、采样、噪声或既有指标。
+
+| 指标 | G s1 | baseline-v2 s50 | G s50 | G s50 相对父 s50 |
+|---|---:|---:|---:|---:|
+| physical MSE | 0.516393 | 0.405095 | 0.412425 | +1.81% |
+| physical ADE | 1.871221 | 1.635829 | 1.651343 | +0.95% |
+| physical endpoint | 1.788791 | 1.729512 | 1.739660 | +0.59% |
+| gripper accuracy | 0.419312 | 0.599647 | 0.580688 | -3.16% |
+| gripper F1 | 0.590867 | 0.581181 | 0.583807 | +0.45% |
+| gripper macro-F1 | 0.295433 | 0.598867 | 0.580664 | -3.04% |
+| language mean-abs delta | 0.931289 | 0.555769 | 0.550032 | -1.03% |
+| visual-shuffle normalized MSE delta | 8.382824 | 3.588213 | 3.674958 | +2.42% |
+| visual delta / prediction scale | 0.329496 | 1.064937 | 1.063807 | -0.11% |
+| pre-clamp outside `[-1,1]` | 89.20% | 56.71% | 57.73% | +1.81% |
+| pre-clamp max abs | 25.750 | 7.875 | 7.594 | -3.57% |
+
+G s1→s50 的改善主要是共同训练效应；严格同 step 父对照没有显示 paired margin 的可归因收益。
+G s50 的视觉绝对 delta 略大，但按输出尺度归一后与父模型相同，且 physical、gripper macro-F1、
+language sensitivity 与裁剪前越界率均略退化。因此判定
+`FAIL_PAIRED_GATE_NO_ATTRIBUTABLE_S50_BENEFIT`：不启动 s100、长训或 rollout。
+
+远端完整 per-step 与评测证据：
+`/mnt/h3-wam/candidate-g-canary-4f469eb/evidence/g2_balanced80_lang_visual_shuffle/G2_COMPARISON.json`，
+SHA256 `49ba5a2421ad253af3fe39772292e34a54cb2adfcb63cd892357f11a369af58d`。本地摘要为
+`experiments/evidence/h3_r1_candidate_g_s50_balanced80_v1.json`。

@@ -11,6 +11,12 @@
 - R1 baseline v2 与 Candidate F v2 的晚期 checkpoint 虽继续降低 physical MSE/ADE，却在相同
   balanced-80 反事实评测中几乎失去视觉与语言响应，并分别于 step914/851 触发零视觉梯度；
   两条线均为 `FAIL_CONDITIONING_COLLAPSE`，不得靠增加 steps 或放宽机制门晋级。
+- Candidate G paired visual margin 在 s50 通过梯度、跨 rank 无 self-map 和 restore 机械门，但
+  严格同 step 父对照中 physical MSE、gripper macro-F1、语言与相对视觉敏感度均无净增益；
+  判定 `FAIL_PAIRED_GATE`，不扩 s100/长训/rollout。
+- Candidate D 的五层 DreamWAM K/V cache 已完成 8,560/8,560 全量审计，且唯一授权的修复后
+  单步 probe 通过有限非零梯度与参数更新门；仅判定 `MECHANICS_PASS_ONLY`，未保存 checkpoint，
+  无 parent paired baseline 或效果结论，不放行长训。
 - 已证明 H3 表征可以训练出显著下降的动作离线损失，但尚未证明通用 H3-WAM 闭环策略成立。
 - dense 数据修正显著改善离线误差，M13 step400 达到 `0.122312`，但固定四任务仍为 `0/4`。
 - 冻结 H3 的 head-only 路线语言区分度很弱，correct/wrong instruction 动作余弦约 `0.994`。
@@ -66,6 +72,8 @@
 | E33 | E30 execution cadence | checkpoint/horizon32 固定；replan 从32改为4/8/16 | 不适用 | 三臂均 `0/1`、最大物体位移 `≤1.49e-16` | saturation 升至 `12.29–12.68%`；开环长度不是简单主因，停止部署扫描 |
 | E34 | R1 baseline v2 A2 | 同一 balanced-80；s100→last-safe s913 | physical MSE `0.343551→0.124351`；visual-shuffle MSE delta `0.236696→4.10e-7`；language mean-abs delta `0.433882→0.019489` | 未放行 | gripper F1 退化；step914 visual grad=0；`FAIL_CONDITIONING_COLLAPSE` |
 | E35 | Candidate F v2 F2 | clean regression weight1；同一 balanced-80；s100→last-safe s850 | physical MSE `0.352986→0.202512`；visual-shuffle MSE delta `0.209107→9.85e-7`；language mean-abs delta `0.415041→0.032469` | 未放行 | gripper macro-F1 `0.550772→0.316026`；step851 visual grad=0；`FAIL_CONDITIONING_COLLAPSE` |
+| E36 | Candidate G paired visual margin | 8-rank wrong-H3 hinge；s1→s50；同 step baseline s50 | G/parent physical MSE `0.412425/0.405095`；visual relative scale `1.063807/1.064937` | 未放行 | 机械门通过，但 gripper macro-F1 低3.04%、语言略低；`FAIL_PAIRED_GATE`，不扩训 |
+| E37 | Candidate D DreamWAM 5-layer K/V carrier | 8,560-window cache 全量 audit；修复后 1 GPU × 1 sample × 1 step；无 checkpoint | loss `1.484375`；5 block/proprio gradients 全部有限非零；head update `1.19e-7` | 未放行 | cache/Data 与 trainability 机械门通过；`MECHANICS_PASS_ONLY / NOT_EVIDENCE_READY`，禁止据此长训或声称效果 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 

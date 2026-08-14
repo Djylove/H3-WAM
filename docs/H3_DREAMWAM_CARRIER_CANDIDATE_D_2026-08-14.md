@@ -1,7 +1,8 @@
 # Candidate D：DreamWAM K/V carrier 到冻结 INT8 H3 的最小端口
 
 日期：2026-08-14
-状态：模型原型与 CPU 单测完成；默认关闭；尚未接 trainer、尚未启动训练。
+状态：独立 cache/trainer 已接通；全量 8,560-window cache 审计通过；一次授权 repair retry 的
+单步机械 probe 通过；默认关闭；未保存 checkpoint、未启动长训、无效果结论。
 
 ## 1. 结论
 
@@ -79,7 +80,16 @@ DreamWAM byte pin：
   - 开启后，在每个所选 H3 block 的同一次 QKV 计算中返回 RoPE 后 K 与原始 V；
   - `kv_capture_indices` 可固定 token 子集；不传时只截取该 packed sequence 的 video indices。
 
-当前尚未把开关接入训练脚本。这是刻意的 evidence gate：先完成独立模块、预算和测试，再决定是否占用 GPU。
+独立 opt-in 路径现已接入：
+
+- `scripts/h3wam/precompute_h3_int8_features.py` 只有显式选择
+  `h3_dreamwam_kv_v1` 时才写五层 K/V，旧 `last32` 默认路径不变；
+- `scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py` 严格校验 cache、manifest、checkpoint
+  contract，并继承 parent v2 的 FP32 continuous timestep 与 rank-distinct flow RNG；
+- trainer 的 BF16 mixed-precision forward 边界保留 FP32 source timestep，不修改 pinned
+  DreamWAM 源码，也不把 timestep 降成 BF16；
+- `scripts/h3wam/audit_h3_dreamwam_kv_cache.py` 独立逐文件校验 raw bytes、身份集合、metadata、
+  shape/dtype/finite 和 storage alias。
 
 ## 6. 存储、参数与计算预算
 
@@ -100,7 +110,7 @@ BF16 K+V 单样本精确缓存量：
 
 运行时每次 observation/replan 只需一次冻结 H3 前向；每个 flow denoise step 运行五个 action blocks。预计算训练 cache 不需要重复运行 H3，但必须在 manifest 固定 H3 checkpoint hash、层号、token indices、timestep/condition、dtype、shape 和采样策略。
 
-## 7. 唯一变量 paired canary（暂不执行）
+## 7. 唯一变量 paired canary（仍未执行）
 
 ### 7.1 不变项
 
@@ -147,6 +157,43 @@ PYTHONPATH=src python -m pytest -q \
   tests/test_h3_starwam_feature_action.py
 ```
 
-结果：`24 passed in 6.99s`。
+原模型端口回归结果：`24 passed in 6.99s`。接入 trainer 后，本地 carrier/trainer 定向回归为
+`12 passed`；30907 上对精确部署的 trainer test SHA 执行为 `6 passed in 7.068s`。
 
-覆盖项包括：默认关闭且零参数、pinned 官方源码加载、distinct-layer K/V 改变输出、反向梯度、重复 cache 拒绝、缺层拒绝、缓存预算，以及 INT8 attention 真实 K/V 捕获。该结果只证明模型端口与旧默认链路兼容，不代表训练或闭环效果。
+覆盖项包括：默认关闭且零参数、pinned 官方源码加载、distinct-layer K/V 改变输出、反向梯度、重复 cache 拒绝、缺层拒绝、缓存预算、INT8 attention 真实 K/V 捕获，以及 FP32 flow timestep 经 BF16 autocast 前向仍保持源精度。该结果只证明模型端口与旧默认链路兼容，不代表训练或闭环效果。
+
+## 9. 30907 cache 审计与机械 probe
+
+固定输入：
+
+- source manifest：8,560 windows，SHA-256
+  `d343a360753bd01821fd87ed4a85ca9240ecf4794f8cf0c457921bac2dd3f0e3`；
+- train/validation：7,710/850 windows，1,542/170 episodes，episode overlap `0`；
+- INT8 H3 checkpoint SHA-256：
+  `e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a`；
+- cache：`h3_int8_dreamwam_kv_5x32_canary_v1`，8 shards 各 1,070 files。
+
+独立全量 audit 结果：8,560/8,560 完成；missing/extra/tmp/duplicate/tensor-metadata error
+全部为 `0`；总大小 `39,314,799,920` bytes；aggregate cache SHA-256
+`4d4e7aee64d7167f7fba6982ee182d4fb927ac74c2a3f0698fe15e2b8de80461`；audit
+用时 `201.575s`，exit `0`。
+
+首次单步 probe 在 report 生成前暴露纯机械 dtype 冲突：FP32 continuous timestep 产生的
+sinusoidal embedding 进入 BF16 Linear。修复只在 Candidate D trainer forward 边界启用标准 BF16
+autocast，未改 pinned DreamWAM，也未降低 source timestep 精度。经明确授权只做一次 repair retry：
+
+- `1 GPU × 1 sample × 1 optimizer step`，`7.576s`；
+- loss `1.484375`，prediction std `1.374959`；
+- 五个 ActionDiT block gradient norms 均有限且非零：
+  `[73.1104, 68.5613, 73.5351, 68.2277, 78.6729]`；
+- proprio gradient norm `0.280970`；head update max abs `1.19209e-7`；
+- peak allocated/reserved `3.285/3.439 GiB`；exit `0`；
+- `saved_checkpoint=null`，没有 `.partial` 或任何 checkpoint 文件。
+
+机械 report SHA-256：
+`7a5d4ada789cbf7ed468d0c39d6be584cb44780eb48e1d79f6fb2aee18d8cc69`。完整可机读证据见
+`experiments/evidence/h3_int8_dreamwam_kv_candidate_d_mechanical_v1.json`。
+
+当前裁决严格限定为 `MECHANICS_PASS_ONLY`：cache/Data 与单步 trainability 通过；没有 parent
+paired baseline、连续 checkpoint、restore、offline mechanism signal 或 closed-loop canary，因此
+`effectiveness=NOT_EVIDENCE_READY`，也未获长训授权。

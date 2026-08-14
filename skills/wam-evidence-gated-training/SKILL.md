@@ -177,6 +177,18 @@ AMP underflow 和 infra，再与至少一个配对反事实趋势或多个 check
 - 先引用固定 commit 的执行代码、resolved command、原始 checkpoint/log/evaluator JSON；论文只用于
   提出修复假设或解释机制，不能覆盖负实验或单独放宽门。
 
+#### Paired-mechanism attribution gate
+
+新增正则、辅助损失或条件路由时，候选自身的早晚 checkpoint 曲线只证明“训练发生了”，不能证明
+新增机制有效。必须另取未启用该机制的直接父配置，在相同 completed steps、样本/噪声/solver/seed、
+normalization 和 evaluator 下做 paired comparison；若训练样本顺序不能完全相同，至少固定 manifest、
+global batch、采样器合同和总见样本数并明确记录差异。
+
+对视觉或语言依赖类机制，同时报告反事实绝对 delta 和相对输出尺度的 delta。若绝对响应变大但按输出
+尺度归一后不变，或 physical、gripper、动作范围中任一关键指标退化，则不能把候选内学习曲线归因于
+新机制，标记 `FAIL_PAIRED_GATE / NOT_EVIDENCE_READY`。不通过 paired gate 时不靠增加 steps、挑选
+不同 checkpoint 或直接闭环来绕过归因；需要修改单变量假设后建立新候选。
+
 不要用单个早期 checkpoint 的效果阈值作通用停止门。出现 teacher-forced 改善而 causal/closed-loop
 退化时，先把它记录为 exposure bias 或 train/inference mismatch 证据；可以继续同变量的预算阶梯，
 或启动直接针对该错配的对照实验。只有学习曲线在多个预注册 checkpoint 上稳定饱和/恶化，或达到
