@@ -1692,6 +1692,14 @@ class H3DreamWAMKVInt8Policy:
             encode_h3_vae_condition_standalone,
         )
         from diffusers import AutoencoderKLMiniMaxH3
+        from fastwam.models.h3wam.starwam_feature_action import (
+            _load_pinned_starwam_action_dit,
+        )
+
+        # Install only the byte-verified lightweight StarWAM module namespace.
+        # Importing StarWAM's package root would pull its PyArrow dataset stack
+        # into the isolated policy runtime.
+        _load_pinned_starwam_action_dit()
         from starwam.modules.scheduler import FlowMatchScheduler
 
         self.carrier_layers = carrier_layers
