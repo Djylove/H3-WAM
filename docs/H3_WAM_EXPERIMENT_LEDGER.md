@@ -529,3 +529,8 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 已预注册 `h3_lingbot_shared_sync_v2_s1000_v1`：1000 steps、global batch8、8000 samples、
   `0.039845` effective epochs、每200步保存。晋级门为 causal action至少改善3%且causal video
   退化不超过5%；训练许可 `GO_LONG`，效果结论仍 `NOT_EVIDENCE_READY`。
+- 配对 adapter-only 机械门也已通过：冻结 shared H3/proj_out，仅训练同步后的 action adapters；
+  2-step action梯度 `1.4526/1.7654`、post-step1跨rank差为0，显存峰值reserved `35.73 GiB`。
+  checkpoint现显式记录并严格校验 `freeze_shared_blocks`；8-rank恢复后差为0，val40
+  video/action为 `0.170031/1.303723`。因此放行同seed、同8000 windows、同预算的1000-step
+  配对对照，唯一变量是是否更新H3 tail-2；这条对照同样为 `GO_LONG / NOT_EVIDENCE_READY`。

@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_sync_v2_adapter_only_s1000_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "If adapting H3's final two shared blocks is necessary for action generation, the paired full-tail run will improve validity-masked causal sample40 action MSE by at least two percentage points more than this adapter-only run without exceeding the same 5% causal-video regression limit.",
+  "single_variable": "Freeze all shared H3 blocks and h3.proj_out; train only synchronized action adapters. Data, seed, initialization, forward graph, action codec, objective, LR, weight decay, warmup, horizon, steps and evaluations match h3_lingbot_shared_sync_v2_s1000_v1.",
+  "parent_baseline": "Paired full-tail experiment h3_lingbot_shared_sync_v2_s1000_v1 from deterministic seed2026 initialization; both arms use the same first 8000 rows of manifest b0d611c2.",
+  "references": [
+    {"kind": "paper", "title": "LingBot-VA: Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "arXiv:2601.21998", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 shared sync-v2 adapter-only arm", "locator": "scripts/h3dreamwam/launch_shared_sync_v2_adapter_only_s1000.sh", "revision": "this dossier commit; trainer sha256 bf086d45", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "trainable shared backbone", "paper": "shared world/action backbone is post-trained", "upstream_code": "shared Wan blocks are trainable", "local": "shared H3 blocks and video output are frozen; action adapters remain trainable", "status": "INTENTIONAL_DEVIATION", "evidence": ["--freeze-shared-blocks", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"], "rationale": "This is the sole controlled variable measuring the value of H3 adaptation."}],
+    "data": [{"field": "paired dense windows", "paper": "dense robot segments", "upstream_code": "dense LeRobot sampling", "local": "same 8000 ordered windows and hashes as full-tail arm", "status": "EQUIVALENT", "evidence": ["manifest b0d611c2", "scripts/h3dreamwam/launch_shared_sync_v2_adapter_only_s1000.sh"], "rationale": "Rank order, sample count and cache are identical across arms."}],
+    "action": [{"field": "action codec", "paper": "normalized action chunks", "upstream_code": "q01/q99 and validity masks", "local": "same seven-channel quantile horizon32 codec and padding mask as full-tail arm", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json"], "rationale": "No action-contract variable changes."}],
+    "objective": [{"field": "weighted video/action flow", "paper": "joint flow matching", "upstream_code": "video plus action velocity losses", "local": "same forward losses; only action-adapter gradients are optimized", "status": "INTENTIONAL_DEVIATION", "evidence": ["--freeze-shared-blocks", "shared_sync_adapter_only_contract_s2_train.json"], "rationale": "The forward objective is controlled while gradient ownership is the experimental variable."}],
+    "optimization": [{"field": "paired budget", "paper": "post-training", "upstream_code": "5000 steps, global batch80", "local": "1000 steps, global batch8, 8000 samples, 0.039845 epochs", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Bounded paired diagnostic before upstream-scale training."}],
+    "evaluation": [{"field": "paired learning curve", "paper": "LIBERO success", "upstream_code": "closed-loop benchmark", "local": "same val40/sample40 steps 0/200/400/600/800/1000 and subsequent selected closed loop", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3dreamwam/watch_eval_shared_sync_v2_adapter_only_s1000.sh"], "rationale": "The paired mechanism comparison precedes full benchmark allocation."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed LingBot commit and trainer hash"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["real 50-layer adapter-only forward/backward"]},
+    "data_contract": {"status": "PASS", "evidence": ["same fixed manifests as paired arm"]},
+    "action_contract": {"status": "PASS", "evidence": ["same tested codec and masks"]},
+    "objective_contract": {"status": "PASS", "evidence": ["real video/action losses finite"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit 8x1000 sample budget and checkpoint cadence"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["paired watcher and fixed step0 baseline"]},
+    "gradient_path": {"status": "PASS", "evidence": ["s2 action gradients 1.4526/1.7654; H3 gradient exactly zero by design"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["adapter-only contract s2 completed; post-step1 replicated diff 0"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["freeze contract persisted; 8-rank restore diff0; val40 0.170031/1.303723"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["paired full-tail run is active from identical initialization and manifest"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["paired 1000-step endpoints pending"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["paired selected checkpoints pending"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 1000, "training_samples": 8000, "unique_windows": 200779, "effective_epochs": 0.0398448045, "gpu_count": 8, "estimated_hours": 3.5},
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "The adapter-only path passes real gradient, parity, explicit freeze-contract save and restore gates. Run it concurrently as the single-variable control; do not claim H3 adaptation value until paired causal curves and fixed closed-loop results are complete.",
+    "launch_command": "PROJECT_ROOT=/mnt/h3-wam/project-adapter-sync-v2 H3_WORKSPACE=/mnt/h3-wam bash scripts/h3dreamwam/launch_shared_sync_v2_adapter_only_s1000.sh"
+  }
+}

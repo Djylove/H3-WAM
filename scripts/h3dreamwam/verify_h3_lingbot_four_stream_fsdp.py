@@ -1064,6 +1064,15 @@ def main() -> None:
                 "stage weight-decay contract mismatch: "
                 f"{checkpoint_weight_decay} != {args.weight_decay}"
             )
+        checkpoint_freeze_shared_blocks = payload.get(
+            "freeze_shared_blocks", False
+        )
+        if checkpoint_freeze_shared_blocks != args.freeze_shared_blocks:
+            raise ValueError(
+                "stage shared-block freeze contract mismatch: "
+                f"{checkpoint_freeze_shared_blocks} != "
+                f"{args.freeze_shared_blocks}"
+            )
         for index_text, layer_state in payload["layers"].items():
             layer = (
                 model.module.shared_layers[int(index_text)]
@@ -1258,6 +1267,7 @@ def main() -> None:
             "upstream_initial_action_anchor": args.upstream_initial_action_anchor,
             "executed_action_history_steps": args.executed_action_history_steps,
             "weight_decay": args.weight_decay,
+            "freeze_shared_blocks": args.freeze_shared_blocks,
             "completed_steps": int(completed_steps),
             "sample_offset": int(args.sample_offset),
             "layers": {},

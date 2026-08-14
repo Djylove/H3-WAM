@@ -60,6 +60,8 @@ class H3LingBotTrainingConventionsTest(unittest.TestCase):
         self.assertIn(
             '"post_step1_replicated_parameter_max_difference"', source
         )
+        self.assertIn('"freeze_shared_blocks": args.freeze_shared_blocks', source)
+        self.assertIn("stage shared-block freeze contract mismatch", source)
 
     def test_checkpoint_cadence_uses_cumulative_steps(self) -> None:
         saved = [
