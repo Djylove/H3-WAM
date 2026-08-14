@@ -1,6 +1,6 @@
 # H3-WAM 实验资产账本
 
-更新时间：2026-08-13（Asia/Shanghai）
+更新时间：2026-08-14（Asia/Shanghai）
 
 本文档保存 H3-WAM 已完成和正在运行的关键尝试，避免云资源结束后只剩模型文件而无法解释。
 历史 `M*` 名称曾被复用，因此这里增加稳定的 `E*` 编号。所有成功率均指真实 LIBERO
@@ -8,6 +8,9 @@
 
 ## 当前结论
 
+- R1 baseline v2 与 Candidate F v2 的晚期 checkpoint 虽继续降低 physical MSE/ADE，却在相同
+  balanced-80 反事实评测中几乎失去视觉与语言响应，并分别于 step914/851 触发零视觉梯度；
+  两条线均为 `FAIL_CONDITIONING_COLLAPSE`，不得靠增加 steps 或放宽机制门晋级。
 - 已证明 H3 表征可以训练出显著下降的动作离线损失，但尚未证明通用 H3-WAM 闭环策略成立。
 - dense 数据修正显著改善离线误差，M13 step400 达到 `0.122312`，但固定四任务仍为 `0/4`。
 - 冻结 H3 的 head-only 路线语言区分度很弱，correct/wrong instruction 动作余弦约 `0.994`。
@@ -61,6 +64,8 @@
 | E31 | 初始动作锚的冷启动近似 s100 | E30 合约；每次窗口/重规划前置4步零动作 | raw改善 video/action `16.967%/1.322%`；无泄漏改善 `13.195%/0.653%` | 撤销上游对齐声明 | pinned LingBot 只在 `frame_st_id==0` 固定首帧并持续维护 KV；本地冷启动近似不等价，旧 checkpoint 已 fail closed |
 | E32 | 官方 AdamW weight decay `0.1` s100 | E30 合约；只将本地默认 `0.01` 对齐官方 `0.1` | raw video/action 改善 `17.705%/-3.005%`；无泄漏改善 `13.680%/-2.836%` | 按门控不重跑 | 两个动作指标均反向；`NO_GO_LONG`，本地短程局部解冻保留 `0.01` |
 | E33 | E30 execution cadence | checkpoint/horizon32 固定；replan 从32改为4/8/16 | 不适用 | 三臂均 `0/1`、最大物体位移 `≤1.49e-16` | saturation 升至 `12.29–12.68%`；开环长度不是简单主因，停止部署扫描 |
+| E34 | R1 baseline v2 A2 | 同一 balanced-80；s100→last-safe s913 | physical MSE `0.343551→0.124351`；visual-shuffle MSE delta `0.236696→4.10e-7`；language mean-abs delta `0.433882→0.019489` | 未放行 | gripper F1 退化；step914 visual grad=0；`FAIL_CONDITIONING_COLLAPSE` |
+| E35 | Candidate F v2 F2 | clean regression weight1；同一 balanced-80；s100→last-safe s850 | physical MSE `0.352986→0.202512`；visual-shuffle MSE delta `0.209107→9.85e-7`；language mean-abs delta `0.415041→0.032469` | 未放行 | gripper macro-F1 `0.550772→0.316026`；step851 visual grad=0；`FAIL_CONDITIONING_COLLAPSE` |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 

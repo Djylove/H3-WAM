@@ -1,0 +1,102 @@
+{
+  "event": "h3_r1_candidate_g_code_audit",
+  "date": "2026-08-14",
+  "classification": "controlled_ablation_novel_composition",
+  "training_permission": "NO_GO",
+  "effectiveness": "NOT_EVIDENCE_READY",
+  "training_started": false,
+  "hypothesis": "With all non-visual inputs fixed, a hinge requiring correct H3 features to yield lower weighted action-flow loss than cross-sample H3 features prevents R1 visual-conditioning collapse.",
+  "source_lock_sha256": "afbd249b2eed3d58fff109e5e0cf21f9c4a6ec54e9c0bf8b5483b682fc12f96f",
+  "sources": {
+    "dreamwam": {
+      "commit": "6e989facc0c452fd3488d75f60bc36411005558c",
+      "clean": true,
+      "mechanisms": ["action_attends_all_video", "structured_future_losses", "local_preview_auxiliary"],
+      "enters_backward": true,
+      "explicit_condition_ranking": false
+    },
+    "fastwam": {
+      "commit": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "clean": false,
+      "audit_mode": "git_show_fixed_commit_blobs",
+      "mechanisms": ["action_attends_full_video", "joint_video_action_flow"],
+      "enters_backward": true,
+      "explicit_condition_ranking": false
+    },
+    "fact": {
+      "commit": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "clean": true,
+      "mechanisms": ["teacher_forcing_causal_mask", "future_state_loss", "value_loss", "failure_action_mask"],
+      "enters_backward": true,
+      "explicit_condition_ranking": false,
+      "failure_rollouts_present_in_resolved_data": "UNKNOWN"
+    },
+    "miniworld": {
+      "commit": "e484206bbd4360ae56ed8abad51c83f2457ac092",
+      "clean": true,
+      "mechanisms": ["structured_condition_dropout_0.1", "learned_null_condition", "causal_kv_cache"],
+      "enters_backward": true,
+      "scope": "action_or_pose_conditioned_video_prediction_not_action_prediction",
+      "explicit_condition_ranking": false
+    },
+    "starwam": {
+      "commit": "cd76d96f273f81e228a05f40f9697fe2514e2356",
+      "clean": true,
+      "mechanisms": ["feature_conditioned_action_flow"],
+      "enters_backward": true,
+      "explicit_condition_ranking": false
+    }
+  },
+  "r1_failure_evidence": {
+    "source": "experiments/evidence/h3_r1_a2_f2_conditioning_collapse_v1.json",
+    "s913_visual_shuffle_delta_mse": 4.096186170051788e-7,
+    "s913_visual_delta_retention_percent_vs_s100": 0.0001730567855217948,
+    "s913_language_mean_abs_delta_reduction_percent": 95.50816760404882,
+    "step914_feature_projector_gradient_norm": 0.0
+  },
+  "candidate_g": {
+    "parent": "R1 pinned StarWAM weighted masked flow with Candidate F disabled",
+    "only_variable": "paired_visual_margin_loss",
+    "formula": "relu(correct_weighted_flow_loss - wrong_visual_weighted_flow_loss + margin)",
+    "wrong_condition": "detached_cross_sample_cached_h3_features",
+    "fixed_inputs": ["noisy_action", "flow_target", "timestep", "text_context", "proprio", "action_padding_mask"],
+    "default_enabled": false,
+    "default_weight": 0.0,
+    "default_margin": 0.05,
+    "extra_parameters": 0,
+    "extra_action_dit_forward": 1,
+    "zero_gradient_gate_relaxed": false
+  },
+  "implementation": {
+    "trainer": "scripts/h3wam/train_h3_int8_starwam_action.py",
+    "trainer_sha256": "e61625dc574e6706f37ed2e720c48f46a0aaa3b41b66f546cb34520ae015b99f",
+    "tests": "tests/test_h3_int8_starwam_action_trainer.py",
+    "tests_sha256": "edc96f2b0966333729ab7ae9b6ef656355d18554bddb5ce68013a35dc675a84e"
+  },
+  "test_runs": [
+    {
+      "command": ".venv/bin/pytest -q tests/test_h3_int8_starwam_action_trainer.py",
+      "result": "25 passed",
+      "wall_time_seconds": 1.13
+    },
+    {
+      "command": ".venv/bin/pytest -q tests/test_h3_int8_starwam_action_trainer.py tests/test_h3_starwam_feature_action.py",
+      "result": "30 passed",
+      "wall_time_seconds": 1.15
+    }
+  ],
+  "unresolved": [
+    "real_8_rank_negative_sample_ids_no_self_map",
+    "real_candidate_g_sec_per_step_and_memory",
+    "global_batch_unique_windows_effective_epochs",
+    "language_binding_remains_unaddressed_by_candidate_g",
+    "fresh_restore_after_real_mechanical_probe"
+  ],
+  "next_gate": "PROBE_ONLY_8_RANK_ONE_STEP_WITHOUT_SAVING_CHECKPOINT",
+  "stop_conditions": [
+    "feature_projector_gradient_norm_is_zero_or_nonfinite",
+    "any_expert_or_proprio_gradient_is_zero_or_nonfinite",
+    "negative_pair_contains_self_map",
+    "checkpoint_restore_is_not_bit_exact"
+  ]
+}

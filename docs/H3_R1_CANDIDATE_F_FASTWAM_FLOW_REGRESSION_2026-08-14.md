@@ -1,7 +1,7 @@
 # H3 R1 Candidate F：FastWAM flow + clean-chunk 回归互补预注册
 
 日期：2026-08-14
-状态：`GO_CANARY / READY_NOT_LAUNCHED`
+状态：`COMPLETED / FAIL_CONDITIONING_COLLAPSE / NO_GO_LONG`
 分类：`novel_composition`，不是 FastWAM 复现
 
 ## 结论先行
@@ -112,8 +112,15 @@ L_clean = sigma^2 * unweighted_masked_MSE(v_pred, v_target)
 5. 任一基础动作指标退化或视觉依赖坍塌即 `NO_GO_LONG`；只有离线机制门槛通过才允许
    固定 LIBERO closed-loop canary。
 
-balanced-80 和 E1 结果当前仍待完成，所以 Candidate F 不能宣称有效、不能宣称闭环成功，
-也不能替代长期基线。历史任务专用 regression head 或 teacher roll-in 不纳入统一策略。
+balanced-80 和 visual-feature shuffle 已完成。s100→s850 的 physical MSE
+`0.352986→0.202512`、ADE `1.517437→1.143283`，但 gripper accuracy
+`0.555115→0.428571`、macro-F1 `0.550772→0.316026`。visual-shuffle action MSE delta
+从 `0.209107` 降至 `9.849e-7`，language mean-abs delta 从 `0.415041` 降至
+`0.032469`；step851 随后出现 `feature_projector_gradient_norm=0`，而 expert/proprio
+梯度仍为正。因此 Candidate F 判定 `FAIL_CONDITIONING_COLLAPSE`：不能宣称有效或闭环成功，
+不得仅增加 steps 或放宽视觉梯度门。完整路径、SHA 和指标见
+`docs/H3_R1_A2_F2_CONDITIONING_COLLAPSE_2026-08-14.md` 与
+`experiments/evidence/h3_r1_a2_f2_conditioning_collapse_v1.json`。
 
 ## CPU 验证范围
 

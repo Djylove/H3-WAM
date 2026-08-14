@@ -26,6 +26,20 @@
 4. 有官方 checkpoint 时先在官方 evaluator 上复现至少一个已报告基线，再移植 H3。
 5. H3 替换实验必须保留同仓库、同数据、同 evaluator 的原 backbone 对照；否则无法归因。
 
+## 条件坍塌时的方法路由
+
+当 physical MSE/ADE 随训练改善，但 visual-feature shuffle、language replacement 或 gripper
+指标持续坍塌时，先按 `conditioning collapse` 而不是“训练不足”路由：
+
+1. 回到执行代码检查 feature 是否真正进入 forward、是否被 mask/detach、loss weight 是否为零、
+   optimizer 是否覆盖 projector，以及 AMP 下是否发生精度归零。
+2. 固定 evaluator、样本、噪声、solver 和 checkpoint 身份，比较至少一个早期与一个晚期点；视觉
+   shuffle 必须是无 self-map 置换，语言测试只能替换指令。
+3. 若 paired sensitivity 近乎消失且预期视觉梯度归零，停止同配方增步，下一候选必须用单变量机制
+   阻止 action-prior bypass；不得先堆 world loss、history、LoRA 或多种正则后再归因。
+4. 以固定 commit 的真实 forward/loss/optimizer/evaluator 和原始实验 artifact 决定是否放行；论文
+   只用于从官方方法中选择下一单变量候选，不能替代上述证据。
+
 ## 项目替换规则
 
 将 Wan2.2 换成 MiniMax-H3 时，逐项重新证明：

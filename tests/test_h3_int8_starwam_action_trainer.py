@@ -343,6 +343,185 @@ class FlowRegressionComplementTest(unittest.TestCase):
         self.assertEqual(complement["weight"], 1.0)
         self.assertEqual(complement["extra_parameters"], 0)
 
+
+class PairedVisualMarginComplementTest(unittest.TestCase):
+    checkpoint_args = staticmethod(FlowRegressionComplementTest.checkpoint_args)
+    checkpoint_dataset = staticmethod(FlowRegressionComplementTest.checkpoint_dataset)
+
+    def test_cli_is_default_off_and_margin_is_explicit(self):
+        required = [
+            "trainer",
+            "manifest.jsonl",
+            "--cache-root",
+            "cache",
+            "--output",
+            "report.json",
+        ]
+        with patch.object(sys, "argv", required):
+            args = MODULE.parse_args()
+            self.assertEqual(args.paired_visual_margin_weight, 0.0)
+            self.assertEqual(args.paired_visual_margin, 0.05)
+        with patch.object(
+            sys,
+            "argv",
+            [
+                *required,
+                "--paired-visual-margin-weight",
+                "0.25",
+                "--paired-visual-margin",
+                "0.1",
+            ],
+        ):
+            args = MODULE.parse_args()
+            self.assertEqual(args.paired_visual_margin_weight, 0.25)
+            self.assertEqual(args.paired_visual_margin, 0.1)
+
+    def test_local_negative_is_cross_sample_and_detached(self):
+        features = torch.arange(3.0, requires_grad=True).reshape(3, 1, 1)
+        negative = MODULE.paired_visual_negative_features(features)
+        torch.testing.assert_close(negative[:, 0, 0], torch.tensor([2.0, 0.0, 1.0]))
+        self.assertFalse(negative.requires_grad)
+        self.assertFalse(torch.equal(negative, features.detach()))
+
+    def test_single_sample_without_distributed_peer_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "local batch >=2"):
+            MODULE.paired_visual_negative_features(torch.zeros(1, 1, 2, 3))
+
+    def test_candidates_f_and_g_cannot_be_composed_silently(self):
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            MODULE.optimizer_step(
+                torch.nn.Linear(1, 1),
+                {},
+                torch.optim.AdamW(torch.nn.Linear(1, 1).parameters(), lr=1e-4),
+                MODULE.FlowMatchScheduler(shift=5.0),
+                seed=1,
+                max_grad_norm=1.0,
+                clean_action_regression_weight=1.0,
+                paired_visual_margin_weight=1.0,
+            )
+
+    def test_single_sample_uses_next_distributed_rank(self):
+        local = torch.zeros(1, 1, 2, 3)
+
+        def fake_all_gather(outputs, value):
+            outputs[0].copy_(value)
+            outputs[1].fill_(7.0)
+
+        with (
+            patch.object(MODULE.dist, "is_initialized", return_value=True),
+            patch.object(MODULE.dist, "get_world_size", return_value=2),
+            patch.object(MODULE.dist, "get_rank", return_value=0),
+            patch.object(MODULE.dist, "all_gather", side_effect=fake_all_gather),
+        ):
+            negative = MODULE.paired_visual_negative_features(local)
+        torch.testing.assert_close(negative, torch.full_like(local, 7.0))
+
+    def test_hinge_ranks_correct_below_wrong_and_backpropagates(self):
+        correct = torch.tensor(0.8, requires_grad=True)
+        wrong = torch.tensor(0.9, requires_grad=True)
+        loss = MODULE.paired_visual_margin_loss(correct, wrong, margin=0.2)
+        torch.testing.assert_close(loss, torch.tensor(0.1))
+        loss.backward()
+        torch.testing.assert_close(correct.grad, torch.tensor(1.0))
+        torch.testing.assert_close(wrong.grad, torch.tensor(-1.0))
+
+    def test_optimizer_uses_same_noise_and_adds_only_candidate_g_loss(self):
+        class VisualPolicy(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.action_scale = torch.nn.Parameter(torch.tensor(0.25))
+                self.visual_scale = torch.nn.Parameter(torch.tensor(0.1))
+                self.calls = []
+
+            def forward(self, noisy_actions, timestep, **conditioning):
+                del timestep
+                features = conditioning["h3_features"]
+                self.calls.append((noisy_actions.detach().clone(), features.detach().clone()))
+                visual = features.float().mean(dim=tuple(range(1, features.ndim)))
+                return noisy_actions * self.action_scale + (
+                    visual[:, None, None] * self.visual_scale
+                )
+
+        batch = {
+            "actions": torch.linspace(-1.0, 1.0, 2 * 4 * 3).reshape(2, 4, 3),
+            "action_is_pad": torch.zeros(2, 4, dtype=torch.bool),
+            "text_context": torch.zeros(2, 1, 2),
+            "text_mask": torch.ones(2, 1, dtype=torch.bool),
+            "features": torch.stack(
+                [torch.zeros(1, 2, 2), torch.full((1, 2, 2), 2.0)]
+            ),
+            "proprio": torch.zeros(2, 2),
+        }
+        model = VisualPolicy()
+        metrics = MODULE.optimizer_step(
+            model,
+            batch,
+            torch.optim.AdamW(model.parameters(), lr=1e-4),
+            MODULE.FlowMatchScheduler(shift=5.0),
+            seed=123,
+            max_grad_norm=1.0,
+            paired_visual_margin_weight=0.25,
+            paired_visual_margin=100.0,
+        )
+        self.assertEqual(len(model.calls), 2)
+        torch.testing.assert_close(model.calls[0][0], model.calls[1][0])
+        torch.testing.assert_close(
+            model.calls[1][1], model.calls[0][1].roll(shifts=1, dims=0)
+        )
+        self.assertGreater(metrics["paired_visual_margin_loss"], 0.0)
+        self.assertGreater(metrics["paired_visual_prediction_delta_mse"], 0.0)
+        self.assertAlmostEqual(
+            metrics["loss"],
+            metrics["flow_loss"] + metrics["weighted_paired_visual_margin_loss"],
+            places=5,
+        )
+        self.assertIsNotNone(model.visual_scale.grad)
+        self.assertTrue(torch.isfinite(model.visual_scale.grad))
+
+    def test_checkpoint_contract_is_unchanged_off_and_records_candidate_g(self):
+        dataset = Namespace(
+            source_manifest_sha256="source",
+            source_manifest_items=2,
+            manifest_sha256="split",
+            manifest_items=1,
+            stats_sha256="stats",
+        )
+        base = dict(
+            expected_h3_checkpoint_sha256="h3",
+            feature_subdir="features",
+            action_horizon=32,
+            action_shift=5.0,
+            learning_rate=1.0e-4,
+            min_learning_rate=1.0e-6,
+            warmup_steps=1000,
+            scheduler_horizon=21700,
+            clean_action_regression_weight=0.0,
+            paired_visual_margin=0.05,
+        )
+        off_contract = MODULE.checkpoint_contract(
+            Namespace(**base, paired_visual_margin_weight=0.0),
+            MODULE.ModelSpec(),
+            dataset,
+        )
+        self.assertNotIn("paired_visual_margin_complement", off_contract)
+        enabled_contract = MODULE.checkpoint_contract(
+            Namespace(**base, paired_visual_margin_weight=0.25),
+            MODULE.ModelSpec(),
+            dataset,
+        )
+        complement = enabled_contract["paired_visual_margin_complement"]
+        self.assertEqual(complement["candidate"], "G")
+        self.assertEqual(complement["weight"], 0.25)
+        self.assertEqual(complement["extra_parameters"], 0)
+
+    def test_candidate_g_does_not_relax_zero_gradient_gate(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "all(math.isfinite(value) and value > 0 for value in gradient_values)",
+            source,
+        )
+        self.assertIn("raise RuntimeError(f\"non-finite/zero gradient path", source)
+
     def test_fp32_timestep_avoids_bfloat16_zero_weight_endpoint(self):
         scheduler = MODULE.FlowMatchScheduler(shift=5.0)
         # Exact CUDA draw observed at the former deterministic step245 failure.

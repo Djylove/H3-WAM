@@ -122,6 +122,22 @@ def parse_args() -> argparse.Namespace:
             "the same flow prediction. Zero preserves the pinned R1 objective."
         ),
     )
+    parser.add_argument(
+        "--paired-visual-margin-weight",
+        type=float,
+        default=0.0,
+        help=(
+            "Candidate G only: require the correct cached H3 observation to have "
+            "lower weighted flow loss than a cross-sample H3 observation. Zero "
+            "preserves the pinned R1 objective."
+        ),
+    )
+    parser.add_argument(
+        "--paired-visual-margin",
+        type=float,
+        default=0.05,
+        help="Candidate G hinge margin in weighted flow-loss units.",
+    )
     parser.add_argument("--feature-input-scale", type=float, default=1.0)
     parser.add_argument("--no-gradient-checkpointing", action="store_true")
     parser.add_argument("--restore-check-only", action="store_true")
@@ -423,6 +439,46 @@ def masked_chunk_regression_loss(
     return per_sample.mean()
 
 
+def paired_visual_negative_features(features: torch.Tensor) -> torch.Tensor:
+    """Return detached cross-sample H3 features without weakening batch-size one DDP.
+
+    A local cyclic shift is sufficient when a rank owns multiple samples.  The
+    production R1 launch uses one sample per rank, so in that case every rank
+    receives the next rank's fixed-shape cached feature tensor.  Cached H3
+    features are frozen inputs; the negative branch must never create a second
+    gradient route into them.
+    """
+
+    if features.ndim < 2 or features.shape[0] <= 0:
+        raise ValueError("paired visual negatives require a non-empty batch tensor")
+    detached = features.detach()
+    if features.shape[0] > 1:
+        return detached.roll(shifts=1, dims=0)
+    if dist.is_initialized() and dist.get_world_size() > 1:
+        gathered = [torch.empty_like(detached) for _ in range(dist.get_world_size())]
+        dist.all_gather(gathered, detached)
+        source_rank = (dist.get_rank() + 1) % dist.get_world_size()
+        return gathered[source_rank]
+    raise ValueError(
+        "paired visual margin needs local batch >=2 or initialized distributed world_size >=2"
+    )
+
+
+def paired_visual_margin_loss(
+    correct_flow_loss: torch.Tensor,
+    wrong_visual_flow_loss: torch.Tensor,
+    *,
+    margin: float,
+) -> torch.Tensor:
+    """Hinge that ranks the correct H3 observation above a paired wrong one."""
+
+    if correct_flow_loss.ndim != 0 or wrong_visual_flow_loss.ndim != 0:
+        raise ValueError("paired visual margin expects scalar flow losses")
+    if not math.isfinite(margin) or margin <= 0:
+        raise ValueError("paired visual margin must be finite and positive")
+    return torch.relu(correct_flow_loss - wrong_visual_flow_loss + margin)
+
+
 def optimizer_step(
     model: nn.Module,
     batch: dict[str, Any],
@@ -433,12 +489,22 @@ def optimizer_step(
     max_grad_norm: float,
     gradient_accumulation_steps: int = 1,
     clean_action_regression_weight: float = 0.0,
+    paired_visual_margin_weight: float = 0.0,
+    paired_visual_margin: float = 0.05,
 ) -> dict[str, float]:
     if (
         not math.isfinite(clean_action_regression_weight)
         or clean_action_regression_weight < 0
     ):
         raise ValueError("clean action regression weight must be finite and non-negative")
+    if not math.isfinite(paired_visual_margin_weight) or paired_visual_margin_weight < 0:
+        raise ValueError("paired visual margin weight must be finite and non-negative")
+    if clean_action_regression_weight > 0 and paired_visual_margin_weight > 0:
+        raise ValueError("Candidates F and G are mutually exclusive controlled ablations")
+    if paired_visual_margin_weight > 0 and (
+        not math.isfinite(paired_visual_margin) or paired_visual_margin <= 0
+    ):
+        raise ValueError("paired visual margin must be finite and positive")
     noisy, target, timesteps = deterministic_flow_batch(
         batch["actions"], scheduler, seed=seed
     )
@@ -450,6 +516,7 @@ def optimizer_step(
         scheduler,
         is_pad_mask=batch["action_is_pad"],
     )
+    auxiliary_losses = []
     if clean_action_regression_weight > 0:
         predicted_clean_action = reconstruct_clean_action_from_flow(
             noisy, prediction, timesteps, scheduler
@@ -459,13 +526,40 @@ def optimizer_step(
             batch["actions"],
             batch["action_is_pad"],
         )
-        total_loss = (
-            flow_loss
-            + clean_action_regression_weight * clean_action_regression_loss
+        auxiliary_losses.append(
+            clean_action_regression_weight * clean_action_regression_loss
         )
     else:
         clean_action_regression_loss = flow_loss.detach().new_zeros(())
-        total_loss = flow_loss
+    if paired_visual_margin_weight > 0:
+        wrong_visual_batch = dict(batch)
+        wrong_visual_batch["features"] = paired_visual_negative_features(
+            batch["features"]
+        )
+        wrong_visual_prediction = forward_policy(
+            model, wrong_visual_batch, noisy, timesteps
+        )
+        wrong_visual_flow_loss = flow_matching_loss(
+            wrong_visual_prediction,
+            target,
+            timesteps,
+            scheduler,
+            is_pad_mask=batch["action_is_pad"],
+        )
+        visual_margin_loss = paired_visual_margin_loss(
+            flow_loss,
+            wrong_visual_flow_loss,
+            margin=paired_visual_margin,
+        )
+        visual_prediction_delta = (
+            prediction.float() - wrong_visual_prediction.float()
+        ).square().mean()
+        auxiliary_losses.append(paired_visual_margin_weight * visual_margin_loss)
+    else:
+        wrong_visual_flow_loss = flow_loss.detach().new_zeros(())
+        visual_margin_loss = flow_loss.detach().new_zeros(())
+        visual_prediction_delta = flow_loss.detach().new_zeros(())
+    total_loss = flow_loss + sum(auxiliary_losses, start=flow_loss.new_zeros(()))
     (total_loss / gradient_accumulation_steps).backward()
     return {
         "loss": float(total_loss.detach()),
@@ -475,6 +569,14 @@ def optimizer_step(
         ),
         "weighted_clean_action_regression_loss": float(
             clean_action_regression_weight * clean_action_regression_loss.detach()
+        ),
+        "wrong_visual_flow_loss": float(wrong_visual_flow_loss.detach()),
+        "paired_visual_margin_loss": float(visual_margin_loss.detach()),
+        "weighted_paired_visual_margin_loss": float(
+            paired_visual_margin_weight * visual_margin_loss.detach()
+        ),
+        "paired_visual_prediction_delta_mse": float(
+            visual_prediction_delta.detach()
         ),
         "timestep_mean": float(timesteps.detach().float().mean()),
         "prediction_std": float(prediction.detach().float().std()),
@@ -560,6 +662,11 @@ def build_lr_scheduler(
 def checkpoint_contract(
     args: argparse.Namespace, spec: ModelSpec, dataset: CachedLast32Dataset
 ) -> dict[str, Any]:
+    paired_visual_margin_weight = float(
+        getattr(args, "paired_visual_margin_weight", 0.0)
+    )
+    if args.clean_action_regression_weight > 0 and paired_visual_margin_weight > 0:
+        raise ValueError("Candidates F and G are mutually exclusive controlled ablations")
     contract = {
         "starwam_commit": STARWAM_COMMIT,
         "starwam_action_dit_sha256": STARWAM_ACTION_DIT_SHA256,
@@ -614,6 +721,24 @@ def checkpoint_contract(
             "loss": "masked_clean_action_chunk_mse",
             "same_forward": True,
             "same_flow_noise": True,
+            "extra_parameters": 0,
+        }
+    paired_visual_margin = float(getattr(args, "paired_visual_margin", 0.05))
+    if paired_visual_margin_weight > 0:
+        contract["paired_visual_margin_complement"] = {
+            "candidate": "G",
+            "weight": paired_visual_margin_weight,
+            "margin": paired_visual_margin,
+            "positive": "same_sample_cached_h3_features",
+            "negative": "detached_cross_sample_cached_h3_features",
+            "fixed_inputs": [
+                "noisy_action",
+                "flow_target",
+                "timestep",
+                "text_context",
+                "proprio",
+            ],
+            "loss": "relu(correct_weighted_flow_loss-wrong_weighted_flow_loss+margin)",
             "extra_parameters": 0,
         }
     return contract
@@ -929,6 +1054,10 @@ def main() -> None:
                         clean_action_regression_weight=(
                             args.clean_action_regression_weight
                         ),
+                        paired_visual_margin_weight=(
+                            args.paired_visual_margin_weight
+                        ),
+                        paired_visual_margin=args.paired_visual_margin,
                     )
                 )
             expert_gradient = module_grad_norm(unwrapped_model.action_expert)
@@ -964,6 +1093,22 @@ def main() -> None:
                 "weighted_clean_action_regression_loss": sum(
                     x["weighted_clean_action_regression_loss"]
                     for x in micro_metrics
+                )
+                / len(micro_metrics),
+                "wrong_visual_flow_loss": sum(
+                    x["wrong_visual_flow_loss"] for x in micro_metrics
+                )
+                / len(micro_metrics),
+                "paired_visual_margin_loss": sum(
+                    x["paired_visual_margin_loss"] for x in micro_metrics
+                )
+                / len(micro_metrics),
+                "weighted_paired_visual_margin_loss": sum(
+                    x["weighted_paired_visual_margin_loss"] for x in micro_metrics
+                )
+                / len(micro_metrics),
+                "paired_visual_prediction_delta_mse": sum(
+                    x["paired_visual_prediction_delta_mse"] for x in micro_metrics
                 )
                 / len(micro_metrics),
                 "timestep_mean": sum(x["timestep_mean"] for x in micro_metrics) / len(micro_metrics),
@@ -1053,6 +1198,9 @@ def main() -> None:
                     args.clean_action_regression_weight
                 ),
                 "candidate_f_enabled": args.clean_action_regression_weight > 0,
+                "paired_visual_margin_weight": args.paired_visual_margin_weight,
+                "paired_visual_margin": args.paired_visual_margin,
+                "candidate_g_enabled": args.paired_visual_margin_weight > 0,
             },
             "contract": contract,
             "h3_checkpoint_path": str(checkpoint_path),

@@ -37,6 +37,21 @@ class MetricTest(unittest.TestCase):
         self.assertAlmostEqual(metrics["chunk_ade_l2"], math.sqrt(2.0))
         self.assertAlmostEqual(metrics["chunk_endpoint_l2"], math.sqrt(2.0))
         self.assertEqual(metrics["prediction_std"], 0.0)
+        self.assertEqual(metrics["prediction_outside_unit_count"], 0)
+        self.assertEqual(metrics["prediction_outside_unit_fraction"], 0.0)
+        self.assertEqual(metrics["prediction_max_abs"], 0.0)
+
+    def test_domain_metrics_report_generated_action_range_before_clamp(self):
+        accumulator = MODULE.DomainMetricAccumulator(action_dim=2)
+        prediction = torch.tensor([[[2.0, 0.5], [-3.0, 1.0], [99.0, 99.0]]])
+        target = torch.zeros_like(prediction)
+        is_pad = torch.tensor([[False, False, True]])
+        accumulator.update(prediction, target, is_pad)
+        metrics = accumulator.finalize()
+        self.assertEqual(metrics["valid_elements"], 4)
+        self.assertEqual(metrics["prediction_outside_unit_count"], 2)
+        self.assertEqual(metrics["prediction_outside_unit_fraction"], 0.5)
+        self.assertEqual(metrics["prediction_max_abs"], 3.0)
 
     def test_gripper_sign_accuracy_and_f1(self):
         accumulator = MODULE.GripperSignAccumulator(gripper_dim=1)

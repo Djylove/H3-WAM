@@ -1,0 +1,84 @@
+{
+  "evidence_id": "h3_r1_starwam_closed_loop_task0_s100_v1",
+  "date": "2026-08-14",
+  "classification": "mechanical_closed_loop_and_fixed_trial_feature_ablation",
+  "verdict": "MECHANICAL_PASS_POLICY_FAIL_ACTION_RANGE",
+  "code_commit": "b16731d",
+  "checkpoint": {
+    "path": "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s100.pt",
+    "completed_steps": 100,
+    "schema_version": 2
+  },
+  "protocol": {
+    "suite": "libero_goal",
+    "task_id": 0,
+    "task": "open the middle drawer of the cabinet",
+    "trial_index": 0,
+    "seed": 42,
+    "max_steps": 400,
+    "wait_steps": 30,
+    "replan_steps": 10,
+    "action_horizon": 32,
+    "flow_shift": 5.0,
+    "flow_euler_steps": 10,
+    "normalized_action_pre_clamp": true,
+    "same_checkpoint_noise_environment_and_initial_state": true
+  },
+  "h3_features": {
+    "result_path": "/mnt/h3-wam/r1-rollout-a57a72b/outputs/s100_goal_task0_trial0_preclip_v4/results.json",
+    "result_sha256": "34541435550cc274583abce4756b43df0574294bd4c123065603bd82ff498205",
+    "success": false,
+    "steps": 400,
+    "replans": 40,
+    "mean_policy_roundtrip_seconds": 0.747464689554181,
+    "peak_allocated_gib": 32.90191459655762,
+    "normalized_action_out_of_bounds_fraction": 0.9340401785714285,
+    "normalized_action_max_abs_before_clamp": 14.0625,
+    "first_environment_action": [
+      -0.9375,
+      0.750732421875,
+      0.9375,
+      -0.24214285612106323,
+      0.375,
+      0.375,
+      1.0
+    ],
+    "target_joint_delta": 0.0,
+    "maximum_nontarget_object_joint_delta": 4.288923649276264e-07
+  },
+  "zero_h3_features": {
+    "result_path": "/mnt/h3-wam/r1-rollout-a57a72b/outputs/s100_goal_task0_trial0_zero_preclip_v1/results.json",
+    "result_sha256": "dadadefccb8b312b7b9db69fe8c67761dede767b8f0d49de4b7830599b9ae132",
+    "success": false,
+    "steps": 400,
+    "replans": 40,
+    "mean_policy_roundtrip_seconds": 0.7328867144911783,
+    "peak_allocated_gib": 32.90191459655762,
+    "normalized_action_out_of_bounds_fraction": 0.5361607142857143,
+    "normalized_action_max_abs_before_clamp": 6.40625,
+    "first_environment_action": [
+      0.4669189453125,
+      0.9375,
+      -0.618896484375,
+      0.016792327165603638,
+      -0.375,
+      0.2306082844734192,
+      1.0
+    ],
+    "target_joint_delta": 0.0,
+    "maximum_nontarget_object_joint_delta": 8.170610349417622e-07
+  },
+  "interpretation": {
+    "mechanical_adapter": "PASS: H3 INT8, VAE, online visual features, StarWAM ActionDiT, shift-5 sampler, LIBERO environment and 40 replans completed without runtime error",
+    "feature_effect": "PRESENT: zeroing H3 features materially changes the first action and action range",
+    "policy_effectiveness": "FAIL: neither fixed trial moves the target joint or succeeds",
+    "primary_failure": "generated normalized actions are severely outside the training decode range before clamp",
+    "h3_feature_observation": "at s100 the real H3 feature path increases the out-of-range fraction from 53.62% to 93.40% on this fixed trial",
+    "next_gate": "do not expand LIBERO rollout until generated-action range and conditioning dependence pass held-out generation checks"
+  },
+  "limitations": [
+    "one task and one trial do not estimate benchmark success rate",
+    "the zero-feature comparison is a mechanism A/B, not a competing policy",
+    "this checkpoint predates the v2 rank-distinct continuous-FP32 training contract"
+  ]
+}

@@ -160,6 +160,23 @@ forward/backward、显存/吞吐探针或最多一个不保留权重的 optimize
 离线总 MSE 下降不等于机制指标。按假设选择指标：语言路线看同状态 correct/wrong 指令差异；motion
 路线看真实 motion loss 与 action 分支梯度；闭环路线看目标 predicate，而非任意物体位移。
 
+#### Conditioning-collapse gate
+
+对 feature/language-conditioned 动作模型，在预注册的早期和晚期 checkpoint 上使用同一
+episode-disjoint 样本、噪声、solver、normalization 和 seed，同时报告 physical error、gripper
+macro-F1、无 self-map 的 visual-feature shuffle 和只替换文本的 language sensitivity。若晚期
+checkpoint 的 generic regression error 改善，但视觉/语言反事实响应接近消失，并伴随 gripper
+退化或预期视觉路径梯度归零，标记 `FAIL_CONDITIONING_COLLAPSE / NOT_EVIDENCE_READY`。
+
+单个 batch 的零视觉梯度不能单独证明机制坍塌；必须先排除无效 feature、零 loss weight、mask、
+AMP underflow 和 infra，再与至少一个配对反事实趋势或多个 checkpoint 互证。一旦互证成立：
+
+- 不把低 MSE 解释成更强条件策略，也不把 shuffle 不敏感解释成 robustness；
+- 不用增加 steps、选择 latest checkpoint 或把 finite/nonzero gradient gate 改成 warning 来晋级；
+- 不进入 rollout，直到新单变量合同在相同协议下恢复视觉/语言依赖并守住 gripper；
+- 先引用固定 commit 的执行代码、resolved command、原始 checkpoint/log/evaluator JSON；论文只用于
+  提出修复假设或解释机制，不能覆盖负实验或单独放宽门。
+
 不要用单个早期 checkpoint 的效果阈值作通用停止门。出现 teacher-forced 改善而 causal/closed-loop
 退化时，先把它记录为 exposure bias 或 train/inference mismatch 证据；可以继续同变量的预算阶梯，
 或启动直接针对该错配的对照实验。只有学习曲线在多个预注册 checkpoint 上稳定饱和/恶化，或达到

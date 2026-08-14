@@ -4,6 +4,14 @@
 
 ## 当日实测勘误与进度（以本节覆盖下文旧状态）
 
+- **最新覆盖结论**：R1 baseline v2 的 s100→s913 与 Candidate F v2 的 s100→s850 已在同一
+  balanced-80、episode-disjoint、seed42、10-step/shift5 合同下完成 visual shuffle 与 language
+  replacement。两条线的 physical MSE 分别改善 `63.80%/42.63%`，但视觉 shuffle MSE delta
+  分别只保留 s100 的 `0.000173%/0.000471%`，语言 mean-abs delta 分别下降
+  `95.51%/92.18%`，并伴随 gripper F1/macro-F1 退化。紧接着的 step914/851 均出现视觉
+  projector 梯度为零、expert/proprio 梯度为正。故下面早期 s50/s100 的 `GO_MEDIUM` 只保留为
+  当时的阶段结论，现已由 `FAIL_CONDITIONING_COLLAPSE / NO_GO_LONG` 覆盖；禁止仅靠增步或
+  放宽门继续这两条配方。证据见 `docs/H3_R1_A2_F2_CONDITIONING_COLLAPSE_2026-08-14.md`。
 - 历史 `multi5/full98` checkpoint 的真实输入不是五个独立层。旧 Comfy capture 保存
   `hidden.detach()` 后未 `clone()`，而后续 block 原地改写同一 storage，最终五个槽位均为
   第 49 层的相同副本。历史 `9/10、9/10、10/10` 闭环证据仍有效，但它只证明 H3 最后一层

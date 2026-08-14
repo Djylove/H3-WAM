@@ -1,0 +1,224 @@
+{
+  "event": "h3_r1_a2_f2_conditioning_collapse",
+  "date": "2026-08-14",
+  "status": "completed_offline_mechanism_evidence_not_closed_loop",
+  "effectiveness": "NOT_EVIDENCE_READY",
+  "mechanism_gate": "FAIL_CONDITIONING_COLLAPSE",
+  "scope": "paired balanced-80 episode-disjoint offline evaluation; no rollout conclusion",
+  "code_identity": {
+    "commit": "a57a72bfa4b6c240d07e8a579469153e4e639d4d",
+    "trainer_sha256": "f98cf0a424f1e9fbeef94b737d7cac7d4212ceb041db9a999e1d3a4189085a78",
+    "evaluator_sha256": "8a7c85fdc8c4b45e534f29b44641b7e0e044aa21002d15822605a9e5d17086e6",
+    "model_sha256": "391687222bff3a298375694fe3030826a7a39110f329635d2db447a4c29fc1fa"
+  },
+  "protocol": {
+    "tasks": 40,
+    "samples_per_task": 2,
+    "items": 80,
+    "episode_disjoint": true,
+    "seed": 42,
+    "inference_steps": 10,
+    "action_shift": 5.0,
+    "same_noise": true,
+    "sample_ids_sha256": "75d888fbb4298bef3517b623c00861ac6fe036495dee3bf4f0c68b5c097c5f54",
+    "source_manifest_sha256": "5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8",
+    "train_manifest_sha256": "a4ad2a7955f539c2f709912d423bfa892688885ed14144a9988595de14b8e78c",
+    "val_manifest_sha256": "df0c6ab6efce8a89e5c249548a17a34f386b388b614b417ec531fb10113a4fa6",
+    "stats_sha256": "f940b481bb50fefe07ec0f976b6b745af2edd1e4bdc0f2c4eb35ef4f3fb2da15",
+    "language_replacement_sensitivity": true,
+    "visual_feature_shuffle": true,
+    "visual_shuffle_self_maps": 0
+  },
+  "a2_baseline_v2": {
+    "remote_root": "/mnt/h3-wam/r1-baseline-v2-s1000-a57a72b-20260814",
+    "comparison": {
+      "path": "/mnt/h3-wam/r1-baseline-v2-s1000-a57a72b-20260814/evidence/a2_balanced80_s100_s913_20260814/comparison_summary.json",
+      "sha256": "5358862e005b65ee634f7af440027751adf69c0d85f6bce8d128e4fe03c260bc"
+    },
+    "s100_result": {
+      "path": "/mnt/h3-wam/r1-baseline-v2-s1000-a57a72b-20260814/evidence/a2_balanced80_s100_s913_20260814/results/s100_balanced80_lang_visual.json",
+      "sha256": "f90f37f89554197290e329304cac678b917ee6f63956ea206bbb67973ad4b1b6",
+      "checkpoint_sha256": "6ca9ea9d1713b6024bc07407b84f38a02bfb839de62d1725d7650f967813cfc6",
+      "fresh_restore_max_abs": 0.0,
+      "physical": {
+        "mse": 0.3435512398042645,
+        "mae": 0.4479178190531674,
+        "ade": 1.4991224121950562,
+        "endpoint": 1.5918208564916019
+      },
+      "gripper": {
+        "accuracy": 0.5824514991181657,
+        "f1": 0.5629903091832027,
+        "macro_f1": 0.581621790302872
+      },
+      "language_sensitivity": {
+        "mean_abs_delta": 0.43388205999449836,
+        "rms_delta": 0.5574989837025522,
+        "mean_step_l2_delta": 1.3797978735545533,
+        "relative_l2_delta": 0.42974124365543115
+      },
+      "visual_shuffle_action_delta_physical": {
+        "mse": 0.2366960739332532,
+        "mae": 0.31609041728670634,
+        "ade": 1.1799926398166174,
+        "endpoint": 1.1687482335521069
+      }
+    },
+    "s913_result": {
+      "path": "/mnt/h3-wam/r1-baseline-v2-s1000-a57a72b-20260814/evidence/a2_balanced80_s100_s913_20260814/results/s913_balanced80_lang_visual.json",
+      "sha256": "cf1961a2cc83decc2cc3e2cc6e12d30714daaf6814d1e115de97a78ca5797967",
+      "checkpoint_sha256": "30dd7809f8a630b930b8202e73f220ba76e9b85d1aa0e6d21d041f5f76a10fb4",
+      "fresh_restore_max_abs": 0.0,
+      "physical": {
+        "mse": 0.12435059979318598,
+        "mae": 0.2257197825306157,
+        "ade": 0.8763064817436694,
+        "endpoint": 0.83260272701399
+      },
+      "gripper": {
+        "accuracy": 0.626984126984127,
+        "f1": 0.39484978540772536,
+        "macro_f1": 0.5626256575222183
+      },
+      "language_sensitivity": {
+        "mean_abs_delta": 0.019489254931053187,
+        "rms_delta": 0.031465354035668525,
+        "mean_step_l2_delta": 0.07014127217416176,
+        "relative_l2_delta": 0.07458326853205952
+      },
+      "visual_shuffle_action_delta_physical": {
+        "mse": 4.096186170051788e-7,
+        "mae": 8.101113709372637e-5,
+        "ade": 0.00047686504208975625,
+        "endpoint": 0.0005919485168758623
+      }
+    },
+    "relative_s913_vs_s100_percent": {
+      "physical_mse": -63.8043513206258,
+      "physical_mae": -49.60687587563401,
+      "physical_ade": -41.5453685025923,
+      "physical_endpoint": -47.694947982459574,
+      "gripper_accuracy": 7.645722937168819,
+      "gripper_f1": -29.865615985365515,
+      "gripper_macro_f1": -3.266062774360933,
+      "language_mean_abs_delta": -95.50816760404882,
+      "language_rms_delta": -94.3559800187086,
+      "visual_shuffle_mse_retention": 0.0001730567855217948,
+      "visual_shuffle_ade_retention": 0.040412543773481996
+    },
+    "zero_visual_gradient": {
+      "attempted_step": 914,
+      "last_safe_step": 913,
+      "expert_gradient_norm": 6.331165313720703,
+      "feature_projector_gradient_norm": 0.0,
+      "proprio_gradient_norm": 0.017413996160030365,
+      "log_path": "/mnt/h3-wam/r1-baseline-v2-s1000-a57a72b-20260814/logs/stage_s100_to_s1000.log",
+      "log_sha256": "b004e7b5e42d0f39c948492e5ea778105c45c31d1d7f70da09958745e1dea88a"
+    },
+    "decision": "FAIL_CONDITIONING_COLLAPSE"
+  },
+  "f2_candidate_f_v2": {
+    "remote_root": "/mnt/h3-wam/experiments/candidate-f-s1000-a57a72b-v2",
+    "comparison": {
+      "path": "/mnt/h3-wam/experiments/candidate-f-s1000-a57a72b-v2/evidence/f2_balanced80_lang_visual_shuffle/F2_COMPARISON.json",
+      "sha256": "1ccf51afd6ea17174d4046c49f4b8d811ee252a64282f1122c5a48a20123d9ce"
+    },
+    "s100_result": {
+      "path": "/mnt/h3-wam/experiments/candidate-f-s1000-a57a72b-v2/evidence/f2_balanced80_lang_visual_shuffle/results/f_s100_balanced80_lang_visual_shuffle.json",
+      "sha256": "acd5566a80bef1b83171c6eef4ac04decdf85b1708f1a8fe1c20e1918f49f85c",
+      "checkpoint_sha256": "759bdcba3459d094dfb27ae6ec52cf96de19a004994ab40088df24009100b1e2",
+      "fresh_restore_max_abs": 0.0,
+      "physical": {
+        "mse": 0.3529859559251374,
+        "mae": 0.45505558041788585,
+        "ade": 1.5174373825542713,
+        "endpoint": 1.6285832947020549
+      },
+      "gripper": {
+        "accuracy": 0.5551146384479718,
+        "f1": 0.5949417904456042,
+        "macro_f1": 0.5507716287191347
+      },
+      "language_sensitivity": {
+        "mean_abs_delta": 0.41504121926005644,
+        "rms_delta": 0.5255714699807889,
+        "mean_step_l2_delta": 1.3139326541280267,
+        "relative_l2_delta": 0.3806443339057242
+      },
+      "visual_shuffle_action_delta_physical": {
+        "mse": 0.2091073707538277,
+        "mae": 0.28840893634652937,
+        "ade": 1.101471873403536,
+        "endpoint": 1.0821462729379565
+      }
+    },
+    "s850_result": {
+      "path": "/mnt/h3-wam/experiments/candidate-f-s1000-a57a72b-v2/evidence/f2_balanced80_lang_visual_shuffle/results/f_s850_balanced80_lang_visual_shuffle.json",
+      "sha256": "bd9ae1410ae6f90bfb066edbf350577703bc38ffe152bab528c58e34b578c331",
+      "checkpoint_sha256": "4539e3eeaaea2fcb5fdbbe34306432ffe535635c977b80a02e5f08793f0e2a74",
+      "fresh_restore_max_abs": 0.0,
+      "physical": {
+        "mse": 0.20251212342953107,
+        "mae": 0.2956766477908257,
+        "ade": 1.1432833534569675,
+        "endpoint": 1.0520340829002073
+      },
+      "gripper": {
+        "accuracy": 0.42857142857142855,
+        "f1": 0.5934755332496863,
+        "macro_f1": 0.3160256004527363
+      },
+      "language_sensitivity": {
+        "mean_abs_delta": 0.032469251829240084,
+        "rms_delta": 0.052523405648382725,
+        "mean_step_l2_delta": 0.12242512780505845,
+        "relative_l2_delta": 0.08791092129376475
+      },
+      "visual_shuffle_action_delta_physical": {
+        "mse": 9.849258320972523e-7,
+        "mae": 0.00016605130188649533,
+        "ade": 0.0009560597242198412,
+        "endpoint": 0.0011879354014667398
+      }
+    },
+    "relative_s850_vs_s100_percent": {
+      "physical_mse": -42.62884400067162,
+      "physical_mae": -35.02405848549304,
+      "physical_ade": -24.656966633278662,
+      "physical_endpoint": -35.40188663836969,
+      "gripper_accuracy": -22.795869737887223,
+      "gripper_f1": -0.2464538917025422,
+      "gripper_macro_f1": -42.62130001364083,
+      "language_mean_abs_delta": -92.17686091826568,
+      "language_rms_delta": -90.00641993556032,
+      "visual_shuffle_mse_delta": -99.99952898559791,
+      "visual_shuffle_ade_delta": -99.91320162163874
+    },
+    "zero_visual_gradient": {
+      "attempted_step": 851,
+      "last_safe_step": 850,
+      "expert_gradient_norm": 40.55021667480469,
+      "feature_projector_gradient_norm": 0.0,
+      "proprio_gradient_norm": 0.06080896779894829,
+      "audit_path": "/mnt/h3-wam/experiments/candidate-f-s1000-a57a72b-v2/output/FAILURE_STEP851_ZERO_VISUAL_GRADIENT.json",
+      "audit_sha256": "5dba18333321373dde157fd32ec801069ab7d34c2edf1d97eee0c3477a2c0818"
+    },
+    "last_safe_reproduction": {
+      "path": "/mnt/h3-wam/experiments/candidate-f-s1000-a57a72b-v2/output/S850_LAST_SAFE_REPRODUCTION_AUDIT.json",
+      "sha256": "39ee524d357dae97c3327a9249917988aa4f11d85dfb9a8411276512eb2d6798"
+    },
+    "decision": "FAIL_CONDITIONING_COLLAPSE"
+  },
+  "interpretation": {
+    "replicated_pattern": "Both baseline v2 and Candidate F v2 improve generic physical regression while nearly eliminating paired visual-shuffle and language-replacement response.",
+    "gripper": "Late checkpoints regress F1 or macro-F1 even when a headline physical metric or accuracy improves.",
+    "gradient_corroboration": "The next attempted optimizer step has a zero feature-projector gradient while expert and proprio gradients remain positive in both runs.",
+    "decision": "Treat both runs as action-prior/conditioning collapse. Do not promote to rollout, extend only the same step budget, or relax the visual-gradient/mechanism gate.",
+    "next_permission": "A new single-variable contract must preserve measurable visual and language dependence and gripper behavior before expensive training is released."
+  },
+  "evidence_priority": [
+    "pinned executable code and resolved launch contract",
+    "raw checkpoints, logs and paired evaluator artifacts",
+    "paper or project-page interpretation only as supplementary context"
+  ]
+}

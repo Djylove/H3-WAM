@@ -781,6 +781,8 @@ class DomainMetricAccumulator:
         self.pred_square_sum = torch.zeros(action_dim, dtype=torch.float64)
         self.target_sum = torch.zeros(action_dim, dtype=torch.float64)
         self.target_square_sum = torch.zeros(action_dim, dtype=torch.float64)
+        self.prediction_outside_unit_count = 0
+        self.prediction_max_abs = 0.0
         self.ade_sum = 0.0
         self.endpoint_sum = 0.0
         self.endpoint_count = 0
@@ -802,6 +804,13 @@ class DomainMetricAccumulator:
             raise ValueError("metric batch has no valid action steps")
         pred_valid = prediction[valid].double()
         target_valid = target[valid].double()
+        self.prediction_outside_unit_count += int(
+            (pred_valid.abs() > 1.0).sum().item()
+        )
+        self.prediction_max_abs = max(
+            self.prediction_max_abs,
+            float(pred_valid.abs().max().item()),
+        )
         diff = pred_valid - target_valid
         self.step_count += int(pred_valid.shape[0])
         self.element_count += int(pred_valid.numel())
@@ -856,6 +865,11 @@ class DomainMetricAccumulator:
             "prediction_mean_per_dim": pred_mean.tolist(),
             "prediction_std_per_dim": pred_variance.clamp_min(0.0).sqrt().tolist(),
             "prediction_std": math.sqrt(global_variance),
+            "prediction_outside_unit_count": self.prediction_outside_unit_count,
+            "prediction_outside_unit_fraction": (
+                self.prediction_outside_unit_count / self.element_count
+            ),
+            "prediction_max_abs": self.prediction_max_abs,
             "target_mean_per_dim": target_mean.tolist(),
             "target_std_per_dim": target_variance.clamp_min(0.0).sqrt().tolist(),
         }
