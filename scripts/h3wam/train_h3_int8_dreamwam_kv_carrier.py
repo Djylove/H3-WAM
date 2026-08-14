@@ -15,6 +15,7 @@ import json
 import math
 import os
 import random
+import shutil
 import sys
 import time
 from contextlib import nullcontext
@@ -62,7 +63,32 @@ DREAMWAM_KV_SCHEMA = "h3_dreamwam_kv_v1"
 DREAMWAM_KV_STRATEGY = "adaptive_avg_pool1d_sequence_v1"
 CACHE_BACKBONE = "H3Int8FeatureBackbone"
 CACHE_QUANTIZATION = "int8_tensorwise_convrot"
-CHECKPOINT_SCHEMA = 1
+CHECKPOINT_SCHEMA = 2
+CHECKPOINT_KEYS = frozenset(
+    {
+        "schema_version",
+        "completed_steps",
+        "model",
+        "optimizer",
+        "lr_scheduler",
+        "contract",
+        "probe_prediction",
+        "probe_sample_ids",
+        "rng_states",
+        "data_state",
+    }
+)
+DATA_STATE_KEYS = frozenset(
+    {
+        "resume_mode",
+        "sample_offset",
+        "limit",
+        "selected_windows",
+        "steps_in_invocation",
+        "sample_ids",
+        "sampler_cursor_restorable",
+    }
+)
 PARENT_OBJECTIVE_COMMIT = PARENT.STARWAM_COMMIT
 
 
@@ -425,7 +451,11 @@ def move_batch(
 
 
 def checkpoint_contract(
-    args: argparse.Namespace, spec: ModelSpec, dataset: CachedDreamWAMKVDataset
+    args: argparse.Namespace,
+    spec: ModelSpec,
+    dataset: CachedDreamWAMKVDataset,
+    *,
+    world_size: int = 1,
 ) -> dict[str, Any]:
     return {
         "candidate": "D",
@@ -460,6 +490,13 @@ def checkpoint_contract(
         "action_shift": args.action_shift,
         "flow_timestep_contract": "continuous_fp32_no_bf16_endpoint_rounding_v2",
         "flow_rng_contract": "base_plus_step1000003_plus_rank10000019_v2",
+        "training_topology": {
+            "world_size": int(world_size),
+            "per_device_batch_size": args.per_device_batch_size,
+            "gradient_accumulation_steps": args.gradient_accumulation_steps,
+            "num_workers": args.num_workers,
+            "seed": args.seed,
+        },
         "lr_schedule": {
             "type": "linear_warmup_then_cosine",
             "base_learning_rate": args.learning_rate,
@@ -469,6 +506,103 @@ def checkpoint_contract(
         },
         "model_spec": asdict(spec),
     }
+
+
+def capture_rng_state(device: torch.device | None = None) -> dict[str, Any]:
+    cuda_state = None
+    if device is not None and device.type == "cuda":
+        cuda_state = torch.cuda.get_rng_state(device).cpu()
+    return {
+        "python": random.getstate(),
+        "torch_cpu": torch.get_rng_state().cpu(),
+        "torch_cuda": cuda_state,
+    }
+
+
+def restore_rng_state(state: dict[str, Any], device: torch.device | None = None) -> None:
+    validate_rng_state(state, require_cuda=device is not None and device.type == "cuda")
+    random.setstate(state["python"])
+    torch.set_rng_state(state["torch_cpu"])
+    if device is not None and device.type == "cuda":
+        torch.cuda.set_rng_state(state["torch_cuda"], device)
+
+
+def validate_rng_state(state: dict[str, Any], *, require_cuda: bool) -> None:
+    if not isinstance(state, dict):
+        raise ValueError("checkpoint RNG state must be a mapping")
+    if set(state) != {"python", "torch_cpu", "torch_cuda"}:
+        raise ValueError("checkpoint RNG state schema mismatch")
+    if not torch.is_tensor(state["torch_cpu"]):
+        raise ValueError("checkpoint CPU RNG state must be a tensor")
+    cuda_state = state["torch_cuda"]
+    if require_cuda and not torch.is_tensor(cuda_state):
+        raise ValueError("checkpoint is missing CUDA RNG state")
+    if cuda_state is not None and not torch.is_tensor(cuda_state):
+        raise ValueError("checkpoint CUDA RNG state must be a tensor or null")
+
+
+def _tensor_bytes(value: Any) -> int:
+    if torch.is_tensor(value):
+        return value.numel() * value.element_size()
+    if isinstance(value, dict):
+        return sum(_tensor_bytes(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return sum(_tensor_bytes(item) for item in value)
+    return 0
+
+
+def estimated_checkpoint_bytes(
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    lr_scheduler: torch.optim.lr_scheduler.LRScheduler,
+    probe_prediction: torch.Tensor,
+    rng_states: list[dict[str, Any]],
+) -> int:
+    """Conservative tensor-payload estimate used only for disk preflight."""
+
+    tensor_bytes = sum(
+        _tensor_bytes(value)
+        for value in (
+            model.state_dict(),
+            optimizer.state_dict(),
+            lr_scheduler.state_dict(),
+            probe_prediction,
+            rng_states,
+        )
+    )
+    return int(tensor_bytes * 1.10) + 64 * 1024**2
+
+
+def flatten_consumed_sample_ids(
+    per_rank_sample_ids: list[list[str]], *, expected_per_rank: int
+) -> list[str]:
+    if expected_per_rank < 0:
+        raise ValueError("expected per-rank sample count must be non-negative")
+    if not per_rank_sample_ids:
+        raise ValueError("checkpoint requires consumed IDs from every rank")
+    for rank, sample_ids in enumerate(per_rank_sample_ids):
+        if not isinstance(sample_ids, list) or any(
+            not isinstance(sample_id, str) for sample_id in sample_ids
+        ):
+            raise ValueError(f"rank {rank} consumed sample IDs must be a string list")
+        if len(sample_ids) != expected_per_rank:
+            raise RuntimeError(
+                f"rank {rank} consumed {len(sample_ids)} samples, "
+                f"expected {expected_per_rank}"
+            )
+    flattened = [sample_id for sample_ids in per_rank_sample_ids for sample_id in sample_ids]
+    expected_total = len(per_rank_sample_ids) * expected_per_rank
+    if len(flattened) != expected_total:
+        raise RuntimeError(
+            f"consumed sample total mismatch: {len(flattened)} != {expected_total}"
+        )
+    unique_count = len(set(flattened))
+    if unique_count != len(flattened):
+        raise RuntimeError(
+            "checkpoint stage contains duplicate consumed sample IDs: "
+            f"unique={unique_count}, total={len(flattened)}"
+        )
+    return flattened
 
 
 def save_checkpoint_atomic(
@@ -481,23 +615,41 @@ def save_checkpoint_atomic(
     contract: dict[str, Any],
     probe_prediction: torch.Tensor,
     probe_sample_ids: list[str],
-) -> None:
+    rng_states: list[dict[str, Any]],
+    data_state: dict[str, Any],
+) -> int:
+    if not rng_states:
+        raise ValueError("checkpoint requires at least one rank RNG state")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.partial")
-    torch.save(
-        {
-            "schema_version": CHECKPOINT_SCHEMA,
-            "completed_steps": int(completed_steps),
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "lr_scheduler": lr_scheduler.state_dict(),
-            "contract": contract,
-            "probe_prediction": probe_prediction.detach().float().cpu(),
-            "probe_sample_ids": list(probe_sample_ids),
-        },
-        temporary,
+    required_free = estimated_checkpoint_bytes(
+        model, optimizer, lr_scheduler, probe_prediction, rng_states
     )
-    os.replace(temporary, path)
+    available = shutil.disk_usage(path.parent).free
+    if available < required_free:
+        raise OSError(
+            "insufficient free space for atomic checkpoint: "
+            f"available={available}, required={required_free}"
+        )
+    payload = {
+        "schema_version": CHECKPOINT_SCHEMA,
+        "completed_steps": int(completed_steps),
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "lr_scheduler": lr_scheduler.state_dict(),
+        "contract": contract,
+        "probe_prediction": probe_prediction.detach().float().cpu(),
+        "probe_sample_ids": list(probe_sample_ids),
+        "rng_states": rng_states,
+        "data_state": data_state,
+    }
+    try:
+        torch.save(payload, temporary)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return path.stat().st_size
 
 
 def load_checkpoint_strict(
@@ -507,10 +659,21 @@ def load_checkpoint_strict(
     optimizer: torch.optim.Optimizer | None,
     lr_scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     expected_contract: dict[str, Any],
+    restore_rng_rank: int | None = None,
+    rng_device: torch.device | None = None,
 ) -> dict[str, Any]:
     payload = torch.load(path, map_location="cpu", weights_only=False)
     if payload.get("schema_version") != CHECKPOINT_SCHEMA:
         raise ValueError("checkpoint schema mismatch")
+    actual_keys = set(payload)
+    if actual_keys != CHECKPOINT_KEYS:
+        raise ValueError(
+            "checkpoint top-level fields mismatch: "
+            f"missing={sorted(CHECKPOINT_KEYS - actual_keys)}, "
+            f"extra={sorted(actual_keys - CHECKPOINT_KEYS)}"
+        )
+    if not isinstance(payload["completed_steps"], int) or payload["completed_steps"] < 0:
+        raise ValueError("checkpoint completed_steps must be a non-negative integer")
     actual_contract = payload.get("contract", {})
     mismatches = [
         key
@@ -519,11 +682,38 @@ def load_checkpoint_strict(
     ]
     if mismatches:
         raise ValueError(f"checkpoint contract mismatch: {mismatches}")
+    rng_states = payload["rng_states"]
+    if not isinstance(rng_states, list) or len(rng_states) != int(
+        expected_contract["training_topology"]["world_size"]
+    ):
+        raise ValueError("checkpoint per-rank RNG state count mismatch")
+    for rng_state in rng_states:
+        validate_rng_state(rng_state, require_cuda=False)
+    data_state = payload["data_state"]
+    if not isinstance(data_state, dict) or set(data_state) != DATA_STATE_KEYS:
+        raise ValueError("checkpoint data state schema mismatch")
+    if data_state["resume_mode"] != "explicit_stage_slice_v1":
+        raise ValueError("checkpoint data resume mode mismatch")
+    if data_state["sampler_cursor_restorable"] is not False:
+        raise ValueError("Candidate D checkpoint must declare non-restorable sampler cursor")
+    if not isinstance(data_state["sample_ids"], list) or any(
+        not isinstance(sample_id, str) for sample_id in data_state["sample_ids"]
+    ):
+        raise ValueError("checkpoint consumed sample IDs must be a string list")
+    if restore_rng_rank is not None:
+        if not 0 <= restore_rng_rank < len(rng_states):
+            raise ValueError("checkpoint RNG rank is out of range")
+        validate_rng_state(
+            rng_states[restore_rng_rank],
+            require_cuda=rng_device is not None and rng_device.type == "cuda",
+        )
     model.load_state_dict(payload["model"], strict=True)
     if optimizer is not None:
         optimizer.load_state_dict(payload["optimizer"])
     if lr_scheduler is not None:
         lr_scheduler.load_state_dict(payload["lr_scheduler"])
+    if restore_rng_rank is not None:
+        restore_rng_state(rng_states[restore_rng_rank], rng_device)
     return payload
 
 
@@ -627,7 +817,7 @@ def main() -> None:
         scheduler_horizon=args.scheduler_horizon,
         min_learning_rate=args.min_learning_rate,
     )
-    contract = checkpoint_contract(args, spec, dataset)
+    contract = checkpoint_contract(args, spec, dataset, world_size=world_size)
     completed_steps = 0
     loaded_payload = None
     if args.load_checkpoint is not None:
@@ -637,8 +827,20 @@ def main() -> None:
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
             expected_contract=contract,
+            restore_rng_rank=rank,
+            rng_device=device,
         )
         completed_steps = int(loaded_payload["completed_steps"])
+        if not args.restore_check_only:
+            previously_consumed = set(loaded_payload["data_state"]["sample_ids"])
+            selected_now = {str(row["id"]) for row in dataset.rows}
+            overlap = previously_consumed & selected_now
+            if overlap:
+                raise ValueError(
+                    "Candidate D has no restorable DataLoader/sampler cursor; "
+                    "training resume requires an explicit disjoint stage slice, "
+                    f"but found {len(overlap)} previously consumed sample IDs"
+                )
 
     unwrapped_model = model
     if world_size > 1:
@@ -775,9 +977,51 @@ def main() -> None:
     if not torch.isfinite(probe_prediction).all() or float(probe_prediction.std()) <= 0:
         raise RuntimeError("probe prediction is non-finite or constant")
 
+    checkpoint_file_size_bytes = None
     if args.save_checkpoint is not None and not args.restore_check_only:
+        local_rng_state = capture_rng_state(device)
+        local_consumed_sample_ids = [
+            sample_id for item in history for sample_id in item["sample_ids"]
+        ]
+        if dist.is_initialized():
+            gathered_states: list[dict[str, Any] | None] = [None] * world_size
+            dist.all_gather_object(
+                gathered_states,
+                {
+                    "rng_state": local_rng_state,
+                    "sample_ids": local_consumed_sample_ids,
+                },
+            )
+            if any(state is None for state in gathered_states):
+                raise RuntimeError("failed to gather every rank checkpoint state")
+            complete_states = [state for state in gathered_states if state is not None]
+        else:
+            complete_states = [
+                {
+                    "rng_state": local_rng_state,
+                    "sample_ids": local_consumed_sample_ids,
+                }
+            ]
+        complete_rng_states = [state["rng_state"] for state in complete_states]
+        consumed_sample_ids = flatten_consumed_sample_ids(
+            [state["sample_ids"] for state in complete_states],
+            expected_per_rank=(
+                args.per_device_batch_size
+                * args.gradient_accumulation_steps
+                * args.steps
+            ),
+        )
+        data_state = {
+            "resume_mode": "explicit_stage_slice_v1",
+            "sample_offset": args.sample_offset,
+            "limit": args.limit,
+            "selected_windows": len(dataset),
+            "steps_in_invocation": args.steps,
+            "sample_ids": consumed_sample_ids,
+            "sampler_cursor_restorable": False,
+        }
         if rank == 0:
-            save_checkpoint_atomic(
+            checkpoint_file_size_bytes = save_checkpoint_atomic(
                 args.save_checkpoint,
                 model=unwrapped_model,
                 optimizer=optimizer,
@@ -786,6 +1030,8 @@ def main() -> None:
                 contract=contract,
                 probe_prediction=probe_prediction,
                 probe_sample_ids=probe_cpu["sample_ids"],
+                rng_states=complete_rng_states,
+                data_state=data_state,
             )
         if dist.is_initialized():
             dist.barrier()
@@ -837,6 +1083,7 @@ def main() -> None:
             "saved_checkpoint": (
                 None if args.save_checkpoint is None else str(args.save_checkpoint)
             ),
+            "checkpoint_file_size_bytes": checkpoint_file_size_bytes,
             "restore_probe_max_abs": restore_max_abs,
             "probe_prediction_mean": float(probe_prediction.mean()),
             "probe_prediction_std": float(probe_prediction.std()),

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
+from unittest import mock
 
 import torch
 
@@ -140,6 +141,18 @@ class DreamWAMKVDatasetTest(unittest.TestCase):
 class DreamWAMKVTrainingContractTest(unittest.TestCase):
     layers = (9, 19, 29, 39, 49)
 
+    @staticmethod
+    def data_state():
+        return {
+            "resume_mode": "explicit_stage_slice_v1",
+            "sample_offset": 0,
+            "limit": 1,
+            "selected_windows": 1,
+            "steps_in_invocation": 1,
+            "sample_ids": ["probe"],
+            "sampler_cursor_restorable": False,
+        }
+
     def build_model(self):
         spec = MODULE.ModelSpec(
             action_dim=2,
@@ -235,6 +248,7 @@ class DreamWAMKVTrainingContractTest(unittest.TestCase):
 
     def test_checkpoint_round_trip_and_contract_mismatch(self):
         torch.manual_seed(13)
+        MODULE.random.seed(13)
         spec, model = self.build_model()
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
         scheduler = MODULE.PARENT.build_lr_scheduler(
@@ -248,9 +262,145 @@ class DreamWAMKVTrainingContractTest(unittest.TestCase):
         noisy, _, timesteps = MODULE.PARENT.deterministic_flow_batch(
             batch["actions"], flow, seed=99
         )
+        prediction = MODULE.forward_policy(model, batch, noisy, timesteps)
+        prediction.square().mean().backward()
+        optimizer.step()
+        scheduler.step()
+        optimizer.zero_grad(set_to_none=True)
+        model.eval()
         with torch.no_grad():
             prediction = MODULE.forward_policy(model, batch, noisy, timesteps)
-        contract = {"candidate": "D", "model_spec": MODULE.asdict(spec)}
+        contract = {
+            "candidate": "D",
+            "model_spec": MODULE.asdict(spec),
+            "training_topology": {"world_size": 1},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "candidate_d.pt"
+            rng_states = [MODULE.capture_rng_state(torch.device("cpu"))]
+            MODULE.save_checkpoint_atomic(
+                checkpoint,
+                model=model,
+                optimizer=optimizer,
+                lr_scheduler=scheduler,
+                completed_steps=1,
+                contract=contract,
+                probe_prediction=prediction,
+                probe_sample_ids=["probe"],
+                rng_states=rng_states,
+                data_state=self.data_state(),
+            )
+            expected_python_random = MODULE.random.random()
+            expected_torch_random = torch.rand(4)
+            restored = MODULE.build_model(
+                spec, device=torch.device("cpu"), dtype=torch.float32
+            )
+            restored_optimizer = torch.optim.AdamW(restored.parameters(), lr=1e-4)
+            restored_scheduler = MODULE.PARENT.build_lr_scheduler(
+                restored_optimizer,
+                warmup_steps=1,
+                scheduler_horizon=4,
+                min_learning_rate=1e-6,
+            )
+            payload = MODULE.load_checkpoint_strict(
+                checkpoint,
+                model=restored,
+                optimizer=restored_optimizer,
+                lr_scheduler=restored_scheduler,
+                expected_contract=contract,
+                restore_rng_rank=0,
+                rng_device=torch.device("cpu"),
+            )
+            with torch.no_grad():
+                actual = MODULE.forward_policy(restored, batch, noisy, timesteps)
+            torch.testing.assert_close(
+                actual, payload["probe_prediction"], rtol=0, atol=0
+            )
+            self.assertEqual(MODULE.random.random(), expected_python_random)
+            torch.testing.assert_close(torch.rand(4), expected_torch_random)
+            self.assertEqual(
+                restored_scheduler.state_dict(), scheduler.state_dict()
+            )
+            expected_optimizer = optimizer.state_dict()
+            actual_optimizer = restored_optimizer.state_dict()
+            self.assertEqual(
+                actual_optimizer["param_groups"], expected_optimizer["param_groups"]
+            )
+            self.assertEqual(
+                set(actual_optimizer["state"]), set(expected_optimizer["state"])
+            )
+            for parameter_id, expected_state in expected_optimizer["state"].items():
+                actual_state = actual_optimizer["state"][parameter_id]
+                self.assertEqual(set(actual_state), set(expected_state))
+                for key, expected_value in expected_state.items():
+                    if torch.is_tensor(expected_value):
+                        torch.testing.assert_close(
+                            actual_state[key], expected_value, rtol=0, atol=0
+                        )
+                    else:
+                        self.assertEqual(actual_state[key], expected_value)
+            with self.assertRaisesRegex(ValueError, "contract mismatch"):
+                MODULE.load_checkpoint_strict(
+                    checkpoint,
+                    model=restored,
+                    optimizer=None,
+                    lr_scheduler=None,
+                    expected_contract={**contract, "candidate": "not-D"},
+                )
+
+    def test_atomic_checkpoint_failure_removes_partial_and_preserves_target(self):
+        spec, model = self.build_model()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+        scheduler = MODULE.PARENT.build_lr_scheduler(
+            optimizer,
+            warmup_steps=1,
+            scheduler_horizon=4,
+            min_learning_rate=1e-6,
+        )
+        contract = {
+            "candidate": "D",
+            "model_spec": MODULE.asdict(spec),
+            "training_topology": {"world_size": 1},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "candidate_d.pt"
+            checkpoint.write_bytes(b"previous-good-checkpoint")
+
+            def fail_after_partial(_payload, path):
+                Path(path).write_bytes(b"incomplete")
+                raise OSError("injected save failure")
+
+            with mock.patch.object(MODULE.torch, "save", side_effect=fail_after_partial):
+                with self.assertRaisesRegex(OSError, "injected save failure"):
+                    MODULE.save_checkpoint_atomic(
+                        checkpoint,
+                        model=model,
+                        optimizer=optimizer,
+                        lr_scheduler=scheduler,
+                        completed_steps=0,
+                        contract=contract,
+                        probe_prediction=torch.zeros(1),
+                        probe_sample_ids=["probe"],
+                        rng_states=[MODULE.capture_rng_state(torch.device("cpu"))],
+                        data_state=self.data_state(),
+                    )
+            self.assertEqual(checkpoint.read_bytes(), b"previous-good-checkpoint")
+            self.assertEqual(list(Path(directory).glob("*.partial")), [])
+
+    def test_invalid_rng_schema_is_rejected_before_model_mutation(self):
+        spec, model = self.build_model()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+        scheduler = MODULE.PARENT.build_lr_scheduler(
+            optimizer,
+            warmup_steps=1,
+            scheduler_horizon=4,
+            min_learning_rate=1e-6,
+        )
+        contract = {
+            "candidate": "D",
+            "model_spec": MODULE.asdict(spec),
+            "training_topology": {"world_size": 1},
+        }
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory) / "candidate_d.pt"
             MODULE.save_checkpoint_atomic(
@@ -260,30 +410,31 @@ class DreamWAMKVTrainingContractTest(unittest.TestCase):
                 lr_scheduler=scheduler,
                 completed_steps=0,
                 contract=contract,
-                probe_prediction=prediction,
+                probe_prediction=torch.zeros(1),
                 probe_sample_ids=["probe"],
+                rng_states=[MODULE.capture_rng_state(torch.device("cpu"))],
+                data_state=self.data_state(),
             )
+            payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+            payload["rng_states"] = []
+            torch.save(payload, checkpoint)
             restored = MODULE.build_model(
                 spec, device=torch.device("cpu"), dtype=torch.float32
             )
-            payload = MODULE.load_checkpoint_strict(
-                checkpoint,
-                model=restored,
-                optimizer=None,
-                lr_scheduler=None,
-                expected_contract=contract,
-            )
-            with torch.no_grad():
-                actual = MODULE.forward_policy(restored, batch, noisy, timesteps)
-            torch.testing.assert_close(actual, payload["probe_prediction"])
-            with self.assertRaisesRegex(ValueError, "contract mismatch"):
+            before = {
+                name: tensor.detach().clone()
+                for name, tensor in restored.state_dict().items()
+            }
+            with self.assertRaisesRegex(ValueError, "RNG state count"):
                 MODULE.load_checkpoint_strict(
                     checkpoint,
                     model=restored,
                     optimizer=None,
                     lr_scheduler=None,
-                    expected_contract={**contract, "candidate": "not-D"},
+                    expected_contract=contract,
                 )
+            for name, tensor in restored.state_dict().items():
+                torch.testing.assert_close(tensor, before[name], rtol=0, atol=0)
 
     def test_parent_v2_flow_rng_is_rank_distinct(self):
         rank0 = MODULE.PARENT.distributed_flow_seed(
@@ -297,6 +448,21 @@ class DreamWAMKVTrainingContractTest(unittest.TestCase):
             rank1 - rank0,
             10_000_019,
         )
+
+    def test_consumed_ids_are_flattened_across_ranks_without_duplicates(self):
+        flattened = MODULE.flatten_consumed_sample_ids(
+            [["r0_a", "r0_b"], ["r1_a", "r1_b"]],
+            expected_per_rank=2,
+        )
+        self.assertEqual(flattened, ["r0_a", "r0_b", "r1_a", "r1_b"])
+        with self.assertRaisesRegex(RuntimeError, "duplicate consumed sample IDs"):
+            MODULE.flatten_consumed_sample_ids(
+                [["shared"], ["shared"]], expected_per_rank=1
+            )
+        with self.assertRaisesRegex(RuntimeError, "consumed 1 samples, expected 2"):
+            MODULE.flatten_consumed_sample_ids(
+                [["r0_a", "r0_b"], ["r1_a"]], expected_per_rank=2
+            )
 
 
 if __name__ == "__main__":
