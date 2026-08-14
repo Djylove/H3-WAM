@@ -155,6 +155,24 @@ def is_checkpoint_milestone(
     return (base_completed_steps + step) % checkpoint_every == 0
 
 
+def clean_stream_validity_masks(
+    future: torch.Tensor,
+    clean_action_valid: torch.Tensor,
+    action_loss_mask: torch.Tensor,
+    *,
+    mask_clean_future: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Build the paired clean-stream key masks used by shared attention."""
+
+    clean_video_valid = torch.ones_like(future, dtype=torch.bool)
+    clean_action_valid = clean_action_valid.to(dtype=torch.bool)
+    if mask_clean_future:
+        clean_video_valid = ~future
+        clean_action_valid = clean_action_valid.clone()
+        clean_action_valid[action_loss_mask] = False
+    return clean_video_valid, clean_action_valid
+
+
 def global_grad_norm(
     named_parameters: list[tuple[str, torch.nn.Parameter]],
     marker: str,
@@ -947,6 +965,7 @@ def main() -> None:
             "replicated trainable parameters differ across ranks at startup: "
             f"{initial_replicated_difference}"
         )
+    restored_replicated_difference = None
     if args.load_stage is not None:
         payload = torch.load(
             args.load_stage.resolve(), map_location="cpu", weights_only=True
@@ -1065,6 +1084,14 @@ def main() -> None:
                 model.module.action_expert.output.load_state_dict(
                     payload["action_output"], strict=True
                 )
+        restored_replicated_difference = replicated_parameter_max_difference(
+            replicated_trainable_parameters, device
+        )
+        if restored_replicated_difference > 1.0e-6:
+            raise RuntimeError(
+                "replicated trainable parameters differ after checkpoint restore: "
+                f"{restored_replicated_difference}"
+            )
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
     optimizer = torch.optim.AdamW(
         trainable,
@@ -1205,6 +1232,7 @@ def main() -> None:
 
     torch.cuda.reset_peak_memory_stats(device)
     history = []
+    post_step1_replicated_difference = None
 
     def save_training_stage(path: Path, completed_steps: int) -> None:
         stage = {
@@ -1357,6 +1385,12 @@ def main() -> None:
             observed_action_mask = ~action_loss_mask
             ignored_action_mask = torch.zeros_like(action_loss_mask)
             clean_action_valid = torch.ones_like(action_loss_mask)
+        clean_video_valid, clean_action_valid = clean_stream_validity_masks(
+            future,
+            clean_action_valid,
+            action_loss_mask,
+            mask_clean_future=args.mask_clean_future,
+        )
         optimizer.zero_grad(set_to_none=True)
         forward_arguments = dict(
             noisy_video_rows=noisy_video,
@@ -1388,6 +1422,7 @@ def main() -> None:
                 clean_action_timestep_indices=torch.zeros_like(
                     action_timestep_indices
                 ),
+                clean_video_valid=clean_video_valid,
                 clean_action_valid=clean_action_valid,
                 noisy_action_valid=~ignored_action_mask,
             )
@@ -1591,13 +1626,13 @@ def main() -> None:
             optimizer.step()
             scheduler.step()
             if step == 1:
-                difference = replicated_parameter_max_difference(
+                post_step1_replicated_difference = replicated_parameter_max_difference(
                     replicated_trainable_parameters, device
                 )
-                if difference > 1.0e-6:
+                if post_step1_replicated_difference > 1.0e-6:
                     raise RuntimeError(
                         "replicated trainable parameters diverged after one step: "
-                        f"{difference}"
+                        f"{post_step1_replicated_difference}"
                     )
         item = {
             "step": step,
@@ -1676,6 +1711,15 @@ def main() -> None:
             "base_completed_steps": args.base_completed_steps,
             "completed_steps": args.base_completed_steps + args.steps,
             "checkpoint_every": args.checkpoint_every,
+            "initial_replicated_parameter_max_difference": (
+                initial_replicated_difference
+            ),
+            "restored_replicated_parameter_max_difference": (
+                restored_replicated_difference
+            ),
+            "post_step1_replicated_parameter_max_difference": (
+                post_step1_replicated_difference
+            ),
             "history": history,
             "evaluated_samples": int(evaluated_tensor),
             "mean_loss": mean_losses[0],

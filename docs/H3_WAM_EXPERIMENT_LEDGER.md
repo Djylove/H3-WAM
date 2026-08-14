@@ -509,3 +509,23 @@ checkpoint 同时受 replicated-gradient 未同步影响，不能支持 global-b
 gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数据、LR与容量的随机父线仅为
 约 `1.22–1.28/3.33–3.61`。因此 residual output scale `0.01` + LR `1e-4` 的直接 H3 插值初始化
 判定 `NO_GO`，不放行长训。任何 `0.001` 缩放或更低 LR 都必须另立稳定化消融，不能覆盖这条负结果。
+
+### 2026-08-14 — shared-H3 distributed contract v2
+
+- 旧 shared/history 训练均已到达预注册终点：tail-2 step10000 的 teacher-forced
+  video/action 为 `0.091899/0.285537`，旧 sampler causal video/action 为
+  `0.251560/0.464778`；history step3000 分别为 `0.090237/0.346457` 与
+  `0.257231/0.632286`。这些 checkpoint 继续标记
+  `TAINTED_FSDP_REPLICATED_GRAD`，不能成为修复版父权重或证明 global-batch-8 方法有效。
+- 修复版 shared-H3 从干净初始化在8×A800完成真实2-step：16 samples，H3/action梯度均finite且
+  非零，step1跨rank replicated参数一致性断言通过，每卡峰值reserved `40.934 GiB`；step1/final
+  v2 checkpoint均落盘。final恢复后的两次val40具有完全相同的40样本loss序列，save/restore门通过。
+- 第一遍真实forward发现 trainer 漏传 `clean_video_valid`；attention正确拒绝了半套validity合约，
+  没有生成checkpoint。补齐成对mask并新增cold-start双流隐藏测试后，云端50项定向测试及真实硬门
+  全部通过。
+- 修复后的step0 teacher-forced video/action为 `0.170026/1.304397`，严格隐藏尚未生成clean token的
+  causal sample40为 `0.695563/1.306988`。s2 causal为 `0.706956/1.305335`：action仅改善
+  `0.127%`，video退化 `1.64%`，所以机械门通过但效果仍为 `NOT_EVIDENCE_READY`。
+- 已预注册 `h3_lingbot_shared_sync_v2_s1000_v1`：1000 steps、global batch8、8000 samples、
+  `0.039845` effective epochs、每200步保存。晋级门为 causal action至少改善3%且causal video
+  退化不超过5%；训练许可 `GO_LONG`，效果结论仍 `NOT_EVIDENCE_READY`。

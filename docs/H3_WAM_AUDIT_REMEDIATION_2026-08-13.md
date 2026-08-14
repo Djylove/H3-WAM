@@ -44,17 +44,31 @@ commit `7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb`。
 
 - 本地：全部一方 `src/scripts/tests` static compile 通过；所有 H3 shell 语法通过；`git diff --check` 通过；
   tracked-secret scan 通过。
-- 云端隔离目录 `/mnt/h3-wam/audit-remediation-20260813`：真实 torch 环境运行65个相关测试全部通过。
+- 云端隔离目录：真实 torch 环境在新增 clean-stream 集成回归后运行50个定向测试全部通过；此前
+  更宽的65项审查测试也全部通过。
 - 同一云端真实 `torch.distributed` 2-rank gloo parity：rank0/rank1 分别产生梯度1/3，平均后均为2，
   SGD 后参数均为0.5，跨 rank max diff=0，PASS。
+
+2026-08-14 又在32409节点完成了8×A800、50层、真实dense window的修复版 shared-H3 硬门：
+global batch8、2个optimizer steps、16个样本，step1/2 的 H3 梯度范数为
+`0.262587/0.285487`，action 梯度范数为 `1.454350/1.760745`，每卡峰值 reserved
+`40.934 GiB`。step1和final两个v2 stage均原子落盘，final随后在8 rank上恢复并两次运行固定
+val40；40个样本的loss序列及 video/action mean `0.1699362870/1.3034238160` 完全一致。
+
+该真实硬门第一次运行还暴露出单测未覆盖的集成遗漏：attention已要求成对的
+`clean_video_valid/clean_action_valid`，trainer只传了后者。现已补齐；cold-start评测还会同时把
+未来video和目标action从clean key集合移除，而不再只把张量数值置零。修复后真实硬门和恢复均通过。
 
 这些测试证明 codec、mask、同步原语与 CPU 模型合同；尚未证明33B H3 的完整 2-GPU FSDP
 `train→save→restore` 或 LIBERO 闭环效果。
 
 ## 当前放行状态
 
-- 修复后的 shared-H3：`GO_CANARY`，`NOT_EVIDENCE_READY`。必须从共同干净初始化跑2-GPU真实H3
-  两步 parity/save/restore，随后才可 `GO_LONG`。
+- 修复后的 shared-H3：真实8-GPU parity/save/restore门已通过，训练许可提升为 `GO_LONG`；效果仍为
+  `NOT_EVIDENCE_READY`。固定step0基线的 teacher-forced video/action 为
+  `0.1700260300/1.3043972850`，严格validity-masked causal sample40为
+  `0.6955631748/1.3069883287`。修复版s2 causal action仅改善`0.127%`且video退化`1.64%`，因此
+  两步只能证明链路，不能证明模型能力。
 - 旧 shared/history/anchor checkpoint：`TAINTED_FSDP_REPLICATED_GRAD`；anchor 额外
   `INVALID_STREAMING_CONTRACT`。仅作历史诊断，不作 resume 父点或效果结论。
 - DoT：不受 shared replicated-gradient 问题影响；训练 checkpoint 可保留。部署需补真实
@@ -67,3 +81,8 @@ commit `7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb`。
 - CheckpointContractV2、严格 optimizer/RNG/sampler resume、完整 content-addressed cache。
 - 精确匹配 dataset episode 初态的 expert replay，以及 released FastWAM 同环境 gold control。
 - LingBot persistent observation/action KV 生命周期；在此之前不再声称 initial anchor 与上游等价。
+
+下一实验固定为 `h3_lingbot_shared_sync_v2_s1000_v1`：从确定性干净初始化训练1000步，global
+batch8、8000个window、仅`0.039845` effective epochs，每200步保存并异步运行val40/sample40。
+它的预注册机制门是 causal action 相对step0至少改善3%，且causal video退化不超过5%；只有满足
+该门的预声明最佳checkpoint才进入固定LIBERO闭环。训练许可与效果声明继续分开。

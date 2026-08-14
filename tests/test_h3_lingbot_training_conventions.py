@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 import torch
 
 from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import (
+    clean_stream_validity_masks,
     flow_match_training_weight,
     is_checkpoint_milestone,
     load_executed_action_history,
@@ -18,6 +19,48 @@ from scripts.h3dreamwam.verify_h3_lingbot_four_stream_fsdp import (
 
 
 class H3LingBotTrainingConventionsTest(unittest.TestCase):
+    def test_shared_training_supplies_paired_clean_stream_masks(self) -> None:
+        future = torch.tensor([False, True, True])
+        action_valid = torch.tensor([True, True, False])
+        action_loss = torch.tensor([True, True, False])
+        video_valid, actual_action_valid = clean_stream_validity_masks(
+            future,
+            action_valid,
+            action_loss,
+            mask_clean_future=False,
+        )
+        torch.testing.assert_close(video_valid, torch.ones_like(future))
+        torch.testing.assert_close(actual_action_valid, action_valid)
+
+    def test_cold_start_mask_hides_both_clean_future_streams(self) -> None:
+        future = torch.tensor([False, True, True])
+        action_valid = torch.tensor([True, True, False])
+        action_loss = torch.tensor([True, True, False])
+        video_valid, actual_action_valid = clean_stream_validity_masks(
+            future,
+            action_valid,
+            action_loss,
+            mask_clean_future=True,
+        )
+        torch.testing.assert_close(video_valid, torch.tensor([True, False, False]))
+        torch.testing.assert_close(
+            actual_action_valid, torch.tensor([False, False, False])
+        )
+
+    def test_training_source_records_replicated_parameter_parity(self) -> None:
+        source = Path(
+            "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py"
+        ).read_text()
+        self.assertIn(
+            '"initial_replicated_parameter_max_difference"', source
+        )
+        self.assertIn(
+            '"restored_replicated_parameter_max_difference"', source
+        )
+        self.assertIn(
+            '"post_step1_replicated_parameter_max_difference"', source
+        )
+
     def test_checkpoint_cadence_uses_cumulative_steps(self) -> None:
         saved = [
             step

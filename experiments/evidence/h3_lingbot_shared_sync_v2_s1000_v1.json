@@ -1,0 +1,50 @@
+{
+  "experiment_id": "h3_lingbot_shared_sync_v2_s1000_v1",
+  "classification": "backbone_port",
+  "hypothesis": "With rank-averaged replicated gradients and validity-aware four-stream attention, 1000 optimizer steps from the deterministic clean H3 initialization will reduce fixed causal sample40 action MSE by at least 3% while increasing causal video MSE by no more than 5%.",
+  "single_variable": "Apply 1000 optimizer updates to the fixed corrected shared-H3 recipe; seed, initialization, model, trainable tail-2, dense manifest order, quantile action codec, objective, LR, weight decay, horizon and evaluation protocol remain fixed relative to the step0 baseline.",
+  "parent_baseline": "Deterministic seed2026 clean initialization on manifest f36525ac: val40 video/action 0.1700260300/1.3043972850 and validity-masked causal sample40 video/action 0.6955631748/1.3069883287. A separate repaired s2 stage restored twice with identical val40 loss sequences.",
+  "references": [
+    {"kind": "paper", "title": "LingBot-VA: Causal World Modeling for Robot Control", "locator": "https://arxiv.org/abs/2601.21998", "revision": "arXiv:2601.21998", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Robbyant/lingbot-va", "locator": "https://github.com/Robbyant/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 shared four-stream port with FSDP replicated-gradient repair", "locator": "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "revision": "c8b87220b76cca242e389822ac654571b59992f2 plus this dossier commit", "official": false, "clean": true},
+    {"kind": "local_result", "title": "Repaired real-H3 s2 and repeated restore gate", "locator": "/mnt/h3-wam/outputs/audit-remediation-c8b8722", "revision": "trainer sha256 a6507e9c98b78108fff5c1169a7a2641ad3efa1b71105028d2d894e62f502a3b", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "shared causal backbone", "paper": "four video/action streams traverse shared causal world-model blocks", "upstream_code": "four streams share all Wan blocks", "local": "four streams share all 50 H3 blocks; tail-2 and output/adapters are trainable", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3dreamwam/shared_four_stream_model.py", "third_party/code_audit/lingbot-va/wan_va/modules/model.py:705"], "rationale": "This is an H3 backbone port, not an official LingBot reproduction."}],
+    "data": [{"field": "dense multi-suite sampling", "paper": "dense robot video/action segments", "upstream_code": "LeRobot segment sampling with stream state", "local": "200779 deterministic dense LIBERO windows, hash b0d611c2; exactly the first 8000 manifest rows across ranks", "status": "INTENTIONAL_DEVIATION", "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl", "docs/H3_WAM_AUDIT_REMEDIATION_2026-08-13.md"], "rationale": "Dense windows and action alignment are preserved, but the local experiment is cold-start window training rather than persistent upstream streaming KV."}],
+    "action": [{"field": "LIBERO action codec and padding", "paper": "normalized chunked embodiment actions", "upstream_code": "q01/q99 normalization with masked inactive/padded channels", "local": "seven q01/q99-normalized dimensions, horizon32; padding is excluded from clean/noisy attention and loss", "status": "EQUIVALENT", "evidence": ["experiments/data/libero_v7_action_quantiles.json", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "tests/test_h3_lingbot_training_conventions.py"], "rationale": "Active LIBERO semantics and normalization formula match; inactive carrier dimensions have no policy content."}],
+    "objective": [{"field": "joint weighted flow objective", "paper": "video/action flow matching", "upstream_code": "video velocity loss plus action velocity loss with scheduler training weights", "local": "future-video and valid-action velocity losses with the released analytic weighting", "status": "EQUIVALENT", "evidence": ["third_party/code_audit/lingbot-va/wan_va/train.py:254", "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "tests/test_h3_lingbot_training_conventions.py"], "rationale": "Both streams optimize the same linear flow targets and weighting ownership."}],
+    "optimization": [{"field": "bounded diagnostic budget", "paper": "post-training at scale", "upstream_code": "5000 steps and effective global batch80", "local": "AdamW LR1e-5, weight_decay0.01, warmup10, global batch8, 1000 steps, 8000 samples, 0.039845 effective epochs", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3dreamwam/launch_shared_sync_v2_s1000.sh"], "rationale": "This checkpoint ladder isolates the corrected training path before spending the upstream-scale budget."}],
+    "evaluation": [{"field": "promotion protocol", "paper": "LIBERO closed-loop success", "upstream_code": "full simulator benchmark", "local": "fixed episode-disjoint val40 and validity-masked four-step causal sample40 at step0/200/400/600/800/1000; only the predeclared best checkpoint proceeds to fixed closed-loop trials", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3dreamwam/watch_eval_shared_sync_v2_s1000.sh", "/mnt/h3-wam/outputs/audit-remediation-c8b8722/shared_sync_clean_init_sample40.json"], "rationale": "The diagnostic ladder tests the train/inference mechanism before allocating a full benchmark."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["LingBot commit 7c6ffa9b; local trainer sha256 a6507e9c"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["50-layer real-H3 8-rank shared forward/backward completed"]},
+    "data_contract": {"status": "PASS", "evidence": ["200779 rows; train hash b0d611c2; val hash f36525ac; existing episode-disjoint audit"]},
+    "action_contract": {"status": "PASS", "evidence": ["quantile codec and valid padding mask tests pass"]},
+    "objective_contract": {"status": "PASS", "evidence": ["real s2 video/action losses and both gradient paths are finite/nonzero"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["explicit global batch8, 8000 samples, checkpoint every200 and storage estimate below30GiB"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["fixed 40-window teacher-forced and causal manifests completed at step0"]},
+    "gradient_path": {"status": "PASS", "evidence": ["s2 H3 gradients 0.2626/0.2855; action gradients 1.4543/1.7607; post-step rank parity assertion passed"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["/mnt/h3-wam/outputs/audit-remediation-c8b8722/shared_sync_clean_s2_train.json"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["v2 final restored on 8 ranks; two val40 runs have identical 40-sample loss sequence and means"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["step0 val40 0.170026/1.304397; causal sample40 0.695563/1.306988"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["s2 causal action improves only 0.127% and causal video regresses 1.64%; 1000-step ladder pending"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["no corrected v2 checkpoint has completed fixed closed-loop evaluation"]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 1000,
+    "training_samples": 8000,
+    "unique_windows": 200779,
+    "effective_epochs": 0.0398448045,
+    "gpu_count": 8,
+    "estimated_hours": 4.0
+  },
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "The repaired path passes real H3 gradient, distributed parity, atomic v2 checkpoint and repeated restore gates. This is a bounded diagnostic ladder: it may continue without a prior mechanism or closed-loop win, but it cannot support an effectiveness claim until the registered causal and closed-loop gates pass.",
+    "launch_command": "PROJECT_ROOT=/mnt/h3-wam/project-shared-sync-v2 H3_WORKSPACE=/mnt/h3-wam bash scripts/h3dreamwam/launch_shared_sync_v2_s1000.sh"
+  }
+}

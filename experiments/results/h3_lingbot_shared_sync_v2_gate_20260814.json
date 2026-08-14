@@ -1,0 +1,61 @@
+{
+  "experiment_id": "h3_lingbot_shared_sync_v2_gate_20260814",
+  "status": {
+    "training_permission": "GO_LONG",
+    "effect_claim": "NOT_EVIDENCE_READY"
+  },
+  "identity": {
+    "base_commit": "c8b87220b76cca242e389822ac654571b59992f2",
+    "trainer_sha256": "a6507e9c98b78108fff5c1169a7a2641ad3efa1b71105028d2d894e62f502a3b",
+    "lingbot_commit": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb",
+    "train_manifest_rows": 200779,
+    "train_manifest_sha256": "b0d611c21059fa7da6fb08162b03efadd59aff68354bb101be41d3ae20d98eb1",
+    "val_manifest_rows": 40,
+    "val_manifest_sha256": "f36525ac62280eaaadbb24a21d460bdb92d8b81402c9a9ce32f59e898e3dd0ba"
+  },
+  "first_real_forward": {
+    "status": "FAIL_EXPECTED_CONTRACT_ENFORCEMENT",
+    "error": "both clean-stream validity masks are required",
+    "checkpoint_written": false,
+    "repair": "Pass clean_video_valid and clean_action_valid together; mask both clean future streams in cold-start evaluation."
+  },
+  "real_fsdp_gate": {
+    "status": "PASS",
+    "world_size": 8,
+    "optimizer_steps": 2,
+    "training_samples": 16,
+    "global_batch": 8,
+    "last_trainable_layers": 2,
+    "peak_reserved_gib_per_rank": 40.93359375,
+    "steps": [
+      {"step": 1, "loss": 2.4530065059661865, "video_loss": 0.2687084674835205, "action_loss": 2.184298038482666, "h3_gradient_norm": 0.262587308883667, "action_gradient_norm": 1.4543497562408447},
+      {"step": 2, "loss": 0.46555209159851074, "video_loss": 0.034732136875391006, "action_loss": 0.43081995844841003, "h3_gradient_norm": 0.2854865789413452, "action_gradient_norm": 1.7607452869415283}
+    ],
+    "artifacts": {
+      "step1": "/mnt/h3-wam/outputs/audit-remediation-c8b8722/shared_sync_clean_s2_step000001.pt",
+      "final": "/mnt/h3-wam/outputs/audit-remediation-c8b8722/shared_sync_clean_s2.pt",
+      "report": "/mnt/h3-wam/outputs/audit-remediation-c8b8722/shared_sync_clean_s2_train.json"
+    }
+  },
+  "restore_gate": {
+    "status": "PASS",
+    "evaluated_samples_per_run": 40,
+    "runs": 2,
+    "loss_sequence_exact_match": true,
+    "mean_video_loss": 0.16993628703057767,
+    "mean_action_loss": 1.3034238159656524,
+    "restored_replicated_parameter_max_difference": 0.0
+  },
+  "step0_baseline": {
+    "teacher_forced": {"evaluated_samples": 40, "video_mse": 0.17002603001892566, "action_mse": 1.3043972849845886},
+    "causal_sample4": {"evaluated_samples": 40, "video_mse": 0.6955631747841835, "action_mse": 1.3069883286952972},
+    "initial_replicated_parameter_max_difference": 0.0
+  },
+  "step2_probe": {
+    "teacher_forced": {"evaluated_samples": 40, "video_mse": 0.16993628703057767, "action_mse": 1.3034238159656524},
+    "causal_sample4": {"evaluated_samples": 40, "video_mse": 0.7069560058414937, "action_mse": 1.3053345799446106},
+    "causal_action_relative_change": -0.0012653135,
+    "causal_video_relative_change": 0.0163792875,
+    "interpretation": "Mechanical path passes, but two steps do not establish an effectiveness signal."
+  }
+}
