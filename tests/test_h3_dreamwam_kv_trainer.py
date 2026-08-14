@@ -153,11 +153,17 @@ class DreamWAMKVDatasetTest(unittest.TestCase):
             "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
         )
         self.assertFalse(args.verify_h3_checkpoint_sha256)
+        self.assertFalse(args.enable_d0_repeat_layer49)
         with mock.patch.object(
             sys, "argv", [*argv, "--verify-h3-checkpoint-sha256"]
         ):
             args = MODULE.parse_args()
         self.assertTrue(args.verify_h3_checkpoint_sha256)
+        with mock.patch.object(
+            sys, "argv", [*argv, "--enable-d0-repeat-layer49"]
+        ):
+            args = MODULE.parse_args()
+        self.assertTrue(args.enable_d0_repeat_layer49)
 
     def test_h3_checkpoint_hash_verify_and_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -220,6 +226,74 @@ class DreamWAMKVTrainingContractTest(unittest.TestCase):
         return spec, MODULE.build_model(
             spec, device=torch.device("cpu"), dtype=torch.float32
         )
+
+    def test_d0_model_is_parameter_identical_single_variable_ablation(self):
+        aligned_spec, aligned = self.build_model()
+        d0_spec = MODULE.ModelSpec(
+            **{
+                **MODULE.asdict(aligned_spec),
+                "carrier_source_mode": MODULE.REPEAT_LAYER49_CARRIER_SOURCE,
+            }
+        )
+        torch.manual_seed(313)
+        aligned = MODULE.build_model(
+            aligned_spec, device=torch.device("cpu"), dtype=torch.float32
+        )
+        torch.manual_seed(313)
+        d0 = MODULE.build_model(
+            d0_spec, device=torch.device("cpu"), dtype=torch.float32
+        )
+        self.assertEqual(set(aligned.state_dict()), set(d0.state_dict()))
+        for name, tensor in aligned.state_dict().items():
+            torch.testing.assert_close(tensor, d0.state_dict()[name], rtol=0, atol=0)
+        self.assertEqual(d0.carrier_source_mode, MODULE.REPEAT_LAYER49_CARRIER_SOURCE)
+
+    def test_d0_checkpoint_contract_changes_only_derived_identity_and_mode(self):
+        aligned_spec, _ = self.build_model()
+        d0_spec = MODULE.ModelSpec(
+            **{
+                **MODULE.asdict(aligned_spec),
+                "carrier_source_mode": MODULE.REPEAT_LAYER49_CARRIER_SOURCE,
+            }
+        )
+        args = Namespace(
+            expected_h3_checkpoint_sha256=MODULE.H3_INT8_CHECKPOINT_SHA256,
+            verify_h3_checkpoint_sha256=True,
+            kv_subdir="same-kv",
+            capture_token_count=5,
+            action_horizon=4,
+            action_shift=5.0,
+            per_device_batch_size=1,
+            gradient_accumulation_steps=1,
+            num_workers=0,
+            seed=42,
+            learning_rate=1e-4,
+            min_learning_rate=1e-6,
+            warmup_steps=10,
+            scheduler_horizon=100,
+        )
+        dataset = Namespace(
+            first_checkpoint_path=Path("/models/h3"),
+            source_manifest_sha256="source",
+            source_manifest_items=100,
+            manifest_sha256="train",
+            manifest_items=80,
+            stats_sha256="stats",
+        )
+        aligned = MODULE.checkpoint_contract(args, aligned_spec, dataset)
+        d0 = MODULE.checkpoint_contract(args, d0_spec, dataset)
+        self.assertEqual(aligned["candidate"], "D")
+        self.assertEqual(d0["candidate"], "D0")
+        differing = {
+            key for key in aligned if aligned[key] != d0[key]
+        }
+        self.assertEqual(differing, {"candidate", "carrier_source_mode", "model_spec"})
+        model_spec_differences = {
+            key
+            for key in aligned["model_spec"]
+            if aligned["model_spec"][key] != d0["model_spec"][key]
+        }
+        self.assertEqual(model_spec_differences, {"carrier_source_mode"})
 
     def batch(self):
         return {
@@ -514,6 +588,20 @@ class DreamWAMKVTrainingContractTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "consumed 1 samples, expected 2"):
             MODULE.flatten_consumed_sample_ids(
                 [["r0_a", "r0_b"], ["r1_a"]], expected_per_rank=2
+            )
+
+    def test_three_stage_consumed_ids_remain_cumulative_and_block_old_overlap(self):
+        cumulative = MODULE.merge_cumulative_consumed_sample_ids([], ["stage1"])
+        cumulative = MODULE.merge_cumulative_consumed_sample_ids(
+            cumulative, ["stage2"]
+        )
+        cumulative = MODULE.merge_cumulative_consumed_sample_ids(
+            cumulative, ["stage3"]
+        )
+        self.assertEqual(cumulative, ["stage1", "stage2", "stage3"])
+        with self.assertRaisesRegex(RuntimeError, "overlaps historical"):
+            MODULE.merge_cumulative_consumed_sample_ids(
+                cumulative, ["stage1"]
             )
 
 

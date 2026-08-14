@@ -2,7 +2,8 @@
 
 日期：2026-08-14
 状态：本地代码与合成测试完成；30907 已产生并严格恢复一个仅 1-step 的 schema-v2
-Candidate D 机械 checkpoint；尚未运行 balanced-80、未启动效果训练。
+Candidate D 机械 checkpoint，并完成真实 balanced-80 evaluator canary。裁决仅为
+`MECHANICAL_GATE PASS / EVALUATOR_MECHANICS PASS / NOT_EFFECTIVENESS`，未启动效果训练。
 
 ## 结论
 
@@ -61,6 +62,38 @@ Candidate D 可以在不修改现有 StarWAM evaluator 行为的前提下，接�
 7. 如果 Candidate D 离线预测变强但 gripper 或闭环退化，应先检查 carrier intervention、动作维度指标和 rollout，不把继续堆训练步数作为默认修复。
 
 放行顺序：保存 Candidate D checkpoint → 固定 v4 balanced-80 adapter 做自身筛选 → 迁移 Candidate D 到 v8 matched IDs，或在 v4 同 IDs 重跑直接父模型 → 只有 paired IDs 一致后才作方法归因 → 仅将非塌缩且动作/gripper 指标有改善的 checkpoint 送入相同 LIBERO 闭环。
+
+## 真实 s1 evaluator canary
+
+30907 运行根为 `/mnt/h3-wam/candidate-d-restore-canary-4d59400`。单步 checkpoint 大小
+`2,099,879,387` bytes，SHA256
+`daa58403d5501efc003c1f5d1c297e308ba3e51267eca86e7c1df7c908224d39`。train 与 fresh restore
+均 exit 0；restore probe `max_abs=0`，并验证 H3 SHA256 为
+`e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a`。
+
+balanced-80 report SHA256 为
+`81cd2f564deca32c5b069a4eadb83318473da6f3feb9d9d0a4836b1091731593`，耗时 `35.0359s`。
+主要输出如下：
+
+| 指标 | s1 数值 |
+|---|---:|
+| normalized MSE / ADE / endpoint | 4.454409 / 5.305041 / 5.031360 |
+| pre-clamp outside `[-1,1]` / max abs | 63.0915% / 12.3125 |
+| physical MSE / ADE / endpoint | 0.492577 / 1.813992 / 1.778067 |
+| gripper accuracy / F1 / macro-F1 | 0.466797 / 0.106090 / 0.363093 |
+| language mean-abs / RMS / relative-L2 | 0.638552 / 0.959821 / 0.471810 |
+| visual-shuffle normalized / physical delta MSE | 0.177422 / 0.030048 |
+| shuffle target physical MSE delta | -0.000904 |
+| shuffle gripper macro-F1 delta | -0.004830 |
+
+adapter 实际与预期 v4 selected-ID hash 均为
+`b507e1ff6031f01c88cd6181aaeb4cba33b76e2c67737a986bf764c76be87519`，说明 v4 评测选择本身一致；
+但它不等于 R1/G v8 的 `75d888...5f54`，且 report 明确为
+`strict_parent=false / NOT_STRICT_PAIRED_IDS`。加上模型只有一个 optimizer step，上述数值只能证明真实
+checkpoint restore、solver、扰动和指标链路能执行，不能证明 Candidate D 有效、优于父模型或具备闭环能力。
+
+完整 train/restore/eval 路径和 SHA 固化于
+`experiments/evidence/h3_candidate_d_s1_restore_balanced80_v1.json`。
 
 ## 本地验证
 

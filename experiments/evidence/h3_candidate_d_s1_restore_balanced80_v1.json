@@ -1,0 +1,83 @@
+{
+  "experiment_id": "h3_candidate_d_s1_restore_balanced80_v1",
+  "date": "2026-08-14",
+  "candidate": "D",
+  "classification": "mechanical_checkpoint_and_evaluator_canary",
+  "remote_root": "/mnt/h3-wam/candidate-d-restore-canary-4d59400",
+  "identity": {
+    "checkpoint": {
+      "path": "/mnt/h3-wam/candidate-d-restore-canary-4d59400/outputs/candidate_d_s1.pt",
+      "sha256": "daa58403d5501efc003c1f5d1c297e308ba3e51267eca86e7c1df7c908224d39",
+      "size_bytes": 2099879387
+    },
+    "h3_checkpoint_sha256_verified": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+    "environment_sha256": "801317f35a6f8f3bbb840041416c2cc2c1d38ea8a5769efa1d89b6c958389d95"
+  },
+  "mechanical_gate": {
+    "status": "PASS",
+    "train": {
+      "path": "/mnt/h3-wam/candidate-d-restore-canary-4d59400/evidence/train_s1.json",
+      "sha256": "00bf2ec5b2af36f7135ec683f39e125cc9c44000b2df094ebbc7fcb1874eab9b",
+      "exit": 0,
+      "optimizer_steps": 1
+    },
+    "fresh_restore": {
+      "path": "/mnt/h3-wam/candidate-d-restore-canary-4d59400/evidence/restore_s1.json",
+      "sha256": "0d4bd5beb8e44e17726a952e9c15ff225dbccf4d11d870227d282afb68890cd7",
+      "exit": 0,
+      "probe_max_abs": 0.0
+    }
+  },
+  "evaluator_mechanics": {
+    "status": "PASS",
+    "report": {
+      "path": "/mnt/h3-wam/candidate-d-restore-canary-4d59400/evidence/balanced80_s1.json",
+      "sha256": "81cd2f564deca32c5b069a4eadb83318473da6f3feb9d9d0a4836b1091731593",
+      "elapsed_seconds": 35.0359
+    },
+    "selected_ids": {
+      "actual_sha256": "b507e1ff6031f01c88cd6181aaeb4cba33b76e2c67737a986bf764c76be87519",
+      "expected_sha256": "b507e1ff6031f01c88cd6181aaeb4cba33b76e2c67737a986bf764c76be87519"
+    },
+    "strict_parent": false,
+    "comparison_status": "NOT_STRICT_PAIRED_IDS",
+    "metrics": {
+      "normalized": {
+        "mse": 4.4544091973,
+        "prediction_outside_unit_fraction": 0.6309151786,
+        "prediction_max_abs": 12.3125,
+        "ade": 5.30504136,
+        "endpoint": 5.03135999
+      },
+      "physical": {
+        "mse": 0.4925772337,
+        "ade": 1.813991779,
+        "endpoint": 1.778067154
+      },
+      "gripper": {
+        "accuracy": 0.466796875,
+        "f1": 0.1060903733,
+        "macro_f1": 0.3630925009
+      },
+      "language_replacement": {
+        "mean_abs_delta": 0.6385520194,
+        "rms_delta": 0.9598209634,
+        "relative_l2": 0.4718095945
+      },
+      "visual_shuffle": {
+        "normalized_delta_mse": 0.177422063,
+        "physical_delta_mse": 0.03004832884,
+        "shuffle_target_physical_mse": 0.4916732329,
+        "shuffle_target_physical_mse_delta": -0.0009040008,
+        "gripper_macro_f1": 0.3582629205,
+        "gripper_macro_f1_delta": -0.00482958
+      }
+    }
+  },
+  "decision": {
+    "mechanical_gate": "PASS",
+    "evaluator_mechanics": "PASS",
+    "effectiveness": "NOT_EFFECTIVENESS",
+    "rationale": "The checkpoint contains only one optimizer step, and Candidate D v4 selected IDs do not match the R1/G v8 parent IDs. Metrics prove execution and counterfactual plumbing only; they do not establish training benefit, strict paired attribution, or closed-loop capability."
+  }
+}

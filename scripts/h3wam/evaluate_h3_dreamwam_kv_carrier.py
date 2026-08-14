@@ -73,6 +73,7 @@ MODEL_SPEC_KEYS = {
     "attn_head_dim",
     "freq_dim",
     "carrier_layers",
+    "carrier_source_mode",
 }
 CONTRACT_KEYS = {
     "candidate",
@@ -82,6 +83,7 @@ CONTRACT_KEYS = {
     "dreamwam_experts_sha256",
     "dreamwam_mot_sha256",
     "parent_shifted_flow_commit",
+    "carrier_source_mode",
     "h3_checkpoint_path",
     "h3_checkpoint_sha256",
     "verify_h3_checkpoint_sha256",
@@ -195,7 +197,6 @@ def _require_contract(
     if not isinstance(contract, dict) or set(contract) != CONTRACT_KEYS:
         raise ValueError("Candidate D checkpoint contract schema mismatch")
     required = {
-        "candidate": "D",
         "classification": "action-only-on-frozen-features",
         "dreamwam_commit": CANDIDATE_D.DREAMWAM_COMMIT,
         "dreamwam_layers_sha256": CANDIDATE_D.DREAMWAM_LAYERS_SHA256,
@@ -227,6 +228,21 @@ def _require_contract(
     model_spec = contract.get("model_spec")
     if not isinstance(model_spec, dict) or set(model_spec) != MODEL_SPEC_KEYS:
         raise ValueError("Candidate D model_spec schema mismatch")
+    carrier_source_mode = str(contract.get("carrier_source_mode", ""))
+    if carrier_source_mode not in (
+        CANDIDATE_D.ALIGNED_5LAYER_CARRIER_SOURCE,
+        CANDIDATE_D.REPEAT_LAYER49_CARRIER_SOURCE,
+    ):
+        raise ValueError("Candidate D/D0 carrier_source_mode is invalid")
+    expected_candidate = (
+        "D0"
+        if carrier_source_mode == CANDIDATE_D.REPEAT_LAYER49_CARRIER_SOURCE
+        else "D"
+    )
+    if contract.get("candidate") != expected_candidate:
+        raise ValueError("candidate label does not match carrier_source_mode")
+    if model_spec.get("carrier_source_mode") != carrier_source_mode:
+        raise ValueError("model_spec and contract carrier_source_mode disagree")
     layers = tuple(int(value) for value in model_spec["carrier_layers"])
     if layers != CANDIDATE_D.DEFAULT_H3_CARRIER_LAYERS:
         raise ValueError("Candidate D carrier layer mapping is not the audited mapping")
@@ -617,7 +633,14 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
     if dict(sorted(evaluated_tasks.items())) != selection["task_counts"]:
         raise RuntimeError("evaluated task counts differ from frozen selection")
     report = {
-        "event": "h3_dreamwam_kv_candidate_d_balanced80_offline_evaluation",
+        "event": (
+            "h3_dreamwam_kv_candidate_d0_balanced80_offline_evaluation"
+            if contract["carrier_source_mode"]
+            == CANDIDATE_D.REPEAT_LAYER49_CARRIER_SOURCE
+            else "h3_dreamwam_kv_candidate_d_balanced80_offline_evaluation"
+        ),
+        "candidate": contract["candidate"],
+        "carrier_source_mode": contract["carrier_source_mode"],
         "classification": "causal-action-on-frozen-five-layer-h3-kv",
         "status": "completed_not_closed_loop_evidence",
         "checkpoint": {
@@ -640,7 +663,13 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
             "selection_salt": PROTOCOL.BALANCED_VAL_SELECTION_SALT,
             "visual_shuffle_salt": PROTOCOL.VISUAL_FEATURE_SHUFFLE_SALT,
             "dreamwam_commit": CANDIDATE_D.DREAMWAM_COMMIT,
-            "carrier_semantics": "shuffle_complete_five_layer_kv_bundle",
+            "carrier_source_mode": contract["carrier_source_mode"],
+            "carrier_semantics": (
+                "shuffle_source_bundle_then_repeat_source_layer49_per_block"
+                if contract["carrier_source_mode"]
+                == CANDIDATE_D.REPEAT_LAYER49_CARRIER_SOURCE
+                else "shuffle_complete_aligned_five_layer_kv_bundle"
+            ),
             "h3_checkpoint_sha256": contract["h3_checkpoint_sha256"],
             "h3_checkpoint_sha256_verified": contract[
                 "verify_h3_checkpoint_sha256"
@@ -682,6 +711,7 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
             "seed": config.seed,
             "batch_size": config.batch_size,
             "same_noise_for_baseline_language_visual": True,
+            "carrier_source_mode": contract["carrier_source_mode"],
             "device": str(device),
             "dtype": str(dtype),
         },
@@ -693,7 +723,12 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
             "visual_feature_shuffle": {
                 "contract": visual_contract,
                 "evaluated_mapping_sha256": pairs_sha,
-                "carrier_semantics": "complete_five_layer_kv_bundle",
+                "carrier_semantics": (
+                    "replace_source_sample_then_repeat_its_layer49_per_block"
+                    if contract["carrier_source_mode"]
+                    == CANDIDATE_D.REPEAT_LAYER49_CARRIER_SOURCE
+                    else "replace_complete_aligned_five_layer_kv_bundle"
+                ),
                 "same_initial_action_noise": True,
                 "baseline_vs_shuffle_action_delta": {
                     "normalized_model_domain": normalized_delta.finalize(),

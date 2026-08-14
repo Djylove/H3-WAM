@@ -152,6 +152,7 @@ class DreamWAMKVEvaluatorTest(unittest.TestCase):
             "attn_head_dim": 128,
             "freq_dim": 256,
             "carrier_layers": (9, 19, 29, 39, 49),
+            "carrier_source_mode": EVAL.CANDIDATE_D.ALIGNED_5LAYER_CARRIER_SOURCE,
         }
         contract = {
             "candidate": "D",
@@ -161,6 +162,7 @@ class DreamWAMKVEvaluatorTest(unittest.TestCase):
             "dreamwam_experts_sha256": EVAL.CANDIDATE_D.DREAMWAM_EXPERTS_SHA256,
             "dreamwam_mot_sha256": EVAL.CANDIDATE_D.DREAMWAM_MOT_SHA256,
             "parent_shifted_flow_commit": EVAL.CANDIDATE_D.PARENT_OBJECTIVE_COMMIT,
+            "carrier_source_mode": EVAL.CANDIDATE_D.ALIGNED_5LAYER_CARRIER_SOURCE,
             "h3_checkpoint_path": "/models/h3",
             "h3_checkpoint_sha256": EVAL.EXPECTED_H3_CHECKPOINT_SHA256,
             "verify_h3_checkpoint_sha256": True,
@@ -208,6 +210,26 @@ class DreamWAMKVEvaluatorTest(unittest.TestCase):
         self.assertIs(actual, contract)
         self.assertIs(actual_spec, spec)
         self.assertEqual(subdir, "kv")
+        contract["candidate"] = "D0"
+        contract["carrier_source_mode"] = EVAL.CANDIDATE_D.REPEAT_LAYER49_CARRIER_SOURCE
+        spec["carrier_source_mode"] = EVAL.CANDIDATE_D.REPEAT_LAYER49_CARRIER_SOURCE
+        d0_contract, d0_spec, _ = EVAL._require_contract(
+            payload,
+            config=self.config(),
+            source_manifest_sha256="source",
+            source_manifest_items=100,
+            train_manifest_sha256="train",
+            train_manifest_items=80,
+            stats_sha256="stats",
+        )
+        self.assertEqual(d0_contract["candidate"], "D0")
+        self.assertEqual(
+            d0_spec["carrier_source_mode"],
+            EVAL.CANDIDATE_D.REPEAT_LAYER49_CARRIER_SOURCE,
+        )
+        contract["candidate"] = "D"
+        contract["carrier_source_mode"] = EVAL.CANDIDATE_D.ALIGNED_5LAYER_CARRIER_SOURCE
+        spec["carrier_source_mode"] = EVAL.CANDIDATE_D.ALIGNED_5LAYER_CARRIER_SOURCE
         contract["h3_checkpoint_sha256"] = "0" * 64
         with self.assertRaises(ValueError):
             EVAL._require_contract(
@@ -319,6 +341,7 @@ class DreamWAMKVEvaluatorTest(unittest.TestCase):
                 "num_heads": 2,
                 "attn_head_dim": 3,
                 "carrier_layers": (9, 19, 29, 39, 49),
+                "carrier_source_mode": EVAL.CANDIDATE_D.ALIGNED_5LAYER_CARRIER_SOURCE,
             }
             dataset = EVAL.CachedDreamWAMKVValidationDataset(
                 rows,

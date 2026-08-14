@@ -34,12 +34,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from fastwam.models.h3wam.dreamwam_kv_carrier import (  # noqa: E402
+    ALIGNED_5LAYER_CARRIER_SOURCE,
     DEFAULT_H3_CARRIER_LAYERS,
     DREAMWAM_COMMIT,
     DREAMWAM_EXPERTS_SHA256,
     DREAMWAM_LAYERS_SHA256,
     DREAMWAM_MOT_SHA256,
     H3DreamWAMKVCarrierPolicy,
+    REPEAT_LAYER49_CARRIER_SOURCE,
     h3_kv_cache_bytes,
 )
 
@@ -106,6 +108,7 @@ class ModelSpec:
     attn_head_dim: int = 128
     freq_dim: int = 256
     carrier_layers: tuple[int, ...] = DEFAULT_H3_CARRIER_LAYERS
+    carrier_source_mode: str = ALIGNED_5LAYER_CARRIER_SOURCE
 
 
 def parse_args() -> argparse.Namespace:
@@ -128,6 +131,14 @@ def parse_args() -> argparse.Namespace:
         "--enable-dreamwam-kv-carrier",
         action="store_true",
         help="Required explicit opt-in; there is no implicit replacement of last32.",
+    )
+    parser.add_argument(
+        "--enable-d0-repeat-layer49",
+        action="store_true",
+        help=(
+            "Explicit D0 ablation: feed an independent clone of H3 layer49 "
+            "K/V to each of the same five action blocks."
+        ),
     )
     parser.add_argument("--steps", type=int, default=1)
     parser.add_argument("--limit", type=int, default=0)
@@ -417,6 +428,7 @@ def build_model(spec: ModelSpec, *, device: torch.device, dtype: torch.dtype) ->
     return H3DreamWAMKVCarrierPolicy(
         enabled=True,
         carrier_layers=spec.carrier_layers,
+        carrier_source_mode=spec.carrier_source_mode,
         action_dim=spec.action_dim,
         proprio_dim=spec.proprio_dim,
         context_dim=spec.context_dim,
@@ -484,13 +496,18 @@ def checkpoint_contract(
     world_size: int = 1,
 ) -> dict[str, Any]:
     return {
-        "candidate": "D",
+        "candidate": (
+            "D0"
+            if spec.carrier_source_mode == REPEAT_LAYER49_CARRIER_SOURCE
+            else "D"
+        ),
         "classification": "action-only-on-frozen-features",
         "dreamwam_commit": DREAMWAM_COMMIT,
         "dreamwam_layers_sha256": DREAMWAM_LAYERS_SHA256,
         "dreamwam_experts_sha256": DREAMWAM_EXPERTS_SHA256,
         "dreamwam_mot_sha256": DREAMWAM_MOT_SHA256,
         "parent_shifted_flow_commit": PARENT_OBJECTIVE_COMMIT,
+        "carrier_source_mode": spec.carrier_source_mode,
         "h3_checkpoint_path": str(dataset.first_checkpoint_path),
         "h3_checkpoint_sha256": args.expected_h3_checkpoint_sha256,
         "verify_h3_checkpoint_sha256": args.verify_h3_checkpoint_sha256,
@@ -633,6 +650,31 @@ def flatten_consumed_sample_ids(
     return flattened
 
 
+def merge_cumulative_consumed_sample_ids(
+    previous_sample_ids: list[str], current_stage_sample_ids: list[str]
+) -> list[str]:
+    for label, sample_ids in (
+        ("previous", previous_sample_ids),
+        ("current stage", current_stage_sample_ids),
+    ):
+        if not isinstance(sample_ids, list) or any(
+            not isinstance(sample_id, str) for sample_id in sample_ids
+        ):
+            raise ValueError(f"{label} consumed sample IDs must be a string list")
+        if len(sample_ids) != len(set(sample_ids)):
+            raise RuntimeError(f"{label} consumed sample IDs are not unique")
+    overlap = set(previous_sample_ids) & set(current_stage_sample_ids)
+    if overlap:
+        raise RuntimeError(
+            "current checkpoint stage overlaps historical consumed sample IDs: "
+            f"overlap={len(overlap)}"
+        )
+    cumulative = [*previous_sample_ids, *current_stage_sample_ids]
+    if len(cumulative) != len(set(cumulative)):
+        raise RuntimeError("cumulative consumed sample IDs are not globally unique")
+    return cumulative
+
+
 def save_checkpoint_atomic(
     path: Path,
     *,
@@ -728,6 +770,8 @@ def load_checkpoint_strict(
         not isinstance(sample_id, str) for sample_id in data_state["sample_ids"]
     ):
         raise ValueError("checkpoint consumed sample IDs must be a string list")
+    if len(data_state["sample_ids"]) != len(set(data_state["sample_ids"])):
+        raise ValueError("checkpoint cumulative consumed sample IDs are not unique")
     if restore_rng_rank is not None:
         if not 0 <= restore_rng_rank < len(rng_states):
             raise ValueError("checkpoint RNG rank is out of range")
@@ -788,6 +832,11 @@ def main() -> None:
         raise ValueError(
             f"Candidate D requires the audited layer mapping {DEFAULT_H3_CARRIER_LAYERS}"
         )
+    carrier_source_mode = (
+        REPEAT_LAYER49_CARRIER_SOURCE
+        if args.enable_d0_repeat_layer49
+        else ALIGNED_5LAYER_CARRIER_SOURCE
+    )
     if args.learning_rate <= 0 or args.weight_decay < 0 or args.action_shift <= 0:
         raise ValueError("invalid optimizer or shifted-flow arguments")
     if (
@@ -845,6 +894,7 @@ def main() -> None:
         attn_head_dim=args.attn_head_dim,
         freq_dim=args.freq_dim,
         carrier_layers=carrier_layers,
+        carrier_source_mode=carrier_source_mode,
     )
     model = build_model(spec, device=device, dtype=dtype)
     optimizer = torch.optim.AdamW(
@@ -1045,7 +1095,7 @@ def main() -> None:
                 }
             ]
         complete_rng_states = [state["rng_state"] for state in complete_states]
-        consumed_sample_ids = flatten_consumed_sample_ids(
+        current_stage_sample_ids = flatten_consumed_sample_ids(
             [state["sample_ids"] for state in complete_states],
             expected_per_rank=(
                 args.per_device_batch_size
@@ -1053,13 +1103,23 @@ def main() -> None:
                 * args.steps
             ),
         )
+        historical_sample_ids = (
+            []
+            if loaded_payload is None
+            else list(loaded_payload["data_state"]["sample_ids"])
+        )
+        cumulative_sample_ids = merge_cumulative_consumed_sample_ids(
+            historical_sample_ids, current_stage_sample_ids
+        )
         data_state = {
             "resume_mode": "explicit_stage_slice_v1",
             "sample_offset": args.sample_offset,
             "limit": args.limit,
             "selected_windows": len(dataset),
             "steps_in_invocation": args.steps,
-            "sample_ids": consumed_sample_ids,
+            # This is the cumulative history through this checkpoint.  The
+            # remaining fields describe only the current invocation/stage.
+            "sample_ids": cumulative_sample_ids,
             "sampler_cursor_restorable": False,
         }
         if rank == 0:

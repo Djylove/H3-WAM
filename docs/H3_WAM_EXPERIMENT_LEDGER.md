@@ -74,6 +74,7 @@
 | E35 | Candidate F v2 F2 | clean regression weight1；同一 balanced-80；s100→last-safe s850 | physical MSE `0.352986→0.202512`；visual-shuffle MSE delta `0.209107→9.85e-7`；language mean-abs delta `0.415041→0.032469` | 未放行 | gripper macro-F1 `0.550772→0.316026`；step851 visual grad=0；`FAIL_CONDITIONING_COLLAPSE` |
 | E36 | Candidate G paired visual margin | 8-rank wrong-H3 hinge；s1→s50；同 step baseline s50 | G/parent physical MSE `0.412425/0.405095`；visual relative scale `1.063807/1.064937` | 未放行 | 机械门通过，但 gripper macro-F1 低3.04%、语言略低；`FAIL_PAIRED_GATE`，不扩训 |
 | E37 | Candidate D DreamWAM 5-layer K/V carrier | 8,560-window cache 全量 audit；修复后 1 GPU × 1 sample × 1 step；无 checkpoint | loss `1.484375`；5 block/proprio gradients 全部有限非零；head update `1.19e-7` | 未放行 | cache/Data 与 trainability 机械门通过；`MECHANICS_PASS_ONLY / NOT_EVIDENCE_READY`，禁止据此长训或声称效果 |
+| E38 | Candidate D s1 save/restore + v4 balanced-80 adapter | schema-v2 1-step checkpoint；fresh restore；v4 40×2 evaluator | restore max-abs `0`；physical MSE `0.492577`；gripper macro-F1 `0.363093`；language relative-L2 `0.471810`；visual delta MSE `0.177422` | 未放行 | `MECHANICAL_GATE PASS / EVALUATOR_MECHANICS PASS`；v4/v8 IDs mismatch 且仅一步，`NOT_EFFECTIVENESS / NOT_STRICT_PAIRED_IDS` |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 

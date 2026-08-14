@@ -30,6 +30,12 @@ DREAMWAM_MOT_SHA256 = (
     "5467d135287a6e77074cb653fc3d72218490fcfa40ac486b61d5cc5975ab6c01"
 )
 DEFAULT_H3_CARRIER_LAYERS = (9, 19, 29, 39, 49)
+ALIGNED_5LAYER_CARRIER_SOURCE = "aligned_5layer"
+REPEAT_LAYER49_CARRIER_SOURCE = "repeat_layer49"
+CARRIER_SOURCE_MODES = (
+    ALIGNED_5LAYER_CARRIER_SOURCE,
+    REPEAT_LAYER49_CARRIER_SOURCE,
+)
 _PINNED_CARRIER_TYPES = None
 
 
@@ -101,6 +107,7 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
         *,
         enabled: bool = False,
         carrier_layers: Sequence[int] = DEFAULT_H3_CARRIER_LAYERS,
+        carrier_source_mode: str = ALIGNED_5LAYER_CARRIER_SOURCE,
         action_dim: int = 7,
         proprio_dim: int = 8,
         context_dim: int = 5120,
@@ -114,13 +121,27 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
         super().__init__()
         self.enabled = bool(enabled)
         self.carrier_layers = tuple(int(index) for index in carrier_layers)
-        self.action_block_to_h3_layer = self.carrier_layers
+        self.carrier_source_mode = str(carrier_source_mode)
+        if self.carrier_source_mode not in CARRIER_SOURCE_MODES:
+            raise ValueError(
+                f"carrier_source_mode must be one of {CARRIER_SOURCE_MODES}"
+            )
         if not self.carrier_layers:
             raise ValueError("carrier_layers must not be empty")
         if tuple(sorted(set(self.carrier_layers))) != self.carrier_layers:
             raise ValueError("carrier_layers must be strictly increasing and unique")
         if self.carrier_layers[0] < 0 or self.carrier_layers[-1] >= 50:
             raise ValueError("carrier_layers must select H3 blocks in [0,49]")
+        if (
+            self.carrier_source_mode == REPEAT_LAYER49_CARRIER_SOURCE
+            and 49 not in self.carrier_layers
+        ):
+            raise ValueError("repeat_layer49 requires H3 layer49 in carrier_layers")
+        self.action_block_to_h3_layer = (
+            tuple(49 for _ in self.carrier_layers)
+            if self.carrier_source_mode == REPEAT_LAYER49_CARRIER_SOURCE
+            else self.carrier_layers
+        )
         dimensions = (
             action_dim,
             proprio_dim,
@@ -216,6 +237,30 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
             flattened.append(tensors)
         return flattened
 
+    def _resolve_carrier_cache(
+        self,
+        video_kv_cache: Mapping[int, Mapping[str, torch.Tensor]],
+        *,
+        batch: int,
+    ) -> list[dict[str, torch.Tensor]]:
+        """Resolve the single D/D0 variable after validating the same full cache.
+
+        D consumes the five aligned layer entries.  D0 still requires and
+        validates that exact five-layer cache, then supplies each action block
+        an independent clone of layer49 K/V.  Independent storage is required
+        because the carrier rejects aliased per-block tensors.
+        """
+
+        aligned = self._validate_cache(video_kv_cache, batch=batch)
+        if self.carrier_source_mode == ALIGNED_5LAYER_CARRIER_SOURCE:
+            return aligned
+        layer49_index = self.carrier_layers.index(49)
+        layer49 = aligned[layer49_index]
+        return [
+            {"k": layer49["k"].clone(), "v": layer49["v"].clone()}
+            for _ in self.carrier_layers
+        ]
+
     def forward(
         self,
         noisy_actions: torch.Tensor,
@@ -248,7 +293,7 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
         elif tuple(text_mask.shape) != tuple(text_context.shape[:2]):
             raise ValueError("text_mask must match text_context tokens")
 
-        flat_cache = self._validate_cache(video_kv_cache, batch=batch)
+        flat_cache = self._resolve_carrier_cache(video_kv_cache, batch=batch)
         proprio_token = self.proprio_encoder(
             proprio.to(
                 device=self.proprio_encoder.weight.device,

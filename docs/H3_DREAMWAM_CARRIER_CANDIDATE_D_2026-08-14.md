@@ -197,3 +197,20 @@ autocast，未改 pinned DreamWAM，也未降低 source timestep 精度。经明
 当前裁决严格限定为 `MECHANICS_PASS_ONLY`：cache/Data 与单步 trainability 通过；没有 parent
 paired baseline、连续 checkpoint、restore、offline mechanism signal 或 closed-loop canary，因此
 `effectiveness=NOT_EVIDENCE_READY`，也未获长训授权。
+
+## 10. schema-v2 s1 save/restore 与 evaluator canary
+
+后续在 `/mnt/h3-wam/candidate-d-restore-canary-4d59400` 完成了严格限定的一步 checkpoint canary。
+checkpoint SHA256 为
+`daa58403d5501efc003c1f5d1c297e308ba3e51267eca86e7c1df7c908224d39`，大小
+`2,099,879,387` bytes；train/restore 均 exit 0，fresh restore `max_abs=0`，H3 实际 SHA 与固定
+`e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a` 相同。因此 Candidate D 的
+`MECHANICAL_GATE=PASS`。
+
+同一 s1 checkpoint 随后跑通 v4 balanced-80 adapter：report SHA256
+`81cd2f564deca32c5b069a4eadb83318473da6f3feb9d9d0a4836b1091731593`；physical MSE `0.492577`、
+gripper macro-F1 `0.363093`、language relative-L2 `0.471810`、visual-shuffle normalized delta MSE
+`0.177422`。这只使 `EVALUATOR_MECHANICS=PASS`。由于它仅训练一步，且 v4 selected IDs 与 R1/G v8
+不一致，report 为 `strict_parent=false / NOT_STRICT_PAIRED_IDS`；效果裁决严格保持
+`NOT_EFFECTIVENESS`，不得用于方法归因、长训放行或闭环能力声明。完整证据见
+`experiments/evidence/h3_candidate_d_s1_restore_balanced80_v1.json`。
