@@ -1,0 +1,140 @@
+import importlib.util
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_script(name: str, relative: str):
+    spec = importlib.util.spec_from_file_location(name, ROOT / relative)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+SERVE = load_script(
+    "serve_rollout_policy_dreamwam_kv_test",
+    "scripts/h3wam/serve_rollout_policy.py",
+)
+ROLLOUT = load_script(
+    "rollout_libero_dreamwam_kv_test",
+    "scripts/h3wam/rollout_libero.py",
+)
+
+
+class H3DreamWAMKVRolloutAdapterTest(unittest.TestCase):
+    def test_server_parser_exposes_d0_policy_and_manifest(self):
+        argv = [
+            "serve",
+            "--policy",
+            "h3_dreamwam_kv_int8",
+            "--checkpoint",
+            "d0.pt",
+            "--cache-root",
+            "cache",
+            "--port",
+            "1234",
+            "--ready-file",
+            "ready.json",
+            "--h3-checkpoint",
+            "h3.safetensors",
+            "--h3-model",
+            "h3-model",
+            "--dreamwam-source-manifest",
+            "source.jsonl",
+            "--model-evaluations",
+            "10",
+        ]
+        with patch.object(sys, "argv", argv):
+            args = SERVE.parse_args()
+        self.assertEqual(args.policy, "h3_dreamwam_kv_int8")
+        self.assertEqual(args.dreamwam_source_manifest, Path("source.jsonl"))
+
+    def test_rollout_routes_d0_to_dedicated_server(self):
+        argv = [
+            "rollout",
+            "--policy",
+            "h3_dreamwam_kv_int8",
+            "--checkpoint",
+            "d0.pt",
+            "--cache-root",
+            "cache",
+            "--policy-python",
+            "python",
+            "--output-dir",
+            "out",
+            "--h3-checkpoint",
+            "h3.safetensors",
+            "--h3-model",
+            "h3-model",
+            "--dreamwam-source-manifest",
+            "source.jsonl",
+            "--model-evaluations",
+            "10",
+        ]
+        with patch.object(sys, "argv", argv):
+            args = ROLLOUT.parse_args()
+        command = ROLLOUT.policy_command(args, 1234, Path("ready.json"))
+        self.assertIn("h3_dreamwam_kv_int8", command)
+        manifest_index = command.index("--dreamwam-source-manifest")
+        self.assertTrue(command[manifest_index + 1].endswith("source.jsonl"))
+
+    def test_rollout_rejects_missing_d0_manifest(self):
+        argv = [
+            "rollout",
+            "--policy",
+            "h3_dreamwam_kv_int8",
+            "--checkpoint",
+            "d0.pt",
+            "--cache-root",
+            "cache",
+            "--policy-python",
+            "python",
+            "--output-dir",
+            "out",
+            "--h3-checkpoint",
+            "h3.safetensors",
+            "--h3-model",
+            "h3-model",
+        ]
+        with patch.object(sys, "argv", argv):
+            args = ROLLOUT.parse_args()
+        with self.assertRaisesRegex(ValueError, "dreamwam-source-manifest"):
+            ROLLOUT.policy_command(args, 1234, Path("ready.json"))
+
+    def test_d0_task_context_mapping_rejects_ambiguity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "manifest.jsonl"
+            manifest.write_text(
+                json.dumps({"task": "pick", "context_id": "pick-v1"}) + "\n",
+                encoding="utf-8",
+            )
+            policy = SERVE.H3DreamWAMKVInt8Policy.__new__(
+                SERVE.H3DreamWAMKVInt8Policy
+            )
+            policy.source_manifest = manifest
+            self.assertEqual(policy._load_task_context_ids(), {"pick": "pick-v1"})
+
+            manifest.write_text(
+                "\n".join(
+                    (
+                        json.dumps({"task": "pick", "context_id": "pick-v1"}),
+                        json.dumps({"task": "pick", "context_id": "pick-v2"}),
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "ambiguous context IDs"):
+                policy._load_task_context_ids()
+
+
+if __name__ == "__main__":
+    unittest.main()

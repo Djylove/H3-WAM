@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from collections.abc import Callable
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -55,6 +56,34 @@ class H3Int8OnlineFeatureContract:
             raise ValueError("condition-video timestep must be in [0,1]")
         if self.capture_compatibility not in ("none", "comfy_alias_v1"):
             raise ValueError("unsupported capture compatibility mode")
+
+
+@dataclass(frozen=True)
+class H3Int8OnlineKVContract:
+    """Live H3 K/V capture contract matching the Candidate D disk cache."""
+
+    layers: tuple[int, ...] = (49,)
+    action_horizon: int = 32
+    target_latent_frames: int = 12
+    video_timestep: float = 1.0
+    condition_video_timestep: float = 1.0
+    capture_token_count: int = 32
+
+    def __post_init__(self) -> None:
+        if not self.layers or min(self.layers) < 0 or max(self.layers) >= 50:
+            raise ValueError("layers must select H3 blocks in [0,49]")
+        if tuple(sorted(set(self.layers))) != self.layers:
+            raise ValueError("layers must be strictly increasing and unique")
+        if min(
+            self.action_horizon,
+            self.target_latent_frames,
+            self.capture_token_count,
+        ) <= 0:
+            raise ValueError("horizon, latent frames and K/V tokens must be positive")
+        if not 0.0 <= self.video_timestep <= 1.0:
+            raise ValueError("video timestep must be in [0,1]")
+        if not 0.0 <= self.condition_video_timestep <= 1.0:
+            raise ValueError("condition-video timestep must be in [0,1]")
 
 
 def apply_online_capture_compatibility(
@@ -212,3 +241,138 @@ class H3Int8OnlineFeatureProvider(nn.Module):
             features, self.contract.capture_compatibility
         )
         return features.unsqueeze(0)
+
+
+def pool_online_kv_tokens(tensor: torch.Tensor, token_count: int) -> torch.Tensor:
+    """Apply the exact Candidate D sequence-only K/V pooling convention."""
+
+    if tensor.ndim != 4 or tensor.shape[0] != 1:
+        raise ValueError("online K/V tensor must be [1,tokens,heads,head_dim]")
+    if token_count <= 0:
+        raise ValueError("K/V token count must be positive")
+    source = tensor[0]
+    if source.shape[0] <= token_count:
+        return source
+    tokens, heads, head_dim = source.shape
+    flattened = source.reshape(tokens, heads * head_dim)
+    pooled = F.adaptive_avg_pool1d(
+        flattened.transpose(0, 1).unsqueeze(0), token_count
+    ).squeeze(0).transpose(0, 1)
+    return pooled.reshape(token_count, heads, head_dim)
+
+
+class H3Int8OnlineKVProvider(nn.Module):
+    """Capture pooled live H3 video K/V for DreamWAM-style action blocks."""
+
+    def __init__(
+        self,
+        backbone: nn.Module,
+        contract: H3Int8OnlineKVContract,
+        *,
+        layout_functions: H3Int8LayoutFunctions | None = None,
+    ) -> None:
+        super().__init__()
+        self.backbone = backbone
+        self.contract = contract
+        self.layout_functions = layout_functions
+
+    @torch.inference_mode()
+    def forward(
+        self,
+        first_frame_latents: torch.Tensor,
+        encoder_context: torch.Tensor,
+        text_token_tags: torch.Tensor,
+    ) -> dict[int, dict[str, torch.Tensor]]:
+        if tuple(first_frame_latents.shape[:3]) != (1, 24, 1):
+            raise ValueError("first-frame latents must be [1,24,1,H,W]")
+        if encoder_context.ndim != 3 or encoder_context.shape[0] != 1:
+            raise ValueError("encoder context must be [1,tokens,hidden]")
+        if encoder_context.shape[-1] not in (5120, 5376):
+            raise ValueError("H3 encoder context width must be raw 5120 or refined 5376")
+        if text_token_tags.ndim != 1 or text_token_tags.numel() != encoder_context.shape[1]:
+            raise ValueError("text token tags must cover every encoder context row")
+
+        layout_functions = self.layout_functions or _official_layout_functions()
+        device = first_frame_latents.device
+        _, channels, _, latent_height, latent_width = first_frame_latents.shape
+        packed = layout_functions.build_packed_sequence(
+            text_token_tags=text_token_tags.to(device="cpu", dtype=torch.long),
+            num_latent_frames=self.contract.target_latent_frames,
+            latent_height=latent_height,
+            latent_width=latent_width,
+            num_audio_latents=self.contract.action_horizon,
+            patch_size=PATCH_SIZE,
+            audio_channels=AUDIO_CHANNELS,
+            audio_tag=2,
+            video_tag=0,
+            keyframe_anchors=("first",),
+        )
+        (
+            position_ids,
+            token_tags,
+            video_indices,
+            audio_indices,
+            text_indices,
+            num_condition_video_rows,
+            num_condition_audio_rows,
+        ) = packed
+        unique_timesteps, timestep_indices = layout_functions.build_row_timesteps(
+            video_indices=video_indices,
+            audio_indices=audio_indices,
+            num_condition_video_rows=num_condition_video_rows,
+            num_condition_audio_rows=num_condition_audio_rows,
+            num_text_tokens=text_indices.numel(),
+            video_timestep=self.contract.video_timestep,
+            audio_timestep=0.0,
+            condition_video_timestep=self.contract.condition_video_timestep,
+            condition_audio_timestep=1.0,
+        )
+
+        target = torch.zeros(
+            (1, channels, self.contract.target_latent_frames, latent_height, latent_width),
+            device=device,
+            dtype=torch.float32,
+        )
+        row_width = channels * 4
+        first_rows = layout_functions.patchify_video_latents(
+            first_frame_latents.float(), PATCH_SIZE
+        ).reshape(1, -1, row_width)
+        target_rows = layout_functions.patchify_video_latents(target, PATCH_SIZE).reshape(
+            1, -1, row_width
+        )
+        video_rows = torch.cat((first_rows, target_rows), dim=1)
+        audio_rows = torch.zeros(
+            (1, self.contract.action_horizon * AUDIO_CHANNELS, AUDIO_LATENT_CHANNELS),
+            device=device,
+            dtype=torch.float32,
+        )
+        condition_indices = video_indices[:num_condition_video_rows].to(device)
+        result = self.backbone(
+            hidden_states=video_rows,
+            audio_hidden_states=audio_rows,
+            encoder_hidden_states=encoder_context.to(device=device, dtype=torch.float32),
+            timestep=unique_timesteps.to(device),
+            timestep_indices=timestep_indices.to(device),
+            token_tags=token_tags.to(device),
+            position_ids=position_ids.to(device),
+            video_indices=video_indices.to(device),
+            audio_indices=audio_indices.to(device),
+            text_indices=text_indices.to(device),
+            capture_layers=(),
+            capture_kv_layers=self.contract.layers,
+            kv_capture_indices=condition_indices,
+        )
+        if tuple(sorted(result.captured_kv)) != self.contract.layers:
+            raise RuntimeError("live H3 K/V capture differs from the requested layers")
+        pooled: dict[int, dict[str, torch.Tensor]] = {}
+        for layer in self.contract.layers:
+            item = result.captured_kv[layer]
+            if set(item) != {"k", "v"}:
+                raise RuntimeError(f"live H3 layer {layer} did not return exact K/V")
+            pooled[layer] = {
+                name: pool_online_kv_tokens(
+                    item[name], self.contract.capture_token_count
+                ).to(device=device, dtype=torch.bfloat16).unsqueeze(0).clone()
+                for name in ("k", "v")
+            }
+        return pooled

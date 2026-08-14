@@ -73,9 +73,12 @@ from .int8_backbone import H3Int8FeatureBackbone, H3Int8FeatureOutput
 from .int8_online import (
     H3Int8OnlineFeatureContract,
     H3Int8OnlineFeatureProvider,
+    H3Int8OnlineKVContract,
+    H3Int8OnlineKVProvider,
     H3Int8LayoutFunctions,
     apply_online_capture_compatibility,
     encode_h3_vae_condition_standalone,
+    pool_online_kv_tokens,
 )
 from .starwam_feature_action import H3StarWAMFeatureActionPolicy
 from .dreamwam_kv_carrier import (
@@ -131,9 +134,12 @@ __all__ = [
     "H3Int8FeatureOutput",
     "H3Int8OnlineFeatureContract",
     "H3Int8OnlineFeatureProvider",
+    "H3Int8OnlineKVContract",
+    "H3Int8OnlineKVProvider",
     "H3Int8LayoutFunctions",
     "apply_online_capture_compatibility",
     "encode_h3_vae_condition_standalone",
+    "pool_online_kv_tokens",
     "H3StarWAMFeatureActionPolicy",
     "H3DreamWAMKVCarrierPolicy",
     "DEFAULT_H3_CARRIER_LAYERS",

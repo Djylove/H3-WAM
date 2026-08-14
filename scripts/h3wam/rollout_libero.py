@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
             "h3_feature",
             "h3_feature_int8",
             "h3_starwam_int8",
+            "h3_dreamwam_kv_int8",
             "baseline",
         ),
         required=True,
@@ -101,6 +102,11 @@ def parse_args() -> argparse.Namespace:
         "--starwam-source-manifest",
         type=Path,
         help="Frozen full cache manifest used to resolve R1 task text contexts.",
+    )
+    parser.add_argument(
+        "--dreamwam-source-manifest",
+        type=Path,
+        help="Frozen full cache manifest used to resolve Candidate D0 text contexts.",
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--target-latent-frames", type=int, default=12)
@@ -238,7 +244,11 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
             if args.text_encoder is None:
                 raise ValueError("online context modes require --text-encoder")
             command.extend(("--text-encoder", str(args.text_encoder.resolve())))
-    elif args.policy in ("h3_feature_int8", "h3_starwam_int8"):
+    elif args.policy in (
+        "h3_feature_int8",
+        "h3_starwam_int8",
+        "h3_dreamwam_kv_int8",
+    ):
         for flag, value in (
             ("--h3-checkpoint", args.h3_checkpoint),
             ("--h3-model", args.h3_model),
@@ -263,6 +273,18 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                 (
                     "--starwam-source-manifest",
                     str(args.starwam_source_manifest.resolve()),
+                )
+            )
+        if args.policy == "h3_dreamwam_kv_int8":
+            if args.dreamwam_source_manifest is None:
+                raise ValueError(
+                    "h3_dreamwam_kv_int8 rollout requires "
+                    "--dreamwam-source-manifest"
+                )
+            command.extend(
+                (
+                    "--dreamwam-source-manifest",
+                    str(args.dreamwam_source_manifest.resolve()),
                 )
             )
         if args.h3_feature_audio_horizon is not None:

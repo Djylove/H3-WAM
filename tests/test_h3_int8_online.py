@@ -8,7 +8,10 @@ from fastwam.models.h3wam import (
     H3Int8LayoutFunctions,
     H3Int8OnlineFeatureContract,
     H3Int8OnlineFeatureProvider,
+    H3Int8OnlineKVContract,
+    H3Int8OnlineKVProvider,
     encode_h3_vae_condition_standalone,
+    pool_online_kv_tokens,
 )
 
 
@@ -73,6 +76,26 @@ class _FakeBackbone(nn.Module):
             for layer in kwargs["capture_layers"]
         }
         return SimpleNamespace(captured_features=captures)
+
+
+class _FakeKVBackbone(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.last_call = None
+
+    def forward(self, **kwargs):
+        self.last_call = kwargs
+        count = int(kwargs["kv_capture_indices"].numel())
+        captures = {
+            layer: {
+                "k": torch.arange(count * 2 * 3, dtype=torch.float32).reshape(
+                    1, count, 2, 3
+                ),
+                "v": torch.full((1, count, 2, 3), float(layer)),
+            }
+            for layer in kwargs["capture_kv_layers"]
+        }
+        return SimpleNamespace(captured_kv=captures)
 
 
 class _FakePosterior:
@@ -147,6 +170,47 @@ class H3Int8OnlineFeatureProviderTest(unittest.TestCase):
         self.assertEqual(first.device.type, "cpu")
         self.assertEqual(first.dtype, torch.float32)
         torch.testing.assert_close(first, second, atol=0, rtol=0)
+
+    def test_live_kv_contract_matches_candidate_d_timestep_and_pooling(self):
+        backbone = _FakeKVBackbone()
+        provider = H3Int8OnlineKVProvider(
+            backbone,
+            H3Int8OnlineKVContract(
+                layers=(49,), action_horizon=32, capture_token_count=32
+            ),
+            layout_functions=FAKE_LAYOUT,
+        )
+        output = provider(
+            torch.zeros(1, 24, 1, 14, 28),
+            torch.zeros(1, 3, 5120),
+            torch.ones(3, dtype=torch.long),
+        )
+
+        self.assertEqual(set(output), {49})
+        self.assertEqual(set(output[49]), {"k", "v"})
+        self.assertEqual(tuple(output[49]["k"].shape), (1, 32, 2, 3))
+        self.assertEqual(output[49]["k"].dtype, torch.bfloat16)
+        self.assertNotEqual(
+            output[49]["k"].untyped_storage().data_ptr(),
+            output[49]["v"].untyped_storage().data_ptr(),
+        )
+        call = backbone.last_call
+        assert call is not None
+        self.assertEqual(call["capture_layers"], ())
+        self.assertEqual(call["capture_kv_layers"], (49,))
+        torch.testing.assert_close(
+            call["timestep"], torch.tensor([1.0, 1.0]), atol=0, rtol=0
+        )
+        self.assertEqual(tuple(call["audio_hidden_states"].shape), (1, 64, 32))
+        self.assertEqual(int(call["kv_capture_indices"].numel()), 98)
+
+    def test_online_kv_pooling_rejects_bad_shape_and_preserves_short_sequences(self):
+        source = torch.randn(1, 7, 2, 3)
+        pooled = pool_online_kv_tokens(source, 32)
+        self.assertEqual(tuple(pooled.shape), (7, 2, 3))
+        torch.testing.assert_close(pooled, source[0])
+        with self.assertRaisesRegex(ValueError, "online K/V tensor"):
+            pool_online_kv_tokens(torch.randn(7, 2, 3), 32)
 
 
 if __name__ == "__main__":
