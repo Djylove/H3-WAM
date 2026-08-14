@@ -137,6 +137,58 @@ class DreamWAMKVDatasetTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "storage aliases"):
                 self.dataset(root, manifest)[0]
 
+    def test_parser_pins_h3_sha_and_requires_explicit_verify_opt_in(self):
+        argv = [
+            str(SCRIPT),
+            "/tmp/manifest.jsonl",
+            "--cache-root",
+            "/tmp/cache",
+            "--output",
+            "/tmp/report.json",
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            args = MODULE.parse_args()
+        self.assertEqual(
+            args.expected_h3_checkpoint_sha256,
+            "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+        )
+        self.assertFalse(args.verify_h3_checkpoint_sha256)
+        with mock.patch.object(
+            sys, "argv", [*argv, "--verify-h3-checkpoint-sha256"]
+        ):
+            args = MODULE.parse_args()
+        self.assertTrue(args.verify_h3_checkpoint_sha256)
+
+    def test_h3_checkpoint_hash_verify_and_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "h3.safetensors"
+            checkpoint.write_bytes(b"pinned-h3-test")
+            expected = MODULE.sha256_file(checkpoint)
+            self.assertEqual(
+                MODULE.verify_h3_checkpoint_sha256(
+                    checkpoint,
+                    expected_sha256=expected,
+                    enabled=True,
+                    rank=0,
+                ),
+                expected,
+            )
+            with self.assertRaisesRegex(ValueError, "H3 checkpoint SHA256 mismatch"):
+                MODULE.verify_h3_checkpoint_sha256(
+                    checkpoint,
+                    expected_sha256="0" * 64,
+                    enabled=True,
+                    rank=0,
+                )
+            self.assertIsNone(
+                MODULE.verify_h3_checkpoint_sha256(
+                    Path(directory) / "missing.safetensors",
+                    expected_sha256="0" * 64,
+                    enabled=False,
+                    rank=0,
+                )
+            )
+
 
 class DreamWAMKVTrainingContractTest(unittest.TestCase):
     layers = (9, 19, 29, 39, 49)

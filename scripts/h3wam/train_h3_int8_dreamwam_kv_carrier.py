@@ -64,6 +64,9 @@ DREAMWAM_KV_STRATEGY = "adaptive_avg_pool1d_sequence_v1"
 CACHE_BACKBONE = "H3Int8FeatureBackbone"
 CACHE_QUANTIZATION = "int8_tensorwise_convrot"
 CHECKPOINT_SCHEMA = 2
+H3_INT8_CHECKPOINT_SHA256 = (
+    "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
+)
 CHECKPOINT_KEYS = frozenset(
     {
         "schema_version",
@@ -117,6 +120,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-checkpoint", type=Path)
     parser.add_argument("--load-checkpoint", type=Path)
     parser.add_argument("--restore-check-only", action="store_true")
+    parser.add_argument("--verify-h3-checkpoint-sha256", action="store_true")
+    parser.add_argument(
+        "--expected-h3-checkpoint-sha256", default=H3_INT8_CHECKPOINT_SHA256
+    )
     parser.add_argument(
         "--enable-dreamwam-kv-carrier",
         action="store_true",
@@ -158,6 +165,25 @@ def sha256_file(path: Path, chunk_size: int = 16 * 1024 * 1024) -> str:
         while chunk := stream.read(chunk_size):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def verify_h3_checkpoint_sha256(
+    checkpoint_path: Path,
+    *,
+    expected_sha256: str,
+    enabled: bool,
+    rank: int,
+) -> str | None:
+    if not enabled:
+        return None
+    actual_sha256 = sha256_file(checkpoint_path) if rank == 0 else None
+    if dist.is_initialized():
+        value = [actual_sha256]
+        dist.broadcast_object_list(value, src=0)
+        actual_sha256 = value[0]
+    if actual_sha256 != expected_sha256:
+        raise ValueError(f"H3 checkpoint SHA256 mismatch: {actual_sha256}")
+    return actual_sha256
 
 
 def _storage_signature(tensor: torch.Tensor) -> int:
@@ -466,6 +492,8 @@ def checkpoint_contract(
         "dreamwam_mot_sha256": DREAMWAM_MOT_SHA256,
         "parent_shifted_flow_commit": PARENT_OBJECTIVE_COMMIT,
         "h3_checkpoint_path": str(dataset.first_checkpoint_path),
+        "h3_checkpoint_sha256": args.expected_h3_checkpoint_sha256,
+        "verify_h3_checkpoint_sha256": args.verify_h3_checkpoint_sha256,
         "kv_subdir": args.kv_subdir,
         "kv_schema": DREAMWAM_KV_SCHEMA,
         "kv_strategy": DREAMWAM_KV_STRATEGY,
@@ -762,6 +790,14 @@ def main() -> None:
         )
     if args.learning_rate <= 0 or args.weight_decay < 0 or args.action_shift <= 0:
         raise ValueError("invalid optimizer or shifted-flow arguments")
+    if (
+        len(args.expected_h3_checkpoint_sha256) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in args.expected_h3_checkpoint_sha256
+        )
+    ):
+        raise ValueError("expected H3 checkpoint SHA256 must be 64 lowercase hex characters")
 
     rank, world_size, device = distributed_setup()
     torch.manual_seed(args.seed + rank)
@@ -780,6 +816,12 @@ def main() -> None:
         action_horizon=args.action_horizon,
         limit=args.limit,
         sample_offset=args.sample_offset,
+    )
+    actual_h3_sha256 = verify_h3_checkpoint_sha256(
+        dataset.first_checkpoint_path,
+        expected_sha256=args.expected_h3_checkpoint_sha256,
+        enabled=args.verify_h3_checkpoint_sha256,
+        rank=rank,
     )
     sampler = (
         DistributedSampler(dataset, shuffle=True, seed=args.seed, drop_last=False)
@@ -1077,6 +1119,8 @@ def main() -> None:
             ),
             "trainable_parameters": trainable_parameters,
             "contract": contract,
+            "h3_checkpoint_path": str(dataset.first_checkpoint_path),
+            "h3_checkpoint_sha256_verified": actual_h3_sha256,
             "loaded_checkpoint": (
                 None if args.load_checkpoint is None else str(args.load_checkpoint)
             ),
