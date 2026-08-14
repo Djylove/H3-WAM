@@ -25,6 +25,18 @@ class StarWAMFeaturePoolingTest(unittest.TestCase):
         features = torch.randn(1, 7, 3)
         self.assertIs(MODULE.pool_feature_tokens(features, 0), features)
 
+    def test_historical_comfy_alias_repeats_last_layer_without_aliasing(self):
+        features = torch.randn(5, 7, 3)
+        output = MODULE.apply_capture_compatibility(features, "comfy_alias_v1")
+        for index in range(output.shape[0]):
+            torch.testing.assert_close(output[index], features[-1])
+        output[0, 0, 0] += 1
+        self.assertNotEqual(float(output[0, 0, 0]), float(output[1, 0, 0]))
+
+    def test_default_capture_compatibility_preserves_features(self):
+        features = torch.randn(5, 7, 3)
+        self.assertIs(MODULE.apply_capture_compatibility(features, "none"), features)
+
 
 if __name__ == "__main__":
     unittest.main()

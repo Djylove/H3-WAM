@@ -1,0 +1,119 @@
+{
+  "experiment_id": "h3_int8_starwam_no_timestep_warmup_scale_ablation_v2",
+  "classification": "controlled_ablation",
+  "hypothesis": "With the released StarWAM no-feature-timestep architecture and its 1000-step linear warmup plus cosine schedule, RMS-matching cached H3 features at scale 0.009606920816877307 remains finite and stable across two optimizer steps and is more stable than raw scale 1 under an otherwise identical run.",
+  "single_variable": "feature_input_scale: 1.0 versus 0.009606920816877307; no timestep token, warmup schedule, source, model, samples and random seeds are identical.",
+  "parent_baseline": "Exact paired raw scale=1 arm in this experiment. The preceding timestep-token/no-warmup diagnostic was NO_GO: raw loss ratio 1858.83 and RMS-match ratio 658.71 despite exact restore.",
+  "references": [
+    {"kind": "paper", "title": "Fast-WAM: Can Video Generation Models Act as World-Action Models?", "locator": "https://arxiv.org/abs/2603.16666", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "shaohua-pan/StarWAM released LIBERO feature recipe", "locator": "https://github.com/shaohua-pan/StarWAM", "revision": "cd76d96f273f81e228a05f40f9697fe2514e2356", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "fastwam_deploy standalone INT8-H3 StarWAM trainer", "locator": "/home/ubuntu/fastwam_deploy", "revision": "dab8058 plus isolated R1 schema2 scheduler/scale diff", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "ActionDiT and feature timestep",
+        "paper": "World-model observations condition an independent action transformer.",
+        "upstream_code": "Pinned ActionDiT/WanBlock; released LIBERO YAML sets feature_condition_include_timestep=false.",
+        "local": "Byte-pinned ActionDiT and include_feature_timestep=false; standalone frozen INT8-H3 replaces online Wan2.2.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["third_party/StarWAM commit cd76d96f273f81e228a05f40f9697fe2514e2356", "scripts/h3wam/train_h3_int8_starwam_action.py"],
+        "rationale": "Action carrier and no-timestep interface are exact; the explicit experiment is the H3 backbone port."
+      }
+    ],
+    "data": [
+      {
+        "field": "paired windows and fixed scale audit",
+        "paper": "Dense robot demonstration windows.",
+        "upstream_code": "32 actions and observation features pooled to 32 tokens.",
+        "local": "Both arms use the same four unique v8 manifest windows; the scale was fixed from the first 512 feature samples and all 40 task contexts before execution.",
+        "status": "EQUIVALENT",
+        "evidence": ["experiments/results/h3_int8_last32_feature_scale_audit_512.json", "manifest sha256=5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8"],
+        "rationale": "Pairing isolates feature magnitude while preserving the released action/token spans."
+      }
+    ],
+    "action": [
+      {
+        "field": "action/state contract",
+        "paper": "Continuous chunked actions.",
+        "upstream_code": "7D x32 actions and 8D proprio, min/max to [-1,1] and clip [-5,5].",
+        "local": "Same dimensions, normalization and pad masking in both arms.",
+        "status": "EXACT",
+        "evidence": ["scripts/h3wam/train_h3_int8_starwam_action.py", "tests/test_h3_int8_starwam_action_trainer.py"],
+        "rationale": "No action variable changes."
+      }
+    ],
+    "objective": [
+      {
+        "field": "flow objective",
+        "paper": "Continuous flow matching for action generation.",
+        "upstream_code": "Shift-5 scheduler and timestep-weighted masked MSE.",
+        "local": "Direct imports of pinned scheduler and loss with shift5.",
+        "status": "EXACT",
+        "evidence": ["third_party/StarWAM/starwam/modules/scheduler.py", "third_party/StarWAM/starwam/training/loss.py"],
+        "rationale": "No objective reinterpretation."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "optimizer and LR schedule",
+        "paper": "Substantial multi-epoch training budget.",
+        "upstream_code": "AdamW 1e-4, WD0.01, betas(0.9,0.95), clip1, BF16, warmup1000 then cosine to base-LR*0.01.",
+        "local": "Exact optimizer/schedule parameters, including initial effective LR1e-7 and strict scheduler checkpoint state; depth2/two-step budget only diagnoses stability.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["third_party/StarWAM/starwam/training/trainer.py", "tests/test_h3_int8_starwam_action_trainer.py"],
+        "rationale": "Schedule is aligned; the bounded depth and steps are intentionally not a convergence run."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "pre-registered mechanical predicate",
+        "paper": "Closed-loop LIBERO success is the endpoint.",
+        "upstream_code": "LIBERO rollout after training.",
+        "local": "Scaled arm requires fresh restore max_abs=0; finite/nonzero three-path gradients and head update; step2/step1 loss<=2, prediction_std<=2, expert gradient<=10 and projector gradient<=10. Raw arm uses the same measurements.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["experiments/evidence/h3_int8_starwam_no_timestep_warmup_scale_ablation_v2.json"],
+        "rationale": "This gate establishes numerical trainability only and makes no policy-quality claim."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Pinned commit and enforced ActionDiT/WanBlock hashes"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["ModelSpec records include_feature_timestep=false and feature scale"]},
+    "data_contract": {"status": "PASS", "evidence": ["Strict cache metadata and fixed manifest/stats hashes"]},
+    "action_contract": {"status": "PASS", "evidence": ["Shape, normalization and pad-mask tests"]},
+    "objective_contract": {"status": "PASS", "evidence": ["Pinned scheduler/loss imports"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Warmup/cosine unit test, schema2 scheduler save/restore test and per-step LR logging"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Numeric stability thresholds fixed before launch"]},
+    "gradient_path": {"status": "PASS", "evidence": ["14 focused local tests pass including ActionDiT/projector gradients"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["scaled loss 1.359375 -> 1.1796875; prediction_std 1.43758 -> 1.47292; all logged gradients finite/nonzero"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["both schema2 checkpoints fresh-process restore max_abs=0.0 at completed_steps=2"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["exact raw arm loss 4000 -> 4992 versus scaled 1.359375 -> 1.1796875"]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["RMS scale reduces first-step loss 2942x, prediction std 66x, expert gradient 6567x under exact pairing"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["out of scope"]}
+  },
+  "budget": {"global_batch": 2, "optimizer_steps": 1, "training_samples": 2, "unique_windows": 2, "effective_epochs": 0.0000072016855533592955, "gpu_count": 2, "estimated_hours": 0.2},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The paired gate passed every threshold and schema2 restore. Authorize only one full30 optimizer step with RMS-match scale followed by fresh-process restore; no multi-step or long training is authorized.",
+    "launch_command": "PROJECT_ROOT=/mnt/h3-wam/r1-action-canary/project NPROC_PER_NODE=2 bash scripts/h3wam/launch_h3_int8_starwam_action.sh MANIFEST --cache-root CACHE --output FULL30_TRAIN.json --save-checkpoint FULL30.pt --steps 1 --limit 16 --action-layers 30 --feature-input-scale 0.009606920816877307 --warmup-steps 1000 --scheduler-horizon 21700 --min-learning-rate 1e-6, then a fresh NPROC_PER_NODE=1 --restore-check-only with the identical contract."
+  },
+  "paired_result": {
+    "raw": {"loss": [4000.0, 4992.0], "prediction_std": [95.39542388916016, 100.16416931152344], "restore_max_abs": 0.0},
+    "rms_match": {"loss": [1.359375, 1.1796875], "prediction_std": [1.4375799894332886, 1.472918152809143], "expert_gradient_norm": [270.14019775390625, 298.6553039550781], "feature_projector_gradient_norm": [140.19940185546875, 159.67929077148438], "restore_max_abs": 0.0}
+  },
+  "production_depth_gate": "PASS: all outputs/three-path gradients are finite, the ActionDiT head update is nonzero, peak_reserved_gib < 80, and fresh-process restore max_abs=0.0.",
+  "production_depth_result": {
+    "status": "PASS_MECHANICAL",
+    "model": {"action_layers": 30, "total_parameters": 1580977159, "trainable_parameters": 1553441799},
+    "step": {"loss": 26.25, "prediction_std": 7.626850605010986, "expert_gradient_norm": 5242.50048828125, "feature_projector_gradient_norm": 3016.4375, "proprio_gradient_norm": 3.8843653202056885, "clipped_gradient_norm": 4288.0, "head_update_max_abs": 1.1920928955078125e-7, "learning_rate": 1.0000000000000001e-7, "next_learning_rate": 1.9990000000000004e-7},
+    "runtime": {"gpu_count": 2, "peak_allocated_gib_per_gpu": 17.43153142929077, "peak_reserved_gib_per_gpu": 17.447265625, "train_elapsed_seconds": 36.202304659062065, "checkpoint_bytes": 9377069949},
+    "restore": {"fresh_process_max_abs": 0.0, "completed_steps": 1, "elapsed_seconds": 40.95369135797955},
+    "artifacts": [
+      "/mnt/h3-wam/outputs/h3-int8-starwam/r1_last32_notimestep_warmup_rmsmatch_full30_s1_train.json",
+      "/mnt/h3-wam/outputs/h3-int8-starwam/r1_last32_notimestep_warmup_rmsmatch_full30_s1.pt",
+      "/mnt/h3-wam/outputs/h3-int8-starwam/r1_last32_notimestep_warmup_rmsmatch_full30_s1_restore.json"
+    ],
+    "scope": "Mechanical trainability only. No full30 multi-step stability, held-out action metric or closed-loop policy quality is established."
+  }
+}

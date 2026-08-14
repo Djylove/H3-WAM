@@ -1,0 +1,65 @@
+{
+  "experiment_id": "h3_int8_starwam_full30_multistep_v3",
+  "classification": "backbone_port",
+  "hypothesis": "The full 30-layer StarWAM ActionDiT remains numerically stable for 20 optimizer steps on RMS-matched frozen H3 last32 features under the released no-timestep and warmup/cosine recipe, and checkpoints at steps 10 and 20 resume and restore exactly.",
+  "single_variable": "Increase the already-passed full30 mechanical budget from one to 20 optimizer steps; architecture, H3 feature scale, objective and official optimizer schedule remain fixed.",
+  "parent_baseline": "full30 step1 PASS: loss26.25, prediction_std7.62685, finite nonzero three-path gradients, 17.45GiB peak reserved and fresh restore max_abs0.0.",
+  "references": [
+    {"kind": "paper", "title": "Fast-WAM", "locator": "https://arxiv.org/abs/2603.16666", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "StarWAM released LIBERO feature recipe", "locator": "https://github.com/shaohua-pan/StarWAM", "revision": "cd76d96f273f81e228a05f40f9697fe2514e2356", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "isolated H3 INT8 action trainer", "locator": "/mnt/h3-wam/r1-action-canary/project", "revision": "trainer sha256=8889f45d879c3b36034eb5776ec534e4761de7d4474d5e9ea45f31efb9cee027", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "full ActionDiT depth", "paper": "Independent action transformer", "upstream_code": "30 layers, hidden1024, FFN4096, 40x128 attention; feature timestep disabled", "local": "Exact dimensions and no timestep; H3 replaces Wan2.2 observation features", "status": "INTENTIONAL_DEVIATION", "evidence": ["step1 full30 checkpoint contract", "scripts/h3wam/train_h3_int8_starwam_action.py"], "rationale": "Only the world-model backbone is intentionally ported."}],
+    "data": [{"field": "20-step non-overlapping windows", "paper": "Dense robot windows", "upstream_code": "32-step actions and 32 pooled observation tokens", "local": "8-GPU global batch8; steps1-10 select manifest slice0:256 and steps11-20 slice256:512; logged sample_ids must show 160 unique windows", "status": "EQUIVALENT", "evidence": ["manifest sha256=5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8"], "rationale": "Disjoint slices avoid replay across the resume boundary."}],
+    "action": [{"field": "action contract", "paper": "Continuous chunks", "upstream_code": "7D x32 action, 8D proprio, minmax clip5", "local": "Exact shapes, normalization and pad mask", "status": "EXACT", "evidence": ["tests/test_h3_int8_starwam_action_trainer.py"], "rationale": "No action change."}],
+    "objective": [{"field": "flow matching", "paper": "Action flow", "upstream_code": "shift5 weighted masked flow loss", "local": "Direct pinned imports", "status": "EXACT", "evidence": ["third_party/StarWAM/starwam/modules/scheduler.py", "third_party/StarWAM/starwam/training/loss.py"], "rationale": "Exact objective."}],
+    "optimization": [{"field": "bounded 20-step schedule", "paper": "Long multi-epoch training", "upstream_code": "AdamW1e-4 WD.01 betas.9/.95 clip1 BF16 warmup1000 cosine", "local": "Exact optimizer schedule, 8 GPU, global batch8, 20 steps split at10 with strict optimizer/scheduler resume", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Budget is a stability canary, not convergence."}],
+    "evaluation": [{"field": "pre-registered multistep gate", "paper": "Closed-loop LIBERO success", "upstream_code": "Rollout after training", "local": "PASS only if every step is finite/nonzero, max loss <=10x step1, max prediction_std <=4x step1, expert/projector grad <=20x step1, 160 logged samples are unique, and fresh restore at step10/20 is exact", "status": "INTENTIONAL_DEVIATION", "evidence": ["experiments/evidence/h3_int8_starwam_full30_multistep_v3.json"], "rationale": "Numerical stability is a prerequisite, not effectiveness."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed commit, hashes and isolated trainer SHA"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["full30 single-step PASS"]},
+    "data_contract": {"status": "PASS", "evidence": ["fixed disjoint manifest slices and sample-id logging"]},
+    "action_contract": {"status": "PASS", "evidence": ["focused tests PASS"]},
+    "objective_contract": {"status": "PASS", "evidence": ["pinned direct imports"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["scheduler schema2 resume test and per-step LR"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["numeric thresholds pre-registered above"]},
+    "gradient_path": {"status": "PASS", "evidence": ["full30 step1 three-path finite/nonzero"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["20/20 full30 steps finite; loss 4.75..194 and prediction_std 5.4245..9.9026"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["s10 and s20 fresh restore max_abs0; optimizer LR and scheduler epoch restored exactly"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["full30 step1 resolved metrics"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["not required for bounded stability"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not measured"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 20, "training_samples": 160, "unique_windows": 160, "effective_epochs": 0.0005761348442687436, "gpu_count": 8, "estimated_hours": 0.5},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Authorize exactly 20 full30 optimizer steps with checkpoints/restores at10 and20. This cannot yield GO_LONG without an episode-disjoint validation contract and action-quality evidence.",
+    "launch_command": "8-GPU stage0:10 on offset0 then fresh restore; 8-GPU strict resume stage10:20 on offset256 then fresh restore, all under isolated trainer SHA8889f45d..."
+  },
+  "superseded_attempt": "Trainer SHA6413279e completed steps1-10 and exact restore, then exposed an inference_mode RoPE-cache resume bug before step11. Its s10 artifacts are retained for audit but excluded from the v2 result; SHA8889f45d uses no_grad for the pre-resume probe and restarts from zero.",
+  "result": {
+    "research_gate": "GO_MULTISTEP",
+    "long_training_gate": "NO_GO_LONG",
+    "steps": 20,
+    "global_batch": 8,
+    "gradient_accumulation": 1,
+    "sample_ids": 160,
+    "unique_sample_ids": 160,
+    "all_finite": true,
+    "all_gradient_paths_and_updates_positive": true,
+    "metrics": {
+      "loss": {"min": 4.75, "max": 194.0, "first": 32.25, "last": 53.0, "max_over_first": 6.015503875968992},
+      "prediction_std": {"min": 5.424500465393066, "max": 9.902592658996582, "first": 8.359848022460938, "last": 5.523298263549805, "max_over_first": 1.184542186938166},
+      "expert_gradient_norm": {"min": 2169.24560546875, "max": 56251.8671875, "max_over_first": 5.208582989640056},
+      "feature_projector_gradient_norm": {"min": 1226.444091796875, "max": 32378.078125, "max_over_first": 5.244874149699143},
+      "proprio_gradient_norm": {"min": 1.322309970855713, "max": 39.996002197265625},
+      "learning_rate": {"first": 1.0000000000000001e-7, "last": 1.9981e-6, "next": 2.0979999999999996e-6}
+    },
+    "step10": {"fresh_restore_max_abs": 0.0, "optimizer_learning_rate": 1.099e-6, "lr_scheduler_last_epoch": 10, "peak_reserved_gib_per_gpu": 17.45703125},
+    "step20": {"resume_precheck_max_abs": 0.0, "fresh_restore_max_abs": 0.0, "optimizer_learning_rate": 2.0979999999999996e-6, "lr_scheduler_last_epoch": 20, "peak_reserved_gib_per_gpu": 17.45703125},
+    "posthoc_full30_inference_audit": {"trainer_sha256": "33d1306f982b5e99353fb661cd9aac824b6ca3c8456f74bd59c65210f079c1df", "restore_max_abs": 0.0, "tokens": false, "ctx": false, "t_mod": false, "freqs": false, "mask": false},
+    "why_not_go_long": ["only 20 optimizer steps", "held-out offline action evaluation not yet run", "closed-loop LIBERO rollout not run"]
+  }
+}

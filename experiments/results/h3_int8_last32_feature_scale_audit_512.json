@@ -1,0 +1,30 @@
+{
+  "audit_id": "h3_int8_last32_feature_scale_audit_512",
+  "created_at": "2026-08-14",
+  "selection": {
+    "features": "first 512 rows of manifest_train_uniform.jsonl",
+    "feature_samples": 512,
+    "feature_elements": 88080384,
+    "text_contexts": "all 40 unique LIBERO task context_ids referenced by the manifest",
+    "text_context_count": 40,
+    "text_context_elements": 2437120
+  },
+  "inputs": {
+    "manifest": "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl",
+    "manifest_sha256": "5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8",
+    "feature_root": "/mnt/h3-wam/data/v8_frameindexed_h3_cache/h3_int8_libero40_last32_starwam",
+    "context_root": "/mnt/h3-wam/data/v8_frameindexed_h3_cache/contexts"
+  },
+  "measurements": {
+    "feature_global_rms_recomputed": 7322.443121517376,
+    "feature_global_rms_preregistered_rounded": 7322.443,
+    "text_context_global_rms_recomputed": 70.34612935276515,
+    "text_context_global_rms_preregistered_rounded": 70.346,
+    "raw_rms_ratio_feature_over_text": 104.09165618881252
+  },
+  "decision": {
+    "formula": "text_context_global_rms / feature_global_rms",
+    "feature_input_scale": 0.009606920816877307,
+    "semantics": "RMS-match H3 observation tokens to the pretrained text-conditioning scale before the randomly initialized StarWAM feature projector; this is not unit-RMS normalization."
+  }
+}

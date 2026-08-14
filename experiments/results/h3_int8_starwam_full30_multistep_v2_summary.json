@@ -1,0 +1,35 @@
+{
+  "result_id": "h3_int8_starwam_full30_multistep_v2",
+  "training_trainer_sha256": "8889f45d879c3b36034eb5776ec534e4761de7d4474d5e9ea45f31efb9cee027",
+  "wrapper_sha256": "391687222bff3a298375694fe3030826a7a39110f329635d2db447a4c29fc1fa",
+  "configuration": {"action_layers": 30, "feature_input_scale": 0.009606920816877307, "include_feature_timestep": false, "warmup_steps": 1000, "scheduler_horizon": 21700, "gpu_count": 8, "global_batch": 8, "gradient_accumulation": 1},
+  "samples": {"logged": 160, "unique": 160, "duplicates": 0},
+  "metrics": {
+    "loss": {"min": 4.75, "max": 194.0, "first": 32.25, "last": 53.0},
+    "prediction_std": {"min": 5.424500465393066, "max": 9.902592658996582, "first": 8.359848022460938, "last": 5.523298263549805},
+    "expert_gradient_norm": {"min": 2169.24560546875, "max": 56251.8671875},
+    "feature_projector_gradient_norm": {"min": 1226.444091796875, "max": 32378.078125},
+    "proprio_gradient_norm": {"min": 1.322309970855713, "max": 39.996002197265625},
+    "all_finite": true,
+    "all_updates_nonzero": true
+  },
+  "resume": {
+    "step10_fresh_restore_max_abs": 0.0,
+    "step10_lr": 1.099e-6,
+    "step10_scheduler_epoch": 10,
+    "step20_resume_precheck_max_abs": 0.0,
+    "step20_fresh_restore_max_abs": 0.0,
+    "step20_lr": 2.0979999999999996e-6,
+    "step20_scheduler_epoch": 20,
+    "posthoc_action_state_is_inference": {"tokens": false, "ctx": false, "t_mod": false, "freqs": false, "mask": false}
+  },
+  "decision": {"status": "GO_MULTISTEP", "go_long": false, "rationale": "Full-depth numerical stability and resumability are established through 20 warmup steps, but validation action quality and closed-loop success are not."},
+  "artifacts": [
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_full30_rmsmatch_multistep_v2_s10_train.json",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_full30_rmsmatch_multistep_v2_s10.pt",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_full30_rmsmatch_multistep_v2_s10_restore.json",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_full30_rmsmatch_multistep_v2_s20_train.json",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_full30_rmsmatch_multistep_v2_s20.pt",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_full30_rmsmatch_multistep_v2_s20_restore.json"
+  ]
+}

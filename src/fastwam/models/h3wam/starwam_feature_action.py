@@ -94,6 +94,9 @@ class H3StarWAMFeatureActionPolicy(nn.Module):
         eps: float = 1e-6,
         max_seq_len: int = 64,
         use_gradient_checkpointing: bool = True,
+        include_feature_timestep: bool = True,
+        feature_timestep: float = 0.0,
+        feature_input_scale: float = 1.0,
     ) -> None:
         super().__init__()
         ActionDiT = _load_pinned_starwam_action_dit()
@@ -103,8 +106,25 @@ class H3StarWAMFeatureActionPolicy(nn.Module):
         self.proprio_dim = int(proprio_dim)
         self.h3_feature_dim = int(h3_feature_dim)
         self.context_dim = int(context_dim)
+        self.freq_dim = int(freq_dim)
+        self.include_feature_timestep = bool(include_feature_timestep)
+        self.feature_timestep = float(feature_timestep)
+        if not torch.isfinite(torch.tensor(feature_input_scale)) or feature_input_scale <= 0:
+            raise ValueError("feature_input_scale must be finite and positive")
+        self.register_buffer(
+            "feature_input_scale",
+            torch.tensor(float(feature_input_scale), dtype=torch.float32),
+            persistent=True,
+        )
         self.feature_projector = nn.Linear(h3_feature_dim, context_dim)
         self.proprio_encoder = nn.Linear(proprio_dim, context_dim)
+        self.feature_timestep_embedding = nn.Sequential(
+            nn.Linear(freq_dim, context_dim),
+            nn.SiLU(),
+            nn.Linear(context_dim, context_dim),
+        )
+        if not self.include_feature_timestep:
+            self.feature_timestep_embedding.requires_grad_(False)
         self.action_expert = ActionDiT(
             hidden_dim=hidden_dim,
             action_dim=action_dim,
@@ -149,25 +169,54 @@ class H3StarWAMFeatureActionPolicy(nn.Module):
             raise ValueError("text mask must match text token dimensions")
 
         feature_param = self.feature_projector.weight
-        features = self.feature_projector(
-            h3_features.to(device=feature_param.device, dtype=feature_param.dtype)
+        scaled_features = h3_features.to(
+            device=feature_param.device, dtype=feature_param.dtype
+        ) * self.feature_input_scale.to(
+            device=feature_param.device, dtype=feature_param.dtype
         )
+        features = self.feature_projector(scaled_features)
         proprio_param = self.proprio_encoder.weight
         proprio_token = self.proprio_encoder(
             proprio.to(device=proprio_param.device, dtype=proprio_param.dtype)
         ).unsqueeze(1)
-        context = torch.cat(
-            (
-                text_context.to(device=features.device, dtype=features.dtype),
-                proprio_token,
-                features,
-            ),
-            dim=1,
-        )
+        parts = [
+            text_context.to(device=features.device, dtype=features.dtype),
+            proprio_token,
+        ]
+        if self.include_feature_timestep:
+            from starwam.modules.wan_block import sinusoidal_embedding_1d
+
+            clean_timestep = torch.full(
+                (batch,),
+                self.feature_timestep,
+                device=features.device,
+                dtype=torch.float32,
+            )
+            timestep_embedding = sinusoidal_embedding_1d(
+                self.freq_dim, clean_timestep
+            )
+            timestep_param = self.feature_timestep_embedding[0].weight
+            timestep_token = self.feature_timestep_embedding(
+                timestep_embedding.to(
+                    device=timestep_param.device, dtype=timestep_param.dtype
+                )
+            ).to(device=features.device, dtype=features.dtype)
+            parts.append(timestep_token.unsqueeze(1))
+        parts.append(features)
+        context = torch.cat(parts, dim=1)
         mask = torch.cat(
             (
                 text_mask.to(device=context.device, dtype=torch.bool),
-                torch.ones((batch, 1 + features.shape[1]), dtype=torch.bool, device=context.device),
+                torch.ones(
+                    (
+                        batch,
+                        1
+                        + int(self.include_feature_timestep)
+                        + features.shape[1],
+                    ),
+                    dtype=torch.bool,
+                    device=context.device,
+                ),
             ),
             dim=1,
         )

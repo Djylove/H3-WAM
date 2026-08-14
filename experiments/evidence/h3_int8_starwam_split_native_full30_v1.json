@@ -1,0 +1,85 @@
+{
+  "experiment_id": "h3_int8_starwam_split_native_full30_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "A fresh full30 H3-feature ActionDiT trained only on the episode-disjoint train manifest remains stable and exactly resumable at s1/s50/s100, producing checkpoints that are eligible for a leakage-free comparison on the frozen episode-disjoint validation manifest.",
+  "single_variable": "Replace the full-source training manifest with its deterministic episode-disjoint train partition; architecture, RMS feature scale, objective, optimizer, scheduler, global batch and seed remain fixed.",
+  "parent_baseline": "Full-source s100 passed mechanical stability and exact restore, but is explicitly ineligible for held-out episode-disjoint effectiveness claims.",
+  "references": [
+    {"kind": "paper", "title": "Fast-WAM", "locator": "https://arxiv.org/abs/2603.16666", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "StarWAM released LIBERO feature recipe", "locator": "https://github.com/shaohua-pan/StarWAM", "revision": "cd76d96f273f81e228a05f40f9697fe2514e2356", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "isolated H3 INT8 action trainer", "locator": "/mnt/h3-wam/r1-action-canary/project", "revision": "trainer sha256=33d1306f982b5e99353fb661cd9aac824b6ca3c8456f74bd59c65210f079c1df; wrapper sha256=391687222bff3a298375694fe3030826a7a39110f329635d2db447a4c29fc1fa", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "full30 H3 feature-conditioned ActionDiT", "paper": "World features condition action transformer", "upstream_code": "30-layer ActionDiT and feature timestep disabled", "local": "Exact action carrier with frozen H3 last32 backbone port", "status": "INTENTIONAL_DEVIATION", "evidence": ["fixed trainer and wrapper hashes"], "rationale": "H3 replaces Wan2.2 by design."}],
+    "data": [{"field": "episode-disjoint train-only samples", "paper": "Dense robot windows", "upstream_code": "32 action/32 feature-token samples", "local": "Train manifest SHA a4ad2a7955f539c2f709912d423bfa892688885ed14144a9988595de14b8e78c; explicit full source provenance SHA 5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8; s1 offset0/limit8, s2:50 offset8/limit504, s51:100 offset512/limit512", "status": "EQUIVALENT", "evidence": ["h3_int8_episode_disjoint_split_v1.json", "per-step sample_ids"], "rationale": "All 800 train windows are non-overlapping and no validation episode is train-visible."}],
+    "action": [{"field": "action contract", "paper": "Continuous action chunks", "upstream_code": "7D x32 and 8D proprio minmax clip5", "local": "Unchanged exact contract", "status": "EXACT", "evidence": ["focused tests"], "rationale": "No action change."}],
+    "objective": [{"field": "flow objective", "paper": "Action flow matching", "upstream_code": "shift5 weighted masked MSE", "local": "Pinned direct imports unchanged", "status": "EXACT", "evidence": ["third_party/StarWAM fixed commit"], "rationale": "No objective change."}],
+    "optimization": [{"field": "fresh bounded s1/s50/s100 chain", "paper": "Long training", "upstream_code": "AdamW, clip1, BF16, warmup1000 then cosine", "local": "8 GPU global batch8 GA1; strict optimizer/scheduler resume at1/50; stop at100", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "This remains a bounded checkpoint-comparison canary, not convergence."}],
+    "evaluation": [{"field": "pre-registered stability and leakage gate", "paper": "Closed-loop success", "upstream_code": "Policy rollout", "local": "Require 100/100 finite steps and positive gradient/update paths; 800 unique train samples with zero cross-stage replay; exact split/source hashes; no train/val episode overlap; max loss<=1940, predstd<=39.61, expert grad<=1125037.4, projector grad<=647561.6; scheduler epochs1/50/100 and fresh restore max_abs0", "status": "INTENTIONAL_DEVIATION", "evidence": ["this dossier"], "rationale": "Passing makes checkpoints eligible for frozen-val comparison; it does not itself establish action improvement."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed commits and local implementation hashes"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["full30 mechanical chain PASS"]},
+    "data_contract": {"status": "PASS", "evidence": ["250035 train/27678 val windows, 1542/170 episodes, episode overlap0, window overlap0"]},
+    "action_contract": {"status": "PASS", "evidence": ["unchanged strict contract"]},
+    "objective_contract": {"status": "PASS", "evidence": ["unchanged pinned objective"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["schema2 exact optimizer/scheduler resume already proven"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["numeric and leakage thresholds fixed before first completed step"]},
+    "gradient_path": {"status": "PASS", "evidence": ["full30 three-path gradients already proven; rechecked every step"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["100/100 split-native steps finite; loss 0.04712..185 and prediction_std 0.5236..9.2564"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["schema2 s1/s50/s100 fresh restore max_abs0; scheduler epochs and optimizer LRs restored exactly"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["full-source result retained as mechanical baseline only"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["balanced-val s1/s50/s100 comparison pending"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not measured"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 100, "training_samples": 800, "unique_windows": 800, "effective_epochs": 0.0031995520622672785, "gpu_count": 8, "estimated_hours": 0.5},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Authorize only a fresh train-split-native s1/s50/s100 chain with dense restore and sample-identity gates. The resulting anchors may proceed to frozen episode-disjoint validation, while GO_LONG remains blocked.",
+    "launch_command": "8GPU s1 offset0/limit8, fresh restore; resume 49 steps offset8/limit504 to s50, fresh restore; resume 50 steps offset512/limit512 to s100, fresh restore; explicit full source manifest for feature-cache provenance; stop."
+  },
+  "research_gate": "GO_MULTISTEP",
+  "heldout_evaluation_gate": "GO_BALANCED_VAL",
+  "long_training_gate": "NO_GO_LONG",
+  "result": {
+    "research_gate": "GO_MULTISTEP",
+    "heldout_evaluation_gate": "GO_BALANCED_VAL",
+    "long_training_gate": "NO_GO_LONG",
+    "steps": 100,
+    "global_batch": 8,
+    "gradient_accumulation": 1,
+    "sample_ids": 800,
+    "unique_sample_ids": 800,
+    "all_samples_in_train_split": true,
+    "cross_stage_sample_overlap": 0,
+    "step_sequence_exact": true,
+    "all_finite": true,
+    "all_gradient_paths_and_updates_positive": true,
+    "pre_registered_thresholds_passed": true,
+    "feature_cache_audit": {"first_train_split_rows_checked": 1024, "present": 1024, "missing": 0},
+    "metrics": {
+      "loss": {"min": 0.047119140625, "max": 185.0, "first": 26.25, "last": 3.890625},
+      "prediction_std": {"min": 0.5236116647720337, "max": 9.256433486938477, "first": 7.626850605010986, "last": 0.9591401815414429},
+      "expert_gradient_norm": {"max": 54504.7109375},
+      "feature_projector_gradient_norm": {"max": 32132.564453125},
+      "peak_reserved_gib_per_gpu": 17.45703125
+    },
+    "checkpoints": {
+      "s1": {"schema_version": 2, "completed_steps": 1, "fresh_restore_max_abs": 0.0, "optimizer_learning_rate": 1.9990000000000004e-07, "lr_scheduler_last_epoch": 1},
+      "s50": {"schema_version": 2, "completed_steps": 50, "fresh_restore_max_abs": 0.0, "optimizer_learning_rate": 5.094999999999997e-06, "lr_scheduler_last_epoch": 50},
+      "s100": {"schema_version": 2, "completed_steps": 100, "fresh_restore_max_abs": 0.0, "optimizer_learning_rate": 1.0089999999999993e-05, "lr_scheduler_last_epoch": 100}
+    },
+    "checkpoint_contract": {
+      "source_manifest_sha256": "5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8",
+      "train_split_manifest_sha256": "a4ad2a7955f539c2f709912d423bfa892688885ed14144a9988595de14b8e78c",
+      "source_manifest_items": 277713,
+      "train_split_manifest_items": 250035,
+      "all_resume_tensor_inference_flags_false": true
+    },
+    "why_not_go_long": [
+      "100 steps are only 0.0032 effective epoch over the train partition",
+      "balanced episode-disjoint validation comparison of s1/s50/s100 is the next required gate",
+      "closed-loop LIBERO success has not been measured"
+    ]
+  }
+}

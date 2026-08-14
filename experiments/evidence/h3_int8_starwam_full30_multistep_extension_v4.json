@@ -1,0 +1,89 @@
+{
+  "experiment_id": "h3_int8_starwam_full30_multistep_extension_v4",
+  "classification": "controlled_ablation",
+  "hypothesis": "The full30 RMS-matched H3-StarWAM checkpoint that passed 20 steps can continue through warmup steps 50 and 100 without numerical explosion, scheduler reset, sample replay or checkpoint restore drift.",
+  "single_variable": "Extend the passed s20 parent to s50 and s100; model, data contract, objective, optimizer and schedule remain unchanged.",
+  "parent_baseline": "s20 schema2 checkpoint: 20 finite steps, 160 unique windows, loss4.75..194, predstd5.4245..9.9026, LR2.098e-6, scheduler epoch20 and fresh restore max_abs0.",
+  "references": [
+    {"kind": "paper", "title": "Fast-WAM", "locator": "https://arxiv.org/abs/2603.16666", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "StarWAM released LIBERO feature recipe", "locator": "https://github.com/shaohua-pan/StarWAM", "revision": "cd76d96f273f81e228a05f40f9697fe2514e2356", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "isolated H3 INT8 action trainer", "locator": "/mnt/h3-wam/r1-action-canary/project", "revision": "trainer sha256=33d1306f982b5e99353fb661cd9aac824b6ca3c8456f74bd59c65210f079c1df; checkpoint contract unchanged from s20 training SHA8889f45d", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "full30 H3 feature-conditioned ActionDiT", "paper": "World features condition action transformer", "upstream_code": "30-layer ActionDiT and no feature timestep", "local": "Exact action carrier with frozen H3 last32 backbone port", "status": "INTENTIONAL_DEVIATION", "evidence": ["s20 checkpoint contract"], "rationale": "H3 replaces Wan2.2 by design."}],
+    "data": [{"field": "non-replayed extension windows", "paper": "Dense robot windows", "upstream_code": "32 action/32 feature-token samples", "local": "s21:50 uses source range512:1024 and logs 240 unique samples; s51:100 uses1024:1536 and logs400; both are disjoint from prior ranges0:512", "status": "EQUIVALENT", "evidence": ["resolved launch offsets and per-step sample_ids"], "rationale": "Disjoint source ranges make replay impossible."}],
+    "action": [{"field": "action contract", "paper": "Continuous action chunks", "upstream_code": "7D x32 and 8D proprio minmax clip5", "local": "Unchanged exact contract", "status": "EXACT", "evidence": ["s20 checkpoint contract"], "rationale": "No change."}],
+    "objective": [{"field": "flow objective", "paper": "Action flow matching", "upstream_code": "shift5 weighted masked MSE", "local": "Pinned direct imports unchanged", "status": "EXACT", "evidence": ["third_party/StarWAM fixed commit"], "rationale": "No change."}],
+    "optimization": [{"field": "bounded resume through step100", "paper": "Long training", "upstream_code": "AdamW, clip1, BF16, warmup1000 then cosine", "local": "8 GPU global batch8 GA1; strict optimizer/scheduler resume at20/50; stop at100", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "This remains 0.029 effective epoch and cannot establish convergence."}],
+    "evaluation": [{"field": "pre-registered extension gate", "paper": "Closed-loop success", "upstream_code": "Policy rollout", "local": "Require all 80 new steps finite/nonzero, 640 unique non-overlapping samples, max loss<=1940, predstd<=39.61, expert grad<=1125037.4, projector grad<=647561.6, scheduler epochs50/100 and fresh restore max_abs0", "status": "INTENTIONAL_DEVIATION", "evidence": ["experiments/evidence/h3_int8_starwam_full30_multistep_extension_v4.json"], "rationale": "Numerical stability only."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed checkpoint contract and diagnostic-only compatible trainer change"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["s20 full30 PASS"]},
+    "data_contract": {"status": "PASS", "evidence": ["disjoint source ranges and sample-id logging"]},
+    "action_contract": {"status": "PASS", "evidence": ["unchanged strict contract"]},
+    "objective_contract": {"status": "PASS", "evidence": ["unchanged pinned objective"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["s20 optimizer/scheduler exact restore"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["numeric thresholds fixed before launch"]},
+    "gradient_path": {"status": "PASS", "evidence": ["20-step three-path gradients positive"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["80/80 extension steps finite; loss 0.04614..58.5 and prediction_std 0.5939..6.1337"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["s50 and s100 resume prechecks and fresh restores max_abs0; optimizer LR and scheduler epochs restored exactly"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["resolved s20 summary"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["not required for bounded stability"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not measured"]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 80, "training_samples": 640, "unique_windows": 640, "effective_epochs": 0.0023045393770749744, "gpu_count": 8, "estimated_hours": 0.5},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "GO_MULTISTEP only: extend the strict parent to50/100 with dense restore gates. GO_LONG and multi-epoch training remain blocked.",
+    "launch_command": "8GPU strict resume s20→s50 on offset512/limit512, save+fresh restore; strict resume s50→s100 on offset1024/limit512, save+fresh restore; stop."
+  },
+  "research_gate": "GO_MULTISTEP",
+  "long_training_gate": "NO_GO_LONG",
+  "data_scope": "MECHANICAL_ONLY: s20/s50/s100 were trained from the full source manifest. These checkpoints must not be evaluated on the episode-disjoint val split as held-out effectiveness evidence because val episodes were present in their training source.",
+  "result": {
+    "research_gate": "GO_MULTISTEP",
+    "long_training_gate": "NO_GO_LONG",
+    "new_steps": 80,
+    "cumulative_steps": 100,
+    "global_batch": 8,
+    "gradient_accumulation": 1,
+    "new_sample_ids": 640,
+    "unique_new_sample_ids": 640,
+    "overlap_with_steps_1_20": 0,
+    "step_sequence_exact": true,
+    "all_finite": true,
+    "all_gradient_paths_and_updates_positive": true,
+    "thresholds_passed": true,
+    "metrics": {
+      "loss": {"min": 0.046142578125, "max": 58.5, "first": 58.5, "last": 2.59375},
+      "prediction_std": {"min": 0.5939003229141235, "max": 6.133679389953613, "first": 6.133679389953613, "last": 0.9254287481307983},
+      "expert_gradient_norm": {"min": 32.348976135253906, "max": 19214.02734375},
+      "feature_projector_gradient_norm": {"min": 17.975854873657227, "max": 10863.7919921875},
+      "proprio_gradient_norm": {"min": 0.030344964936375618, "max": 14.254000663757324},
+      "head_update_max_abs": {"min": 3.814697265625e-06, "max": 7.62939453125e-06},
+      "learning_rate": {"first": 2.0979999999999996e-06, "last": 9.990099999999993e-06, "next": 1.0089999999999993e-05}
+    },
+    "step50": {
+      "resume_precheck_max_abs": 0.0,
+      "fresh_restore_max_abs": 0.0,
+      "optimizer_learning_rate": 5.094999999999997e-06,
+      "lr_scheduler_last_epoch": 50,
+      "peak_reserved_gib_per_gpu": 17.45703125,
+      "action_state_is_inference": {"tokens": false, "ctx": false, "t_mod": false, "freqs": false, "mask": false}
+    },
+    "step100": {
+      "resume_precheck_max_abs": 0.0,
+      "fresh_restore_max_abs": 0.0,
+      "optimizer_learning_rate": 1.0089999999999993e-05,
+      "lr_scheduler_last_epoch": 100,
+      "peak_reserved_gib_per_gpu": 17.45703125,
+      "action_state_is_inference": {"tokens": false, "ctx": false, "t_mod": false, "freqs": false, "mask": false}
+    },
+    "why_not_go_long": [
+      "100 cumulative steps are only 0.003 effective epoch over 277713 windows",
+      "the full-source checkpoints are ineligible for episode-disjoint held-out effectiveness claims",
+      "closed-loop LIBERO success has not yet been measured"
+    ]
+  }
+}

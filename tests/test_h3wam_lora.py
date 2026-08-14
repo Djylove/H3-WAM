@@ -35,6 +35,20 @@ class FakeH3(nn.Module):
         self.blocks = nn.ModuleList([FakeBlock(), FakeBlock()])
 
 
+class FusedSwiGLUBase(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.in_features = 4
+        self.out_features = 3
+        self.weight = nn.Parameter(torch.randn(3, 4))
+
+    def forward(self, hidden, *, input_act=None):
+        if input_act == "swiglu":
+            gate, up = hidden.chunk(2, dim=-1)
+            hidden = torch.nn.functional.silu(gate) * up
+        return torch.nn.functional.linear(hidden, self.weight)
+
+
 class H3LoRATest(unittest.TestCase):
     def test_injection_wraps_selected_attention_modules(self):
         model = FakeH3().requires_grad_(False)
@@ -107,6 +121,18 @@ class H3LoRATest(unittest.TestCase):
         state.pop(next(iter(state)))
         with self.assertRaises(ValueError):
             load_h3_lora_state_dict(model, state)
+
+    def test_lora_supports_native_fused_swiglu_input(self):
+        base = FusedSwiGLUBase()
+        layer = H3LoRALinear(base, rank=2, alpha=2)
+        source = torch.randn(5, 8)
+        expected = base(source, input_act="swiglu")
+        torch.testing.assert_close(layer(source, input_act="swiglu"), expected)
+        with torch.no_grad():
+            layer.lora_b.weight.fill_(0.25)
+        self.assertFalse(
+            torch.equal(layer(source, input_act="swiglu"), expected)
+        )
 
 
 if __name__ == "__main__":

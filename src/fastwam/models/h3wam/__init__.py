@@ -70,6 +70,13 @@ from .int8_linear import (
     parse_int8_marker,
 )
 from .int8_backbone import H3Int8FeatureBackbone, H3Int8FeatureOutput
+from .int8_online import (
+    H3Int8OnlineFeatureContract,
+    H3Int8OnlineFeatureProvider,
+    H3Int8LayoutFunctions,
+    apply_online_capture_compatibility,
+    encode_h3_vae_condition_standalone,
+)
 from .starwam_feature_action import H3StarWAMFeatureActionPolicy
 __all__ = [
     "ActionEnsembler",
@@ -116,6 +123,11 @@ __all__ = [
     "parse_int8_marker",
     "H3Int8FeatureBackbone",
     "H3Int8FeatureOutput",
+    "H3Int8OnlineFeatureContract",
+    "H3Int8OnlineFeatureProvider",
+    "H3Int8LayoutFunctions",
+    "apply_online_capture_compatibility",
+    "encode_h3_vae_condition_standalone",
     "H3StarWAMFeatureActionPolicy",
     "DEFAULT_OFFICIAL_H3_LORA_TARGETS",
     "inject_official_h3_lora",

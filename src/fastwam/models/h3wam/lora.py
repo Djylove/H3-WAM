@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Iterator
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -62,11 +63,23 @@ class H3LoRALinear(nn.Module):
     def bias(self):
         return getattr(self.base, "bias", None)
 
-    def forward(self, hidden: torch.Tensor) -> torch.Tensor:
-        base_output = self.base(hidden)
+    def forward(
+        self, hidden: torch.Tensor, *, input_act: str | None = None
+    ) -> torch.Tensor:
+        base_output = (
+            self.base(hidden)
+            if input_act is None
+            else self.base(hidden, input_act=input_act)
+        )
         if not self.enabled:
             return base_output
-        delta = self.lora_b(self.lora_a(self.dropout(hidden.float()))) * self.scaling
+        lora_input = hidden.float()
+        if input_act == "swiglu":
+            gate, up = lora_input.chunk(2, dim=-1)
+            lora_input = F.silu(gate) * up
+        elif input_act is not None:
+            raise ValueError(f"unsupported LoRA input activation {input_act!r}")
+        delta = self.lora_b(self.lora_a(self.dropout(lora_input))) * self.scaling
         return base_output + delta.to(dtype=base_output.dtype)
 
 

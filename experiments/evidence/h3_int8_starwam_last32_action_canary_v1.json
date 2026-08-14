@@ -1,0 +1,242 @@
+{
+  "experiment_id": "h3_int8_starwam_last32_action_canary_v1",
+  "classification": "backbone_port",
+  "hypothesis": "On real cached LIBERO windows, the pinned StarWAM ActionDiT conditioned on frozen standalone INT8-H3 last-layer observation features produces finite non-zero gradients in the action expert, feature projector and proprio encoder, performs a non-zero optimizer update, and restores an identical probe prediction from an atomic checkpoint.",
+  "single_variable": "Replace StarWAM's online trainable Wan2.2 observation feature extractor with frozen cached standalone MiniMax-H3 INT8 layer-49 features while retaining its ActionDiT source, 32-step min/max-normalized action contract and shift-5 weighted flow objective.",
+  "parent_baseline": "StarWAM feature-conditioned Wan2.2 recipe at commit cd76d96f273f81e228a05f40f9697fe2514e2356; this is a mechanical backbone-port canary and does not claim an action-quality comparison.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "Fast-WAM: Can Video Generation Models Act as World-Action Models?",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "v1",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "shaohua-pan/StarWAM feature-conditioned action model",
+      "locator": "https://github.com/shaohua-pan/StarWAM",
+      "revision": "cd76d96f273f81e228a05f40f9697fe2514e2356",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "fastwam_deploy standalone INT8-H3 StarWAM action trainer",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "dab8058 plus uncommitted trainer, launcher, tests and dossier diff",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "ActionDiT implementation and dimensions",
+        "paper": "Independent action diffusion transformer conditioned on world-model features.",
+        "upstream_code": "Byte-pinned StarWAM modules/action_dit.py and wan_block.py; official LIBERO feature recipe uses hidden 1024, random ActionDiT initialization, 32 actions and the backbone layer count.",
+        "local": "Imports the pinned ActionDiT source with enforced SHA256; the production spec is 30 layers, hidden 1024, FFN 4096, 40 heads x 128 dimensions.",
+        "status": "EXACT",
+        "evidence": [
+          "third_party/StarWAM/starwam/modules/action_dit.py",
+          "third_party/StarWAM/examples/libero/configs/recipes/starwam_libero_feature_conditioned_wan22_5b.yaml",
+          "src/fastwam/models/h3wam/starwam_feature_action.py"
+        ],
+        "rationale": "The two executed upstream source files are hash checked before construction."
+      },
+      {
+        "field": "world-model feature extractor",
+        "paper": "Pretrained video/world-model visual representation.",
+        "upstream_code": "Online Wan2.2 observation forward with feature_condition_train_backbone=true.",
+        "local": "Frozen standalone INT8 MiniMax-H3 layer 49, pooled to 32 tokens before training and read from cache; H3 receives no gradient.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/precompute_h3_int8_features.py",
+          "scripts/h3wam/train_h3_int8_starwam_action.py",
+          "docs/H3_INT8_ACTION_RESEARCH_PLAN_V2_2026-08-14.md"
+        ],
+        "rationale": "This is explicitly an action-only-on-frozen-features backbone port; it tests whether H3 observation features can drive the pinned action carrier without conflating H3 fine-tuning."
+      }
+    ],
+    "data": [
+      {
+        "field": "LIBERO window and feature cache contract",
+        "paper": "Dense robot demonstration windows.",
+        "upstream_code": "Two-camera LIBERO, 33 frames and 32 actions with current observation features pooled by adaptive_avg_pool1d to 32 tokens.",
+        "local": "277713 uniform unique frame-indexed windows from 1712 episodes and 40 tasks; last32 cache requires layer49, timestep1, observation-only rows, exact pooling metadata and text-only context.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/training_candidate.json sha256=d9df0a75766b4140bc1c17bbcfffa620f00d0619a450cfcce67da3972756902e",
+          "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl sha256=5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8",
+          "tests/test_h3_int8_precompute.py"
+        ],
+        "rationale": "The action span and adaptive feature pooling match; H3's latent packing and text encoder are backbone-specific deviations recorded separately."
+      },
+      {
+        "field": "validation split for this canary",
+        "paper": "Held-out evaluation is required for method claims.",
+        "upstream_code": "Training and evaluation are separate and rollout uses fixed LIBERO states.",
+        "local": "The current v8 candidate has zero validation episodes; this canary checks mechanics and restore only.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/training_candidate.json split.validation_episodes=0"
+        ],
+        "rationale": "No effect or generalization conclusion is allowed; a non-empty episode-disjoint validation manifest is required before GO_LONG effectiveness work."
+      }
+    ],
+    "action": [
+      {
+        "field": "action/state representation and normalization",
+        "paper": "Continuous chunked robot actions.",
+        "upstream_code": "Seven-dimensional 32-step LIBERO action chunk and eight-dimensional proprio, min/max mapped to [-1,1] with outliers clipped to [-5,5].",
+        "local": "Same shapes and StarWAM min/max formula using train-only v8 stats; pad tokens are masked from weighted flow loss.",
+        "status": "EXACT",
+        "evidence": [
+          "third_party/StarWAM/starwam/data/lerobot.py:653",
+          "scripts/h3wam/train_h3_int8_starwam_action.py",
+          "/mnt/h3-wam/data/v8_frameindexed_h3_cache/stats.pt sha256=f940b481bb50fefe07ec0f976b6b745af2edd1e4bdc0f2c4eb35ef4f3fb2da15"
+        ],
+        "rationale": "The local loader reproduces upstream normalization and applies the real action_is_pad mask."
+      }
+    ],
+    "objective": [
+      {
+        "field": "action flow parameterization and loss",
+        "paper": "Continuous flow matching for action generation.",
+        "upstream_code": "Shift-5 scheduler, x_t=(1-sigma)x_0+sigma*noise, target=noise-x_0 and timestep-weighted masked MSE.",
+        "local": "Directly imports the pinned StarWAM FlowMatchScheduler and flow_matching_loss with shift5.",
+        "status": "EXACT",
+        "evidence": [
+          "third_party/StarWAM/starwam/modules/scheduler.py",
+          "third_party/StarWAM/starwam/training/loss.py",
+          "tests/test_h3_int8_starwam_action_trainer.py"
+        ],
+        "rationale": "No local reinterpretation of sigma, velocity target or weighting is used."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "mechanical canary budget and optimizer",
+        "paper": "Full training requires a substantial multi-epoch budget.",
+        "upstream_code": "AdamW betas(0.9,0.95), LR1e-4, WD0.01, BF16, grad clip1; official feature recipe trains 50 epochs with warmup1000.",
+        "local": "Same optimizer constants and BF16; two-layer mechanical canary uses two optimizer steps on two GPUs, then production 30-layer uses one optimizer step only.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/StarWAM/starwam/training/trainer.py:161",
+          "third_party/StarWAM/examples/libero/configs/recipes/starwam_libero_feature_conditioned_wan22_5b.yaml",
+          "decision.launch_command"
+        ],
+        "rationale": "The bounded budget tests memory, gradients, update and restore, not convergence."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "canary success predicate",
+        "paper": "Closed-loop LIBERO success is the final policy metric.",
+        "upstream_code": "Fixed LIBERO rollout plus offline action metrics.",
+        "local": "Finite non-constant output, non-zero action/projector/proprio gradients, non-zero optimizer delta and exact fresh-process checkpoint restore on a deterministic real cached sample.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "tests/test_h3_int8_starwam_action_trainer.py",
+          "scripts/h3wam/train_h3_int8_starwam_action.py"
+        ],
+        "rationale": "This is the precondition for an evaluable policy; it is not a policy-quality or closed-loop result."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": [
+        "StarWAM submodule cd76d96f273f81e228a05f40f9697fe2514e2356 and enforced ActionDiT/WanBlock file hashes"
+      ]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": [
+        "tests/test_h3_starwam_feature_action.py and production spec recorded in checkpoint contract"
+      ]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": [
+        "strict feature metadata and manifest/stats SHA256 validation; 277713-window candidate audit"
+      ]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": [
+        "tests/test_h3_int8_starwam_action_trainer.py dataset normalization and pad-mask test"
+      ]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": [
+        "direct pinned StarWAM scheduler and weighted flow loss imports"
+      ]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": [
+        "resolved canary command fixes LR, WD, betas, clip, dtype, model depth and sample budget"
+      ]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": [
+        "pre-registered mechanical predicate; no effectiveness claim"
+      ]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": [
+        "9 local tests pass including action loss to ActionDiT and feature projector; cloud canary must replace this with real gradient values"
+      ]
+    },
+    "smoke_finite": {
+      "status": "FAIL",
+      "evidence": [
+        "pending real A800 cached-feature forward/backward"
+      ]
+    },
+    "checkpoint_restore": {
+      "status": "FAIL",
+      "evidence": [
+        "pending fresh-process A800 restore"
+      ]
+    },
+    "parent_baseline": {
+      "status": "FAIL",
+      "evidence": [
+        "no matched H3 ActionDiT quality baseline is claimed by this mechanical canary"
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": [
+        "not measured"
+      ]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": [
+        "not measured"
+      ]
+    }
+  },
+  "budget": {
+    "global_batch": 2,
+    "optimizer_steps": 2,
+    "training_samples": 4,
+    "unique_windows": 4,
+    "effective_epochs": 0.000014403371106718591,
+    "gpu_count": 2,
+    "estimated_hours": 0.1
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The source, architecture, data, action, objective, optimization and mechanical evaluation contracts are fixed and unit gradient tests pass. Authorize only the two-layer two-step real cached-feature canary; production 30-layer may run one optimizer step and restore only after the small-depth path is finite.",
+    "launch_command": "NPROC_PER_NODE=2 bash scripts/h3wam/launch_h3_int8_starwam_action.sh /mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl --cache-root /mnt/h3-wam/data/v8_frameindexed_h3_cache --feature-subdir h3_int8_libero40_last32_starwam --output /mnt/h3-wam/outputs/h3-int8-starwam/r1_last32_depth2_s2_train.json --save-checkpoint /mnt/h3-wam/outputs/h3-int8-starwam/r1_last32_depth2_s2.pt --steps 2 --limit 16 --per-device-batch-size 1 --gradient-accumulation-steps 1 --action-layers 2 --hidden-dim 1024 --ffn-dim 4096 --num-heads 40 --attn-head-dim 128 --learning-rate 1e-4 --weight-decay 0.01 --action-shift 5 --seed 42 --verify-h3-checkpoint-sha256"
+  }
+}

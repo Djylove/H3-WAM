@@ -232,6 +232,34 @@ class H3Int8FeatureOutput:
     captured_features: dict[int, torch.Tensor]
 
 
+def _prepare_text_hidden_states(
+    encoder_hidden_states: torch.Tensor,
+    condition_proj: nn.Module,
+    token_refiner: nn.Module,
+) -> torch.Tensor:
+    """Normalize raw Qwen or already-refined H3 context for sequence packing.
+
+    Historical ComfyUI feature caches store the output of ``condition_proj``
+    and ``token_refiner`` at width 5376.  The native cache path instead stores
+    raw Qwen embeddings at the projection input width.  Accepting both keeps
+    the two contracts explicit and, crucially, never refines historical
+    context for a second time.
+    """
+
+    if encoder_hidden_states.ndim != 3:
+        raise ValueError("encoder_hidden_states must be [batch,tokens,width]")
+    width = int(encoder_hidden_states.shape[-1])
+    if width == HIDDEN_SIZE:
+        return encoder_hidden_states
+    input_width = int(condition_proj.in_features)
+    if width != input_width:
+        raise ValueError(
+            "encoder context width must be raw Qwen "
+            f"({input_width}) or refined H3 ({HIDDEN_SIZE}), got {width}"
+        )
+    return token_refiner(condition_proj(encoder_hidden_states))
+
+
 class H3Int8FeatureBackbone(nn.Module):
     """Frozen H3 backbone exposing selected packed-sequence block features."""
 
@@ -307,7 +335,13 @@ class H3Int8FeatureBackbone(nn.Module):
 
         video = self.video_patch_proj(hidden_states)
         audio = self.audio_patch_proj(audio_hidden_states)
-        text = self.token_refiner(self.condition_proj(encoder_hidden_states))
+        text = _prepare_text_hidden_states(
+            encoder_hidden_states, self.condition_proj, self.token_refiner
+        )
+        if text.shape[1] != text_indices.numel():
+            raise ValueError(
+                "encoder context token count does not match packed text indices"
+            )
         packed = text.new_zeros((1, sequence_length, HIDDEN_SIZE))
         text_indices = text_indices.to(device=packed.device, dtype=torch.long)
         video_indices = video_indices.to(device=packed.device, dtype=torch.long)

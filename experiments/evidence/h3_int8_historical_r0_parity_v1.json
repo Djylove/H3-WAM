@@ -1,0 +1,218 @@
+{
+  "schema_version": 2,
+  "date": "2026-08-14",
+  "scope": "Historical action-head restore and live standalone MiniMax-H3 INT8 rollout on node 30234",
+  "status": "R0_PROVIDER_VALIDATED_BENCHMARK_GATE_FAIL_22_OF_30",
+  "contracts": {
+    "historical_context": "refined H3 multimodal context [1,113|115,5376] with matching token_tags",
+    "historical_comfy_timestep": 1000.0,
+    "native_equivalent_video_timestep": 0.0,
+    "condition_video_timestep": 0.999,
+    "capture_compatibility": "comfy_alias_v1",
+    "feature_shape": [5, 98, 5376],
+    "layers": [9, 19, 29, 39, 49],
+    "rollout_action_horizon": 8,
+    "rollout_feature_audio_horizon": 8,
+    "seed": 42,
+    "trial_index": 0
+  },
+  "root_causes": [
+    {
+      "name": "timestep_domain_inversion",
+      "evidence": "Comfy receives sigma=1000 and internally computes t_video=1-sigma/1000=0; the first native cache incorrectly used curve timestep 1.0."
+    },
+    {
+      "name": "historical_in_place_capture_alias",
+      "evidence": "All five stored historical layer tensors are exactly equal for task0, task3, and push-plate (max_abs_difference=0). The old hook detached but did not clone an in-place-mutated Comfy hidden tensor, so all selected layers became final-layer features."
+    }
+  ],
+  "offline_matching_contract_results": {
+    "task0_h8": {
+      "feature_cosine": 0.980645,
+      "feature_relative_l2": 0.197388,
+      "action_relative_l2": 0.066747,
+      "action_max_abs": 0.050455
+    },
+    "task3_h1_video_lora_reference_early_diagnostic": {
+      "feature_cosine": 0.985133,
+      "feature_relative_l2": 0.173146,
+      "action_relative_l2": 0.059294,
+      "action_max_abs": 0.057666,
+      "contract_note": "This early diagnostic accidentally compared against an H1 video-LoRA feature file. It is retained only as audit history and is not the restored rollout contract."
+    },
+    "task3_h8_video_lora_reference_corrected": {
+      "reference": "/mnt/h3-wam/int8-action/checkpoints/historical/reference/task3/h3_video_features_fixedctx_h8_videolora500_ep000042_s000000.pt",
+      "feature_cosine": 0.986215,
+      "feature_relative_l2": 0.165943,
+      "action_cosine": 0.998907,
+      "action_relative_l2": 0.048736,
+      "action_max_abs": 0.05196,
+      "contract_note": "This is the matching H8 reference used to gate the real rollout. The successful rollout used action_horizon=8, feature_audio_horizon=8, the historical video LoRA, the H8 recovery head, and the learned_switch gate."
+    },
+    "push_plate_h8": {
+      "feature_cosine": 0.928484,
+      "feature_relative_l2": 0.391651,
+      "action_relative_l2": 0.070906,
+      "action_max_abs": 0.06705
+    }
+  },
+  "online_provider_parity": {
+    "task": "task0 historical first-frame latent",
+    "comparison": "standalone online provider output versus corrected offline comfy_alias_v1 H8 cache",
+    "shape": [5, 98, 5376],
+    "exact_equal": true,
+    "max_abs": 0.0,
+    "relative_l2": 0.0,
+    "peak_allocated_gib": 20.026
+  },
+  "vae_helper_parity": {
+    "result": "/mnt/h3-wam/int8-action/results/h3_vae_helper_parity.json",
+    "exact_equal": true,
+    "max_abs": 0.0,
+    "dtype": "float32",
+    "device": "cpu",
+    "official_file_sha256": "fea751a889752ba58f1528acbc23b223e827ea707a75e2ae0c43d4a53ce758af",
+    "official_function_sha256": "f32062d7c23de2e550e985d0f282931f63be555aec176f5e5fbe5d45fd2aea96",
+    "standalone_function_sha256": "ffa844771e9f4c8f646429c26d120852a5303398d5f6e00ec080ee7bca63625a"
+  },
+  "non_policy_failures": [
+    {
+      "class": "startup_transformers_missing",
+      "count_as_policy_result": false,
+      "resolution": "Replaced import of the broad official encoders module with a standalone source-audited VAE helper."
+    },
+    {
+      "class": "startup_accelerate_missing",
+      "count_as_policy_result": false,
+      "resolution": "Installed project-locked accelerate==1.12.0 and psutil into /mnt/h3-wam/runtime/h3-int8-native only; saved install log and before/after freeze."
+    },
+    {
+      "class": "startup_simulator_numpy_shadowing",
+      "count_as_policy_result": false,
+      "resolution": "Removed the exact SIM_SITE_PACKAGES entry only from the policy child PYTHONPATH. Exact-env smoke loaded NumPy 2.4.6 and accelerate 1.12.0 from the isolated policy venv and loaded the official VAE."
+    },
+    {
+      "class": "first_inference_cuda_current_device_mismatch",
+      "count_as_policy_result": false,
+      "affected_task": "push_plate",
+      "resolution": "Bound torch current_device to the configured policy device before comfy_kitchen DLPack calls; reran the same trial and seed."
+    }
+  ],
+  "live_canaries": {
+    "task0": {
+      "result": "/mnt/h3-wam/int8-action/results/historical_online_canary/task0_trial0_seed42/results.json",
+      "video": "/mnt/h3-wam/int8-action/results/historical_online_canary/task0_trial0_seed42/task00_trial00_success1.mp4",
+      "success": true,
+      "steps": 133,
+      "replans": 17,
+      "duration_seconds": 72.36410658701789,
+      "mean_model_inference_seconds": 0.3221814690554953,
+      "mean_policy_roundtrip_seconds": 0.4043191546464668,
+      "peak_allocated_gib": 29.997009754180908,
+      "action_saturation_fraction": 0.0,
+      "contract": "historical base plus fixed switch to recovery head at step 64"
+    },
+    "task3": {
+      "result": "/mnt/h3-wam/int8-action/results/historical_online_canary/task3_trial0_seed42/results.json",
+      "video": "/mnt/h3-wam/int8-action/results/historical_online_canary/task3_trial0_seed42/task03_trial00_success1.mp4",
+      "success": true,
+      "steps": 228,
+      "replans": 29,
+      "duration_seconds": 98.664043621975,
+      "mean_model_inference_seconds": 0.30193991846694,
+      "mean_policy_roundtrip_seconds": 0.3526914078934953,
+      "peak_allocated_gib": 30.078649044036865,
+      "action_saturation_fraction": 0.0,
+      "contract": "H8 base plus H8 recovery, video LoRA, and learned_switch threshold 0.1"
+    },
+    "push_plate": {
+      "result": "/mnt/h3-wam/int8-action/results/historical_online_canary/push_plate_trial0_seed42/results.json",
+      "video": "/mnt/h3-wam/int8-action/results/historical_online_canary/push_plate_trial0_seed42/task05_trial00_success1.mp4",
+      "success": true,
+      "steps": 147,
+      "replans": 19,
+      "duration_seconds": 73.45057817804627,
+      "mean_model_inference_seconds": 0.3082479618575522,
+      "mean_policy_roundtrip_seconds": 0.3655400678552197,
+      "peak_allocated_gib": 29.9747896194458,
+      "action_saturation_fraction": 0.0,
+      "contract": "historical H8 base action head"
+    }
+  },
+  "r0_30_episode_regression": {
+    "protocol": "Existing fixed trial0 plus trial indices 1-9 for each task; seed=42; no replacement trials or alternate seeds",
+    "gate": ">=26/30",
+    "gate_pass": false,
+    "successes": 22,
+    "episodes": 30,
+    "success_rate": 0.7333333333333333,
+    "total_replans": 827,
+    "replan_weighted_model_inference_seconds": 0.2595432059102587,
+    "replan_weighted_policy_roundtrip_seconds": 0.30169915873613634,
+    "max_peak_allocated_gib": 30.078649044036865,
+    "by_task": {
+      "task0": {
+        "successes": 8,
+        "episodes": 10,
+        "success_rate": 0.8,
+        "mean_steps": 184.3,
+        "total_replans": 234,
+        "replan_weighted_model_inference_seconds": 0.25489922679122934,
+        "replan_weighted_policy_roundtrip_seconds": 0.2986552739644256,
+        "max_peak_allocated_gib": 29.997009754180908,
+        "failed_trials": [3, 7],
+        "failure_summary": "Both failures moved the bowl/plate substantially while the requested middle drawer stayed closed, indicating wrong-object motion rather than a static policy."
+      },
+      "task3": {
+        "successes": 7,
+        "episodes": 10,
+        "success_rate": 0.7,
+        "mean_steps": 252.2,
+        "total_replans": 319,
+        "replan_weighted_model_inference_seconds": 0.2715835850813563,
+        "replan_weighted_policy_roundtrip_seconds": 0.3136845065388817,
+        "max_peak_allocated_gib": 30.078649044036865,
+        "failed_trials": [4, 6, 7],
+        "failure_summary": "Trials 4 and 6 moved the plate instead of the bowl/drawer; trial 7 opened the correct top drawer by 0.13688 but did not place the bowl, exposing object selection and multi-stage completion failures."
+      },
+      "push_plate": {
+        "successes": 7,
+        "episodes": 10,
+        "success_rate": 0.7,
+        "mean_steps": 217.5,
+        "total_replans": 274,
+        "replan_weighted_model_inference_seconds": 0.24949141816672848,
+        "replan_weighted_policy_roundtrip_seconds": 0.2903449364277589,
+        "max_peak_allocated_gib": 29.9747896194458,
+        "failed_trials": [1, 4, 7],
+        "failure_summary": "All failures moved the plate (0.16883-0.24275 joint delta) but did not reach the success region, indicating endpoint/control robustness rather than no-action collapse."
+      }
+    },
+    "result_files": {
+      "task0_trials1_9": "/mnt/h3-wam/int8-action/results/historical_online_canary/task0_trials1_9_seed42/results.json",
+      "task3_trials1_9": "/mnt/h3-wam/int8-action/results/historical_online_canary/task3_trials1_9_seed42/results.json",
+      "push_plate_trials1_9": "/mnt/h3-wam/int8-action/results/historical_online_canary/push_plate_trials1_9_seed42/results.json"
+    },
+    "result_sha256": {
+      "task0_trials1_9": "5bfac2e66821640414ea6f4db156e02447069c6f358671a4222fc0a1f4fc5a5a",
+      "task3_trials1_9": "1680d39fef216cab6ba62be23ae97991c14fd606047176ab3ea84bfc1f581e91",
+      "push_plate_trials1_9": "6f9cfcc7365b28f7c7cba830354f80c12c994518b10696f631a2c9b4cbeb92bf"
+    }
+  },
+  "tests": {
+    "command": "PYTHONPATH=src /mnt/h3-wam/runtime/h3-int8-native/bin/python -m pytest -q tests/test_policy_environment.py tests/test_h3_int8_online.py tests/test_h3wam_lora.py tests/test_h3wam_int8_backbone.py tests/test_h3_int8_precompute.py",
+    "result": "23 passed"
+  },
+  "cloud_artifacts": {
+    "offline_results": "/mnt/h3-wam/int8-action/results/r0_refined_t0_alias",
+    "online_results": "/mnt/h3-wam/int8-action/results/historical_online_canary",
+    "runtime_audit": "/mnt/h3-wam/int8-action/results/runtime_audit",
+    "online_context_cache": "/mnt/h3-wam/int8-action/cache/historical_online",
+    "offline_source_features": "/mnt/h3-wam/int8-action/cache/r0_refined_parity/refined_h3_t0_cond0999_h{1,8,32}_multilayer98",
+    "offline_compatibility_features": "/mnt/h3-wam/int8-action/cache/r0_refined_parity/refined_h3_t0_cond0999_h{1,8,32}_comfy_alias_v1_multilayer98"
+  },
+  "decision": {
+    "reason": "The restored standalone online path exactly matches its corrected offline provider output and all three fixed canaries passed, so the H3 INT8 deployment contract is valid. The frozen 30-episode regression reached only 22/30 (73.33%), below the preregistered 26/30 gate; therefore the current historical action system is not robust enough to claim a stable R0 policy.",
+    "next_gate": "Do not tune the provider contract or add replacement seeds. Preserve the exact provider and focus the next action-learning experiment on object/task grounding, multi-stage completion, and endpoint robustness, then evaluate on the same frozen 30-trial protocol."
+  }
+}

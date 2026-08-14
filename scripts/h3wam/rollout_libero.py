@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import socket
 import subprocess
 import sys
@@ -21,11 +20,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from fastwam.policy_environment import standalone_policy_environment
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--policy", choices=("h3", "h3_feature", "baseline"), required=True
+        "--policy",
+        choices=("h3", "h3_feature", "h3_feature_int8", "baseline"),
+        required=True,
     )
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument(
@@ -87,6 +90,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--startup-timeout", type=float, default=180.0)
     parser.add_argument("--comfy-root", type=Path)
     parser.add_argument("--h3-checkpoint", type=Path)
+    parser.add_argument("--h3-model", type=Path)
+    parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--target-latent-frames", type=int, default=12)
+    parser.add_argument("--h3-feature-audio-horizon", type=int)
     parser.add_argument(
         "--h3-tail-delta",
         type=Path,
@@ -208,6 +215,38 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
             if args.text_encoder is None:
                 raise ValueError("online context modes require --text-encoder")
             command.extend(("--text-encoder", str(args.text_encoder.resolve())))
+    elif args.policy == "h3_feature_int8":
+        for flag, value in (
+            ("--h3-checkpoint", args.h3_checkpoint),
+            ("--h3-model", args.h3_model),
+        ):
+            if value is None:
+                raise ValueError(f"standalone INT8 H3 rollout requires {flag}")
+            command.extend((flag, str(value.resolve())))
+        command.extend(
+            (
+                "--device",
+                args.device,
+                "--target-latent-frames",
+                str(args.target_latent_frames),
+            )
+        )
+        if args.h3_feature_audio_horizon is not None:
+            command.extend(
+                (
+                    "--h3-feature-audio-horizon",
+                    str(args.h3_feature_audio_horizon),
+                )
+            )
+        if args.h3_video_lora_checkpoint is not None:
+            command.extend(
+                (
+                    "--h3-video-lora-checkpoint",
+                    str(args.h3_video_lora_checkpoint.resolve()),
+                )
+            )
+        if args.h3_tail_delta is not None:
+            raise ValueError("standalone INT8 rollout does not support H3 tail delta")
     if args.h3_action_mode is not None:
         command.extend(("--h3-action-mode", str(args.h3_action_mode)))
     for checkpoint in args.h3_feature_ensemble_checkpoint:
@@ -238,6 +277,18 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
             ("--h3-feature-gate-threshold", str(args.h3_feature_gate_threshold))
         )
     return command
+
+
+def policy_environment() -> dict[str, str]:
+    """Keep simulator-only wheels out of the standalone policy process.
+
+    ``run_cloud_libero.sh`` prepends the LIBERO wheel directory to PYTHONPATH
+    for the simulator.  The policy uses its own virtualenv and must not import
+    NumPy (or any other package) from that directory; mixing the imported
+    NumPy with virtualenv package metadata breaks accelerate's version gates.
+    """
+
+    return standalone_policy_environment()
 
 
 def wait_for_server(process: subprocess.Popen, ready_file: Path, timeout: float) -> None:
@@ -425,7 +476,7 @@ def run_episode(
             episode_key,
             step,
             previous_action,
-            np.asarray(executed_actions, dtype=np.float32),
+            np.asarray(executed_actions[-16:], dtype=np.float32),
         )
         if trajectory is not None:
             trajectory["policy_actions"].append(actions.copy())
@@ -594,7 +645,7 @@ def main() -> None:
         cwd=REPO_ROOT,
         stdout=server_log,
         stderr=subprocess.STDOUT,
-        env=os.environ.copy(),
+        env=policy_environment(),
     )
     connection = None
     all_results = {

@@ -1,0 +1,154 @@
+{
+  "experiment_id": "h3_int8_starwam_feature_scale_ablation_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "On identical real H3 last32 windows and seeds, multiplying cached H3 features by the pre-registered text-RMS/feature-RMS ratio 0.009606920816877307 prevents the step-2 loss, prediction-variance and gradient explosion seen at scale 1 while preserving non-zero gradients, a non-zero optimizer update and exact fresh-process restore.",
+  "single_variable": "feature_input_scale: raw arm 1.0 versus RMS-match arm 0.009606920816877307; every other resolved argument, sample, seed and source byte is fixed.",
+  "parent_baseline": "The raw scale=1 arm rerun under the same clean feature-timestep-token implementation; the earlier depth2 run produced loss 10944 -> 7143424 and prediction_std 159.175 -> 3953.595, motivating but not substituting for the paired rerun.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "Fast-WAM: Can Video Generation Models Act as World-Action Models?",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "v1",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "shaohua-pan/StarWAM feature-conditioned action model",
+      "locator": "https://github.com/shaohua-pan/StarWAM",
+      "revision": "cd76d96f273f81e228a05f40f9697fe2514e2356",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "fastwam_deploy standalone INT8-H3 StarWAM action trainer",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "dab8058 plus isolated R1 trainer, wrapper, tests and dossier diff",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "ActionDiT source, clean feature-timestep token and H3 feature adapter",
+        "paper": "An action diffusion transformer consumes world-model observation features.",
+        "upstream_code": "Pinned ActionDiT/WanBlock source; FeatureConditionedActionModel implements an optional feature-timestep token, although the released LIBERO feature YAML sets feature_condition_include_timestep=false.",
+        "local": "Byte-pinned ActionDiT plus a fixed clean-observation t=0 token and a scalar before the H3 feature projector; both arms use the same token and differ only in scalar value.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/StarWAM/starwam/modules/action_dit.py sha256=b6cd067cac448d8f4dba20f3778bae9bef622f58bdd854b1dfccc190d9dcf8b1",
+          "third_party/StarWAM/starwam/modules/wan_block.py sha256=303344329ba63692616494e40dd3b2288945d329d905e38c1bdcc26af5467524",
+          "src/fastwam/models/h3wam/starwam_feature_action.py"
+        ],
+        "rationale": "The clean token explicitly separates StarWAM conditioning time t=0 from the cached H3 denoising-curve capture at t=1; it is held fixed in the scale ablation and recorded as a deviation from the released LIBERO YAML."
+      }
+    ],
+    "data": [
+      {
+        "field": "paired windows and pre-registered feature scale",
+        "paper": "Dense robot demonstration windows with observation features.",
+        "upstream_code": "32 action steps and observation tokens pooled to 32 positions.",
+        "local": "Both arms use the same four unique windows from the 277713-window manifest; scale is fixed from 512 feature samples and all 40 task text contexts before execution.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "experiments/results/h3_int8_last32_feature_scale_audit_512.json",
+          "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl sha256=5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8"
+        ],
+        "rationale": "Window/action length and token pooling match while backbone-specific latent magnitude is the controlled variable."
+      }
+    ],
+    "action": [
+      {
+        "field": "action/state representation and normalization",
+        "paper": "Continuous chunked robot actions.",
+        "upstream_code": "Seven-dimensional 32-step actions and eight-dimensional proprio, min/max mapped to [-1,1], clipped to [-5,5].",
+        "local": "Identical dimensions and pinned StarWAM normalization in both arms, including action pad masking.",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_int8_starwam_action.py",
+          "tests/test_h3_int8_starwam_action_trainer.py"
+        ],
+        "rationale": "No action contract variable changes between arms."
+      }
+    ],
+    "objective": [
+      {
+        "field": "flow scheduler, target and loss",
+        "paper": "Continuous flow matching for action generation.",
+        "upstream_code": "Shift-5 scheduler and timestep-weighted masked flow-matching MSE.",
+        "local": "Direct imports from the fixed StarWAM commit, identical seeds and objectives in both arms.",
+        "status": "EXACT",
+        "evidence": [
+          "third_party/StarWAM/starwam/modules/scheduler.py",
+          "third_party/StarWAM/starwam/training/loss.py"
+        ],
+        "rationale": "The scale ablation does not alter flow parameterization."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "paired bounded mechanical budget",
+        "paper": "Full policy learning requires many epochs.",
+        "upstream_code": "AdamW LR1e-4, WD0.01, betas(0.9,0.95), clip1 and BF16.",
+        "local": "Same optimizer, two 2-GPU arms, depth2, two optimizer steps, batch1/GPU and identical seed42; this diagnoses stability only.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "decision.launch_command",
+          "scripts/h3wam/train_h3_int8_starwam_action.py"
+        ],
+        "rationale": "The bounded paired budget is deliberately too small for an effectiveness claim."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "pre-registered stability predicate",
+        "paper": "Closed-loop LIBERO success is the final policy metric.",
+        "upstream_code": "LIBERO rollout is the policy-quality endpoint.",
+        "local": "Scaled arm passes only if restore max_abs=0, all three gradient paths and head update are finite/non-zero, step2/step1 loss<=2, prediction_std<=2, expert-gradient<=10 and projector-gradient<=10; raw is measured with the same predicate.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "experiments/evidence/h3_int8_starwam_feature_scale_ablation_v1.json",
+          "scripts/h3wam/train_h3_int8_starwam_action.py"
+        ],
+        "rationale": "This is a pre-training stability gate, not action quality or generalization evidence."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["StarWAM commit and ActionDiT/WanBlock hashes are enforced at import"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["10 local wrapper/trainer/precompute tests pass before launch"]},
+    "data_contract": {"status": "PASS", "evidence": ["strict cache metadata plus fixed manifest/stats hashes"]},
+    "action_contract": {"status": "PASS", "evidence": ["normalization, shapes and pad mask unit-tested"]},
+    "objective_contract": {"status": "PASS", "evidence": ["pinned StarWAM scheduler and loss used directly"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["paired commands fix every argument except feature_input_scale"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["numeric step-ratio, finite-gradient, update and exact-restore thresholds pre-registered above"]},
+    "gradient_path": {"status": "PASS", "evidence": ["CPU unit test reaches ActionDiT head and feature projector; real values are required after canary"]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["pending paired A800 run"]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["pending paired fresh-process restore"]},
+    "parent_baseline": {"status": "FAIL", "evidence": ["pending exact raw-scale paired arm"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["pending scale-separated stability signal"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["out of scope for the mechanical scale gate"]}
+  },
+  "budget": {
+    "global_batch": 4,
+    "optimizer_steps": 2,
+    "training_samples": 8,
+    "unique_windows": 4,
+    "effective_epochs": 0.000014403371106718591,
+    "gpu_count": 4,
+    "estimated_hours": 0.2
+  },
+  "decision": {
+    "status": "NO_GO",
+    "rationale": "Completed diagnostic: RMS matching greatly reduced absolute scale but failed every pre-registered step-ratio stability threshold when the non-recipe timestep token was enabled and the official warmup schedule was absent. Do not promote this configuration.",
+    "launch_command": null
+  },
+  "result": {
+    "raw": {"loss": [3984.0, 7405568.0], "prediction_std": [94.75717163085938, 3868.1015625], "restore_max_abs": 0.0},
+    "rms_match": {"loss": [1.3359375, 880.0], "prediction_std": [1.4188505411148071, 42.60847091674805], "restore_max_abs": 0.0},
+    "diagnosis": "Feature magnitude was causal but insufficient. The released LIBERO recipe disables the timestep token and uses warmup1000; both were corrected in v2."
+  }
+}

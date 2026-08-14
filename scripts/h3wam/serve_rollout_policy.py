@@ -22,7 +22,9 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--policy", choices=("h3", "h3_feature", "baseline"), required=True
+        "--policy",
+        choices=("h3", "h3_feature", "h3_feature_int8", "baseline"),
+        required=True,
     )
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument(
@@ -57,6 +59,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--comfy-root", type=Path)
     parser.add_argument("--h3-checkpoint", type=Path)
+    parser.add_argument(
+        "--h3-model",
+        type=Path,
+        help="Official MiniMax-H3 model root; INT8 live rollout loads its VAE.",
+    )
+    parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--target-latent-frames", type=int, default=12)
+    parser.add_argument(
+        "--h3-feature-audio-horizon",
+        type=int,
+        help="Packed H3 audio length when it differs from the action-head horizon.",
+    )
     parser.add_argument(
         "--h3-tail-delta",
         type=Path,
@@ -523,16 +537,26 @@ class H3FeaturePolicy(CachedContextMixin):
     """Frozen H3 video expert plus an independent cross-attention action expert."""
 
     def __init__(self, args: argparse.Namespace) -> None:
-        if args.comfy_root is None or args.h3_checkpoint is None or args.video_vae is None:
+        self.feature_runtime = (
+            "int8" if args.policy == "h3_feature_int8" else "comfy"
+        )
+        if args.h3_checkpoint is None:
+            raise ValueError("H3 feature policy requires --h3-checkpoint")
+        if self.feature_runtime == "comfy" and (
+            args.comfy_root is None or args.video_vae is None
+        ):
             raise ValueError(
                 "H3 feature policy requires --comfy-root, --h3-checkpoint and --video-vae"
             )
+        if self.feature_runtime == "int8" and args.h3_model is None:
+            raise ValueError("standalone INT8 H3 feature policy requires --h3-model")
         if args.context_mode != "cached":
             raise ValueError("H3 feature policy currently requires cached context mode")
-        sys.path.insert(0, str(args.comfy_root.resolve()))
-        import comfy.model_management as model_management
-        import comfy.sd
-        import comfy.utils
+        if self.feature_runtime == "comfy":
+            sys.path.insert(0, str(args.comfy_root.resolve()))
+            import comfy.model_management as model_management
+            import comfy.sd
+            import comfy.utils
 
         from fastwam.models.h3wam import (
             H3FeatureActionTransformer,
@@ -545,9 +569,19 @@ class H3FeaturePolicy(CachedContextMixin):
         )
 
         super().__init__(args.cache_root)
-        self.model_management = model_management
-        model_management.in_training = False
-        self.device = model_management.get_torch_device()
+        self.model_management = None
+        if self.feature_runtime == "comfy":
+            self.model_management = model_management
+            model_management.in_training = False
+            self.device = model_management.get_torch_device()
+        else:
+            self.device = torch.device(args.device)
+            if self.device.type != "cuda":
+                raise ValueError("standalone INT8 online rollout requires a CUDA device")
+            # comfy_kitchen's DLPack CUDA backend uses the process current
+            # device as well as each tensor's device.  Keep both contracts in
+            # sync when parallel canaries bind policy servers to cuda:1+.
+            torch.cuda.set_device(self.device)
         checkpoint = torch.load(
             args.checkpoint.resolve(), map_location="cpu", weights_only=False
         )
@@ -706,14 +740,26 @@ class H3FeaturePolicy(CachedContextMixin):
             if not 0.0 < self.switch_gate_threshold < 1.0:
                 raise ValueError("feature-gate threshold must be between zero and one")
 
-        self.h3_patcher = comfy.sd.load_diffusion_model(
-            str(args.h3_checkpoint.resolve())
-        )
-        model_management.load_models_gpu([self.h3_patcher])
-        self.h3_model = self.h3_patcher.model.diffusion_model
+        self.h3_patcher = None
+        self.int8_feature_provider = None
+        self._encode_vae_condition = None
+        if self.feature_runtime == "comfy":
+            self.h3_patcher = comfy.sd.load_diffusion_model(
+                str(args.h3_checkpoint.resolve())
+            )
+            model_management.load_models_gpu([self.h3_patcher])
+            self.h3_model = self.h3_patcher.model.diffusion_model
+        else:
+            from fastwam.models.h3wam import H3Int8FeatureBackbone
+
+            self.h3_model = H3Int8FeatureBackbone.from_checkpoint(
+                args.h3_checkpoint.resolve()
+            ).to(self.device)
         self.h3_model.requires_grad_(False).eval()
         self.tail_delta_report = None
         if args.h3_tail_delta is not None:
+            if self.feature_runtime != "comfy":
+                raise ValueError("H3 tail delta is not supported by the INT8 runtime")
             if args.h3_video_lora_checkpoint is not None or checkpoint.get("h3_lora"):
                 raise ValueError("use either an H3 tail delta or H3 LoRA, not both")
             self.tail_delta_report = load_h3_comfy_feature_delta(
@@ -745,7 +791,7 @@ class H3FeaturePolicy(CachedContextMixin):
             # wrapped module. Its training dispatch calls the wrapper normally,
             # which is required for fc2 LoRA while still running under
             # torch.inference_mode here.
-            if include_mlp_lora:
+            if include_mlp_lora and self.feature_runtime == "comfy":
                 model_management.in_training = True
             inject_h3_attention_lora(
                 self.h3_model,
@@ -756,9 +802,43 @@ class H3FeaturePolicy(CachedContextMixin):
             )
             load_h3_lora_state_dict(self.h3_model, h3_lora)
             self.h3_model.eval()
-        vae_state = comfy.utils.load_torch_file(str(args.video_vae.resolve()))
-        self.video_vae = comfy.sd.VAE(sd=vae_state)
-        del vae_state
+        if self.feature_runtime == "comfy":
+            vae_state = comfy.utils.load_torch_file(str(args.video_vae.resolve()))
+            self.video_vae = comfy.sd.VAE(sd=vae_state)
+            del vae_state
+        else:
+            from diffusers import AutoencoderKLMiniMaxH3
+            from fastwam.models.h3wam import (
+                H3Int8OnlineFeatureContract,
+                H3Int8OnlineFeatureProvider,
+                encode_h3_vae_condition_standalone,
+            )
+
+            feature_audio_horizon = (
+                self.horizon
+                if args.h3_feature_audio_horizon is None
+                else int(args.h3_feature_audio_horizon)
+            )
+            if feature_audio_horizon <= 0:
+                raise ValueError("h3-feature-audio-horizon must be positive")
+            self.int8_feature_provider = H3Int8OnlineFeatureProvider(
+                self.h3_model,
+                H3Int8OnlineFeatureContract(
+                    layers=self.feature_layers,
+                    action_horizon=feature_audio_horizon,
+                    target_latent_frames=args.target_latent_frames,
+                    video_timestep=0.0,
+                    condition_video_timestep=0.999,
+                    capture_compatibility="comfy_alias_v1",
+                ),
+            )
+            self.video_vae = AutoencoderKLMiniMaxH3.from_pretrained(
+                args.h3_model.resolve(),
+                subfolder="vae",
+                torch_dtype=torch.float32,
+                low_cpu_mem_usage=True,
+            ).to(self.device).eval()
+            self._encode_vae_condition = encode_h3_vae_condition_standalone
         self.binarize_gripper = args.binarize_gripper
         self.action_median_window = args.action_median_window
         self.action_scale = float(args.action_scale)
@@ -808,46 +888,74 @@ class H3FeaturePolicy(CachedContextMixin):
             request["agentview_image"], request["wristview_image"]
         )
         encode_started = time.perf_counter()
-        first_frame = self.video_vae.encode(pixels).to(
-            device=self.device, dtype=torch.bfloat16
-        )
-        self.model_management.load_models_gpu([self.h3_patcher])
+        if self.feature_runtime == "comfy":
+            first_frame = self.video_vae.encode(pixels).to(
+                device=self.device, dtype=torch.bfloat16
+            )
+            assert self.model_management is not None
+            assert self.h3_patcher is not None
+            self.model_management.load_models_gpu([self.h3_patcher])
+        else:
+            assert self._encode_vae_condition is not None
+            video = (
+                pixels.mul(255.0)
+                .round()
+                .to(torch.uint8)
+                .permute(0, 3, 1, 2)
+                .unsqueeze(2)
+                .to(self.device)
+            )
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                first_frame = self._encode_vae_condition(
+                    self.video_vae,
+                    video,
+                    (0.485, 0.456, 0.406),
+                    (0.229, 0.224, 0.225),
+                ).to(device=self.device, dtype=torch.float32)
         torch.cuda.synchronize(self.device)
         encode_seconds = time.perf_counter() - encode_started
 
-        text_len = int(task_context["context"].shape[1])
-        frame_rows = int(
-            first_frame.shape[2]
-            * (first_frame.shape[3] // 2)
-            * (first_frame.shape[4] // 2)
-        )
-        capture = H3BlockFeatureCapture(
-            self.feature_layers,
-            token_start=text_len,
-            token_stop=text_len + frame_rows,
-        )
-        payload = make_first_frame_payload(first_frame, frame_count=39)
-        payload["text_token_tags"] = task_context["token_tags"].to(self.device)
         h3_started = time.perf_counter()
-        self.h3_model(
-            [
-                torch.zeros(
-                    (1, 24, 12, first_frame.shape[-2], first_frame.shape[-1]),
-                    device=self.device,
-                    dtype=torch.bfloat16,
-                ),
-                torch.zeros(
-                    (1, 32, 2, self.horizon),
-                    device=self.device,
-                    dtype=torch.float32,
-                ),
-            ],
-            torch.tensor([self.feature_timestep], device=self.device),
-            task_context["context"],
-            transformer_options=capture.transformer_options(),
-            minimax_payload=payload,
-        )
-        features = capture.stacked().unsqueeze(0)
+        if self.feature_runtime == "comfy":
+            text_len = int(task_context["context"].shape[1])
+            frame_rows = int(
+                first_frame.shape[2]
+                * (first_frame.shape[3] // 2)
+                * (first_frame.shape[4] // 2)
+            )
+            capture = H3BlockFeatureCapture(
+                self.feature_layers,
+                token_start=text_len,
+                token_stop=text_len + frame_rows,
+            )
+            payload = make_first_frame_payload(first_frame, frame_count=39)
+            payload["text_token_tags"] = task_context["token_tags"].to(self.device)
+            self.h3_model(
+                [
+                    torch.zeros(
+                        (1, 24, 12, first_frame.shape[-2], first_frame.shape[-1]),
+                        device=self.device,
+                        dtype=torch.bfloat16,
+                    ),
+                    torch.zeros(
+                        (1, 32, 2, self.horizon),
+                        device=self.device,
+                        dtype=torch.float32,
+                    ),
+                ],
+                torch.tensor([self.feature_timestep], device=self.device),
+                task_context["context"],
+                transformer_options=capture.transformer_options(),
+                minimax_payload=payload,
+            )
+            features = capture.stacked().unsqueeze(0)
+        else:
+            assert self.int8_feature_provider is not None
+            features = self.int8_feature_provider(
+                first_frame,
+                task_context["context"],
+                task_context["token_tags"].to(self.device),
+            )
         if self.feature_ablation == "zero":
             features = torch.zeros_like(features)
         torch.cuda.synchronize(self.device)
@@ -1098,7 +1206,16 @@ class H3FeaturePolicy(CachedContextMixin):
             "h3_feature_seconds": h3_seconds,
             "action_model_seconds": action_seconds,
             "h3_feature_ablation": self.feature_ablation,
-            "h3_feature_timestep": self.feature_timestep,
+            "h3_feature_runtime": self.feature_runtime,
+            "h3_feature_timestep": (
+                self.feature_timestep if self.feature_runtime == "comfy" else 0.0
+            ),
+            "h3_condition_video_timestep": (
+                None if self.feature_runtime == "comfy" else 0.999
+            ),
+            "h3_capture_compatibility": (
+                None if self.feature_runtime == "comfy" else "comfy_alias_v1"
+            ),
             "h3_tail_delta_source_step": (
                 None
                 if self.tail_delta_report is None
@@ -1142,7 +1259,7 @@ def main() -> None:
     torch.manual_seed(args.seed)
     if args.policy == "h3":
         policy = H3Policy(args)
-    elif args.policy == "h3_feature":
+    elif args.policy in ("h3_feature", "h3_feature_int8"):
         policy = H3FeaturePolicy(args)
     else:
         policy = BaselinePolicy(args)

@@ -1,0 +1,65 @@
+{
+  "result_id": "h3_int8_starwam_split_native_full30_v1",
+  "trainer_sha256": "33d1306f982b5e99353fb661cd9aac824b6ca3c8456f74bd59c65210f079c1df",
+  "wrapper_sha256": "391687222bff3a298375694fe3030826a7a39110f329635d2db447a4c29fc1fa",
+  "data_contract": {
+    "source_manifest_sha256": "5a5f605ed1607a38c22a6cdb892d660bf7a8e046eb2e69af62aa8a035ae5f5d8",
+    "source_manifest_items": 277713,
+    "train_split_manifest_sha256": "a4ad2a7955f539c2f709912d423bfa892688885ed14144a9988595de14b8e78c",
+    "train_split_manifest_items": 250035,
+    "val_split_manifest_sha256": "df0c6ab6efce8a89e5c249548a17a34f386b388b614b417ec531fb10113a4fa6",
+    "val_split_manifest_items": 27678,
+    "train_val_episode_overlap": 0
+  },
+  "configuration": {
+    "action_layers": 30,
+    "feature_input_scale": 0.009606920816877307,
+    "include_feature_timestep": false,
+    "warmup_steps": 1000,
+    "scheduler_horizon": 21700,
+    "gpu_count": 8,
+    "global_batch": 8,
+    "gradient_accumulation": 1
+  },
+  "samples": {
+    "logged": 800,
+    "unique": 800,
+    "all_in_train_split": true,
+    "cross_stage_overlap": 0,
+    "stages": {
+      "s1": {"steps": [1, 1], "logged": 8, "unique": 8},
+      "s50": {"steps": [2, 50], "logged": 392, "unique": 392},
+      "s100": {"steps": [51, 100], "logged": 400, "unique": 400}
+    }
+  },
+  "metrics": {
+    "loss": {"min": 0.047119140625, "max": 185.0, "first": 26.25, "last": 3.890625},
+    "prediction_std": {"min": 0.5236116647720337, "max": 9.256433486938477, "first": 7.626850605010986, "last": 0.9591401815414429},
+    "expert_gradient_norm_max": 54504.7109375,
+    "feature_projector_gradient_norm_max": 32132.564453125,
+    "all_finite": true,
+    "all_gradient_paths_and_updates_positive": true,
+    "pre_registered_thresholds_passed": true
+  },
+  "checkpoints": {
+    "s1": {"schema_version": 2, "scheduler_epoch": 1, "optimizer_learning_rate": 1.9990000000000004e-07, "fresh_restore_max_abs": 0.0},
+    "s50": {"schema_version": 2, "scheduler_epoch": 50, "optimizer_learning_rate": 5.094999999999997e-06, "fresh_restore_max_abs": 0.0},
+    "s100": {"schema_version": 2, "scheduler_epoch": 100, "optimizer_learning_rate": 1.0089999999999993e-05, "fresh_restore_max_abs": 0.0}
+  },
+  "decision": {
+    "status": "GO_BALANCED_VAL",
+    "go_long": false,
+    "rationale": "The train-split-native checkpoints are stable, exactly resumable and leakage-eligible for a frozen balanced-val comparison. Effectiveness is not yet established."
+  },
+  "artifacts": [
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s1_train.json",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s1.pt",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s1_restore.json",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s50_train.json",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s50.pt",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s50_restore.json",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s100_train.json",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s100.pt",
+    "/mnt/h3-wam/outputs/h3-int8-starwam/r1_split_native_full30_v1_s100_restore.json"
+  ]
+}

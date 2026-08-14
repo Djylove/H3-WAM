@@ -1,0 +1,168 @@
+{
+  "schema": "h3wam_closed_loop_comparison_v1",
+  "created_at": "2026-08-14T14:50:26+08:00",
+  "status": "completed_not_evidence_ready",
+  "hypothesis": "A four-layer DoT action carrier whose causal validation loss beats the one-layer parent will improve fixed-protocol LIBERO task success.",
+  "selection": {
+    "step1000": {
+      "role": "first checkpoint to beat the one-layer parent final causal validation loss",
+      "causal_val40_action_mean": 0.104876207
+    },
+    "step1600": {
+      "role": "best depth-four checkpoint on the unified causal val40 curve",
+      "causal_val40_action_mean": 0.097111728
+    },
+    "one_layer_parent_final_causal_val40_action_mean": 0.1091902
+  },
+  "protocol": {
+    "suite": "libero_goal",
+    "task_id": 3,
+    "task": "open the top drawer and put the bowl inside",
+    "trial_indices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    "seed": 0,
+    "max_steps": 400,
+    "wait_steps": 30,
+    "replan_steps": 10,
+    "action_horizon": 32,
+    "sample_steps": 10,
+    "text_only_context": true,
+    "clip_normalized_actions": true,
+    "binarize_gripper": true,
+    "save_video": true,
+    "save_trajectories": true,
+    "world_size_per_candidate": 4,
+    "parallel_gpu_groups": {
+      "step1000": [0, 1, 2, 3],
+      "step1600": [4, 5, 6, 7]
+    }
+  },
+  "data": {
+    "manifest": "/mnt/h3-wam/data/v8_multisuite_frameindexed_candidate/manifest_train_uniform.jsonl",
+    "manifest_rows": 277713,
+    "task3_training_windows": 6702,
+    "task3_training_episodes": 33,
+    "cache_root": "/mnt/h3-wam/data/v8_frameindexed_h3_cache",
+    "task3_context_id": "task_7bfd2c16634155c7"
+  },
+  "results": {
+    "step1000": {
+      "checkpoint": "/mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_random_gb128_s2170_step001000.pt",
+      "checkpoint_format": "h3dotwam_stage_v2",
+      "declared_action_layers": 4,
+      "observed_action_layers": 4,
+      "episodes": 10,
+      "successes": 0,
+      "success_rate": 0.0,
+      "duration_seconds": 1102.87840476993,
+      "mean_inference_seconds": 0.450602069949091,
+      "full_horizon_policy_mean_abs_motion6": 0.11338058114051819,
+      "replan_previous_action_mean_abs_motion6": 0.10998772829771042,
+      "executed_first10_mean_abs_motion6": 0.1151684308424592,
+      "policy_motion6_clip_fraction": 0.0,
+      "executed_motion6_clip_fraction": 0.0,
+      "full_horizon_gripper_close_fraction": 0.34828125,
+      "executed_first10_gripper_close_fraction": 0.283,
+      "episodes_bowl_delta_gt_0_1": 8,
+      "episodes_top_drawer_delta_gt_0_05": 1,
+      "episodes_both_subgoals_moved": 0,
+      "episodes_any_distractor_delta_gt_0_1": 9,
+      "mean_max_object_joint_delta": 0.4571003516952866
+    },
+    "step1600": {
+      "checkpoint": "/mnt/h3-wam/outputs/h3dotwam-depth/h3dotwam_depth4_random_gb128_s2170_step001600.pt",
+      "checkpoint_format": "h3dotwam_stage_v2",
+      "declared_action_layers": 4,
+      "observed_action_layers": 4,
+      "episodes": 10,
+      "successes": 0,
+      "success_rate": 0.0,
+      "duration_seconds": 1093.0979709919775,
+      "mean_inference_seconds": 0.4487834884651238,
+      "full_horizon_policy_mean_abs_motion6": 0.11444206535816193,
+      "replan_previous_action_mean_abs_motion6": 0.11253809928894043,
+      "executed_first10_mean_abs_motion6": 0.11795506626367551,
+      "policy_motion6_clip_fraction": 0.0,
+      "executed_motion6_clip_fraction": 0.0,
+      "full_horizon_gripper_close_fraction": 0.185078125,
+      "executed_first10_gripper_close_fraction": 0.16575,
+      "episodes_bowl_delta_gt_0_1": 7,
+      "episodes_top_drawer_delta_gt_0_05": 1,
+      "episodes_both_subgoals_moved": 0,
+      "episodes_any_distractor_delta_gt_0_1": 6,
+      "mean_max_object_joint_delta": 0.38549738730091504
+    }
+  },
+  "trajectory_attribution": {
+    "expert_reference": {
+      "source": "All 6702 action rows from the same task's 33 training episodes",
+      "translation_mean_abs": 0.3299761116504669,
+      "rotation_mean_abs": 0.029931312426924706,
+      "motion_mean": [0.081189, 0.003924, -0.094661, -0.000266, 0.00048, -0.002327],
+      "motion_mean_abs": [0.328949, 0.211141, 0.44984, 0.015464, 0.045783, 0.028547],
+      "consecutive_motion_delta_l2_mean": 0.09123557806015015,
+      "gripper_close_fraction": 0.359146523425843,
+      "gripper_switches_per_episode_mean": 2.4242424242424243
+    },
+    "step1000": {
+      "translation_mean_abs": 0.20187699794769287,
+      "rotation_mean_abs": 0.028459863737225533,
+      "motion_mean": [-0.038924, 0.068109, -0.139246, -0.004731, 0.005037, -0.011495],
+      "within_chunk_motion_delta_l2_mean": 0.06180700659751892,
+      "replan_seam_motion_delta_l2_mean": 0.4412536323070526,
+      "replan_seam_to_within_ratio": 7.139216899871826,
+      "gripper_switches_per_episode_mean": 13.7,
+      "episodes_min_eef_to_initial_bowl_lt_0_10": 8,
+      "episodes_final_bowl_translation_gt_0_05": 6,
+      "episodes_final_top_drawer_open": 1,
+      "episodes_drawer_open_and_bowl_moved": 0,
+      "episodes_final_distractor_translation_gt_0_05": 2
+    },
+    "step1600": {
+      "translation_mean_abs": 0.20639432966709137,
+      "rotation_mean_abs": 0.02951580286026001,
+      "motion_mean": [-0.011193, -0.021388, -0.150215, 0.002036, 0.001436, -0.006264],
+      "within_chunk_motion_delta_l2_mean": 0.06081965193152428,
+      "replan_seam_motion_delta_l2_mean": 0.43183499574661255,
+      "replan_seam_to_within_ratio": 7.100254535675049,
+      "gripper_switches_per_episode_mean": 4.5,
+      "episodes_min_eef_to_initial_bowl_lt_0_10": 7,
+      "episodes_final_bowl_translation_gt_0_05": 7,
+      "episodes_final_top_drawer_open": 0,
+      "episodes_drawer_open_and_bowl_moved": 0,
+      "episodes_final_distractor_translation_gt_0_05": 3
+    }
+  },
+  "interpretation": {
+    "offline_mechanism_signal": "pass",
+    "closed_loop_gate": "fail",
+    "training_step_hypothesis": "not_supported_between_1000_and_1600",
+    "action_collapse": "not_observed",
+    "motion_saturation": "not_observed",
+    "dominant_failure": "History-free stochastic replanning creates approximately 7.1x action discontinuities at chunk boundaries, while the policy approaches and moves the bowl before satisfying the drawer prerequisite. It never coordinates both required subgoals.",
+    "normalization_assessment": "A global normalization failure is unlikely: motion clipping is zero and rotation scale matches the expert reference. Translation is nevertheless under-dispersed at 61-63% of expert mean absolute magnitude.",
+    "next_test": "Before allocating more steps to the same objective, ablate fixed replan noise and action continuity, then train explicit executed-action history or overlap conditioning with generic phase-balanced multi-task sampling."
+  },
+  "cloud_artifacts": {
+    "root": "/mnt/h3-wam/outputs/eval-frameindexed-dot/depth4_random_closed_loop",
+    "step1000_results": "/mnt/h3-wam/outputs/eval-frameindexed-dot/depth4_random_closed_loop/step1000/libero_goal_task3/results.json",
+    "step1600_results": "/mnt/h3-wam/outputs/eval-frameindexed-dot/depth4_random_closed_loop/step1600/libero_goal_task3/results.json",
+    "videos_and_trajectories": "Ten MP4 and ten NPZ artifacts per checkpoint are stored beside each results.json."
+  },
+  "excluded_infrastructure_failures": [
+    {
+      "class": "bootstrap_failure",
+      "cause": "The node-local LIBERO Python site package was absent.",
+      "counted_as_episode_failure": false
+    },
+    {
+      "class": "restore_failure",
+      "cause": "The stale remote server hard-coded a one-layer action head for four-layer checkpoints.",
+      "counted_as_episode_failure": false
+    },
+    {
+      "class": "launcher_failure",
+      "cause": "The requested runtime torchrun wrapper path did not exist on node 30234.",
+      "counted_as_episode_failure": false
+    }
+  ]
+}

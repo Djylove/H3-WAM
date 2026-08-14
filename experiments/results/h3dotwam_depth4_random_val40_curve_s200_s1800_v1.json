@@ -1,0 +1,79 @@
+{
+  "experiment_id": "h3dotwam_depth4_random_val40_curve_s200_s1800_v1",
+  "captured_at": "2026-08-14T14:11:53+08:00",
+  "classification": "controlled_ablation",
+  "hypothesis": "At fixed frozen-H3, data, optimizer, and inference contracts, a four-layer random DoT carrier eventually lowers episode-disjoint causal action error below the one-layer parent rather than merely fitting the training objective.",
+  "source": {
+    "training_node": "117.50.181.177:30907",
+    "evaluation_node": "117.50.181.177:30234",
+    "training_log": "/mnt/h3-wam/logs/cluster-30907/h3dotwam_depth4_random_gb128_s2170.log",
+    "evaluation_root": "/mnt/h3-wam/outputs/eval-frameindexed-dot/depth4_random_curve",
+    "trainer_sha256": "be0d802c5982aa8eddc40fc4bc72f4a1639bde862963b3287fec9cf77208e2c6",
+    "evaluator_sha256": "26c5c0f1258a204aeb66d4af893f1223f6164593d6483e83627247e5f94da2ed",
+    "local_revision": "dab80583e5b58ea995e6eb16b366dc9101f99df0"
+  },
+  "contract": {
+    "checkpoint_format": "h3dotwam_stage_v2",
+    "action_layers": 4,
+    "action_initialization": null,
+    "gradient_accumulation_steps": 16,
+    "training_global_batch": 128,
+    "unique_training_windows": 277713,
+    "h3_trainable_blocks": 0,
+    "validation_manifest": "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val_stratified40.jsonl",
+    "validation_manifest_sha256": "f36525ac62280eaaadbb24a21d460bdb92d8b81402c9a9ce32f59e898e3dd0ba",
+    "validation_samples": 40,
+    "episode_disjoint": true,
+    "sample_steps": 10,
+    "action_horizon": 32,
+    "seed": 2026,
+    "context": "text-only"
+  },
+  "parent_metrics": {
+    "depth1_step200": 0.15138926571235062,
+    "depth1_step400": 0.1334350763820112,
+    "depth1_step800": 0.11829830529168248,
+    "depth1_step1600": 0.10853167180903256,
+    "depth1_final2170": 0.10919022220186889,
+    "depth1_final2170_closed_loop": "0/10 on fixed LIBERO Goal task3 trials 0-9"
+  },
+  "curve": [
+    {"step": 200, "samples_seen": 25600, "effective_epochs": 0.092181497, "training_action_loss_mean50": 0.203870909, "training_video_loss_mean50": 0.403368137, "causal_val40_action_mse": 0.217121853},
+    {"step": 400, "samples_seen": 51200, "effective_epochs": 0.184362993, "training_action_loss_mean50": 0.144523379, "training_video_loss_mean50": 0.411646017, "causal_val40_action_mse": 0.139733942},
+    {"step": 600, "samples_seen": 76800, "effective_epochs": 0.276544490, "training_action_loss_mean50": 0.125907957, "training_video_loss_mean50": 0.406906967, "causal_val40_action_mse": 0.133723597},
+    {"step": 800, "samples_seen": 102400, "effective_epochs": 0.368725987, "training_action_loss_mean50": 0.118460923, "training_video_loss_mean50": 0.412409898, "causal_val40_action_mse": 0.113030053},
+    {"step": 1000, "samples_seen": 128000, "effective_epochs": 0.460907484, "training_action_loss_mean50": 0.103677498, "training_video_loss_mean50": 0.404903994, "causal_val40_action_mse": 0.104876207},
+    {"step": 1200, "samples_seen": 153600, "effective_epochs": 0.553088980, "training_action_loss_mean50": 0.099593292, "training_video_loss_mean50": 0.405527955, "causal_val40_action_mse": 0.097585034},
+    {"step": 1400, "samples_seen": 179200, "effective_epochs": 0.645270477, "training_action_loss_mean50": 0.093703634, "training_video_loss_mean50": 0.407289971, "causal_val40_action_mse": 0.100998815},
+    {"step": 1600, "samples_seen": 204800, "effective_epochs": 0.737451974, "training_action_loss_mean50": 0.093917032, "training_video_loss_mean50": 0.406686945, "causal_val40_action_mse": 0.097111728},
+    {"step": 1800, "samples_seen": 230400, "effective_epochs": 0.829633471, "training_action_loss_mean50": 0.090879960, "training_video_loss_mean50": 0.402054378, "causal_val40_action_mse": 0.097451668}
+  ],
+  "interpretation": {
+    "first_step_better_than_depth1_final": 1000,
+    "best_observed_step": 1600,
+    "best_observed_causal_val40_action_mse": 0.09711172783281655,
+    "best_improvement_vs_depth1_final_percent": 11.061883,
+    "plateau": "Steps 1200-1800 stay within 0.097112-0.100999 despite continuing training-loss improvement.",
+    "video_loss_note": "H3 is frozen and video loss is not included in the optimization objective. Its flat approximately 0.40 training curve is diagnostic only; eval-only intentionally reports no generated-video metric.",
+    "mechanism_signal": "PASS: four consecutive checkpoints from step1000 through step1800 beat the depth1 final causal metric; step1600 also beats the matched depth1 step1600 by 10.52%.",
+    "effect_conclusion": "NOT_EVIDENCE_READY until fixed closed-loop trials are consumed."
+  },
+  "closed_loop_selection": {
+    "maximum_checkpoints": 3,
+    "selection": [
+      {"checkpoint": "step1000", "reason": "first checkpoint that crosses the depth1-final causal baseline"},
+      {"checkpoint": "step1600", "reason": "best pre-final held-out causal checkpoint"},
+      {"checkpoint": "final2170", "reason": "required endpoint only if its causal val40 remains <=0.109190 and within 5% of the best pre-final value"}
+    ],
+    "final2170_gate": {
+      "beat_depth1_final": "causal_val40_action_mse <= 0.1091902222",
+      "avoid_latest_checkpoint_regression": "causal_val40_action_mse <= 0.1019673142",
+      "fallback_if_final_fails": "Use step1200 as the third closed-loop point; do not roll out final2170 merely because it is latest."
+    }
+  },
+  "decision": {
+    "training_permission": "GO_LONG",
+    "effect_status": "NOT_EVIDENCE_READY",
+    "next_action": "Do not start another GPU job on 30234. After final2170 is saved, run the same val40 contract once, apply the final gate, and closed-loop exactly the selected three checkpoints."
+  }
+}

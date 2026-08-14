@@ -2,7 +2,18 @@ import unittest
 
 import torch
 
-from fastwam.models.h3wam.int8_backbone import FrozenLinear, FrozenRMSNorm, _apply_rotary
+from fastwam.models.h3wam.int8_backbone import (
+    HIDDEN_SIZE,
+    FrozenLinear,
+    FrozenRMSNorm,
+    _apply_rotary,
+    _prepare_text_hidden_states,
+)
+
+
+class _FailIfCalled(torch.nn.Module):
+    def forward(self, _source):
+        raise AssertionError("refined context must bypass projection and refiner")
 
 
 class H3Int8BackbonePrimitiveTest(unittest.TestCase):
@@ -28,6 +39,27 @@ class H3Int8BackbonePrimitiveTest(unittest.TestCase):
         source = torch.randn(1, 3, 2, 8)
         output = _apply_rotary(source, torch.ones(3, 4), torch.zeros(3, 4))
         torch.testing.assert_close(output, source)
+
+    def test_raw_context_runs_projection_and_refiner(self):
+        projection = FrozenLinear(torch.ones(HIDDEN_SIZE, 4))
+        refiner = torch.nn.Identity()
+        source = torch.ones(1, 3, 4)
+        output = _prepare_text_hidden_states(source, projection, refiner)
+        self.assertEqual(tuple(output.shape), (1, 3, HIDDEN_SIZE))
+        torch.testing.assert_close(output, torch.full_like(output, 4.0))
+
+    def test_refined_context_bypasses_projection_and_refiner(self):
+        projection = FrozenLinear(torch.ones(HIDDEN_SIZE, 4))
+        source = torch.randn(1, 3, HIDDEN_SIZE)
+        output = _prepare_text_hidden_states(source, projection, _FailIfCalled())
+        self.assertIs(output, source)
+
+    def test_context_rejects_unknown_width(self):
+        projection = FrozenLinear(torch.ones(HIDDEN_SIZE, 4))
+        with self.assertRaisesRegex(ValueError, "raw Qwen.*refined H3"):
+            _prepare_text_hidden_states(
+                torch.zeros(1, 3, 8), projection, torch.nn.Identity()
+            )
 
 
 if __name__ == "__main__":

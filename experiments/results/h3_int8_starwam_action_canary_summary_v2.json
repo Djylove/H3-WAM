@@ -1,0 +1,62 @@
+{
+  "summary_id": "h3_int8_starwam_action_canary_summary_v2",
+  "date": "2026-08-14",
+  "source": {
+    "starwam_commit": "cd76d96f273f81e228a05f40f9697fe2514e2356",
+    "trainer_sha256": "30c5ef1a00d711b11cf848575344514dfab8931d2e8009a6e651028fb26a2568",
+    "wrapper_sha256": "391687222bff3a298375694fe3030826a7a39110f329635d2db447a4c29fc1fa",
+    "isolated_cloud_project": "/mnt/h3-wam/r1-action-canary/project"
+  },
+  "resolved_corrections": {
+    "feature_input_scale": 0.009606920816877307,
+    "include_feature_timestep": false,
+    "feature_timestep_embedding_trainable": false,
+    "warmup_steps": 1000,
+    "scheduler_horizon": 21700,
+    "base_learning_rate": 0.0001,
+    "min_learning_rate": 0.000001,
+    "checkpoint_schema": 2,
+    "checkpoint_includes_lr_scheduler": true
+  },
+  "paired_depth2": {
+    "raw": {
+      "loss": [4000.0, 4992.0],
+      "prediction_std": [95.39542388916016, 100.16416931152344],
+      "expert_gradient_norm": [1774066.0, 2075798.375],
+      "feature_projector_gradient_norm": [1058181.125, 1272825.375],
+      "head_update_max_abs": [1.1920928955078125e-7, 2.384185791015625e-7],
+      "fresh_restore_max_abs": 0.0
+    },
+    "rms_match": {
+      "loss": [1.359375, 1.1796875],
+      "prediction_std": [1.4375799894332886, 1.472918152809143],
+      "expert_gradient_norm": [270.14019775390625, 298.6553039550781],
+      "feature_projector_gradient_norm": [140.19940185546875, 159.67929077148438],
+      "head_update_max_abs": [1.1920928955078125e-7, 2.384185791015625e-7],
+      "fresh_restore_max_abs": 0.0
+    },
+    "decision": "PASS_SCALE_AND_WARMUP_GATE"
+  },
+  "full30_single_step": {
+    "total_parameters": 1580977159,
+    "trainable_parameters": 1553441799,
+    "loss": 26.25,
+    "prediction_std": 7.626850605010986,
+    "expert_gradient_norm": 5242.50048828125,
+    "feature_projector_gradient_norm": 3016.4375,
+    "proprio_gradient_norm": 3.8843653202056885,
+    "head_update_max_abs": 1.1920928955078125e-7,
+    "learning_rate": 1.0000000000000001e-7,
+    "next_learning_rate": 1.9990000000000004e-7,
+    "peak_reserved_gib_per_gpu": 17.447265625,
+    "checkpoint_bytes": 9377069949,
+    "fresh_restore_max_abs": 0.0,
+    "decision": "PASS_MECHANICAL"
+  },
+  "gate": {
+    "status": "GO_CANARY",
+    "allowed_next": "bounded multi-step full30 stability canary with dense checkpointing",
+    "not_allowed": "long training or H3/WAM effectiveness claim",
+    "missing_evidence": ["full30 multi-step stability through warmup", "episode-disjoint validation split", "held-out action metrics", "closed-loop LIBERO rollout"]
+  }
+}

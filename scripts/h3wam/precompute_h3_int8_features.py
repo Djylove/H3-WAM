@@ -34,6 +34,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--action-horizon", type=int, default=32)
     parser.add_argument("--target-latent-frames", type=int, default=12)
     parser.add_argument("--timestep", type=float, default=1.0)
+    parser.add_argument("--condition-video-timestep", type=float, default=1.0)
+    parser.add_argument(
+        "--capture-compatibility",
+        choices=("none", "comfy_alias_v1"),
+        default="none",
+        help=(
+            "Reproduce an explicitly identified historical capture contract. "
+            "comfy_alias_v1 repeats the final selected layer because the old "
+            "Comfy hook retained aliases to an in-place-mutated hidden tensor."
+        ),
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--num-shards", type=int, default=1)
@@ -53,10 +64,24 @@ def pool_feature_tokens(features: torch.Tensor, token_count: int) -> torch.Tenso
     return F.adaptive_avg_pool1d(features.transpose(1, 2), token_count).transpose(1, 2)
 
 
+def apply_capture_compatibility(features: torch.Tensor, mode: str) -> torch.Tensor:
+    """Apply a named historical feature-capture contract without changing default caches."""
+
+    if features.ndim != 3:
+        raise ValueError("features must be [layers,tokens,hidden]")
+    if mode == "none":
+        return features
+    if mode == "comfy_alias_v1":
+        return features[-1:].expand_as(features).clone()
+    raise ValueError(f"unsupported capture compatibility mode {mode!r}")
+
+
 def main() -> None:
     args = parse_args()
     if not 0.0 <= args.timestep <= 1.0:
         raise ValueError("H3 curve timestep must be in [0,1]")
+    if not 0.0 <= args.condition_video_timestep <= 1.0:
+        raise ValueError("H3 condition-video curve timestep must be in [0,1]")
     if min(args.action_horizon, args.target_latent_frames, args.progress_every) <= 0:
         raise ValueError("positive horizon, latent-frame and progress arguments are required")
     if args.num_shards <= 0 or not 0 <= args.shard_index < args.num_shards:
@@ -142,7 +167,7 @@ def main() -> None:
                 num_text_tokens=text_indices.numel(),
                 video_timestep=args.timestep,
                 audio_timestep=0.0,
-                condition_video_timestep=1.0,
+                condition_video_timestep=args.condition_video_timestep,
                 condition_audio_timestep=1.0,
             )
             layouts[layout_key] = {
@@ -173,6 +198,8 @@ def main() -> None:
             dtype=torch.float32,
         )
         context = context_item["context"].to(device=device, dtype=torch.float32)
+        context_width = int(context.shape[-1])
+        context_mode = "refined_h3" if context_width == 5376 else "raw_qwen"
         with torch.inference_mode():
             result = model(
                 hidden_states=video_rows,
@@ -191,6 +218,7 @@ def main() -> None:
         features = torch.stack(
             [result.captured_features[layer][0] for layer in layers], dim=0
         )
+        features = apply_capture_compatibility(features, args.capture_compatibility)
         features = pool_feature_tokens(features, args.capture_token_count).to(
             device="cpu", dtype=torch.bfloat16
         )
@@ -205,10 +233,14 @@ def main() -> None:
                 "start": int(row["start"]),
                 "suite": str(row["suite"]),
                 "context_id": context_id,
+                "context_width": context_width,
+                "context_mode": context_mode,
                 "timestep": float(args.timestep),
+                "condition_video_timestep": float(args.condition_video_timestep),
                 "action_horizon": int(args.action_horizon),
                 "capture_token_count": int(features.shape[1]),
                 "capture_token_strategy": "starwam_adaptive_avg_pool1d_v1",
+                "capture_compatibility": args.capture_compatibility,
                 "backbone": "H3Int8FeatureBackbone",
                 "quantization": "int8_tensorwise_convrot",
                 "checkpoint": str(args.h3_checkpoint.resolve()),
