@@ -306,7 +306,7 @@
         "artifact": "/mnt/h3-wam/eval/expert-progress-targets-v1/report.json"
       },
       "go_status": "GO_PROGRESS_HEAD_CANARY",
-      "evidence_status": "TARGET_DOSSIER_PASS; FROZEN_FEATURE_PROBE_ACTIVE",
+      "evidence_status": "PASS_PROGRESS_FEATURE_GATE",
       "canary_budget": {
         "train_samples": 4000,
         "validation_samples": 2000,
@@ -317,8 +317,20 @@
         "launch_host": "117.50.181.177:32611",
         "command": "nohup bash scripts/h3wam/launch_c17_progress_probe.sh > /mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1.queue.log 2>&1 &"
       },
+      "canary_result": {
+        "baseline_mae": 0.08825532470780299,
+        "h3_mae": 0.062385009196593594,
+        "mae_ratio": 0.7068696353805143,
+        "baseline_r2": 0.8145640707118487,
+        "h3_r2": 0.8983170160958638,
+        "libero_10_baseline_mae": 0.06785383154308311,
+        "libero_10_h3_mae": 0.05789386378633448,
+        "all_four_suites_improved": true,
+        "status": "PASS_PROGRESS_FEATURE_GATE",
+        "artifact": "/mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1/COMPLETED"
+      },
       "promotion": "Frozen-H3 progress head must improve held-out value MAE and task-progress calibration over step/context baselines, including LIBERO-10, before fusion.",
-      "stop": "No best-of-N or policy claim until the critic is action-conditioned and ranks held-out alternative outcomes."
+      "stop": "Feature gate passed, but no best-of-N or policy claim until a shadow progress trace passes and the critic is action-conditioned with held-out alternative outcomes."
     }
   },
   "difference_matrix": [
@@ -383,7 +395,7 @@
       "C14 executed-action-history16 adapter (mechanism only, fusion rejected)",
       "C15 dual-view spatial grid K/V (active canary)",
       "C16 FACT-style rollout progress value (target dossier only)",
-      "C17 expert progress value (target dossier passed)"
+      "C17 expert progress value (feature gate passed; shadow integration pending)"
     ],
     "track_winner": "none: C02 failed both final gates and C14 did not confirm across trials",
     "fusion": "blocked; C15 spatial-topology canary is the next single-variable challenger"

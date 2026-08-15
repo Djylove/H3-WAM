@@ -309,6 +309,11 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   K/V为512维mean/std，用两路低优先级CPU读取，避免抢C15的GPU与共享I/O。promotion要求相对
   task+absolute-step ridge的总MAE至少改善5%，且四个suite均不得退化超过5%。真实命令：
   `nohup bash scripts/h3wam/launch_c17_progress_probe.sh > /mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1.queue.log 2>&1 &`。
+  probe已完成并通过：held-out总MAE `0.088255→0.062385`（ratio `0.70687`），R²
+  `0.81456→0.89832`；四suite均改善，LIBERO-10 MAE `0.067854→0.057894`。这说明冻结H3 K/V包含
+  超出task+absolute-step的阶段进度信息，C17晋级shadow progress trace；但它尚未看到可验证的备选动作
+  outcome，因此仍不授权best-of-N或声称动作生成改善。artifact：
+  `/mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1/COMPLETED`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。
