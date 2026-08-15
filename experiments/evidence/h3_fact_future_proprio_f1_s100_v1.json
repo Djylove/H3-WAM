@@ -1,0 +1,11 @@
+{
+  "experiment_id": "h3_fact_future_proprio_f1_s100_v1",
+  "classification": "novel_composition",
+  "status": "PASS_MECHANISM_GATE",
+  "claim_boundary": "Correct candidate actions improve future-proprio prediction under frozen H3 observations; this does not establish action-policy, ranking or LIBERO success.",
+  "source": {"fact_commit": "618a6c16868699b6d4138941de6a863589ac00dd", "h3_checkpoint_sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a", "cloud_report": "/mnt/h3-wam/outputs/fact-lite-future-proprio-v1/f1_s100.json", "checkpoint_sha256": "92bdd05c951a02f45302b9c37b96f2b08e7d367c972409c11fe6ff2e78c28d9d"},
+  "data": {"train_selected": 1024, "validation_selected": 256, "train_tasks": 40, "validation_tasks": 39, "train_episodes": 1542, "validation_episodes": 170, "episode_overlap": 0, "window_overlap": 0, "current_state_cache_parquet_max_abs": 0.0},
+  "budget": {"gpu_count": 1, "optimizer_steps": 100, "batch_size": 16, "training_samples": 1600, "effective_selected_subset_epochs": 1.5625, "duration_seconds": 32.1577363749966},
+  "metrics": {"initial_conditioned_mse": 0.19825219176709652, "conditioned_true_mse": 0.016670197597704828, "shuffled_at_eval_mse": 0.2351710144430399, "shuffled_trained_mse": 0.10883461451157928, "independent_mse": 0.1135121788829565, "conditioned_gain_over_independent": 0.8531417706738443, "conditioned_gain_over_shuffled_train": 0.846830002821104, "conditioned_shuffle_degradation": 13.107272158274748, "fresh_restore_max_abs": 0.0},
+  "decision": {"training_permission": "GO_CANARY", "evidence_status": "EVIDENCE_READY", "next": "Repeat the identical mechanism at 500 steps; future-H3/value/ranking must be separate candidates."}
+}

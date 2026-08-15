@@ -1,0 +1,10 @@
+{
+  "experiment_id": "h3_lingbot_shared_sync_v2_adapter_only_s1000_closed_loop_v1",
+  "classification": "closed_loop_canary",
+  "status": "FAIL_CLOSED_LOOP",
+  "claim_boundary": "One fixed LIBERO Goal task/trial can reject promotion but cannot estimate benchmark success rate.",
+  "source": {"stage": "/mnt/h3-wam/outputs/h3-lingbot-shared-sync-v2-adapter-only/shared_sync_v2_adapter_only_s1000.pt", "result": "/mnt/h3-wam/outputs/parallel-routes-20260815/lingbot_sync_v2_adapter_s1000_goal3_v5/results.json", "trajectory": "/mnt/h3-wam/outputs/parallel-routes-20260815/lingbot_sync_v2_adapter_s1000_goal3_v5/task03_trial00_trajectory.npz", "video": "/mnt/h3-wam/outputs/parallel-routes-20260815/lingbot_sync_v2_adapter_s1000_goal3_v5/task03_trial00_success0.mp4"},
+  "contract": {"suite": "libero_goal", "task_id": 3, "trial": 0, "task": "open the top drawer and put the bowl inside", "max_steps": 80, "wait_steps": 30, "replan_steps": 32, "action_horizon": 32, "sample_steps": 4, "world_size": 8, "normalization": "quantile", "normalized_clip_bound": 1.5},
+  "metrics": {"successes": 0, "episodes": 1, "success_rate": 0.0, "replans": 3, "mean_policy_roundtrip_seconds": 72.40266671598268, "action_saturation_fraction": 0.09375, "mean_action_magnitude": 0.3367688258488973, "eef_position_range": [0.058612167835235596, 0.056647091172635555, 0.040799736976623535], "max_object_joint_delta": 1.4592683615297086e-16},
+  "decision": {"training_permission": "GO_LONG", "evidence_status": "EVIDENCE_READY", "promotion": "STOP_S1000_CLOSED_LOOP", "rationale": "The policy moved the end effector but made no measurable object contact. Keep the already-approved diagnostic scale ladder and do not run the full benchmark until a later milestone passes a fixed canary."}
+}

@@ -14,6 +14,8 @@ TMP_ROOT="${H3_WORKSPACE}/tmp/h3-lingbot-shared-sync-v2-eval"
 EVAL_LOCK="${H3_WORKSPACE}/tmp/h3-lingbot-shared-sync-v2-eval.lock"
 RUN_NAME="${RUN_NAME:-shared_sync_v2_clean_s1000}"
 FREEZE_SHARED_BLOCKS="${FREEZE_SHARED_BLOCKS:-0}"
+EVAL_STEPS="${EVAL_STEPS:-200 400 600 800}"
+FINAL_STEP="${FINAL_STEP:-1000}"
 extra_model_args=()
 if [[ "${FREEZE_SHARED_BLOCKS}" == "1" ]]; then
   extra_model_args+=(--freeze-shared-blocks)
@@ -98,8 +100,8 @@ PY
   exec 9>&-
 }
 
-for step in 200 400 600 800; do
+for step in ${EVAL_STEPS}; do
   evaluate_stage "${step}" \
     "${STAGE_ROOT}/${RUN_NAME}_step$(printf '%06d' "${step}").pt"
 done
-evaluate_stage 1000 "${STAGE_ROOT}/${RUN_NAME}.pt"
+evaluate_stage "${FINAL_STEP}" "${STAGE_ROOT}/${RUN_NAME}.pt"

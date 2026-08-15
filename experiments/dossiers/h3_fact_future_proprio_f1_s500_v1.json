@@ -1,0 +1,40 @@
+{
+  "experiment_id": "h3_fact_future_proprio_f1_s500_v1",
+  "classification": "scale_ladder",
+  "hypothesis": "The fixed FACT-lite action-to-future-proprio mechanism remains action-dependent after 500 optimizer steps on the same episode-disjoint split, rather than the s100 result being a transient optimization artifact.",
+  "single_variable": "Increase optimizer steps from 100 to 500; initialization, selected rows, three arms, seed, batch size, learning rate, normalization and evaluation are unchanged.",
+  "parent_baseline": "h3_fact_future_proprio_f0_f1_s100_v1: conditioned validation MSE 0.0166702 versus shuffled-trained 0.108835 and independent 0.113512; shuffled-at-eval MSE 0.235171.",
+  "references": [
+    {"kind": "upstream_code", "title": "FACT causal action-to-consequence path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 FACT-lite future-proprio canary", "locator": "scripts/h3wam/train_h3_fact_future_proprio.py", "revision": "8e4b862", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "action-to-consequence information flow", "paper": "Generated or clean action conditions future prediction.", "upstream_code": "Unified trainable Wan transformer with causal visibility.", "local": "Frozen H3 features plus detached clean actions predict future proprio.", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3wam/fact_lite_consequence.py"], "rationale": "This is a mechanism-only child, not a FACT reproduction."}],
+    "data": [{"field": "future-state join", "paper": "Future state follows the action segment.", "upstream_code": "RoboTwin future state/value records.", "local": "Same deterministic 1024 train and 256 episode-disjoint validation rows as s100; raw state[start+32].", "status": "EQUIVALENT", "evidence": ["experiments/evidence/h3_fact_future_proprio_f1_s100_v1.json"], "rationale": "No data variable changes."}],
+    "action": [{"field": "candidate action", "paper": "Action tokens condition consequences.", "upstream_code": "Clean action conditions future branch.", "local": "Correct, deranged or zero normalized 32x7 action.", "status": "EQUIVALENT", "evidence": ["docs/H3_FACT_FUTURE_PROPRIO_F0_F1_CANARY.md"], "rationale": "Same intervention as the parent."}],
+    "objective": [{"field": "future consequence", "paper": "Future state/value/video losses.", "upstream_code": "Joint future objectives.", "local": "Future-proprio normalized MSE only.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_h3_fact_future_proprio.py"], "rationale": "Future-H3, value and action ranking remain separate children."}],
+    "optimization": [{"field": "scale check", "paper": "150k steps at global batch256.", "upstream_code": "Full FACT training.", "local": "500 steps, batch16, 8000 sampled rows, 7.8125 passes over the selected 1024-row training subset.", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Bounded repeat of the passed mechanism."}],
+    "evaluation": [{"field": "paired mechanism gate", "paper": "Task performance and best-of-N.", "upstream_code": "Future/value calibration and closed loop.", "local": "Same 256 validation rows and three predeclared 1% gates.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_h3_fact_future_proprio.py"], "rationale": "Policy and ranking claims remain blocked."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT commit and H3 SHA are fixed."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Parent s100 real-data run passed no-leak and restore checks."]},
+    "data_contract": {"status": "PASS", "evidence": ["Parent reports zero episode/window overlap and exact cache/parquet parity."]},
+    "action_contract": {"status": "PASS", "evidence": ["Same unpadded horizon32 action intervention."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Future target is absent from forward."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Only steps change from 100 to 500."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Same fixed selection salt and thresholds."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Parent real run has positive finite gradients for all arms."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Parent s100 completed finite."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Parent fresh restore max_abs 0."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["s100 PASS_MECHANISM_GATE with 85.31% gain over independent."]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["s100 passed all three predeclared mechanism thresholds."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Not applicable to consequence-only expert; no policy claim."]}
+  },
+  "budget": {"gpu_count": 1, "optimizer_steps": 500, "batch_size": 16, "training_samples": 8000, "train_selected": 1024, "effective_selected_subset_epochs": 7.8125, "validation_selected": 256, "estimated_minutes": 3.0},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The parent passed by a large margin and finished in 32 seconds; a same-contract s500 repeat is the allowed next gate. Do not attach value, best-of-N or policy claims to this run.",
+    "launch_command": "CUDA_VISIBLE_DEVICES=0 /mnt/h3-wam/runtime/h3-int8-native/bin/python scripts/h3wam/train_h3_fact_future_proprio.py --train-manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --val-manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val.jsonl --source-manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_all.jsonl --cache-root /mnt/h3-wam/data/v7_dense_h3_cache --feature-subdir h3_int8_starwam_last32_dense_v1 --steps 500 --train-limit 1024 --val-limit 256 --batch-size 16 --hidden-dim 256 --seed 42 --verify-h3-checkpoint-sha256 --output /mnt/h3-wam/outputs/fact-lite-future-proprio-v1/f1_s500.json --checkpoint /mnt/h3-wam/outputs/fact-lite-future-proprio-v1/f1_s500.pt"
+  }
+}

@@ -83,6 +83,9 @@
 | E42 | H3 INT8 双输出 dense cache | 同一次 H3 forward 写 DreamWAM 五层 K/V 与 StarWAM layer49 pooled hidden；单样本与两条独立路径比对 | feature/KV 均 bitwise equal、max-abs `0`；32 workers；切换时保留30,005份K/V；初始补写约`9.16 samples/s` | 不适用 | `MECHANICAL_PASS`；避免为 C03 再完整跑一遍22万样本，但不构成任何策略效果证据 |
 | E43 | dense carrier 三线流水线 | 32卡双 cache → 双全量 audit → D/D0 各8卡 s963；C03 8卡 s100；第四节点逐 checkpoint balanced-80 | 已 armed；快照 K/V `30,002`、StarWAM `14,623`、错误0；D/D0/C03 与三条评测 watcher 均等待 audit READY | 待评测 | v7/v8 train ID 重合 `90.07%`，故 C03 锁死 s100、禁止重复 s963；D/D0 严格唯一变量配对，任何线均未获得长训或效果声明许可 |
 | E44 | dense 双 cache 全量审计与三线解锁 | 64个单线程内容分片；逐文件 hash/反序列化/元数据/finite 检查；精确目录 ID 集合；固定 manifest/H3 hash | K/V `222,929` 条、`953.56 GiB`；StarWAM `222,929` 条、`71.98 GiB`；缺失/额外/临时/元数据错误均为0；D/D0/C03 共24卡已启动 | 等待首个 checkpoint 与 balanced-80 | 3个无生产者旧 `.tmp` 已可恢复隔离，完整 final 均存在；过度订阅与慢目录扫描归类为基础设施问题；审计 PASS 只放行训练，不构成效果证据 |
+| E45 | FACT-lite H3 future-proprio F1 s100 | 同 H3/state 输入下，正确 horizon32 动作 vs batch derangement vs zero-action；episode-disjoint 1024/256 | val MSE `0.016670` vs shuffled-train `0.108835` vs independent `0.113512`；正确模型 shuffle 后 `0.235171`；restore diff0 | 不适用 | 三个预注册机制门均通过；`PASS_MECHANISM_GATE / EVIDENCE_READY`，只放行同合同 s500，不声称策略或成功率 |
+| E46 | repaired LingBot adapter-only s1000 闭环 | Goal task3/trial0；80步；horizon/replan32；4-step flow；quantile clip1.5 | action saturation `9.375%`；EEF 三轴移动范围 `0.0586/0.0566/0.0408m`；物体最大位移 `1.46e-16` | `0/1` | 服务与恢复成功但无物体接触；`FAIL_CLOSED_LOOP`，停止 s1000 benchmark 晋级；保留已批准的独立 5000-step 诊断曲线 |
+| E47 | repaired LingBot adapter-only fresh s5000 | s1000 配方完全不变；从确定性初值连续5000步；global batch8；每500步独立 val40/sample40 | 运行中；step311 有限，8卡约`37.54 GiB/GPU`、利用率约100% | 首个候选里程碑待 s500 | `GO_LONG / NOT_EVIDENCE_READY`；s1000需同时复核与旧曲线连续性，只有选中里程碑通过闭环才跑 benchmark |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
