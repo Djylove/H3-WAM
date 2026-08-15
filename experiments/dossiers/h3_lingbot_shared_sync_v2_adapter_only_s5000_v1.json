@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_lingbot_shared_sync_v2_adapter_only_s5000_v1",
+  "classification": "scale_ladder",
+  "hypothesis": "The repaired adapter-only shared-H3 learning curve remains data-budget limited at step1000 and will continue reducing validity-masked causal action error through a fresh deterministic 5000-step run without causal video regression.",
+  "single_variable": "Increase the clean-from-initialization optimizer budget from 1000 to 5000 steps; all architecture, data order, seed, normalization, objective and optimization hyperparameters remain fixed.",
+  "parent_baseline": "Repaired adapter-only s1000: causal action MSE decreases monotonically over steps 200/400/600/800/1000 as 1.325556/1.294950/1.257163/1.200220/1.166916; clean step0 is 1.306988.",
+  "references": [
+    {"kind": "upstream_code", "title": "LingBot-VA", "locator": "third_party/code_audit/lingbot-va", "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "Repaired shared-H3 adapter-only trainer", "locator": "scripts/h3dreamwam/verify_h3_lingbot_four_stream_fsdp.py", "revision": "bf086d452959875d391beefa77e21e7d1456e5f2f5ab810ec74c73dcdc8a7ff4", "official": false, "clean": true}
+  ],
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Pinned clean LingBot source and exact trainer SHA256."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Repaired shared-v2 8-rank gradient synchronization and adapter-only freeze contract."]},
+    "data_contract": {"status": "PASS", "evidence": ["200779-row episode-disjoint v7 train manifest; deterministic seed2026 order."]},
+    "action_contract": {"status": "PASS", "evidence": ["Quantile-normalized 7D horizon32 with validity-aware padding."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Pinned LingBot-style weighted joint flow objective; only action adapters update."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Fresh 5000-step run, global batch8, checkpoints every500; no optimizer-reset resume claim."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Reuse fixed val40/sample40 protocol at milestones and fixed LIBERO closed loop for selected checkpoint."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Repaired s1000 action-adapter gradients finite/nonzero and cross-rank parity exact."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["s1000 completed without nonfinite steps."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["s1000 freeze contract and repeated restore passed."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["Fixed clean step0 and complete s200-s1000 causal curve."]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["Causal action improves 10.72% at s1000 and is monotonic after s200; causal video also improves."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Corrected s1000 closed-loop is running; scale training is diagnostic and cannot establish effectiveness alone."]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 5000,
+    "training_samples": 40000,
+    "unique_windows": 200779,
+    "effective_epochs": 0.199223,
+    "gpu_count": 8,
+    "estimated_hours": 17.5,
+    "checkpoint_every": 500
+  },
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "The repaired line has a monotonic causal action signal and the user explicitly authorized a longer budget. A fresh run is required because the existing v2 stage omits optimizer/scheduler state.",
+    "launch_command": "PROJECT_ROOT=/mnt/h3-wam/project-adapter-sync-v2 H3_WORKSPACE=/mnt/h3-wam bash scripts/h3dreamwam/launch_shared_sync_v2_adapter_only_s5000.sh"
+  }
+}
