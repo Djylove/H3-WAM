@@ -1,0 +1,32 @@
+{
+  "experiment_id": "h3_c43_powered_causal_ranking_dataset_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "C42's five-trial train and five-trial final source roles each yield at least24 mixed counterfactual outcome groups across at least3 LIBERO suites under controlled first-action interventions.",
+  "single_variable": "Within each bit-exact restored state only the first policy diffusion-noise seed changes; the frozen D0-H32-s14000 parent, first chunk32, replan8 continuation and continuation seed schedule are held fixed.",
+  "parent_baseline": "C40's consequence ensemble beat action-only by13.58 points but failed absolute fresh ranking and permutation gates with22 train mixed groups. C43 increases source-disjoint causal outcomes without reusing C33 for fitting or selection.",
+  "references": [
+    {"kind": "paper", "title": "FACT failure-aware future/value supervision", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT rollout and value data path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "local_implementation", "title": "C43 controlled branch contract", "locator": "scripts/h3wam/evaluate_c43_powered_causal_ranking_dataset.py", "revision": "C43 preregistration commit"}
+  ],
+  "alignment": {
+    "architecture": [{"field": "fixed policy consequence collection", "paper": "Future/value targets follow executed actions from one policy.", "upstream_code": "FACT retains observed outcomes.", "local": "C43 freezes D0-H32-s14000 and changes only first-action diffusion seed.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/launch_c43_powered_causal_ranking_shard.sh"], "rationale": "No model trains in C43."}],
+    "data": [{"field": "source-disjoint train/final roles", "paper": "Value fitting and final evaluation use distinct episodes.", "upstream_code": "Episode identity is retained for held-out evaluation.", "local": "Train trials12,13,14,16,17 and final trials15,18,19,20,21 are immutable.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/prepare_c43_powered_causal_ranking_dataset.py"], "rationale": "Final branches cannot fit or select C44."}],
+    "action": [{"field": "clean executed prefix", "paper": "Consequences condition on executed actions.", "upstream_code": "FACT uses executed clean actions.", "local": "Exact result/trajectory action equality and terminal tail metadata are audited.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c43_powered_causal_ranking_dataset.py"], "rationale": "Unexecuted tails remain maskable."}],
+    "objective": [{"field": "mixed causal outcomes", "paper": "Success/failure alternatives supervise value.", "upstream_code": "Failure-aware fitting retains both labels.", "local": "Each split requires>=24 mixed groups across>=3 suites.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/evaluate_c43_powered_causal_ranking_dataset.py"], "rationale": "C43 gates data sufficiency, not model effectiveness."}],
+    "optimization": [{"field": "parameter updates", "paper": "Optimization follows collection.", "upstream_code": "Rollout generation is inference-only.", "local": "Zero optimizer steps over four shards and32 GPUs.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c43_powered_causal_ranking_shard.sh"]}],
+    "evaluation": [{"field": "mechanical and outcome audit", "paper": "Held-out value is judged on unseen rollouts.", "upstream_code": "Evaluation retains outcomes and episode identity.", "local": "All branches require exact actions, fixed seed schedules, complete consequences and predeclared roles.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c43_powered_causal_ranking_dataset.py"], "rationale": "A pass only authorizes C44 ranking."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["C42 roles and frozen parent fixed."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Inference-only fixed parent."]},
+    "data_contract": {"status": "PASS", "evidence": ["Five train and five final trials; d3/d5 states; four branches/group."]},
+    "action_contract": {"status": "PASS", "evidence": ["First chunk32 and exact executed action audit."]},
+    "objective_contract": {"status": "PASS", "evidence": ["24 mixed groups and three suites required per split."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["No gradients or optimizer."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Final source trials cannot train or select."]},
+    "gradient_path": {"status": "PASS", "evidence": ["No training path."]}
+  },
+  "budget": {"global_batch": 32, "optimizer_steps": 0, "training_samples": 0, "unique_windows": 0, "effective_epochs": 0.0, "gpu_count": 32, "estimated_hours": 0.5, "note": "Exact branch count and max simulator steps are frozen by C43 preparation after C42 source eligibility is known."},
+  "decision": {"status": "GO_CANARY", "rationale": "C40's positive direction and failed statistical gates specifically justify more source-disjoint causal data, not further C33 tuning.", "launch_command": "After C42 PASS, prepare C43 once; run C43_SHARD=0/1/2/3 on the four nodes; aggregate only after all shard markers."}
+}
