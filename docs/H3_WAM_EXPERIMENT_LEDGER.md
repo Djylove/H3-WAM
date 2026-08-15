@@ -726,7 +726,7 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `{10,30,100,300}`、weight decay`{0.03,0.3,3.0}`；H3×action选中`10/3.0`，LOO为`18/21`、
   top1 `6/6`，但已看过的C25 val仍仅`4/9`，只允许作为C27预选配置，不能回写C26结论。
 
-### 2026-08-15 — C27 fresh expanded causal dataset（运行中）
+### 2026-08-15 — C27 fresh expanded causal dataset 与 C28确认
 
 - 从固定父策略`D0-H32-s14000/replan8`的57个成功源episode中，在查看新分支结果前排除C22/C25
   用过的18个源episode，剩余39个全新源episode：Goal5、Object22、Spatial12。LIBERO-10父策略仅有
@@ -737,4 +737,28 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   state/branch不跨split。放行门为train mixed>=10、val mixed>=4且覆盖Goal/Object/Spatial三suite。
 - 四台8×A800分别运行一个noise-offset shard，避免一台机器同时跑同状态四候选；preregistration与
   selection SHA256分别为`6711ee8b30f9c85410e598255e9aea2e741269ce9d4594a563a898e794719a39`、
-  `c4712c6d0dbbd4477c1fac2861643387ca279a2ed7bb158eb98c5a3632d1107c`。结果未完成前不调门槛。
+  `c4712c6d0dbbd4477c1fac2861643387ca279a2ed7bb158eb98c5a3632d1107c`。结果生成期间未改门槛。
+- C27最终312/312完成、198成功；78组中17组mixed，train13组/42对、fresh val4组/12对，train和val
+  mixed均覆盖Goal/Object/Spatial。机械合同、源episode隔离、seed schedule与动作多样性全部通过，判定
+  `PASS_C27_EXPANDED_CAUSAL_DATASET`。完成报告SHA256为
+  `d2c33b99b7281a2ad8f6310def9e482bf4a1d8c3235f89ed3bfafa923d6fd6f0`。
+- 冻结dataset重新审计312条结果/轨迹及78个bit-exact起点，SHA256
+  `585d3060095c3a797304eae3e81971b4aa2991bc22e48f072b1b123b6de253d0`。78个真实在线INT8 H3 layer49
+  特征在32611重算38.24秒、峰值29.68GiB，SHA256
+  `9a3b2c51746968edbf8f8695491960721919afd773b501729c461f34ee1c875b`；没有使用ComfyUI或旧结果缓存。
+- C28严格复用C25 train-group LOO预选的10 steps/LR0.03/WD3.0，不读取C27 val调参。C25全部转train后
+  与C27 train合计22个mixed组/72对；每臂每步144个平衡样本，10 steps=`10` effective pair epochs、
+  1440 examples seen，H3/action父模型均冻结。
+- C28训练上H3×action为65/72、action-only为53/72，但fresh C27 val反转为H3 `6/12`、top1 `2/4`、
+  exact permutation `p=0.5859375`，action-only为`7/12`、top1 `2/4`。七项预注册门仅score variation和
+  shuffle margin通过，判定`FAIL_C28_FRESH_HELDOUT_WITHIN_STATE_RANKING / NO_GO_BEST_OF_N`。
+  artifact/checkpoint SHA256分别为
+  `718abe0b47e47b7b456c19205f6c2a807b3c312f1ab88fb1ac14f3e732be0558`、
+  `f0cbf0836c4e90553ceaf1586a38fc0bc6f552caf14a4dc56669346a4d749f11`。
+- 该失败排除“C26只有21对/训练不足”作为主因：监督增至72对后训练拟合更强、fresh泛化仍失败。停止用
+  已消费C27 val调静态H3×action critic；下一条 consequence 路线必须显式学习候选动作导致的短期动态，
+  且重新采集未消费源episode作验证。
+- 基础设施事件：首次手工特征命令遗漏正式rollout脚本固定设置的
+  `LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64`，导致32409上的INT8 H3前向报cuBLAS
+  初始化错误；不带该环境的探针在30907/32409/30234也失败。补齐环境后，三节点最小BF16 matmul全部
+  通过，故不是GPU/节点故障。C27特征与C28训练已在32611完成，模型结果不受此启动合同事件影响。

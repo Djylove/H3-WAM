@@ -1,0 +1,80 @@
+{
+  "experiment_id": "h3_c28_fresh_causal_action_critic_v1",
+  "classification": "novel_composition",
+  "hypothesis": "The C25 training-only-selected frozen H3 state-action interaction critic ranks successful first-action chunks above failed alternatives on fresh C27 source episodes and beats an action-only shortcut.",
+  "single_variable": "The candidate adds the frozen live INT8 H3 layer-49 state feature interaction to the executed 32-step action chunk; the action-only arm, data, pairwise objective, optimizer budget and fresh validation split remain fixed.",
+  "parent_baseline": "C25 all 32 groups are now training-only and C27 contributes 58 training groups; the only untouched evaluation data are C27's 20 source-episode-disjoint validation groups, including four mixed groups and 12 sortable pairs.",
+  "references": [
+    {"kind": "paper", "title": "FACT: A Failure-Aware Causal Transformer for World Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "FACT causal action-consequence and best-of-N", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "C28 fresh causal critic confirmation", "locator": "scripts/h3wam/train_c28_fresh_causal_action_critic.py", "revision": "d59fe54", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [
+      {"field": "causal action value", "paper": "A causal transformer predicts future consequences and action value.", "upstream_code": "Candidate actions are scored for best-of-N selection.", "local": "The D0 action parent and live INT8 H3 are frozen; only an isolated linear pairwise head over H3-state/action interactions is fitted.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_c28_fresh_causal_action_critic.py"], "rationale": "The available controlled outcomes support a small falsifiable critic, not end-to-end FACT reproduction."}
+    ],
+    "data": [
+      {"field": "counterfactual outcomes", "paper": "Successful and failed rollouts supervise action value.", "upstream_code": "Failure trajectories retain consequence/value supervision.", "local": "Four alternative first actions are executed from each bit-exact simulator state with identical continuation seed schedules; C27 source episodes are split-disjoint and frozen before outcome inspection.", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/eval/c27-expanded-causal-dataset-v1/COMPLETED", "/mnt/h3-wam/eval/c28-fresh-critic-v1/c27_dataset.pt"], "rationale": "The local labels are directly observed closed-loop successes under controlled first-action interventions."}
+    ],
+    "action": [
+      {"field": "candidate action", "paper": "Generated action tokens are valued before execution.", "upstream_code": "Each best-of-N candidate is scored.", "local": "The exact decoded 32-step environment-domain action chunk that was executed is scored.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/prepare_c27_causal_critic_dataset.py"], "rationale": "Using the executed chunk removes action-decoding and clamp ambiguity."}
+    ],
+    "objective": [
+      {"field": "within-state preference", "paper": "Value/cost supervision distinguishes successful and failed candidates.", "upstream_code": "The value head orders candidates.", "local": "Balanced within-state pairwise logistic loss orders every success/failure action pair.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_c26_causal_action_critic.py"], "rationale": "Pairwise ordering is identifiable without requiring globally calibrated success probabilities."}
+    ],
+    "optimization": [
+      {"field": "preselected critic fit", "paper": "Large-scale joint WAM optimization.", "upstream_code": "World, action and value objectives are jointly trained.", "local": "The C25 train-group LOO-selected configuration is frozen at 10 full-pair steps, learning rate 0.03, weight decay 3.0 and projection seed 20260815; all parent parameters remain frozen.", "status": "INTENTIONAL_DEVIATION", "evidence": ["/mnt/h3-wam/eval/c26-causal-critic-v1/train_group_loo.json"], "rationale": "No C27 validation outcome was used for configuration selection."}
+    ],
+    "evaluation": [
+      {"field": "fresh held-out ranking gate", "paper": "Best-of-N is evaluated closed loop.", "upstream_code": "The value head selects candidates during rollout.", "local": "C28 first requires pair accuracy, top-1 success, action-only margin, shuffled-label margin and permutation significance on four untouched C27 mixed validation groups.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_c28_fresh_causal_action_critic.py"], "rationale": "A closed-loop N=1 versus N=4 canary is authorized only if this fresh mechanism gate passes."}
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT 618a6c1 remains pinned; current upstream 9427ea4 differs only in README"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["H3 interaction and action-only arms fixed in d59fe54"]},
+    "data_contract": {"status": "PASS", "evidence": ["C27: 312 branches, 78 groups, 39 fresh source episodes, all mechanical audits pass"]},
+    "action_contract": {"status": "PASS", "evidence": ["312/312 result first chunks match saved trajectory actions"]},
+    "objective_contract": {"status": "PASS", "evidence": ["72 training positive pairs, balanced inverse pairs, no future observation input"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["C25 train-only LOO configuration fixed before opening C27 validation"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["C27 has four untouched mixed validation groups, 12 pairs, across Goal/Object/Spatial"]},
+    "gradient_path": {"status": "PASS", "evidence": ["H3, D0 action parent and FACT artifact are loaded frozen; only linear critic weights update"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["78 live H3 feature tensors are finite; peak feature-extraction memory 29.68 GiB"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["C28 checkpoint contains both arm weights, fixed design contract and all source hashes"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["action-only shortcut shares identical labels and optimizer budget"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["pending one-shot C28 fresh validation"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["not authorized before C28 mechanism pass"]}
+  },
+  "budget": {
+    "global_batch": 144,
+    "optimizer_steps": 10,
+    "training_samples": 1440,
+    "unique_windows": 144,
+    "effective_epochs": 10.0,
+    "gpu_count": 1,
+    "estimated_hours": 0.005
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The preregistered C27 data gate passed and the C28 configuration was selected exclusively from C25 training groups; one fresh held-out confirmation is authorized.",
+    "launch_command": "PYTHONPATH=src:scripts/h3wam:. CUDA_VISIBLE_DEVICES=1 /mnt/h3-wam/runtime/h3-int8-native/bin/python scripts/h3wam/train_c28_fresh_causal_action_critic.py --c25-dataset /mnt/h3-wam/eval/c26-causal-critic-v1/dataset.pt --c25-features /mnt/h3-wam/eval/c26-causal-critic-v1/h3_features.pt --c27-dataset /mnt/h3-wam/eval/c28-fresh-critic-v1/c27_dataset.pt --c27-features /mnt/h3-wam/eval/c28-fresh-critic-v1/c27_h3_features.pt --stats /mnt/h3-wam/data/v7_dense_h3_cache/stats.pt --fact-checkpoint /mnt/h3-wam/outputs/fact-lite-future-h3-v1/f1h_s500.pt --device cuda:0 --output /mnt/h3-wam/eval/c28-fresh-critic-v1/COMPLETED --checkpoint /mnt/h3-wam/eval/c28-fresh-critic-v1/critic.pt"
+  },
+  "result": {
+    "status": "FAIL_C28_FRESH_HELDOUT_WITHIN_STATE_RANKING",
+    "decision": "NO_GO_BEST_OF_N",
+    "metrics": {
+      "train_pairs": 72,
+      "fresh_val_pairs": 12,
+      "action_only_pair_accuracy": 0.5833333333333334,
+      "action_only_top1": "2/4",
+      "h3_interaction_pair_accuracy": 0.5,
+      "h3_interaction_top1": "2/4",
+      "h3_interaction_exact_permutation_p": 0.5859375,
+      "h3_interaction_shuffle_mean_pair_accuracy": 0.35
+    },
+    "artifact": "/mnt/h3-wam/eval/c28-fresh-critic-v1/COMPLETED",
+    "artifact_sha256": "718abe0b47e47b7b456c19205f6c2a807b3c312f1ab88fb1ac14f3e732be0558",
+    "checkpoint_sha256": "f0cbf0836c4e90553ceaf1586a38fc0bc6f552caf14a4dc56669346a4d749f11",
+    "interpretation": "The H3 interaction fits training pairs better than action-only (65/72 versus 53/72) but reverses to 6/12 versus 7/12 on fresh episodes. More epochs on this representation are not justified; candidate-conditioned consequence learning needs a new source-episode split.",
+    "next": "Stop static state-action ranking and best-of-N. Freeze C27 as consumed exploratory evidence; collect new source episodes before testing an action-conditioned dynamics/consequence route."
+  }
+}
