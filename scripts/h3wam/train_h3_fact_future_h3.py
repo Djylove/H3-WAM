@@ -26,6 +26,7 @@ sys.path.insert(0, str(SCRIPT_ROOT))
 
 from fastwam.models.h3wam.fact_lite_consequence import (  # noqa: E402
     FutureH3ConsequenceModel,
+    TemporalFutureH3ConsequenceModel,
     actions_for_arm,
     future_h3_mse,
 )
@@ -66,6 +67,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--action-horizon", type=int, default=32)
     parser.add_argument("--target-dim", type=int, default=256)
     parser.add_argument("--hidden-dim", type=int, default=256)
+    parser.add_argument(
+        "--model-variant", choices=("flattened", "temporal"), default="flattened"
+    )
+    parser.add_argument("--actions-per-latent", type=int, default=4)
+    parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--learning-rate", type=float, default=3.0e-4)
     parser.add_argument("--weight-decay", type=float, default=1.0e-2)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
@@ -339,10 +345,11 @@ def train(
 
 
 def fresh_restore_probe(
-    models: dict[str, FutureH3ConsequenceModel],
+    models: dict[str, FutureH3ConsequenceModel | TemporalFutureH3ConsequenceModel],
     batch: dict[str, Any],
     *,
     model_kwargs: dict[str, Any],
+    model_class: type[FutureH3ConsequenceModel] | type[TemporalFutureH3ConsequenceModel],
     device: torch.device,
 ) -> tuple[dict[str, dict[str, torch.Tensor]], float]:
     batch = move_batch(batch, device)
@@ -355,7 +362,7 @@ def fresh_restore_probe(
         for name, model in models.items():
             actions = actions_for_arm(batch["actions"], name)
             expected = model(batch["current_proprio"], batch["features"], actions).cpu()
-            restored = FutureH3ConsequenceModel(**model_kwargs).to(device)
+            restored = model_class(**model_kwargs).to(device)
             restored.load_state_dict(states[name], strict=True)
             actual = restored(batch["current_proprio"], batch["features"], actions).cpu()
             max_abs = max(max_abs, float((expected - actual).abs().max()))
@@ -366,7 +373,7 @@ def main() -> None:
     args = parse_args()
     if args.output.exists() or args.checkpoint.exists():
         raise FileExistsError("refusing to overwrite future-H3 report or checkpoint")
-    if min(args.steps, args.train_limit, args.val_limit, args.batch_size, args.action_horizon, args.target_dim, args.hidden_dim) <= 0:
+    if min(args.steps, args.train_limit, args.val_limit, args.batch_size, args.action_horizon, args.target_dim, args.hidden_dim, args.actions_per_latent, args.num_heads) <= 0:
         raise ValueError("steps, limits, batch size and dimensions must be positive")
     if args.batch_size < 2 or args.train_limit % args.batch_size or args.val_limit % args.batch_size:
         raise ValueError("limits must be divisible by batch-size >=2")
@@ -419,13 +426,24 @@ def main() -> None:
         "feature_input_scale": args.feature_input_scale,
         "projection_seed": args.projection_seed,
     }
-    initial = FutureH3ConsequenceModel(**model_kwargs)
+    if args.model_variant == "temporal":
+        model_class = TemporalFutureH3ConsequenceModel
+        model_kwargs.update({
+            "actions_per_latent": args.actions_per_latent,
+            "num_heads": args.num_heads,
+        })
+    else:
+        model_class = FutureH3ConsequenceModel
+    initial = model_class(**model_kwargs)
     models = {name: copy.deepcopy(initial).to(device) for name in ARMS}
     initial_metrics = evaluate(models, val_loader, device)
     started = time.perf_counter()
     history = train(models, train_loader, steps=args.steps, learning_rate=args.learning_rate, weight_decay=args.weight_decay, max_grad_norm=args.max_grad_norm, device=device)
     final_metrics = evaluate(models, val_loader, device)
-    states, restore_max_abs = fresh_restore_probe(models, next(iter(val_loader)), model_kwargs=model_kwargs, device=device)
+    states, restore_max_abs = fresh_restore_probe(
+        models, next(iter(val_loader)), model_kwargs=model_kwargs,
+        model_class=model_class, device=device,
+    )
 
     conditioned = float(final_metrics["conditioned_true"]["projected_mse"])
     independent = float(final_metrics["independent"]["projected_mse"])
@@ -440,6 +458,7 @@ def main() -> None:
     checkpoint_payload = {
         "schema_version": 1,
         "classification": "novel_composition_fact_lite_future_h3_only",
+        "model_variant": args.model_variant,
         "completed_steps": args.steps,
         "model_kwargs": model_kwargs,
         "models": states,
@@ -452,12 +471,18 @@ def main() -> None:
             "action_boundary": "candidate_actions_detached_inside_consequence_forward",
             "action_generator_present": False,
             "arms": list(ARMS),
+            "model_variant": args.model_variant,
+            "action_temporal_alignment": (
+                f"{args.actions_per_latent}_raw_actions_per_latent_token"
+                if args.model_variant == "temporal" else "flattened_32x7"
+            ),
         },
     }
     atomic_torch_save(checkpoint_payload, args.checkpoint.resolve())
     report = {
         "experiment_id": "h3_fact_lite_future_h3_f1h_v1",
         "classification": "novel_composition",
+        "model_variant": args.model_variant,
         "status": "PASS_MECHANISM_GATE" if mechanism_pass else "FAIL_MECHANISM_GATE",
         "claim_boundary": "Future-H3 projection mechanism only; no value, ranking, policy or LIBERO success claim.",
         "source": {
