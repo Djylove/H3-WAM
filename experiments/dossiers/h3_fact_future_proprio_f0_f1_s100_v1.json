@@ -1,0 +1,40 @@
+{
+  "experiment_id": "h3_fact_future_proprio_f0_f1_s100_v1",
+  "classification": "novel_composition",
+  "hypothesis": "Given the same current H3 observation and proprioception, the correct 32-step action chunk predicts proprioception at start+32 better than either a no-self-map shuffled action or a zero-action control.",
+  "single_variable": "The three parameter-identical arms differ only in candidate action input: correct, within-batch deranged, or zero.",
+  "parent_baseline": "Action-independent future-proprio model trained on the identical selected rows and initialization.",
+  "references": [
+    {"kind": "upstream_code", "title": "FACT causal action-to-consequence path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 FACT-lite future-proprio canary", "locator": "scripts/h3wam/train_h3_fact_future_proprio.py", "revision": "this dossier commit", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "action-to-consequence information flow", "paper": "Generated/clean action conditions future state, value and image under a causal mask.", "upstream_code": "Unified trainable Wan transformer with causal token visibility.", "local": "An isolated frozen-feature consequence expert consumes detached clean actions and predicts future proprio only.", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3wam/fact_lite_consequence.py"], "rationale": "This is the smallest no-leak mechanism test compatible with frozen INT8 H3, not a FACT reproduction."}],
+    "data": [{"field": "future-state join", "paper": "Future robot state follows the candidate action segment.", "upstream_code": "RoboTwin future_state/value records.", "local": "Episode-disjoint LIBERO v7 raw LeRobot observation.state[start+32], with cached current state parity <=1e-6.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_h3_fact_future_proprio.py", "tests/test_h3_fact_future_proprio.py"], "rationale": "The consequence target occurs exactly after the 32-step action horizon."}],
+    "action": [{"field": "candidate action", "paper": "Action tokens condition future predictions.", "upstream_code": "Clean generated/ground-truth action conditions the future branch.", "local": "Normalized 32x7 demo action, shuffled control, or zero control.", "status": "EQUIVALENT", "evidence": ["docs/H3_FACT_FUTURE_PROPRIO_F0_F1_CANARY.md"], "rationale": "The action information intervention is isolated."}],
+    "objective": [{"field": "future consequence", "paper": "Future state/value/video losses.", "upstream_code": "Joint future-state/value/image objective.", "local": "Future-proprio normalized MSE only.", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3wam/fact_lite_consequence.py"], "rationale": "Future H3/value/failure heads remain gated on this minimal signal."}],
+    "optimization": [{"field": "bounded canary", "paper": "150k-step global-batch256 RoboTwin training.", "upstream_code": "Full unified FACT training.", "local": "Three small arms, 100 steps, batch16, 1024 selected train rows.", "status": "INTENTIONAL_DEVIATION", "evidence": ["docs/H3_FACT_FUTURE_PROPRIO_F0_F1_CANARY.md"], "rationale": "The canary can reject the action-consequence signal but cannot reproduce FACT."}],
+    "evaluation": [{"field": "paired mechanism gate", "paper": "Task performance and best-of-N ranking.", "upstream_code": "Future/value calibration and closed loop.", "local": "256 episode-disjoint validation rows; correct vs independent, shuffled-trained and shuffled-at-eval.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_h3_fact_future_proprio.py"], "rationale": "Ranking and policy claims remain blocked."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT fixed at clean commit 618a6c16868699b6d4138941de6a863589ac00dd."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Future target is absent from model.forward; action input detaches inside the model."]},
+    "data_contract": {"status": "PASS", "evidence": ["Episode-disjoint/source-provenance/parquet-join tests pass; real-data audit runs before training."]},
+    "action_contract": {"status": "PASS", "evidence": ["32x7 min-max action, no padded rows, deterministic no-self-map shuffle."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Future-proprio target is detached and no action generator is imported."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Three arms share initialization, batches and optimizer hyperparameters."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Predeclared three 1% relative thresholds and fixed deterministic selection salt."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Unit test proves upstream action-generator gradient None and consequence action-encoder gradient nonzero."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Two-step CPU end-to-end smoke and explicit positive finite gradient checks."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Synthetic fresh restore max_abs=0; real canary repeats the same check."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["Zero-action independent arm is co-trained from identical initialization."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Pending real v7 s100 result."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Not applicable until consequence signal and value/ranking descendants pass."]}
+  },
+  "budget": {"gpu_count": 1, "optimizer_steps": 100, "batch_size": 16, "train_selected": 1024, "validation_selected": 256, "checkpoint_steps": [100]},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "All source, no-leak, temporal-join, paired-control, finite-gradient and restore mechanics pass locally. Run one real v7 s100 canary; only PASS_MECHANISM_GATE permits a same-contract s500 child.",
+    "launch_command": "Use the exact single-GPU command in docs/H3_FACT_FUTURE_PROPRIO_F0_F1_CANARY.md"
+  }
+}
