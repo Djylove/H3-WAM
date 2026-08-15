@@ -55,9 +55,16 @@ case "${USE_ACTION_ENSEMBLER:-0}" in
     ;;
   *) echo "USE_ACTION_ENSEMBLER must be boolean" >&2; exit 2 ;;
 esac
+progress_args=()
+progress_suffix=""
+if [[ -n "${H3_PROGRESS_PROBE:-}" ]]; then
+  test -f "${H3_PROGRESS_PROBE}"
+  progress_args+=(--progress-probe "$(realpath "${H3_PROGRESS_PROBE}")")
+  progress_suffix="_progress-shadow"
+fi
 checkpoint="$(realpath "${checkpoint}")"
 checkpoint_name="$(basename "${checkpoint}" .pt)"
-output_root="${OUTPUT_ROOT:-${workspace}/outputs/eval-dense-d0-long/${checkpoint_name}_${suite_slug}_task${task_id}_trial${trial_index}_replan${replan_steps}${ensemble_suffix}}"
+output_root="${OUTPUT_ROOT:-${workspace}/outputs/eval-dense-d0-long/${checkpoint_name}_${suite_slug}_task${task_id}_trial${trial_index}_replan${replan_steps}${ensemble_suffix}${progress_suffix}}"
 
 test -f "${checkpoint}"
 test -f "${project}/scripts/h3wam/rollout_libero.py"
@@ -93,6 +100,7 @@ exec bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
   --model-evaluations 10 \
   --seed 42 \
   --normalized-action-pre-clamp \
+  "${progress_args[@]}" \
   "${ensemble_args[@]}" \
   --output-dir "${output_root}" \
   --save-video \

@@ -90,6 +90,15 @@ from .dreamwam_kv_carrier import (
     H3DreamWAMKVCarrierPolicy,
     h3_kv_cache_bytes,
 )
+from .progress_probe import (
+    FrozenH3ProgressProbe,
+    PROGRESS_DESIGN_CONTRACT,
+    PROGRESS_FEATURE_CONTRACT,
+    PROGRESS_PROBE_FORMAT,
+    TIMEBLIND_PROGRESS_DESIGN_CONTRACT,
+    TIMEBLIND_PROGRESS_PROBE_FORMAT,
+    compact_h3_kv_progress_feature,
+)
 __all__ = [
     "ActionEnsembler",
     "action_denormalization_bounds",
@@ -151,6 +160,13 @@ __all__ = [
     "DEFAULT_H3_CARRIER_LAYERS",
     "DREAMWAM_COMMIT",
     "h3_kv_cache_bytes",
+    "FrozenH3ProgressProbe",
+    "PROGRESS_DESIGN_CONTRACT",
+    "PROGRESS_FEATURE_CONTRACT",
+    "PROGRESS_PROBE_FORMAT",
+    "TIMEBLIND_PROGRESS_DESIGN_CONTRACT",
+    "TIMEBLIND_PROGRESS_PROBE_FORMAT",
+    "compact_h3_kv_progress_feature",
     "DEFAULT_OFFICIAL_H3_LORA_TARGETS",
     "inject_official_h3_lora",
     "load_cached_task_context",

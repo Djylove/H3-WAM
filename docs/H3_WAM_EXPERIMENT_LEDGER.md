@@ -562,3 +562,16 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   checkpoint现显式记录并严格校验 `freeze_shared_blocks`；8-rank恢复后差为0，val40
   video/action为 `0.170031/1.303723`。因此放行同seed、同8000 windows、同预算的1000-step
   配对对照，唯一变量是是否更新H3 tail-2；这条对照同样为 `GO_LONG / NOT_EVIDENCE_READY`。
+
+### 2026-08-15 — C17/C18 frozen-H3 progress shadow
+
+- C17复用FACT commit `618a6c16868699b6d4138941de6a863589ac00dd` 的time-to-go意图，但
+  offset32是本项目适配，不是官方复现。4000 train/2000 episode-disjoint val上，task+step+H3相对
+  task+step MAE改善29.3%，只证明冻结H3 K/V含专家阶段信息。
+- 固定D0-H32-s14000/replan8的16条闭环shadow中，首动作块和outcome均16/16复现；C17最终值AUROC
+  `0.1875`，失败轨迹被absolute-step时间捷径压到0，判定`FAIL_PROGRESS_SHADOW_GATE`。
+- C18唯一变量是删除absolute-step。离线MAE `0.21545→0.09952`、R² `0.00418→0.74192`；同一
+  16条闭环AUROC提高到`0.546875`，仍未达到`0.65`，判定`FAIL_PROGRESS_SHADOW_GATE`。
+- 两轮均未更新任何动作/H3参数，不涉及global batch、effective epoch或训练checkpoint；各16 episode、
+  最多6400环境步、实测344秒。结论是成功专家time-to-go不足以训练闭环停滞critic；停止该标签路线，
+  action-conditioned ranking继续`NO_GO`，直到具备failure onset或counterfactual action outcome。

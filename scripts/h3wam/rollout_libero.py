@@ -108,6 +108,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Frozen full cache manifest used to resolve Candidate D0 text contexts.",
     )
+    parser.add_argument(
+        "--progress-probe",
+        type=Path,
+        help="Validated frozen H3 progress ridge for shadow diagnostics only.",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--target-latent-frames", type=int, default=12)
     parser.add_argument("--h3-feature-audio-horizon", type=int)
@@ -287,6 +292,12 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                     str(args.dreamwam_source_manifest.resolve()),
                 )
             )
+            if args.progress_probe is not None:
+                command.extend(
+                    ("--progress-probe", str(args.progress_probe.resolve()))
+                )
+        elif args.progress_probe is not None:
+            raise ValueError("--progress-probe requires h3_dreamwam_kv_int8")
         if args.h3_feature_audio_horizon is not None:
             command.extend(
                 (
@@ -452,6 +463,7 @@ def run_episode(
             "gripper_qpos": [],
             "previous_action": [],
             "policy_actions": [],
+            "progress_value": [],
             # Full MuJoCo state makes an exact cross-process teacher takeover
             # possible without keeping H3 and FastWAM resident together.
             "sim_state": [],
@@ -491,6 +503,7 @@ def run_episode(
     action_head_motion_disagreements = []
     action_head_gripper_disagreements = []
     action_head_switch_gate_probabilities = []
+    progress_values = []
     if use_action_ensembler:
         from fastwam.action_ensembler import ActionEnsembler
 
@@ -539,6 +552,11 @@ def run_episode(
         )
         if trajectory is not None:
             trajectory["policy_actions"].append(actions.copy())
+            trajectory["progress_value"].append(
+                np.nan
+                if metadata.get("progress_value") is None
+                else float(metadata["progress_value"])
+            )
         context_id = metadata.get("context_id")
         if first_environment_action is None:
             first_environment_action = metadata.get("first_environment_action")
@@ -561,6 +579,8 @@ def run_episode(
         action_head_switch_gate_probabilities.append(
             metadata.get("action_head_switch_gate_probability")
         )
+        if metadata.get("progress_value") is not None:
+            progress_values.append(float(metadata["progress_value"]))
         policy_seconds.append(roundtrip)
         model_seconds.append(float(metadata.get("inference_seconds", 0.0)))
         vae_seconds.append(float(metadata.get("vae_encode_seconds", 0.0)))
@@ -644,6 +664,14 @@ def run_episode(
             "action_head_gripper_disagreements": action_head_gripper_disagreements,
             "action_head_switch_gate_probabilities": (
                 action_head_switch_gate_probabilities
+            ),
+            "progress_values": progress_values,
+            "progress_first": progress_values[0] if progress_values else None,
+            "progress_last": progress_values[-1] if progress_values else None,
+            "progress_delta": (
+                progress_values[-1] - progress_values[0]
+                if progress_values
+                else None
             ),
             "mean_policy_roundtrip_seconds": sum(policy_seconds) / max(len(policy_seconds), 1),
             "mean_model_inference_seconds": sum(model_seconds) / max(len(model_seconds), 1),

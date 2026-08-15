@@ -65,7 +65,8 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C14 | temporal/progress | D0-H32 executed-action history16 adapter | LingBot-VA persistent video/action KV + local D0 parent | D0-H32-s14000/replan8 | add zero-init 16-action progress adapter；freeze parent | s14500 trials0/1长程+1，但trials2/3无新增；s17000过训练 | 机制证据保留；NO_GO_FUSION |
 | C15 | carrier/spatial | D0 dual-view grid K/V | local H3 adapter + DreamWAM carrier | D0-H32-s14000/replan8 | 32-token一维池化 → 左右相机各4×4网格池化 | Spatial7/20与父持平；Object2/8低于父5/8 | NO_GO；FAIL_PAIRED_GATE |
 | C16 | temporal/value | held-out progress value diagnostic | FACT | D0-H32-s14000 rollout trajectories | 只对成功轨迹按官方future-state time-to-go造target；失败轨迹右删失 | 1001 transitions；trial3 val238；LIBERO-10 val正样本0 | GO_DIAGNOSTIC；NO_GO_BEST_OF_N |
-| C17 | temporal/value | expert progress value diagnostic | FACT + v7 dense expert windows | frozen H3 carrier | future offset32的time-to-go target；不改动作策略 | feature gate PASS，MAE下降29.3%；待shadow trace | GO_SHADOW_TRACE；NO_GO_BEST_OF_N |
+| C17 | temporal/value | expert progress value diagnostic | FACT + v7 dense expert windows | frozen H3 carrier | task+absolute-step+H3预测offset32 time-to-go；不改动作 | feature PASS，但shadow AUROC0.1875；absolute-step形成时间捷径 | NO_GO_POLICY_INTEGRATION；保留诊断证据 |
+| C18 | temporal/value | time-blind expert progress diagnostic | C17冻结特征与split | C17 | 删除absolute-step，仅task+H3预测time-to-go | feature MAE下降53.8%，但shadow AUROC0.5469<0.65 | NO_GO_POLICY_INTEGRATION；需failure/action outcome |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -324,6 +325,19 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   `/mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1/COMPLETED`。
   同一拟合已导出为17KB严格契约权重 `probe.pt`（40 contexts、553维标准化输入、554个含bias权重），
   restore复算与原预测逐元素一致；下一步只做闭环shadow trace，不直接改动作。
+- C17 shadow在固定擂主的16条闭环上完成（四suite各2成功+2失败、同checkpoint/seed/init/replan8）：
+  16/16首动作块逐值一致、16/16 outcome一致，证明17KB头只读且没有改变动作；但最终remaining-progress
+  AUROC仅`0.1875`，成功/失败终值中位数分别`0.05746/0.0`。失败episode跑到step400时也被
+  `absolute_step/400`压成0，形成明确的时间捷径，故`FAIL_PROGRESS_SHADOW_GATE / NOT_EVIDENCE_READY`。
+  artifact：`/mnt/h3-wam/eval/c17-progress-shadow-v1/report.json`，16 episodes墙钟344秒。
+- C18以C17为父，只删除absolute-step并复用完全相同的4000/2000特征、split、ridge和target。离线
+  task-only→task+H3 MAE为`0.21545→0.09952`（ratio`0.46190`），R²为`0.00418→0.74192`，
+  四suite全部改善；但相同16条shadow的AUROC仅提升到`0.546875`，仍低于预注册`0.65`。
+  成功/失败终值中位数为`0.15174/0.15648`，虽方向正确但分离不足；首动作与outcome仍16/16一致。
+  因而停止仅靠成功专家time-to-go标签的调参，不授权best-of-N。下一次critic实验必须先取得可审计的
+  failure onset或同状态备选动作outcome。artifacts：
+  `/mnt/h3-wam/eval/c18-timeblind-progress-probe-v1/COMPLETED`、
+  `/mnt/h3-wam/eval/c18-timeblind-progress-shadow-v1/report.json`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。

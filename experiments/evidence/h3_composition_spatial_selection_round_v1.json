@@ -330,8 +330,8 @@
         "validation_manifest_sha256": "3941893af51f429896da206a999ecef05c8234b64ba836981995f7ec15c89413",
         "artifact": "/mnt/h3-wam/eval/expert-progress-targets-v1/report.json"
       },
-      "go_status": "GO_PROGRESS_HEAD_CANARY",
-      "evidence_status": "PASS_PROGRESS_FEATURE_GATE",
+      "go_status": "NO_GO_POLICY_INTEGRATION",
+      "evidence_status": "FAIL_PROGRESS_SHADOW_GATE",
       "canary_budget": {
         "train_samples": 4000,
         "validation_samples": 2000,
@@ -357,8 +357,61 @@
         "probe_parameters": 554,
         "probe_contexts": 40
       },
+      "shadow_result": {
+        "episodes": 16,
+        "successful_episodes": 8,
+        "failed_episodes": 8,
+        "first_action_chunks_exact": true,
+        "outcomes_exact": true,
+        "final_remaining_progress_auroc": 0.1875,
+        "success_median_delta": -0.60592205510144,
+        "success_median_last": 0.05746477904853603,
+        "failure_median_last": 0.0,
+        "duration_seconds": 344,
+        "status": "FAIL_PROGRESS_SHADOW_GATE",
+        "artifact": "/mnt/h3-wam/eval/c17-progress-shadow-v1/report.json"
+      },
       "promotion": "Frozen-H3 progress head must improve held-out value MAE and task-progress calibration over step/context baselines, including LIBERO-10, before fusion.",
-      "stop": "Feature gate passed, but no best-of-N or policy claim until a shadow progress trace passes and the critic is action-conditioned with held-out alternative outcomes."
+      "stop": "Shadow failed because absolute step is a time shortcut; do not integrate into policy or enable best-of-N."
+    },
+    "C18": {
+      "name": "time-blind-expert-progress-value-diagnostic",
+      "parent_lineage": "C17 frozen feature selection and ridge probe",
+      "classification": "controlled_ablation",
+      "source": {
+        "project": "FACT plus local C17",
+        "revision": "618a6c16868699b6d4138941de6a863589ac00dd"
+      },
+      "single_variable": "remove absolute_step/400 from both task baseline and H3 progress design",
+      "invariants": "same 4000/2000 selected features, contexts, targets, ridge, D0 checkpoint and 16 rollout initial states",
+      "feature_result": {
+        "baseline_task_only_mae": 0.21544751125316505,
+        "h3_plus_task_mae": 0.09951611057450793,
+        "mae_ratio": 0.46190420114702524,
+        "baseline_r2": 0.004178624069897885,
+        "h3_r2": 0.7419192982151501,
+        "all_four_suites_improved": true,
+        "status": "PASS_TIMEBLIND_PROGRESS_FEATURE_GATE",
+        "artifact": "/mnt/h3-wam/eval/c18-timeblind-progress-probe-v1/COMPLETED"
+      },
+      "shadow_result": {
+        "episodes": 16,
+        "successful_episodes": 8,
+        "failed_episodes": 8,
+        "first_action_chunks_exact": true,
+        "outcomes_exact": true,
+        "final_remaining_progress_auroc": 0.546875,
+        "success_median_delta": -0.48802929842654463,
+        "success_median_last": 0.15174124535092615,
+        "failure_median_last": 0.15648067952127348,
+        "duration_seconds": 344,
+        "status": "FAIL_PROGRESS_SHADOW_GATE",
+        "artifact": "/mnt/h3-wam/eval/c18-timeblind-progress-shadow-v1/report.json"
+      },
+      "go_status": "NO_GO_POLICY_INTEGRATION",
+      "evidence_status": "FAIL_PROGRESS_SHADOW_GATE",
+      "promotion": "AUROC>=0.65 with exact parent actions/outcomes and successful median delta<0",
+      "stop": "Do not tune this expert-only label further; require failure onset or held-out alternative-action outcomes before action-conditioned critic work."
     }
   },
   "difference_matrix": [
@@ -423,9 +476,10 @@
       "C14 executed-action-history16 adapter (mechanism only, fusion rejected)",
       "C15 dual-view spatial grid K/V (rejected: Spatial tie, Object regression)",
       "C16 FACT-style rollout progress value (target dossier only)",
-      "C17 expert progress value (feature gate passed; shadow integration pending)"
+      "C17 expert progress value (feature pass, shadow rejected: time shortcut)",
+      "C18 time-blind expert progress value (feature pass, shadow AUROC0.546875 rejected)"
     ],
     "track_winner": "none: C02 and C15 failed final spatial/object gates; C14 did not confirm across trials",
-    "fusion": "blocked; C17 passed the progress feature gate but has not passed shadow or action-conditioned rollout gates"
+    "fusion": "blocked; C17/C18 both failed shadow and no action-conditioned outcome supervision exists"
   }
 }

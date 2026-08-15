@@ -85,6 +85,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Frozen full cache manifest used to resolve Candidate D0 text contexts.",
     )
+    parser.add_argument(
+        "--progress-probe",
+        type=Path,
+        help="Validated frozen H3 progress ridge for shadow diagnostics only.",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--target-latent-frames", type=int, default=12)
     parser.add_argument(
@@ -1707,6 +1712,7 @@ class H3DreamWAMKVInt8Policy:
             )
 
         from fastwam.models.h3wam import (
+            FrozenH3ProgressProbe,
             H3DreamWAMKVCarrierPolicy,
             H3Int8FeatureBackbone,
             H3Int8OnlineKVContract,
@@ -1770,6 +1776,16 @@ class H3DreamWAMKVInt8Policy:
                 pool_strategy=kv_pool_strategy,
             ),
         )
+        if args.progress_probe is not None:
+            if kv_pool_strategy != "adaptive_avg_pool1d_sequence_v1":
+                raise ValueError(
+                    "H3 progress probe was trained only on sequence-pooled layer49 K/V"
+                )
+            if self.feature_ablation != "none":
+                raise ValueError("H3 progress shadow does not support feature ablation")
+            self.progress_probe = FrozenH3ProgressProbe.load(args.progress_probe)
+        else:
+            self.progress_probe = None
         self.video_vae = AutoencoderKLMiniMaxH3.from_pretrained(
             args.h3_model.resolve(),
             subfolder="vae",
@@ -1882,6 +1898,13 @@ class H3DreamWAMKVInt8Policy:
             task_context["context"],
             task_context["token_tags"],
         )
+        progress_value = None
+        if self.progress_probe is not None:
+            progress_value = self.progress_probe.predict(
+                context_id=task_context["id"],
+                absolute_step=int(request.get("step", 0)),
+                layer_cache=live_cache[49],
+            )
         if self.feature_ablation == "zero":
             live_cache = {
                 layer: {
@@ -2006,6 +2029,13 @@ class H3DreamWAMKVInt8Policy:
             "h3_feature_runtime": "int8_live_kv",
             "h3_feature_ablation": self.feature_ablation,
             "h3_checkpoint_sha256": self.h3_checkpoint_sha256,
+            "progress_value": progress_value,
+            "progress_probe_format": (
+                None
+                if self.progress_probe is None
+                else self.progress_probe.format
+            ),
+            "progress_shadow_only": self.progress_probe is not None,
             "candidate": self.candidate,
             "carrier_source_mode": self.carrier_source_mode,
             "carrier_layers": list(self.carrier_layers),

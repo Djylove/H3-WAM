@@ -12,6 +12,8 @@ from pathlib import Path
 
 import torch
 
+from fastwam.models.h3wam import compact_h3_kv_progress_feature
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -47,17 +49,6 @@ def select_rows(rows: list[dict], per_suite: int, bins: int = 5) -> list[dict]:
     return sorted(selected, key=lambda row: (row["suite"], row["id"]))
 
 
-def compact_layer49(payload: dict) -> torch.Tensor:
-    item = payload["video_kv_cache"][49]
-    values = []
-    for name in ("k", "v"):
-        tensor = item[name].float()
-        if tuple(tensor.shape) != (32, 56, 128):
-            raise ValueError(f"unexpected H3 K/V shape: {tuple(tensor.shape)}")
-        values.extend((tensor.mean(dim=(0, 1)), tensor.std(dim=(0, 1), unbiased=False)))
-    return torch.cat(values).to(torch.bfloat16)
-
-
 def main() -> None:
     args = parse_args()
     if args.per_suite <= 0 or args.num_shards <= 0 or not 0 <= args.shard_index < args.num_shards:
@@ -70,7 +61,11 @@ def main() -> None:
     cache = args.cache_root / args.kv_subdir
     for row in shard:
         payload = torch.load(cache / f"{row['id']}.pt", map_location="cpu", weights_only=False)
-        features.append(compact_layer49(payload))
+        features.append(
+            compact_h3_kv_progress_feature(payload["video_kv_cache"][49]).to(
+                torch.bfloat16
+            )
+        )
     result = {
         "format": "h3wam-progress-probe-features-v1",
         "selection_sha256": selection_hash,
