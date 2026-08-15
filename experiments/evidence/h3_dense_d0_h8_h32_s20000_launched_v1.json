@@ -140,7 +140,37 @@
       "existence_claim": "One frozen-INT8-H3 plus unified dense DreamWAM action expert checkpoint can satisfy real LIBERO predicates in more than one suite/task without task-specific finetuning.",
       "benchmark_or_horizon_superiority_status": "NOT_EVIDENCE_READY"
     },
-    "active_replication": "H32 s11000 is running additional trials for the successful goal5 and object0 tasks plus object1; matched-step/final H8-H32 evaluation remains required."
+    "s11000_replication": {
+      "libero_goal_task5": {"successes": 1, "episodes": 3},
+      "libero_object_task0": {"successes": 1, "episodes": 4},
+      "libero_object_task1": {"successes": 0, "episodes": 1},
+      "interpretation": "The two predicate successes are real but not robust; they promote matched-step evaluation, not a high-success-rate or benchmark claim."
+    },
+    "matched_s12000_trials0_1": {
+      "contract": "H8 versus H32 on goal5 and object0, trials0/1, exact completed steps12000; only action horizon/replan differs.",
+      "offline": {
+        "h32": {"normalized_action_mse": 0.07005957093982228, "physical_action_mse": 0.029194734720913728, "gripper_accuracy": 0.925, "language_relative_l2_prediction_delta": 0.806565698561586, "visual_shuffle_normalized_mse_penalty": 0.07720282193894103},
+        "h8": {"normalized_action_mse": 0.06405320681775005, "physical_action_mse": 0.026146188011083333, "gripper_accuracy": 0.9296875, "language_relative_l2_prediction_delta": 0.4183156859744615, "visual_shuffle_normalized_mse_penalty": 0.05884251596414418}
+      },
+      "rollout": {
+        "h32_goal5": {"successes": 2, "episodes": 2, "success_steps": [254, 395]},
+        "h8_goal5": {"successes": 0, "episodes": 2},
+        "h32_object0": {"successes": 0, "episodes": 2},
+        "h8_object0": {"successes": 1, "episodes": 2, "success_steps": [149]}
+      },
+      "interpretation": "At matched budget H8 is slightly better on generic action/gripper error, H32 retains much stronger language/visual dependence, and closed-loop behavior is task-type dependent: H32 wins sustained push while H8 has the only short pick-place success."
+    },
+    "matched_s12000_trials0_3": {
+      "h32_goal5": {"successes": 2, "episodes": 4},
+      "h8_goal5": {"successes": 0, "episodes": 4},
+      "h32_object0": {"successes": 2, "episodes": 4},
+      "h8_object0": {"successes": 2, "episodes": 4},
+      "aggregate_h32": {"successes": 4, "episodes": 8},
+      "aggregate_h8": {"successes": 2, "episodes": 8},
+      "paired_subset_status": "EVIDENCE_READY",
+      "supported": "At exact s12000 on this preregistered two-task/eight-episode-per-arm screen, the H32 training-and-replan bundle beats H8 overall and uniquely solves the sustained push task; both solve the short object pick-place task at 2/4.",
+      "not_supported": "This does not establish full LIBERO benchmark superiority, isolate training horizon from execution replan, or prove that H8 is globally inferior."
+    }
   },
   "retention_cleanup": {
     "deleted_files": 143,

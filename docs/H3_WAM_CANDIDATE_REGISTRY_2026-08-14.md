@@ -116,6 +116,16 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 - task3各4 trials 均 `0/4`：H8四次都移动目标碗、平均最大位移 `0.5148`，但0次拉开顶层抽屉；
   H32四次都接触碗，2次明显拉动顶层抽屉，平均抽屉/碗位移 `0.0689/0.1811`。当前解释是H8偏短期
   目标接触，H32更可能学习先后顺序；必须由 matched-step/final paired rollout 确认。
+- H32-s11000 正例复核后，goal task5 为 `1/3`、object task0 为 `1/4`，新增 object task1 为 `0/1`；
+  正例可复现身份但当前成功率不稳。32409 已启动严格 matched-s12000 的 H8/H32 配对：goal5 与
+  object0 各 trial0/1，共8 episodes，action horizon/replan 是唯一变量。
+- matched-s12000 trials0/1：H32 在 goal5 为 `2/2`、Object0 为 `0/2`；H8 在 goal5 为 `0/2`、
+  Object0 为 `1/2`（第149步成功）。离线H8 action/gripper略优，但H32语言/视觉反事实响应明显更强；
+  闭环呈任务类型分工而非单边碾压。已继续 trials2/3，将每个任务/模型扩为4 episodes。
+- matched-s12000 trials0–3 完整结果：H32 goal5/object0 分别 `2/4、2/4`，H8 为 `0/4、2/4`；
+  聚合 H32 `4/8` 对 H8 `2/8`。因此 H32 的“训练H32+部署replan32”bundle 在该两任务配对screen
+  达到 `EVIDENCE_READY` 并成为 horizon 赛道 rollout-gate 暂定胜者；完整LIBERO优越性仍为
+  `NOT_EVIDENCE_READY`，且本实验没有拆开训练horizon与执行replan两个耦合因素。
 
 ## 蛊王融合谱系
 
