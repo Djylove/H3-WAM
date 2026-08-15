@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import torch
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,10 +17,14 @@ sys.modules[spec.name] = MODULE
 spec.loader.exec_module(MODULE)
 
 
-def test_c31_feature_samples_order_current_before_future_targets():
+@pytest.mark.parametrize("dataset_format", [
+    "h3wam-c31-action-conditioned-consequence-dataset-v1",
+    "h3wam-c34-combined-consequence-ranking-dataset-v1",
+])
+def test_consequence_feature_samples_order_current_before_future_targets(dataset_format):
     image = torch.zeros(4, 4, 3, dtype=torch.uint8)
     dataset = {
-        "format": "h3wam-c31-action-conditioned-consequence-dataset-v1",
+        "format": dataset_format,
         "states": [
             {"group_id": 0, "task_language": "task a", "agentview_image": image, "wristview_image": image},
             {"group_id": 1, "task_language": "task b", "agentview_image": image + 1, "wristview_image": image + 1},

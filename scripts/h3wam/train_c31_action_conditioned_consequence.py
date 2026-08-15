@@ -32,6 +32,11 @@ from fastwam.models.h3wam.fact_lite_consequence import (
 
 DATA_FORMAT = "h3wam-c31-action-conditioned-consequence-dataset-v1"
 FEATURE_FORMAT = "h3wam-c31-live-h3-consequence-features-v1"
+FORMATS = {
+    DATA_FORMAT: FEATURE_FORMAT,
+    "h3wam-c34-combined-consequence-ranking-dataset-v1":
+        "h3wam-c34-live-h3-consequence-features-v1",
+}
 ARMS = ("conditioned", "shuffled", "independent")
 
 
@@ -295,7 +300,7 @@ def main() -> None:
     dataset_sha, feature_sha = sha256_file(dataset_path), sha256_file(feature_path)
     data = torch.load(dataset_path, map_location="cpu", weights_only=False)
     features = torch.load(feature_path, map_location="cpu", weights_only=False)
-    if data.get("format") != DATA_FORMAT or features.get("format") != FEATURE_FORMAT:
+    if data.get("format") not in FORMATS or features.get("format") != FORMATS[data["format"]]:
         raise ValueError("C31 data/feature format mismatch")
     if features.get("dataset_sha256") != dataset_sha:
         raise ValueError("C31 feature/dataset identity mismatch")

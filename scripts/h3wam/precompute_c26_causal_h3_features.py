@@ -30,6 +30,11 @@ FORMAT_BY_DATASET = {
     "h3wam-c26-causal-critic-dataset-v1": "h3wam-c26-live-h3-features-v1",
     "h3wam-c27-causal-critic-dataset-v1": "h3wam-c27-live-h3-features-v1",
     "h3wam-c31-action-conditioned-consequence-dataset-v1": "h3wam-c31-live-h3-consequence-features-v1",
+    "h3wam-c34-combined-consequence-ranking-dataset-v1": "h3wam-c34-live-h3-consequence-features-v1",
+}
+CONSEQUENCE_DATASETS = {
+    "h3wam-c31-action-conditioned-consequence-dataset-v1",
+    "h3wam-c34-combined-consequence-ranking-dataset-v1",
 }
 EXPECTED_H3_SHA256 = "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
 EXPECTED_SOURCE_SHA256 = "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9"
@@ -95,7 +100,7 @@ def feature_samples(dataset: dict) -> list[dict]:
         }
         for state in states
     ]
-    if dataset.get("format") == "h3wam-c31-action-conditioned-consequence-dataset-v1":
+    if dataset.get("format") in CONSEQUENCE_DATASETS:
         branches = dataset.get("branches")
         if not isinstance(branches, list) or not branches:
             raise ValueError("C31 consequence dataset requires branches")
@@ -249,7 +254,7 @@ def main() -> None:
         "duration_seconds": time.perf_counter() - started,
         "peak_allocated_gib": torch.cuda.max_memory_allocated(device) / 2**30,
     }
-    if dataset["format"] == "h3wam-c31-action-conditioned-consequence-dataset-v1":
+    if dataset["format"] in CONSEQUENCE_DATASETS:
         result["sample_kinds"] = [sample["kind"] for sample in samples]
         result["sample_indices"] = torch.tensor(
             [int(sample["index"]) for sample in samples]
@@ -266,7 +271,7 @@ def main() -> None:
     os.replace(temporary, output)
     count_name = (
         "samples"
-        if dataset["format"] == "h3wam-c31-action-conditioned-consequence-dataset-v1"
+        if dataset["format"] in CONSEQUENCE_DATASETS
         else "groups"
     )
     print(json.dumps({

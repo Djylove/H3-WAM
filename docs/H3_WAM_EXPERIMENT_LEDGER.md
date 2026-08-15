@@ -822,3 +822,8 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - C33自动prepare watcher的shell内联Python引号被远端shell剥离而报SyntaxError；C32 artifact本身正常，
   随后用相同已提交脚本手工执行并得到上述固定哈希。该事件发生在任何C33 outcome前，只影响自动化，
   不改变selection、数据门或模型结论。
+- C33运行期间提前完成C34组合冻结器：C30只保留45个原train source/90 states/360 branches，并继续按
+  结果未知时固定的37/8 source划分训练与consequence validation；C30原16个旧val source全部排除。
+  C33若通过，其52个source/104 states/416 branches全部只作fresh ranking validation。组合数据预计为
+  194 states/776 branches，在线INT8 H3需抽取970个current/future样本；C34格式、特征路由、masked
+  executed-action loader及现有future-H3模型共12项测试通过。C33未通过前保持`HOLD_C33_GATE`。
