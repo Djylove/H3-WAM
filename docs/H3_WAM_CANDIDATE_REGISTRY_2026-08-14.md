@@ -143,6 +143,10 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
   checkpoint/replan32 是 `4/8`、object0 `2/4`。因此长32步开环执行是已证实的部署瓶颈，当前
   rollout incumbent 更新为 H32-s14000/replan8。最终 s20000 队列同步改为两臂都用 replan8，只有
   在同8 episodes 达到至少 `6/8` 且条件响应不塌缩时才替换 incumbent。
+- H32-s20000/replan8 最终门为 `4/8`：object0 `4/4`，但 goal5 从 s14000 的 `2/4` 降为 `0/4`；
+  离线条件响应仍健康。它没有达到预注册的 `>=6/8` 晋级线，明确拒绝并保留 H32-s14000/replan8。
+  这表明继续优化偏向短 pick-place，却损失持续 push，训练步数与闭环能力不是单调关系。H8-s20000
+  完成后，自动队列会跳过已有H32结果，只补H8的8 episodes。
 
 ## 蛊王融合谱系
 

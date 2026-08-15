@@ -16,6 +16,7 @@
     "incumbent": "D0 H32 dense s963; physical MSE 0.1330554, ADE 0.8997891, gripper macro-F1 0.6859585",
     "control": "D0 H32 strict schema2 continuation to s20000",
     "challenger": "D0 H8 fresh matched-sample training to s20000",
+    "current_rollout_incumbent": "D0 H32 s14000 with execution replan8; 6/8 on goal5/object0 trials0-3",
     "track": "action objective / deployment horizon",
     "excluded_this_round": {
       "aligned_five_layer_D": "Lost the dense paired s963 action/range gate to D0.",
@@ -221,9 +222,24 @@
       "status": "EVIDENCE_READY_FOR_FIXED_TWO_TASK_DEPLOYMENT_ABLATION",
       "interpretation": "At the identical checkpoint and episode seeds, replan8 raises aggregate success from 4/8 to 6/8 and object0 from 2/4 to 4/4. Long open-loop action execution was a material deployment bottleneck. This does not establish a full LIBERO success rate."
     },
+    "h32_s20000_replan8_final_gate": {
+      "checkpoint_sha256": "5f492b818e3610c8fd431fe3943c56c0b38929976b70b23d989ea199af680e08",
+      "completed_steps": 20000,
+      "training_samples": 160000,
+      "effective_epochs": 0.7968960897304997,
+      "offline": {"normalized_action_mse": 0.05964703950205928, "physical_action_mse": 0.024401304668515422, "gripper_accuracy": 0.933984375, "language_relative_l2_prediction_delta": 0.8681068149841579, "visual_shuffle_normalized_mse_penalty": 0.08227570085292817},
+      "rollout": {
+        "goal5": {"successes": 0, "episodes": 4},
+        "object0": {"successes": 4, "episodes": 4, "success_trials": [0, 1, 2, 3], "success_steps": [186, 124, 127, 134]},
+        "aggregate": {"successes": 4, "episodes": 8}
+      },
+      "sorted_sha256_manifest_sha256": "f6347ccefbefd6148da5fe16d41e39cd92f054d565feb2567d77d7204f0da895",
+      "promotion_status": "REJECT_KEEP_H32_S14000_REPLAN8",
+      "interpretation": "Continuing from s14000 to s20000 preserved 4/4 object pick-place but reduced goal5 sustained-push success from 2/4 to 0/4. More optimization is not monotonically better for closed-loop behavior."
+    },
     "queued_final_s20000_pair": {
       "node_port": 32409,
-      "queue_pid": 582490,
+      "queue_pid": 582689,
       "runner": "scripts/h3wam/queue_final_d0_s20000_rollout.sh",
       "episodes_per_arm": 8,
       "tasks": ["libero_goal task5 trials0-3", "libero_object task0 trials0-3"],
@@ -254,7 +270,7 @@
   },
   "gates": {
     "training_permission": "GO_LONG",
-    "effect_status": "S12000_TWO_TASK_PAIRED_SUBSET_EVIDENCE_READY; FULL_BENCHMARK_NOT_EVIDENCE_READY",
+    "effect_status": "S14000_REPLAN8_TWO_TASK_DEPLOYMENT_ABLATION_EVIDENCE_READY; FULL_BENCHMARK_NOT_EVIDENCE_READY",
     "promotion": "A checkpoint must retain non-collapsed visual/language counterfactual response and gripper control, then produce target contact or success in the fixed 400-step rollout.",
     "stop": "Stop a branch on non-finite gradients, exact-restore failure, sample overlap, or confirmed conditioning collapse across consecutive checkpoints."
   },

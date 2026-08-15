@@ -33,6 +33,19 @@ launch_one() {
   local task="$5"
   local trial="$6"
   local log="${log_dir}/${suite}_task${task}_trial${trial}_${mode}.log"
+  local checkpoint_name
+  local suite_slug="${suite#libero_}"
+  local output_root
+  checkpoint_name="$(basename "${checkpoint}" .pt)"
+  output_root="${workspace}/outputs/eval-dense-d0-long/${checkpoint_name}_${suite_slug}_task${task}_trial${trial}_replan8"
+  if [[ -f "${output_root}/results.json" ]]; then
+    echo "skip completed ${output_root}"
+    return 0
+  fi
+  if [[ -e "${output_root}" ]]; then
+    echo "refusing partial pre-existing output ${output_root}" >&2
+    return 1
+  fi
   env SUITE="${suite}" REPLAN_STEPS_OVERRIDE=8 bash "${rollout_script}" \
     "${mode}" "${checkpoint}" "${gpu}" "${task}" "${trial}" >"${log}" 2>&1 &
   wave_pids+=("$!")
