@@ -214,6 +214,129 @@ class FutureH3ConsequenceModel(nn.Module):
         return current_target + delta
 
 
+class TemporalFutureH3ConsequenceModel(nn.Module):
+    """Predict future H3 features from clean, time-aligned action tokens.
+
+    MiniWorld aligns four raw actions to one video-latent frame, while FACT
+    exposes the clean action sequence as K/V-only context for future targets.
+    This isolated adapter combines those two code-backed contracts: 32 actions
+    become eight ordered tokens, and a future query attends to them plus the
+    frozen current observation.  Candidate actions are detached so future
+    supervision cannot update the upstream action generator.
+    """
+
+    def __init__(
+        self,
+        *,
+        state_dim: int = 8,
+        action_dim: int = 7,
+        action_horizon: int = 32,
+        actions_per_latent: int = 4,
+        h3_feature_dim: int = 5376,
+        target_dim: int = 256,
+        hidden_dim: int = 256,
+        num_heads: int = 8,
+        feature_input_scale: float = 0.009606920816877307,
+        projection_seed: int = 20260815,
+    ) -> None:
+        super().__init__()
+        if action_horizon % actions_per_latent:
+            raise ValueError("action_horizon must be divisible by actions_per_latent")
+        if hidden_dim % num_heads:
+            raise ValueError("hidden_dim must be divisible by num_heads")
+        if min(
+            state_dim, action_dim, action_horizon, actions_per_latent,
+            h3_feature_dim, target_dim, hidden_dim, num_heads,
+        ) <= 0:
+            raise ValueError("all temporal consequence dimensions must be positive")
+        if feature_input_scale <= 0:
+            raise ValueError("feature_input_scale must be positive")
+        self.state_dim = int(state_dim)
+        self.action_dim = int(action_dim)
+        self.action_horizon = int(action_horizon)
+        self.actions_per_latent = int(actions_per_latent)
+        self.action_tokens = self.action_horizon // self.actions_per_latent
+        self.h3_feature_dim = int(h3_feature_dim)
+        self.target_dim = int(target_dim)
+        self.feature_input_scale = float(feature_input_scale)
+        self.projection_seed = int(projection_seed)
+
+        generator = torch.Generator(device="cpu").manual_seed(self.projection_seed)
+        projection = torch.randn(
+            self.h3_feature_dim, self.target_dim, generator=generator
+        ) / self.h3_feature_dim**0.5
+        self.register_buffer("fixed_projection", projection, persistent=True)
+        self.state_encoder = nn.Sequential(
+            nn.Linear(self.state_dim, hidden_dim), nn.SiLU(), nn.LayerNorm(hidden_dim)
+        )
+        self.visual_encoder = nn.Sequential(
+            nn.Linear(self.target_dim, hidden_dim), nn.SiLU(), nn.LayerNorm(hidden_dim)
+        )
+        self.action_encoder = nn.Sequential(
+            nn.Linear(self.actions_per_latent * self.action_dim, hidden_dim),
+            nn.SiLU(), nn.LayerNorm(hidden_dim),
+        )
+        self.action_position = nn.Parameter(
+            torch.randn(1, self.action_tokens, hidden_dim, generator=generator)
+            / hidden_dim**0.5
+        )
+        self.future_query = nn.Parameter(
+            torch.randn(1, 1, hidden_dim, generator=generator) / hidden_dim**0.5
+        )
+        self.context_norm = nn.LayerNorm(hidden_dim)
+        self.future_attention = nn.MultiheadAttention(
+            hidden_dim, num_heads, batch_first=True
+        )
+        self.predictor = nn.Sequential(
+            nn.LayerNorm(hidden_dim), nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(), nn.Linear(hidden_dim, self.target_dim),
+        )
+
+    def project_features(self, h3_features: torch.Tensor) -> torch.Tensor:
+        if h3_features.ndim == 4 and h3_features.shape[1] == 1:
+            h3_features = h3_features[:, 0]
+        if h3_features.ndim != 3 or h3_features.shape[-1] != self.h3_feature_dim:
+            raise ValueError(
+                "h3_features must be [B,T,F] (or [B,1,T,F]) with "
+                f"F={self.h3_feature_dim}, got {tuple(h3_features.shape)}"
+            )
+        pooled = h3_features.float().mean(dim=1) * self.feature_input_scale
+        return pooled @ self.fixed_projection.to(pooled)
+
+    def forward(
+        self,
+        current_proprio: torch.Tensor,
+        h3_features: torch.Tensor,
+        candidate_actions: torch.Tensor,
+    ) -> torch.Tensor:
+        if current_proprio.ndim != 2 or current_proprio.shape[-1] != self.state_dim:
+            raise ValueError(
+                f"current_proprio must be [B,{self.state_dim}], got "
+                f"{tuple(current_proprio.shape)}"
+            )
+        expected = (
+            current_proprio.shape[0], self.action_horizon, self.action_dim
+        )
+        if tuple(candidate_actions.shape) != expected:
+            raise ValueError(f"candidate_actions must be {expected}, got {tuple(candidate_actions.shape)}")
+        current_target = self.project_features(h3_features)
+        if current_target.shape[0] != current_proprio.shape[0]:
+            raise ValueError("H3 feature batch must match current proprio batch")
+        actions = candidate_actions.detach().float().reshape(
+            expected[0], self.action_tokens,
+            self.actions_per_latent * self.action_dim,
+        )
+        state_token = self.state_encoder(current_proprio.float()).unsqueeze(1)
+        visual_token = self.visual_encoder(current_target).unsqueeze(1)
+        action_tokens = self.action_encoder(actions) + self.action_position
+        context = self.context_norm(
+            torch.cat((state_token, visual_token, action_tokens), dim=1)
+        )
+        query = self.future_query.expand(expected[0], -1, -1) + state_token + visual_token
+        future, _ = self.future_attention(query, context, context, need_weights=False)
+        return current_target + self.predictor(future[:, 0])
+
+
 def future_proprio_mse(
     model: FutureProprioConsequenceModel,
     *,
@@ -276,6 +399,7 @@ def actions_for_arm(actions: torch.Tensor, arm: str) -> torch.Tensor:
 __all__ = [
     "FutureH3ConsequenceModel",
     "FutureProprioConsequenceModel",
+    "TemporalFutureH3ConsequenceModel",
     "actions_for_arm",
     "deranged_batch_indices",
     "future_proprio_mse",
