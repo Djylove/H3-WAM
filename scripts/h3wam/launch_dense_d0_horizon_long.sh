@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-if (( $# != 1 )) || [[ "$1" != "h32_resume" && "$1" != "h8_fresh" ]]; then
-  echo "usage: $0 h32_resume|h8_fresh" >&2
+if (( $# != 1 )) || [[ "$1" != "h32_resume" && "$1" != "h8_fresh" && "$1" != "d_h32_resume" ]]; then
+  echo "usage: $0 h32_resume|h8_fresh|d_h32_resume" >&2
   exit 2
 fi
 MODE="$1"
@@ -15,19 +15,39 @@ CACHE_ROOT="${CACHE_ROOT:-${H3_WORKSPACE}/data/v7_dense_h3_cache}"
 KV_SUBDIR="${KV_SUBDIR:-h3_int8_dreamwam_kv_5x32_dense_v1}"
 READY_MARKER="${READY_MARKER:-${H3_WORKSPACE}/dense-d0-v1-96976ce/cache_generation/full_audit/DUAL_CACHE_AUDIT_READY.json}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
+RESUME_FROM_MILESTONE="${RESUME_FROM_MILESTONE:-0}"
+[[ "${RESUME_FROM_MILESTONE}" =~ ^[0-9]+$ ]] || {
+  echo "RESUME_FROM_MILESTONE must be a non-negative integer" >&2
+  exit 2
+}
 SELECTED80_SHA256="26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42"
 PARENT_S963_SHA256="0a72d829a70f6b408f9aedeeae4dac6734e1c67cc29bf3fca85a8fd1f5234cc5"
+PARENT_D_S963_SHA256="b9084e294e86e63756b6a13b99dac1bf817f9e2e9513026dcf03b382b79bad25"
 
 if [[ "${MODE}" == "h32_resume" ]]; then
   ACTION_HORIZON=32
+  ARM=d0
+  FINAL_MILESTONE=20000
   OUTPUT_ROOT="${OUTPUT_ROOT:-${H3_WORKSPACE}/outputs/dense-carrier-d0-h32-s20000-v1}"
   previous_checkpoint="${H3_WORKSPACE}/outputs/dense-carrier-tournament-v1/d0/checkpoints/d0_s963.pt"
   previous_milestone=963
+  expected_parent_sha256="${PARENT_S963_SHA256}"
+elif [[ "${MODE}" == "d_h32_resume" ]]; then
+  ACTION_HORIZON=32
+  ARM=d
+  FINAL_MILESTONE=14000
+  OUTPUT_ROOT="${OUTPUT_ROOT:-${H3_WORKSPACE}/outputs/dense-carrier-d-h32-s14000-v1}"
+  previous_checkpoint="${H3_WORKSPACE}/outputs/dense-carrier-tournament-v1/d/checkpoints/d_s963.pt"
+  previous_milestone=963
+  expected_parent_sha256="${PARENT_D_S963_SHA256}"
 else
   ACTION_HORIZON=8
+  ARM=d0
+  FINAL_MILESTONE=20000
   OUTPUT_ROOT="${OUTPUT_ROOT:-${H3_WORKSPACE}/outputs/dense-carrier-d0-h8-s20000-v1}"
   previous_checkpoint=""
   previous_milestone=0
+  expected_parent_sha256=""
 fi
 
 for required in \
@@ -43,19 +63,26 @@ done
   echo "train manifest row count changed" >&2
   exit 2
 }
-if [[ "${MODE}" == "h32_resume" ]]; then
+if [[ -n "${previous_checkpoint}" ]]; then
   [[ -f "${previous_checkpoint}" ]] || { echo "missing parent: ${previous_checkpoint}" >&2; exit 2; }
   actual_parent_sha256="$(sha256sum "${previous_checkpoint}" | awk '{print $1}')"
-  [[ "${actual_parent_sha256}" == "${PARENT_S963_SHA256}" ]] || {
+  [[ "${actual_parent_sha256}" == "${expected_parent_sha256}" ]] || {
     echo "parent s963 identity mismatch: ${actual_parent_sha256}" >&2
     exit 2
   }
 fi
-[[ ! -e "${OUTPUT_ROOT}" ]] || { echo "refusing to reuse output root: ${OUTPUT_ROOT}" >&2; exit 1; }
-
-mkdir -p "${OUTPUT_ROOT}/checkpoints" "${OUTPUT_ROOT}/reports" \
-  "${OUTPUT_ROOT}/evaluations" "${OUTPUT_ROOT}/logs" "${OUTPUT_ROOT}/evaluation_logs"
-printf '%s\n' "$(date -Iseconds)" > "${OUTPUT_ROOT}/STARTED"
+if (( RESUME_FROM_MILESTONE > 0 )); then
+  [[ -d "${OUTPUT_ROOT}" ]] || { echo "resume output root is missing" >&2; exit 2; }
+  previous_checkpoint="${OUTPUT_ROOT}/checkpoints/${ARM}_h${ACTION_HORIZON}_s${RESUME_FROM_MILESTONE}.pt"
+  [[ -f "${previous_checkpoint}" ]] || { echo "resume checkpoint is missing" >&2; exit 2; }
+  previous_milestone="${RESUME_FROM_MILESTONE}"
+  printf '%s milestone=%s\n' "$(date -Iseconds)" "${RESUME_FROM_MILESTONE}" >> "${OUTPUT_ROOT}/RESUMED"
+else
+  [[ ! -e "${OUTPUT_ROOT}" ]] || { echo "refusing to reuse output root: ${OUTPUT_ROOT}" >&2; exit 1; }
+  mkdir -p "${OUTPUT_ROOT}/checkpoints" "${OUTPUT_ROOT}/reports" \
+    "${OUTPUT_ROOT}/evaluations" "${OUTPUT_ROOT}/logs" "${OUTPUT_ROOT}/evaluation_logs"
+  printf '%s\n' "$(date -Iseconds)" > "${OUTPUT_ROOT}/STARTED"
+fi
 
 export PYTHONPATH="${PROJECT_ROOT}/src:${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 PYTORCH_CU13_LIB="$("${PYTHON_BIN}" - <<'PY'
@@ -92,7 +119,7 @@ common_args=(
   "${CANDIDATE_ROOT}/manifest_train_uniform.jsonl"
   --source-manifest "${CANDIDATE_ROOT}/manifest_all.jsonl"
   --cache-root "${CACHE_ROOT}" --kv-subdir "${KV_SUBDIR}"
-  --enable-dreamwam-kv-carrier --enable-d0-repeat-layer49
+  --enable-dreamwam-kv-carrier
   --verify-h3-checkpoint-sha256
   --action-horizon "${ACTION_HORIZON}"
   --per-device-batch-size 1 --gradient-accumulation-steps 1 --num-workers 0
@@ -100,20 +127,23 @@ common_args=(
   --scheduler-horizon 21700 --min-learning-rate 1e-6
   --action-shift 5 --seed 42
 )
+if [[ "${ARM}" == "d0" ]]; then
+  common_args+=(--enable-d0-repeat-layer49)
+fi
 
-for milestone in $(seq 1000 1000 20000); do
+for milestone in $(seq 1000 1000 "${FINAL_MILESTONE}"); do
   if (( milestone <= previous_milestone )); then
     continue
   fi
   stage_steps=$((milestone - previous_milestone))
   sample_offset=$((previous_milestone * 8))
   sample_limit=$((stage_steps * 8))
-  checkpoint="${OUTPUT_ROOT}/checkpoints/d0_h${ACTION_HORIZON}_s${milestone}.pt"
-  report="${OUTPUT_ROOT}/reports/d0_h${ACTION_HORIZON}_s${milestone}_train.json"
-  restore_report="${OUTPUT_ROOT}/reports/d0_h${ACTION_HORIZON}_s${milestone}_restore.json"
-  evaluation="${OUTPUT_ROOT}/evaluations/d0_h${ACTION_HORIZON}_s${milestone}_balanced80.json"
-  train_log="${OUTPUT_ROOT}/logs/d0_h${ACTION_HORIZON}_s${milestone}.log"
-  evaluation_log="${OUTPUT_ROOT}/evaluation_logs/d0_h${ACTION_HORIZON}_s${milestone}_balanced80.log"
+  checkpoint="${OUTPUT_ROOT}/checkpoints/${ARM}_h${ACTION_HORIZON}_s${milestone}.pt"
+  report="${OUTPUT_ROOT}/reports/${ARM}_h${ACTION_HORIZON}_s${milestone}_train.json"
+  restore_report="${OUTPUT_ROOT}/reports/${ARM}_h${ACTION_HORIZON}_s${milestone}_restore.json"
+  evaluation="${OUTPUT_ROOT}/evaluations/${ARM}_h${ACTION_HORIZON}_s${milestone}_balanced80.json"
+  train_log="${OUTPUT_ROOT}/logs/${ARM}_h${ACTION_HORIZON}_s${milestone}.log"
+  evaluation_log="${OUTPUT_ROOT}/evaluation_logs/${ARM}_h${ACTION_HORIZON}_s${milestone}_balanced80.log"
   load_args=()
   if [[ -n "${previous_checkpoint}" ]]; then
     load_args+=(--load-checkpoint "${previous_checkpoint}")
@@ -146,25 +176,26 @@ for milestone in $(seq 1000 1000 20000); do
   previous_milestone="${milestone}"
 done
 
-"${PYTHON_BIN}" - "${MODE}" "${ACTION_HORIZON}" "${OUTPUT_ROOT}" <<'PY'
+"${PYTHON_BIN}" - "${MODE}" "${ARM}" "${ACTION_HORIZON}" "${FINAL_MILESTONE}" "${OUTPUT_ROOT}" <<'PY'
 import json
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-mode, horizon, raw_root = sys.argv[1:]
+mode, arm, horizon, final_milestone, raw_root = sys.argv[1:]
 root = Path(raw_root)
 output = root / "COMPLETED"
 payload = {
     "completed": True,
     "mode": mode,
     "action_horizon": int(horizon),
-    "completed_steps": 20000,
-    "training_samples": 160000,
-    "effective_epochs": 160000 / 200779,
+    "arm": arm,
+    "completed_steps": int(final_milestone),
+    "training_samples": int(final_milestone) * 8,
+    "effective_epochs": int(final_milestone) * 8 / 200779,
     "completed_at": datetime.now(timezone.utc).isoformat(),
-    "final_checkpoint": str(root / "checkpoints" / f"d0_h{horizon}_s20000.pt"),
+    "final_checkpoint": str(root / "checkpoints" / f"{arm}_h{horizon}_s{final_milestone}.pt"),
 }
 temporary = output.with_name(f".{output.name}.{os.getpid()}.partial")
 temporary.write_text(json.dumps(payload, indent=2) + "\n")

@@ -78,6 +78,9 @@ from .int8_online import (
     H3Int8LayoutFunctions,
     apply_online_capture_compatibility,
     encode_h3_vae_condition_standalone,
+    DUAL_VIEW_GRID_KV_POOL,
+    SEQUENCE_KV_POOL,
+    pool_dual_view_grid_kv_tokens,
     pool_online_kv_tokens,
 )
 from .starwam_feature_action import H3StarWAMFeatureActionPolicy
@@ -139,6 +142,9 @@ __all__ = [
     "H3Int8LayoutFunctions",
     "apply_online_capture_compatibility",
     "encode_h3_vae_condition_standalone",
+    "DUAL_VIEW_GRID_KV_POOL",
+    "SEQUENCE_KV_POOL",
+    "pool_dual_view_grid_kv_tokens",
     "pool_online_kv_tokens",
     "H3StarWAMFeatureActionPolicy",
     "H3DreamWAMKVCarrierPolicy",

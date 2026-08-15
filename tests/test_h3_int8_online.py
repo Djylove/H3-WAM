@@ -10,7 +10,9 @@ from fastwam.models.h3wam import (
     H3Int8OnlineFeatureProvider,
     H3Int8OnlineKVContract,
     H3Int8OnlineKVProvider,
+    DUAL_VIEW_GRID_KV_POOL,
     encode_h3_vae_condition_standalone,
+    pool_dual_view_grid_kv_tokens,
     pool_online_kv_tokens,
 )
 
@@ -211,6 +213,30 @@ class H3Int8OnlineFeatureProviderTest(unittest.TestCase):
         torch.testing.assert_close(pooled, source[0])
         with self.assertRaisesRegex(ValueError, "online K/V tensor"):
             pool_online_kv_tokens(torch.randn(7, 2, 3), 32)
+
+    def test_dual_view_grid_pool_preserves_view_boundary_and_shape(self):
+        source = torch.zeros(1, 98, 2, 3)
+        grid = source.view(1, 7, 14, 2, 3)
+        grid[:, :, :7] = 1.0
+        grid[:, :, 7:] = 9.0
+        pooled = pool_dual_view_grid_kv_tokens(
+            source, grid_height=7, grid_width=14
+        )
+        self.assertEqual(tuple(pooled.shape), (32, 2, 3))
+        pooled_grid = pooled.view(4, 8, 2, 3)
+        torch.testing.assert_close(
+            pooled_grid[:, :4], torch.ones_like(pooled_grid[:, :4])
+        )
+        torch.testing.assert_close(
+            pooled_grid[:, 4:], torch.full_like(pooled_grid[:, 4:], 9.0)
+        )
+
+    def test_dual_view_contract_requires_32_tokens(self):
+        with self.assertRaisesRegex(ValueError, "exactly 32"):
+            H3Int8OnlineKVContract(
+                capture_token_count=64,
+                pool_strategy=DUAL_VIEW_GRID_KV_POOL,
+            )
 
 
 if __name__ == "__main__":

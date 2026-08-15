@@ -63,6 +63,8 @@ flow_matching_loss = PARENT.flow_matching_loss
 
 DREAMWAM_KV_SCHEMA = "h3_dreamwam_kv_v1"
 DREAMWAM_KV_STRATEGY = "adaptive_avg_pool1d_sequence_v1"
+DUAL_VIEW_GRID_KV_STRATEGY = "dual_view_spatial_grid_4x4_each_v1"
+SUPPORTED_KV_STRATEGIES = (DREAMWAM_KV_STRATEGY, DUAL_VIEW_GRID_KV_STRATEGY)
 CACHE_BACKBONE = "H3Int8FeatureBackbone"
 CACHE_QUANTIZATION = "int8_tensorwise_convrot"
 CHECKPOINT_SCHEMA = 2
@@ -109,6 +111,7 @@ class ModelSpec:
     freq_dim: int = 256
     carrier_layers: tuple[int, ...] = DEFAULT_H3_CARRIER_LAYERS
     carrier_source_mode: str = ALIGNED_5LAYER_CARRIER_SOURCE
+    history_action_steps: int = 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -122,6 +125,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--save-checkpoint", type=Path)
     parser.add_argument("--load-checkpoint", type=Path)
+    parser.add_argument(
+        "--initialize-history-from",
+        type=Path,
+        help="Bootstrap a zero-init history adapter from a history-free D0 parent.",
+    )
+    parser.add_argument(
+        "--initialize-carrier-from",
+        type=Path,
+        help="Continue a D0 parent with a new audited K/V representation contract.",
+    )
     parser.add_argument("--restore-check-only", action="store_true")
     parser.add_argument("--verify-h3-checkpoint-sha256", action="store_true")
     parser.add_argument(
@@ -154,8 +167,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-learning-rate", type=float, default=1.0e-6)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--action-horizon", type=int, default=32)
+    parser.add_argument("--history-action-steps", type=int, default=0)
+    parser.add_argument("--executed-action-history-root", type=Path)
+    parser.add_argument("--train-history-adapter-only", action="store_true")
     parser.add_argument("--action-shift", type=float, default=5.0)
     parser.add_argument("--capture-token-count", type=int, default=32)
+    parser.add_argument(
+        "--kv-pool-strategy",
+        choices=SUPPORTED_KV_STRATEGIES,
+        default=DREAMWAM_KV_STRATEGY,
+    )
     parser.add_argument(
         "--carrier-layers",
         type=int,
@@ -217,7 +238,7 @@ def collate_cached_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
         }
         for layer in layers
     }
-    return {
+    result = {
         "sample_ids": [str(item["sample_id"]) for item in items],
         "video_kv_cache": video_kv_cache,
         "actions": torch.stack([item["actions"] for item in items]),
@@ -226,6 +247,16 @@ def collate_cached_batch(items: list[dict[str, Any]]) -> dict[str, Any]:
         "text_context": context,
         "text_mask": context_mask,
     }
+    if "executed_action_history" in items[0]:
+        if any("executed_action_history" not in item for item in items):
+            raise ValueError("batch mixes history-conditioned and history-free samples")
+        result["executed_action_history"] = torch.stack(
+            [item["executed_action_history"] for item in items]
+        )
+        result["executed_action_history_valid"] = torch.stack(
+            [item["executed_action_history_valid"] for item in items]
+        )
+    return result
 
 
 class CachedDreamWAMKVDataset(Dataset):
@@ -240,9 +271,12 @@ class CachedDreamWAMKVDataset(Dataset):
         source_manifest: Path | None = None,
         carrier_layers: tuple[int, ...] = DEFAULT_H3_CARRIER_LAYERS,
         capture_token_count: int = 32,
+        kv_pool_strategy: str = DREAMWAM_KV_STRATEGY,
         num_heads: int = 56,
         attn_head_dim: int = 128,
         action_horizon: int = 32,
+        history_action_steps: int = 0,
+        executed_action_history_root: Path | None = None,
         limit: int = 0,
         sample_offset: int = 0,
     ) -> None:
@@ -251,9 +285,24 @@ class CachedDreamWAMKVDataset(Dataset):
         self.kv_root = self.cache_root / kv_subdir
         self.carrier_layers = tuple(int(layer) for layer in carrier_layers)
         self.capture_token_count = int(capture_token_count)
+        self.kv_pool_strategy = str(kv_pool_strategy)
+        if self.kv_pool_strategy not in SUPPORTED_KV_STRATEGIES:
+            raise ValueError(f"unsupported K/V pool strategy {self.kv_pool_strategy!r}")
         self.num_heads = int(num_heads)
         self.attn_head_dim = int(attn_head_dim)
         self.action_horizon = int(action_horizon)
+        self.history_action_steps = int(history_action_steps)
+        self.executed_action_history_root = (
+            None
+            if executed_action_history_root is None
+            else executed_action_history_root.resolve()
+        )
+        if self.history_action_steps < 0:
+            raise ValueError("history_action_steps cannot be negative")
+        if bool(self.history_action_steps) != bool(self.executed_action_history_root):
+            raise ValueError(
+                "history_action_steps and executed_action_history_root must be set together"
+            )
         if tuple(sorted(set(self.carrier_layers))) != self.carrier_layers:
             raise ValueError("carrier_layers must be strictly increasing and unique")
         if min(
@@ -345,7 +394,7 @@ class CachedDreamWAMKVDataset(Dataset):
             "capture_token_count": self.capture_token_count,
             "num_heads": self.num_heads,
             "attn_head_dim": self.attn_head_dim,
-            "capture_token_strategy": DREAMWAM_KV_STRATEGY,
+            "capture_token_strategy": self.kv_pool_strategy,
             "dreamwam_commit": DREAMWAM_COMMIT,
             "context_id": str(row["context_id"]),
             "backbone": CACHE_BACKBONE,
@@ -422,7 +471,7 @@ class CachedDreamWAMKVDataset(Dataset):
         )[: self.action_horizon].bool()
         if tuple(actions.shape) != (self.action_horizon, 7):
             raise ValueError(f"unexpected action shape for {sample_id}: {actions.shape}")
-        return {
+        result = {
             "sample_id": sample_id,
             "video_kv_cache": normalized_cache,
             "actions": PARENT.normalize_minmax(
@@ -434,6 +483,37 @@ class CachedDreamWAMKVDataset(Dataset):
             "action_is_pad": action_is_pad,
             "text_context": context_item["context"][0].float(),
         }
+        if self.history_action_steps:
+            assert self.executed_action_history_root is not None
+            history_path = (
+                self.executed_action_history_root
+                / "actions"
+                / f"{row['suite']}_ep{int(row['episode']):06d}.pt"
+            )
+            history_payload = torch.load(
+                history_path, map_location="cpu", weights_only=True
+            )
+            episode_actions = history_payload["actions"].float()
+            start = int(row["start"])
+            if episode_actions.ndim != 2 or episode_actions.shape[1] != 7:
+                raise ValueError(f"invalid action history sidecar: {history_path}")
+            if start < 0 or start > len(episode_actions):
+                raise ValueError(f"window start is outside history sidecar: {sample_id}")
+            history = episode_actions[
+                max(0, start - self.history_action_steps) : start
+            ]
+            valid = torch.ones(len(history), dtype=torch.bool)
+            if len(history) < self.history_action_steps:
+                missing = self.history_action_steps - len(history)
+                history = torch.cat((torch.zeros(missing, 7), history), dim=0)
+                valid = torch.cat((torch.zeros(missing, dtype=torch.bool), valid))
+            normalized_history = torch.zeros_like(history)
+            normalized_history[valid] = PARENT.normalize_minmax(
+                history[valid], self.action_min, self.action_max
+            ).clamp(-5.0, 5.0)
+            result["executed_action_history"] = normalized_history
+            result["executed_action_history_valid"] = valid
+        return result
 
 
 def build_model(spec: ModelSpec, *, device: torch.device, dtype: torch.dtype) -> nn.Module:
@@ -449,6 +529,7 @@ def build_model(spec: ModelSpec, *, device: torch.device, dtype: torch.dtype) ->
         num_heads=spec.num_heads,
         attn_head_dim=spec.attn_head_dim,
         freq_dim=spec.freq_dim,
+        history_action_steps=spec.history_action_steps,
     ).to(device=device, dtype=dtype)
 
 
@@ -470,21 +551,29 @@ def forward_policy(
         else nullcontext()
     )
     with autocast_context:
-        return model(
-            noisy,
-            timesteps,
-            text_context=batch["text_context"],
-            proprio=batch["proprio"],
-            video_kv_cache=batch["video_kv_cache"],
-            text_mask=batch["text_mask"],
-        )
+        arguments = {
+            "text_context": batch["text_context"],
+            "proprio": batch["proprio"],
+            "video_kv_cache": batch["video_kv_cache"],
+            "text_mask": batch["text_mask"],
+        }
+        if "executed_action_history" in batch:
+            arguments["executed_action_history"] = batch[
+                "executed_action_history"
+            ]
+            arguments["executed_action_history_valid"] = batch[
+                "executed_action_history_valid"
+            ]
+        return model(noisy, timesteps, **arguments)
 
 
 def move_batch(
     batch: dict[str, Any], device: torch.device, dtype: torch.dtype
 ) -> dict[str, Any]:
     result = dict(batch)
-    for key in ("actions", "proprio", "text_context"):
+    for key in ("actions", "proprio", "text_context", "executed_action_history"):
+        if key not in batch:
+            continue
         result[key] = batch[key].to(device=device, dtype=dtype, non_blocking=True)
     result["video_kv_cache"] = {
         layer: {
@@ -497,6 +586,10 @@ def move_batch(
         device=device, non_blocking=True
     )
     result["text_mask"] = batch["text_mask"].to(device=device, non_blocking=True)
+    if "executed_action_history_valid" in batch:
+        result["executed_action_history_valid"] = batch[
+            "executed_action_history_valid"
+        ].to(device=device, non_blocking=True)
     return result
 
 
@@ -507,7 +600,12 @@ def checkpoint_contract(
     *,
     world_size: int = 1,
 ) -> dict[str, Any]:
-    return {
+    model_spec = asdict(spec)
+    if spec.history_action_steps == 0:
+        # Preserve byte-level contract compatibility with the already-running
+        # D/D0 tournament when the opt-in history route is disabled.
+        model_spec.pop("history_action_steps")
+    contract = {
         "candidate": (
             "D0"
             if spec.carrier_source_mode == REPEAT_LAYER49_CARRIER_SOURCE
@@ -525,7 +623,7 @@ def checkpoint_contract(
         "verify_h3_checkpoint_sha256": args.verify_h3_checkpoint_sha256,
         "kv_subdir": args.kv_subdir,
         "kv_schema": DREAMWAM_KV_SCHEMA,
-        "kv_strategy": DREAMWAM_KV_STRATEGY,
+        "kv_strategy": getattr(args, "kv_pool_strategy", DREAMWAM_KV_STRATEGY),
         "kv_layers": list(spec.carrier_layers),
         "kv_tokens": args.capture_token_count,
         "kv_num_heads": spec.num_heads,
@@ -561,8 +659,34 @@ def checkpoint_contract(
             "warmup_steps": args.warmup_steps,
             "scheduler_horizon": args.scheduler_horizon,
         },
-        "model_spec": asdict(spec),
+        "model_spec": model_spec,
     }
+    if spec.history_action_steps:
+        contract.update(
+            {
+                "history_action_steps": spec.history_action_steps,
+                "executed_action_history_root": str(
+                    args.executed_action_history_root.resolve()
+                ),
+                "train_history_adapter_only": args.train_history_adapter_only,
+                "initialization_parent_sha256": getattr(
+                    args, "initialization_parent_sha256", None
+                ),
+                "initialization_parent_completed_steps": getattr(
+                    args, "initialization_parent_completed_steps", None
+                ),
+            }
+        )
+    elif getattr(args, "initialization_kind", None) == "kv_pool_adaptation":
+        contract.update(
+            {
+                "initialization_kind": "kv_pool_adaptation",
+                "initialization_parent_sha256": args.initialization_parent_sha256,
+                "initialization_parent_completed_steps": args.initialization_parent_completed_steps,
+                "initialization_optimizer_scheduler_restored": True,
+            }
+        )
+    return contract
 
 
 def capture_rng_state(device: torch.device | None = None) -> dict[str, Any]:
@@ -824,6 +948,32 @@ def main() -> None:
         raise ValueError("Candidate D requires --enable-dreamwam-kv-carrier")
     if args.restore_check_only and args.load_checkpoint is None:
         raise ValueError("--restore-check-only requires --load-checkpoint")
+    initialization_paths = [
+        path
+        for path in (args.initialize_history_from, args.initialize_carrier_from)
+        if path is not None
+    ]
+    if args.load_checkpoint is not None and initialization_paths:
+        raise ValueError("load-checkpoint and initialization are mutually exclusive")
+    if len(initialization_paths) > 1:
+        raise ValueError("history and carrier initialization are mutually exclusive")
+    if args.history_action_steps < 0:
+        raise ValueError("history-action-steps cannot be negative")
+    if bool(args.history_action_steps) != bool(args.executed_action_history_root):
+        raise ValueError(
+            "history-action-steps and executed-action-history-root must be set together"
+        )
+    if args.initialize_history_from is not None and not args.history_action_steps:
+        raise ValueError("history initialization requires history-action-steps")
+    if args.train_history_adapter_only and not args.history_action_steps:
+        raise ValueError("history-adapter-only training requires history-action-steps")
+    if args.initialize_carrier_from is not None and args.history_action_steps:
+        raise ValueError("carrier representation initialization is history-free")
+    if (
+        args.kv_pool_strategy == DUAL_VIEW_GRID_KV_STRATEGY
+        and args.capture_token_count != 32
+    ):
+        raise ValueError("dual-view 4x4 pooling produces exactly 32 tokens")
     positive = (
         args.steps,
         args.per_device_batch_size,
@@ -872,9 +1022,12 @@ def main() -> None:
         source_manifest=args.source_manifest,
         carrier_layers=carrier_layers,
         capture_token_count=args.capture_token_count,
+        kv_pool_strategy=args.kv_pool_strategy,
         num_heads=args.num_heads,
         attn_head_dim=args.attn_head_dim,
         action_horizon=args.action_horizon,
+        history_action_steps=args.history_action_steps,
+        executed_action_history_root=args.executed_action_history_root,
         limit=args.limit,
         sample_offset=args.sample_offset,
     )
@@ -907,8 +1060,87 @@ def main() -> None:
         freq_dim=args.freq_dim,
         carrier_layers=carrier_layers,
         carrier_source_mode=carrier_source_mode,
+        history_action_steps=args.history_action_steps,
     )
     model = build_model(spec, device=device, dtype=dtype)
+    bootstrap_payload = None
+    args.initialization_kind = None
+    if args.initialize_carrier_from is not None:
+        bootstrap_path = args.initialize_carrier_from.resolve()
+        bootstrap_payload = torch.load(
+            bootstrap_path, map_location="cpu", weights_only=False
+        )
+        if bootstrap_payload.get("schema_version") != CHECKPOINT_SCHEMA:
+            raise ValueError("carrier parent checkpoint schema mismatch")
+        parent_contract = bootstrap_payload.get("contract", {})
+        required_parent = {
+            "candidate": "D0",
+            "carrier_source_mode": REPEAT_LAYER49_CARRIER_SOURCE,
+            "h3_checkpoint_sha256": args.expected_h3_checkpoint_sha256,
+            "split_manifest_sha256": dataset.manifest_sha256,
+            "stats_sha256": dataset.stats_sha256,
+            "action_horizon": args.action_horizon,
+            "kv_strategy": DREAMWAM_KV_STRATEGY,
+        }
+        mismatches = [
+            key
+            for key, expected in required_parent.items()
+            if parent_contract.get(key) != expected
+        ]
+        if mismatches:
+            raise ValueError(f"carrier parent contract mismatch: {mismatches}")
+        model.load_state_dict(bootstrap_payload["model"], strict=True)
+        args.initialization_kind = "kv_pool_adaptation"
+        args.initialization_parent_sha256 = sha256_file(bootstrap_path)
+        args.initialization_parent_completed_steps = int(
+            bootstrap_payload["completed_steps"]
+        )
+    elif args.initialize_history_from is not None:
+        bootstrap_path = args.initialize_history_from.resolve()
+        bootstrap_payload = torch.load(
+            bootstrap_path, map_location="cpu", weights_only=False
+        )
+        if bootstrap_payload.get("schema_version") != CHECKPOINT_SCHEMA:
+            raise ValueError("history parent checkpoint schema mismatch")
+        parent_contract = bootstrap_payload.get("contract", {})
+        required_parent = {
+            "candidate": "D0",
+            "carrier_source_mode": REPEAT_LAYER49_CARRIER_SOURCE,
+            "h3_checkpoint_sha256": args.expected_h3_checkpoint_sha256,
+            "split_manifest_sha256": dataset.manifest_sha256,
+            "stats_sha256": dataset.stats_sha256,
+            "action_horizon": args.action_horizon,
+        }
+        mismatches = [
+            key
+            for key, expected in required_parent.items()
+            if parent_contract.get(key) != expected
+        ]
+        if mismatches:
+            raise ValueError(f"history parent contract mismatch: {mismatches}")
+        missing, unexpected = model.load_state_dict(
+            bootstrap_payload["model"], strict=False
+        )
+        if missing != ["history_action_encoder.weight"] or unexpected:
+            raise ValueError(
+                "history parent model migration mismatch: "
+                f"missing={missing}, unexpected={unexpected}"
+            )
+        assert model.history_action_encoder is not None
+        if torch.count_nonzero(model.history_action_encoder.weight):
+            raise RuntimeError("history adapter did not remain zero initialized")
+        args.initialization_parent_sha256 = sha256_file(bootstrap_path)
+        args.initialization_parent_completed_steps = int(
+            bootstrap_payload["completed_steps"]
+        )
+    else:
+        args.initialization_parent_sha256 = None
+        args.initialization_parent_completed_steps = None
+    if args.train_history_adapter_only:
+        for parameter in model.parameters():
+            parameter.requires_grad_(False)
+        assert model.history_action_encoder is not None
+        model.history_action_encoder.requires_grad_(True)
     optimizer = torch.optim.AdamW(
         [parameter for parameter in model.parameters() if parameter.requires_grad],
         lr=args.learning_rate,
@@ -921,8 +1153,29 @@ def main() -> None:
         scheduler_horizon=args.scheduler_horizon,
         min_learning_rate=args.min_learning_rate,
     )
+    if args.initialize_carrier_from is not None:
+        assert bootstrap_payload is not None
+        optimizer.load_state_dict(bootstrap_payload["optimizer"])
+        lr_scheduler.load_state_dict(bootstrap_payload["lr_scheduler"])
+        restore_rng_state(bootstrap_payload["rng_states"][rank], device)
+    if args.load_checkpoint is not None:
+        preview = torch.load(
+            args.load_checkpoint.resolve(), map_location="cpu", weights_only=False
+        )
+        preview_contract = preview.get("contract", {})
+        args.initialization_kind = preview_contract.get("initialization_kind")
+        args.initialization_parent_sha256 = preview_contract.get(
+            "initialization_parent_sha256"
+        )
+        args.initialization_parent_completed_steps = preview_contract.get(
+            "initialization_parent_completed_steps"
+        )
     contract = checkpoint_contract(args, spec, dataset, world_size=world_size)
-    completed_steps = 0
+    completed_steps = (
+        0
+        if bootstrap_payload is None
+        else int(bootstrap_payload["completed_steps"])
+    )
     loaded_payload = None
     if args.load_checkpoint is not None:
         loaded_payload = load_checkpoint_strict(
@@ -945,6 +1198,15 @@ def main() -> None:
                     "training resume requires an explicit disjoint stage slice, "
                     f"but found {len(overlap)} previously consumed sample IDs"
                 )
+    if bootstrap_payload is not None:
+        previously_consumed = set(bootstrap_payload["data_state"]["sample_ids"])
+        selected_now = {str(row["id"]) for row in dataset.rows}
+        overlap = previously_consumed & selected_now
+        if overlap:
+            raise ValueError(
+                "parent initialization requires a disjoint stage slice, "
+                f"but found {len(overlap)} consumed sample IDs"
+            )
 
     unwrapped_model = model
     if world_size > 1:
@@ -963,9 +1225,12 @@ def main() -> None:
         source_manifest=args.source_manifest,
         carrier_layers=carrier_layers,
         capture_token_count=args.capture_token_count,
+        kv_pool_strategy=args.kv_pool_strategy,
         num_heads=args.num_heads,
         attn_head_dim=args.attn_head_dim,
         action_horizon=args.action_horizon,
+        history_action_steps=args.history_action_steps,
+        executed_action_history_root=args.executed_action_history_root,
         limit=1,
         sample_offset=0,
     )
@@ -973,7 +1238,10 @@ def main() -> None:
     probe = move_batch(probe_cpu, device, dtype)
 
     restore_max_abs = None
-    if loaded_payload is not None:
+    reference_payload = loaded_payload or (
+        bootstrap_payload if args.initialize_history_from is not None else None
+    )
+    if reference_payload is not None:
         unwrapped_model.eval()
         with torch.no_grad():
             noisy, _, timesteps = PARENT.deterministic_flow_batch(
@@ -982,8 +1250,8 @@ def main() -> None:
             restored_prediction = forward_policy(
                 unwrapped_model, probe, noisy, timesteps
             ).float()
-        expected = loaded_payload["probe_prediction"].to(restored_prediction)
-        if loaded_payload.get("probe_sample_ids") != probe_cpu["sample_ids"]:
+        expected = reference_payload["probe_prediction"].to(restored_prediction)
+        if reference_payload.get("probe_sample_ids") != probe_cpu["sample_ids"]:
             raise ValueError("checkpoint restore probe sample identity mismatch")
         restore_max_abs = float((restored_prediction - expected).abs().max())
         if restore_max_abs != 0.0:
@@ -996,7 +1264,11 @@ def main() -> None:
         model.train()
         iterator = iter(infinite_batches(loader))
         optimizer.zero_grad(set_to_none=True)
-        tracked = unwrapped_model.action_expert.head.weight
+        tracked = (
+            unwrapped_model.history_action_encoder.weight
+            if args.train_history_adapter_only
+            else unwrapped_model.action_expert.head.weight
+        )
         tracked_before = tracked.detach().float().clone()
         for local_step in range(1, args.steps + 1):
             losses = []
@@ -1035,9 +1307,28 @@ def main() -> None:
             proprio_gradient_norm = PARENT.module_grad_norm(
                 unwrapped_model.proprio_encoder
             )
-            gradient_values = [*block_gradient_norms, proprio_gradient_norm]
-            if not all(math.isfinite(value) and value > 0 for value in gradient_values):
-                raise RuntimeError(f"non-finite/zero gradient path: {gradient_values}")
+            history_gradient_norm = (
+                0.0
+                if unwrapped_model.history_action_encoder is None
+                else PARENT.module_grad_norm(unwrapped_model.history_action_encoder)
+            )
+            if args.train_history_adapter_only:
+                if not math.isfinite(history_gradient_norm) or history_gradient_norm <= 0:
+                    raise RuntimeError(
+                        f"non-finite/zero history gradient: {history_gradient_norm}"
+                    )
+                if any(value != 0.0 for value in block_gradient_norms) or (
+                    proprio_gradient_norm != 0.0
+                ):
+                    raise RuntimeError("frozen parent received gradients")
+            else:
+                gradient_values = [*block_gradient_norms, proprio_gradient_norm]
+                if not all(
+                    math.isfinite(value) and value > 0 for value in gradient_values
+                ):
+                    raise RuntimeError(
+                        f"non-finite/zero gradient path: {gradient_values}"
+                    )
             clipped_norm = float(
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(), args.max_grad_norm, error_if_nonfinite=True
@@ -1051,7 +1342,7 @@ def main() -> None:
                 (tracked.detach().float() - tracked_before).abs().max()
             )
             if not math.isfinite(update_max_abs) or update_max_abs <= 0:
-                raise RuntimeError("optimizer did not update the DreamWAM ActionDiT head")
+                raise RuntimeError("optimizer did not update the tracked action module")
             tracked_before = tracked.detach().float().clone()
             item = {
                 "step": completed_steps + local_step,
@@ -1060,8 +1351,14 @@ def main() -> None:
                 "prediction_std": sum(prediction_stds) / len(prediction_stds),
                 "block_gradient_norms": block_gradient_norms,
                 "proprio_gradient_norm": proprio_gradient_norm,
+                "history_gradient_norm": history_gradient_norm,
                 "clipped_gradient_norm": clipped_norm,
                 "head_update_max_abs": update_max_abs,
+                "tracked_update_module": (
+                    "history_action_encoder"
+                    if args.train_history_adapter_only
+                    else "action_expert_head"
+                ),
                 "learning_rate": learning_rate,
                 "sample_ids": sample_ids,
             }
@@ -1115,10 +1412,11 @@ def main() -> None:
                 * args.steps
             ),
         )
+        parent_payload = loaded_payload or bootstrap_payload
         historical_sample_ids = (
             []
-            if loaded_payload is None
-            else list(loaded_payload["data_state"]["sample_ids"])
+            if parent_payload is None
+            else list(parent_payload["data_state"]["sample_ids"])
         )
         cumulative_sample_ids = merge_cumulative_consumed_sample_ids(
             historical_sample_ids, current_stage_sample_ids
@@ -1195,6 +1493,11 @@ def main() -> None:
             "h3_checkpoint_sha256_verified": actual_h3_sha256,
             "loaded_checkpoint": (
                 None if args.load_checkpoint is None else str(args.load_checkpoint)
+            ),
+            "initialized_history_from": (
+                None
+                if args.initialize_history_from is None
+                else str(args.initialize_history_from)
             ),
             "saved_checkpoint": (
                 None if args.save_checkpoint is None else str(args.save_checkpoint)

@@ -147,6 +147,44 @@ class H3DreamWAMKVCarrierPolicyTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires H3 layer49"):
             self.build_policy(carrier_source_mode=REPEAT_LAYER49_CARRIER_SOURCE)
 
+    def test_zero_initialized_action_history_preserves_parent_then_gets_gradient(self):
+        torch.manual_seed(19)
+        parent = self.build_policy()
+        torch.manual_seed(91)
+        history = H3DreamWAMKVCarrierPolicy(
+            enabled=True,
+            carrier_layers=(1, 3),
+            action_dim=2,
+            proprio_dim=3,
+            context_dim=6,
+            hidden_dim=8,
+            ffn_dim=16,
+            num_heads=2,
+            attn_head_dim=4,
+            freq_dim=8,
+            history_action_steps=4,
+        )
+        missing, unexpected = history.load_state_dict(parent.state_dict(), strict=False)
+        self.assertEqual(missing, ["history_action_encoder.weight"])
+        self.assertEqual(unexpected, [])
+        inputs = self.inputs()
+        cache = self.cache()
+        parent_output = parent(video_kv_cache=cache, **inputs)
+        history_actions = torch.randn(2, 4, 2)
+        valid = torch.tensor([[False, False, True, True], [True, True, True, True]])
+        child_output = history(
+            video_kv_cache=cache,
+            executed_action_history=history_actions,
+            executed_action_history_valid=valid,
+            **inputs,
+        )
+        torch.testing.assert_close(child_output, parent_output, rtol=0, atol=0)
+        child_output.square().mean().backward()
+        assert history.history_action_encoder is not None
+        self.assertGreater(
+            float(history.history_action_encoder.weight.grad.abs().sum()), 0.0
+        )
+
     def test_rejects_missing_or_repeated_last_layer_cache(self):
         policy = self.build_policy()
         inputs = self.inputs()

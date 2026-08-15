@@ -110,6 +110,12 @@ CONTRACT_KEYS = {
     "lr_schedule",
     "model_spec",
 }
+CARRIER_INITIALIZATION_CONTRACT_KEYS = {
+    "initialization_kind",
+    "initialization_parent_sha256",
+    "initialization_parent_completed_steps",
+    "initialization_optimizer_scheduler_restored",
+}
 
 
 @dataclass(frozen=True)
@@ -194,8 +200,24 @@ def _require_contract(
     if not isinstance(payload.get("model"), dict) or not payload["model"]:
         raise ValueError("checkpoint model state is missing or empty")
     contract = payload.get("contract")
-    if not isinstance(contract, dict) or set(contract) != CONTRACT_KEYS:
+    contract_keys = set(contract) if isinstance(contract, dict) else set()
+    if (
+        not isinstance(contract, dict)
+        or not CONTRACT_KEYS.issubset(contract_keys)
+        or contract_keys - CONTRACT_KEYS - CARRIER_INITIALIZATION_CONTRACT_KEYS
+    ):
         raise ValueError("Candidate D checkpoint contract schema mismatch")
+    kv_strategy = str(contract.get("kv_strategy", ""))
+    if kv_strategy not in CANDIDATE_D.SUPPORTED_KV_STRATEGIES:
+        raise ValueError(f"unsupported Candidate D K/V strategy {kv_strategy!r}")
+    initialization_keys = contract_keys & CARRIER_INITIALIZATION_CONTRACT_KEYS
+    if initialization_keys and initialization_keys != CARRIER_INITIALIZATION_CONTRACT_KEYS:
+        raise ValueError("Candidate D carrier initialization contract is partial")
+    if initialization_keys:
+        if contract["initialization_kind"] != "kv_pool_adaptation":
+            raise ValueError("unsupported carrier initialization kind")
+        if contract["initialization_optimizer_scheduler_restored"] is not True:
+            raise ValueError("carrier adaptation did not restore optimizer/scheduler")
     required = {
         "classification": "action-only-on-frozen-features",
         "dreamwam_commit": CANDIDATE_D.DREAMWAM_COMMIT,
@@ -206,7 +228,7 @@ def _require_contract(
         "h3_checkpoint_sha256": EXPECTED_H3_CHECKPOINT_SHA256,
         "verify_h3_checkpoint_sha256": True,
         "kv_schema": CANDIDATE_D.DREAMWAM_KV_SCHEMA,
-        "kv_strategy": CANDIDATE_D.DREAMWAM_KV_STRATEGY,
+        "kv_strategy": kv_strategy,
         "kv_layers": list(CANDIDATE_D.DEFAULT_H3_CARRIER_LAYERS),
         "source_manifest_sha256": source_manifest_sha256,
         "source_manifest_items": source_manifest_items,
@@ -288,12 +310,14 @@ class CachedDreamWAMKVValidationDataset(PROTOCOL.CachedLast32ValidationDataset):
         action_horizon: int,
         h3_checkpoint_path: str,
         visual_feature_shuffle: dict[str, str],
+        kv_strategy: str = CANDIDATE_D.DREAMWAM_KV_STRATEGY,
     ) -> None:
         self.carrier_layers = tuple(int(value) for value in model_spec["carrier_layers"])
         self.kv_tokens = 32
         self.kv_num_heads = int(model_spec["num_heads"])
         self.kv_attn_head_dim = int(model_spec["attn_head_dim"])
         self.h3_checkpoint_path = Path(h3_checkpoint_path)
+        self.kv_strategy = str(kv_strategy)
         parent_spec = {
             "action_dim": int(model_spec["action_dim"]),
             "proprio_dim": int(model_spec["proprio_dim"]),
@@ -324,7 +348,7 @@ class CachedDreamWAMKVValidationDataset(PROTOCOL.CachedLast32ValidationDataset):
             "capture_token_count": self.kv_tokens,
             "num_heads": self.kv_num_heads,
             "attn_head_dim": self.kv_attn_head_dim,
-            "capture_token_strategy": CANDIDATE_D.DREAMWAM_KV_STRATEGY,
+            "capture_token_strategy": self.kv_strategy,
             "dreamwam_commit": CANDIDATE_D.DREAMWAM_COMMIT,
             "context_id": expected_context_id,
             "backbone": CANDIDATE_D.CACHE_BACKBONE,
@@ -538,6 +562,7 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
         action_horizon=int(contract["action_horizon"]),
         h3_checkpoint_path=str(contract["h3_checkpoint_path"]),
         visual_feature_shuffle=visual_mapping,
+        kv_strategy=str(contract["kv_strategy"]),
     )
     if len(dataset.replacement_context) < 2:
         raise ValueError("language sensitivity requires at least two context ids")

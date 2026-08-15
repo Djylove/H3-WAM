@@ -13,6 +13,9 @@ from torch import nn
 AUDIO_CHANNELS = 2
 AUDIO_LATENT_CHANNELS = 32
 PATCH_SIZE = (1, 2, 2)
+SEQUENCE_KV_POOL = "adaptive_avg_pool1d_sequence_v1"
+DUAL_VIEW_GRID_KV_POOL = "dual_view_spatial_grid_4x4_each_v1"
+KV_POOL_STRATEGIES = (SEQUENCE_KV_POOL, DUAL_VIEW_GRID_KV_POOL)
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,7 @@ class H3Int8OnlineKVContract:
     video_timestep: float = 1.0
     condition_video_timestep: float = 1.0
     capture_token_count: int = 32
+    pool_strategy: str = SEQUENCE_KV_POOL
 
     def __post_init__(self) -> None:
         if not self.layers or min(self.layers) < 0 or max(self.layers) >= 50:
@@ -84,6 +88,13 @@ class H3Int8OnlineKVContract:
             raise ValueError("video timestep must be in [0,1]")
         if not 0.0 <= self.condition_video_timestep <= 1.0:
             raise ValueError("condition-video timestep must be in [0,1]")
+        if self.pool_strategy not in KV_POOL_STRATEGIES:
+            raise ValueError(f"unsupported K/V pool strategy {self.pool_strategy!r}")
+        if (
+            self.pool_strategy == DUAL_VIEW_GRID_KV_POOL
+            and self.capture_token_count != 32
+        ):
+            raise ValueError("dual-view 4x4 pooling produces exactly 32 tokens")
 
 
 def apply_online_capture_compatibility(
@@ -261,6 +272,34 @@ def pool_online_kv_tokens(tensor: torch.Tensor, token_count: int) -> torch.Tenso
     return pooled.reshape(token_count, heads, head_dim)
 
 
+def pool_dual_view_grid_kv_tokens(
+    tensor: torch.Tensor,
+    *,
+    grid_height: int,
+    grid_width: int,
+) -> torch.Tensor:
+    """Pool two horizontal camera grids independently to 4x4 tokens per view."""
+
+    if tensor.ndim not in (3, 4):
+        raise ValueError("K/V tensor must be [tokens,heads,head_dim] or batched")
+    if tensor.ndim == 4:
+        if tensor.shape[0] != 1:
+            raise ValueError("batched K/V pooling supports exactly one sample")
+        tensor = tensor[0]
+    if grid_height <= 0 or grid_width <= 0 or grid_width % 2:
+        raise ValueError("dual-view grid must have positive height and even width")
+    if tensor.shape[0] != grid_height * grid_width:
+        raise ValueError("K/V token count does not match the declared spatial grid")
+    _, heads, head_dim = tensor.shape
+    channels = heads * head_dim
+    grid = tensor.reshape(grid_height, grid_width, channels).permute(2, 0, 1)
+    half_width = grid_width // 2
+    left = F.adaptive_avg_pool2d(grid[:, :, :half_width].unsqueeze(0), (4, 4))
+    right = F.adaptive_avg_pool2d(grid[:, :, half_width:].unsqueeze(0), (4, 4))
+    pooled = torch.cat((left, right), dim=-1).squeeze(0).permute(1, 2, 0)
+    return pooled.reshape(32, heads, head_dim)
+
+
 class H3Int8OnlineKVProvider(nn.Module):
     """Capture pooled live H3 video K/V for DreamWAM-style action blocks."""
 
@@ -370,8 +409,16 @@ class H3Int8OnlineKVProvider(nn.Module):
             if set(item) != {"k", "v"}:
                 raise RuntimeError(f"live H3 layer {layer} did not return exact K/V")
             pooled[layer] = {
-                name: pool_online_kv_tokens(
-                    item[name], self.contract.capture_token_count
+                name: (
+                    pool_dual_view_grid_kv_tokens(
+                        item[name],
+                        grid_height=latent_height // PATCH_SIZE[1],
+                        grid_width=latent_width // PATCH_SIZE[2],
+                    )
+                    if self.contract.pool_strategy == DUAL_VIEW_GRID_KV_POOL
+                    else pool_online_kv_tokens(
+                        item[name], self.contract.capture_token_count
+                    )
                 ).to(device=device, dtype=torch.bfloat16).unsqueeze(0).clone()
                 for name in ("k", "v")
             }

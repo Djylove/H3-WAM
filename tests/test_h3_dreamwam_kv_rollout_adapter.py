@@ -30,6 +30,24 @@ ROLLOUT = load_script(
 
 
 class H3DreamWAMKVRolloutAdapterTest(unittest.TestCase):
+    def test_online_adapter_accepts_paired_d_and_d0_source_modes(self):
+        resolve = SERVE.H3DreamWAMKVInt8Policy._resolve_candidate_source_mode
+        self.assertEqual(
+            resolve({"candidate": "D", "carrier_source_mode": "aligned_5layer"}),
+            ("D", "aligned_5layer"),
+        )
+        self.assertEqual(
+            resolve({"candidate": "D0", "carrier_source_mode": "repeat_layer49"}),
+            ("D0", "repeat_layer49"),
+        )
+
+    def test_online_adapter_rejects_crossed_or_unknown_source_modes(self):
+        resolve = SERVE.H3DreamWAMKVInt8Policy._resolve_candidate_source_mode
+        with self.assertRaisesRegex(ValueError, "source mode mismatch"):
+            resolve({"candidate": "D", "carrier_source_mode": "repeat_layer49"})
+        with self.assertRaisesRegex(ValueError, "only supports paired"):
+            resolve({"candidate": "D1", "carrier_source_mode": "aligned_5layer"})
+
     def test_server_prefers_project_vendored_starwam_when_present(self):
         expected = ROOT / "third_party" / "StarWAM"
         self.assertTrue(expected.is_dir())

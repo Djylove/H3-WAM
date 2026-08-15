@@ -1603,7 +1603,24 @@ def _sha256_file(path: Path, chunk_size: int = 16 * 1024 * 1024) -> str:
 
 
 class H3DreamWAMKVInt8Policy:
-    """Online LIBERO adapter for the selected Candidate D0 schema-2 checkpoint."""
+    """Online LIBERO adapter for Candidate D/D0 schema-2 checkpoints."""
+
+    @staticmethod
+    def _resolve_candidate_source_mode(contract: dict) -> tuple[str, str]:
+        candidate = str(contract.get("candidate"))
+        expected_source_modes = {
+            "D": "aligned_5layer",
+            "D0": "repeat_layer49",
+        }
+        if candidate not in expected_source_modes:
+            raise ValueError("online rollout only supports paired Candidate D/D0")
+        carrier_source_mode = str(contract.get("carrier_source_mode"))
+        if carrier_source_mode != expected_source_modes[candidate]:
+            raise ValueError(
+                f"Candidate {candidate} rollout source mode mismatch: "
+                f"{carrier_source_mode} != {expected_source_modes[candidate]}"
+            )
+        return candidate, carrier_source_mode
 
     def __init__(self, args: argparse.Namespace) -> None:
         if args.h3_checkpoint is None or args.h3_model is None:
@@ -1617,9 +1634,9 @@ class H3DreamWAMKVInt8Policy:
         if args.context_mode != "cached":
             raise ValueError("h3_dreamwam_kv_int8 requires cached text contexts")
         if args.model_evaluations != 10:
-            raise ValueError("Candidate D0 rollout is fixed to 10 Euler steps")
+            raise ValueError("Candidate D/D0 rollout is fixed to 10 Euler steps")
         if args.h3_video_lora_checkpoint is not None or args.h3_tail_delta is not None:
-            raise ValueError("Candidate D0 rollout does not accept H3 deltas")
+            raise ValueError("Candidate D/D0 rollout does not accept H3 deltas")
 
         self.device = torch.device(args.device)
         if self.device.type != "cuda":
@@ -1643,14 +1660,11 @@ class H3DreamWAMKVInt8Policy:
             args.checkpoint.resolve(), map_location="cpu", weights_only=False
         )
         if payload.get("schema_version") != 2:
-            raise ValueError("Candidate D0 rollout requires a schema-2 checkpoint")
+            raise ValueError("Candidate D/D0 rollout requires a schema-2 checkpoint")
         contract = payload.get("contract")
         if not isinstance(contract, dict):
-            raise ValueError("Candidate D0 checkpoint contract is missing")
-        if contract.get("candidate") != "D0":
-            raise ValueError("online rollout only promotes the paired D0 winner")
-        if contract.get("carrier_source_mode") != "repeat_layer49":
-            raise ValueError("Candidate D0 rollout requires repeat_layer49")
+            raise ValueError("Candidate D/D0 checkpoint contract is missing")
+        candidate, carrier_source_mode = self._resolve_candidate_source_mode(contract)
         if contract.get("kv_schema") != "h3_dreamwam_kv_v1":
             raise ValueError("Candidate D0 K/V schema mismatch")
         carrier_layers = tuple(int(layer) for layer in contract.get("kv_layers", ()))
@@ -1658,6 +1672,12 @@ class H3DreamWAMKVInt8Policy:
             raise ValueError("Candidate D0 rollout requires audited carrier layers")
         if int(contract.get("kv_tokens", -1)) != 32:
             raise ValueError("Candidate D0 rollout requires 32 pooled K/V tokens")
+        kv_pool_strategy = str(contract.get("kv_strategy", ""))
+        if kv_pool_strategy not in (
+            "adaptive_avg_pool1d_sequence_v1",
+            "dual_view_spatial_grid_4x4_each_v1",
+        ):
+            raise ValueError("Candidate D0 rollout K/V pool strategy is unsupported")
         if int(contract.get("kv_num_heads", -1)) != 56:
             raise ValueError("Candidate D0 rollout requires 56 H3 attention heads")
         if int(contract.get("kv_attn_head_dim", -1)) != 128:
@@ -1681,8 +1701,10 @@ class H3DreamWAMKVInt8Policy:
             raise ValueError("Candidate D0 checkpoint model_spec is missing")
         if tuple(model_spec.get("carrier_layers", ())) != carrier_layers:
             raise ValueError("Candidate D0 model and cache carrier layers differ")
-        if model_spec.get("carrier_source_mode") != "repeat_layer49":
-            raise ValueError("Candidate D0 model_spec source mode mismatch")
+        if model_spec.get("carrier_source_mode") != carrier_source_mode:
+            raise ValueError(
+                f"Candidate {candidate} model_spec source mode mismatch"
+            )
 
         from fastwam.models.h3wam import (
             H3DreamWAMKVCarrierPolicy,
@@ -1703,10 +1725,15 @@ class H3DreamWAMKVInt8Policy:
         from starwam.modules.scheduler import FlowMatchScheduler
 
         self.carrier_layers = carrier_layers
+        self.candidate = candidate
+        self.carrier_source_mode = carrier_source_mode
+        self.captured_h3_layers = (
+            carrier_layers if carrier_source_mode == "aligned_5layer" else (49,)
+        )
         self.action_model = H3DreamWAMKVCarrierPolicy(
             enabled=True,
             carrier_layers=carrier_layers,
-            carrier_source_mode="repeat_layer49",
+            carrier_source_mode=carrier_source_mode,
             action_dim=int(model_spec["action_dim"]),
             proprio_dim=int(model_spec["proprio_dim"]),
             context_dim=int(model_spec["context_dim"]),
@@ -1715,6 +1742,7 @@ class H3DreamWAMKVInt8Policy:
             num_heads=int(model_spec["num_heads"]),
             attn_head_dim=int(model_spec["attn_head_dim"]),
             freq_dim=int(model_spec["freq_dim"]),
+            history_action_steps=int(model_spec.get("history_action_steps", 0)),
         ).to(device=self.device, dtype=self.dtype)
         self.action_model.load_state_dict(payload["model"], strict=True)
         self.action_model.eval()
@@ -1733,12 +1761,13 @@ class H3DreamWAMKVInt8Policy:
         self.int8_kv_provider = H3Int8OnlineKVProvider(
             self.h3_model,
             H3Int8OnlineKVContract(
-                layers=(49,),
+                layers=self.captured_h3_layers,
                 action_horizon=feature_audio_horizon,
                 target_latent_frames=int(args.target_latent_frames),
                 video_timestep=1.0,
                 condition_video_timestep=1.0,
                 capture_token_count=32,
+                pool_strategy=kv_pool_strategy,
             ),
         )
         self.video_vae = AutoencoderKLMiniMaxH3.from_pretrained(
@@ -1759,6 +1788,9 @@ class H3DreamWAMKVInt8Policy:
         self.task_context_ids = self._load_task_context_ids()
         self._contexts: dict[str, dict] = {}
         self.completed_steps = int(payload["completed_steps"])
+        self.history_action_steps = int(model_spec.get("history_action_steps", 0))
+        if self.history_action_steps != int(contract.get("history_action_steps", 0)):
+            raise ValueError("Candidate D0 history-action contract mismatch")
         self.h3_checkpoint_sha256 = actual_h3_sha256
 
     def _load_task_context_ids(self) -> dict[str, str]:
@@ -1850,16 +1882,31 @@ class H3DreamWAMKVInt8Policy:
             task_context["context"],
             task_context["token_tags"],
         )
-        layer49 = live_cache[49]
         if self.feature_ablation == "zero":
-            layer49 = {name: torch.zeros_like(value) for name, value in layer49.items()}
-        video_kv_cache = {
-            layer: {
-                "k": layer49["k"].clone(),
-                "v": layer49["v"].clone(),
+            live_cache = {
+                layer: {
+                    name: torch.zeros_like(value)
+                    for name, value in layer_cache.items()
+                }
+                for layer, layer_cache in live_cache.items()
             }
-            for layer in self.carrier_layers
-        }
+        if self.carrier_source_mode == "repeat_layer49":
+            layer49 = live_cache[49]
+            video_kv_cache = {
+                layer: {
+                    "k": layer49["k"].clone(),
+                    "v": layer49["v"].clone(),
+                }
+                for layer in self.carrier_layers
+            }
+        else:
+            video_kv_cache = {
+                layer: {
+                    "k": live_cache[layer]["k"],
+                    "v": live_cache[layer]["v"],
+                }
+                for layer in self.carrier_layers
+            }
         torch.cuda.synchronize(self.device)
         h3_seconds = time.perf_counter() - h3_started
 
@@ -1875,6 +1922,34 @@ class H3DreamWAMKVInt8Policy:
             device=self.device,
             dtype=torch.bool,
         )
+        normalized_history = None
+        history_valid = None
+        if self.history_action_steps:
+            from fastwam.models.h3wam import normalize_libero_environment_action_history
+
+            raw_history = np.asarray(
+                request.get("executed_action_history", []), dtype=np.float32
+            ).reshape(-1, 7)
+            if len(raw_history) > self.history_action_steps:
+                raw_history = raw_history[-self.history_action_steps :]
+            missing = self.history_action_steps - len(raw_history)
+            padded = np.zeros((self.history_action_steps, 7), dtype=np.float32)
+            valid = np.zeros(self.history_action_steps, dtype=bool)
+            if len(raw_history):
+                padded[missing:] = raw_history
+                valid[missing:] = True
+            normalized_history = normalize_libero_environment_action_history(
+                padded,
+                valid,
+                self.stats["action_min"],
+                self.stats["action_max"],
+                clip=5.0,
+            ).reshape(1, self.history_action_steps, 7).to(
+                device=self.device, dtype=self.dtype
+            )
+            history_valid = torch.as_tensor(
+                valid, device=self.device, dtype=torch.bool
+            ).reshape(1, self.history_action_steps)
         action_started = time.perf_counter()
         action_samples = []
         for sample_index in range(self.sample_ensemble_size):
@@ -1899,6 +1974,8 @@ class H3DreamWAMKVInt8Policy:
                         proprio=state,
                         video_kv_cache=video_kv_cache,
                         text_mask=text_mask,
+                        executed_action_history=normalized_history,
+                        executed_action_history_valid=history_valid,
                     )
                 actions = self.flow_scheduler.step(velocity, delta, actions)
             action_samples.append(actions)
@@ -1929,13 +2006,18 @@ class H3DreamWAMKVInt8Policy:
             "h3_feature_runtime": "int8_live_kv",
             "h3_feature_ablation": self.feature_ablation,
             "h3_checkpoint_sha256": self.h3_checkpoint_sha256,
-            "carrier_source_mode": "repeat_layer49",
+            "candidate": self.candidate,
+            "carrier_source_mode": self.carrier_source_mode,
             "carrier_layers": list(self.carrier_layers),
-            "captured_h3_layers": [49],
+            "captured_h3_layers": list(self.captured_h3_layers),
             "kv_tokens": 32,
             "action_objective": "dreamwam_kv_shift5_flow",
             "action_flow_steps": self.inference_steps,
             "checkpoint_completed_steps": self.completed_steps,
+            "history_action_steps": self.history_action_steps,
+            "history_valid_steps": (
+                0 if history_valid is None else int(history_valid.sum().item())
+            ),
             "sample_ensemble_size": self.sample_ensemble_size,
             "action_scale": self.action_scale,
             "normalized_action_pre_clamp": self.normalized_action_pre_clamp,

@@ -1,0 +1,325 @@
+{
+  "experiment_id": "h3_composition_spatial_selection_round_v1",
+  "date": "2026-08-15",
+  "hypothesis": "The remaining D0-H32-s14000/replan8 failures are driven more by compressed spatial carriers and missing cross-replan progress than by basic object category selection; aligned five-layer H3 K/V should improve the fixed Spatial gate, while an executed-action history adapter should improve fixed Goal/LIBERO-10 composition without materially reducing Object success.",
+  "fixed_parent": {
+    "checkpoint": "/mnt/h3-wam/outputs/dense-carrier-d0-h32-s20000-v1/checkpoints/d0_h32_s14000.pt",
+    "deployment": "replan8, action_horizon32, no temporal ensemble, normalized pre-clamp",
+    "current_screen": {
+      "trials_0_3_episodes": 160,
+      "successes": 57,
+      "by_suite": {
+        "goal": "10/40",
+        "object": "28/40",
+        "spatial": "17/40",
+        "libero_10": "2/40"
+      },
+      "diagnostic_audit": "/mnt/h3-wam/eval/audits/d0-h32-s14000-replan8-trials0123-failure-audit-v1.json",
+      "result_hash_manifest_sha256": "892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c4aa23019a2",
+      "boundary": "Object-joint displacement is a diagnostic proxy only; simulator predicates alone count as success."
+    }
+  },
+  "source_registry": [
+    {
+      "source": "DreamWAM",
+      "revision": "6e989facc0c452fd3488d75f60bc36411005558c",
+      "code_status": "TRAINABLE",
+      "mechanism": "layer-wise video K/V carried into ActionDiT"
+    },
+    {
+      "source": "LingBot-VA",
+      "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb",
+      "code_status": "TRAINABLE",
+      "mechanism": "persistent video/action KV updated with executed observations and actions"
+    },
+    {
+      "source": "OptimusVLA",
+      "revision": "UNPINNED",
+      "code_status": "EXCLUDED_NO_TRAINING_CODE",
+      "mechanism": "README describes historical-action local consistency; GitHub release currently contains README/assets only"
+    },
+    {
+      "source": "HELM",
+      "revision": "UNPINNED",
+      "code_status": "EXCLUDED_NO_VERIFIED_OFFICIAL_REPOSITORY",
+      "mechanism": "memory, verification and recovery taxonomy only"
+    }
+  ],
+  "candidates": {
+    "C02": {
+      "name": "aligned-five-layer-H3-KV",
+      "parent_lineage": "D-s963 paired sibling of D0, continued on the exact D0 sample sequence to s14000",
+      "single_variable": "repeat layer49 K/V for all five ActionDiT blocks -> aligned H3 layers 9/19/29/39/49",
+      "budget": {
+        "global_batch": 8,
+        "final_steps": 14000,
+        "samples": 112000,
+        "manifest_items": 200779,
+        "effective_epochs": 0.5578270617,
+        "checkpoint_every_steps": 1000,
+        "estimated_wall_hours": "5-6"
+      },
+      "launch_host": "117.50.181.177:30907",
+      "launch_pid": 651073,
+      "launch_command": "nohup bash /mnt/h3-wam/candidate-d0-rollout-96976ce/project/scripts/h3wam/launch_dense_d0_horizon_long.sh d_h32_resume > /mnt/h3-wam/eval/d-h32-s14000-five-layer.queue.log 2>&1 </dev/null &",
+      "go_status": "NO_GO",
+      "evidence_status": "FAIL_PAIRED_GATE",
+      "s6000_offline": {
+        "checkpoint": "/mnt/h3-wam/outputs/dense-carrier-d-h32-s14000-v1/checkpoints/d_h32_s6000.pt",
+        "normalized_mse": 0.09760536512076215,
+        "physical_mse": 0.047003985857575765,
+        "gripper_macro_f1": 0.9073551682156962,
+        "language_mean_abs_delta": 0.1620289900473186,
+        "visual_shuffle_mean_abs_delta": 0.1444017538002559,
+        "matched_d0_s6000": {
+          "normalized_mse": 0.11049014244368403,
+          "physical_mse": 0.050609534899605735,
+          "gripper_macro_f1": 0.8803191797123975,
+          "language_mean_abs_delta": 0.19468101944242205,
+          "visual_shuffle_mean_abs_delta": 0.13989644806299892
+        },
+        "boundary": "Promising matched-step offline mechanism evidence; final paired rollout is still required."
+      },
+      "early_spatial_rollout": {
+        "tasks": [0, 1, 2, 3, 4, 5, 6, 7],
+        "trial": 0,
+        "fixed_parent": "3/8",
+        "s6000": "0/8",
+        "s8000": "0/8",
+        "artifacts": [
+          "/mnt/h3-wam/eval/d-spatial-milestone/d_h32_s6000_trial0_summary.json",
+          "/mnt/h3-wam/eval/d-spatial-milestone/d_h32_s8000_trial0_summary.json"
+        ],
+        "boundary": "Early diagnostic only, but two consecutive negative rollout milestones contradict the simple aligned-K/V spatial-improvement hypothesis."
+      },
+      "s14000_final": {
+        "checkpoint": "/mnt/h3-wam/outputs/dense-carrier-d-h32-s14000-v1/checkpoints/d_h32_s14000.pt",
+        "checkpoint_sha256": "869b1a203cde4013aa5fafd754bace5cd45f27b06f46d95ec391ae46518848a3",
+        "normalized_mse": 0.057962321876363736,
+        "physical_mse": 0.02551104160348489,
+        "gripper_macro_f1": 0.9429773190058897,
+        "language_mean_abs_delta": 0.2061006486415863,
+        "visual_shuffle_mean_abs_delta": 0.13457901477813722,
+        "spatial_candidate": "5/20",
+        "spatial_fixed_parent": "7/20",
+        "object_candidate": "3/8",
+        "object_fixed_parent": "5/8",
+        "decision": "FAIL_PAIRED_GATE",
+        "artifacts": [
+          "/mnt/h3-wam/eval/d-final-spatial-gate-v1/d_h32_s14000_summary.json",
+          "/mnt/h3-wam/eval/d-final-object-gate-v1/d_h32_s14000_summary.json"
+        ],
+        "measured_resume_wall": "69m04s for s3000->s14000; earlier s963->s3000 excluded"
+      },
+      "promotion": "Beat parent 7/20 on Spatial tasks0-9 trials0-1 and lose no more than one Object success.",
+      "stop": "Stop if balanced80 condition response collapses or fixed Spatial does not beat the parent."
+    },
+    "C14": {
+      "name": "D0-executed-action-history16-adapter",
+      "parent_lineage": "D0-H32-s14000/replan8",
+      "single_variable": "add a zero-initialized 16x7 executed-action adapter to the proprio context token; freeze every parent parameter",
+      "classification": "novel_composition of LingBot persistent action context with the local D0 carrier",
+      "mechanical_budget": {
+        "global_batch": 8,
+        "steps": 1,
+        "samples": 8
+      },
+      "conditional_canary_budget": {
+        "global_batch": 8,
+        "steps": 3000,
+        "samples": 24000,
+        "manifest_items": 200779,
+        "effective_epochs": 0.1195344015,
+        "checkpoint_every_steps": 500
+      },
+      "mechanical_launch_host": "117.50.181.177:32611",
+      "mechanical_result": {
+        "status": "PASS",
+        "parent_probe_max_abs": 0.0,
+        "history_gradient_norm": 0.10316205024719238,
+        "history_update_max_abs": 0.000010073184967041016,
+        "frozen_block_gradient_norms": [0.0, 0.0, 0.0, 0.0, 0.0],
+        "frozen_proprio_gradient_norm": 0.0,
+        "restore_probe_max_abs": 0.0,
+        "checkpoint": "/mnt/h3-wam/outputs/d0-history16-mechanical-v1/d0_history16_s14001.pt"
+      },
+      "canary_launch_host": "117.50.181.177:32611",
+      "canary_launch_pid": 199429,
+      "canary_launch_command": "nohup bash /mnt/h3-wam/candidate-d0-rollout-96976ce/project/scripts/h3wam/launch_dense_d0_history16_adapter.sh > /mnt/h3-wam/eval/d0-history16-adapter-s3000-v1.queue.log 2>&1 </dev/null &",
+      "canary_completion": {
+        "completed": true,
+        "parent_completed_steps": 14000,
+        "adapter_steps": 3000,
+        "global_batch": 8,
+        "training_samples": 24000,
+        "effective_epochs": 0.11953441345957495,
+        "final_checkpoint": "/mnt/h3-wam/outputs/d0-history16-adapter-s3000-v1/checkpoints/d0_history16_s17000.pt"
+      },
+      "s17000_offline": {
+        "examples": 40,
+        "inference_steps": 10,
+        "parent_zero_history_physical_mse": 0.029282121446781925,
+        "correct_history_physical_mse": 0.029187897087207863,
+        "shuffled_history_physical_mse": 0.02964233950977879,
+        "correct_history_gripper_accuracy": 0.92734375,
+        "history_mean_abs_delta": 0.024255807059151785,
+        "language_mean_abs_delta": 0.17504359654017856,
+        "visual_mean_abs_delta": 0.1102294921875,
+        "artifact": "/mnt/h3-wam/eval/history-adapter/d0_history16_s17000_offline40_v1.json"
+      },
+      "s14500_selection": {
+        "offline_physical_mse": 0.02831571,
+        "long_composition_candidate": "2/10",
+        "long_composition_fixed_parent": "1/10",
+        "object_candidate": "5/8",
+        "object_fixed_parent": "5/8",
+        "decision": "PASS_TRIALS01_ONLY_NOT_CONFIRMED",
+        "artifacts": [
+          "/mnt/h3-wam/eval/history16-long-composition-gate-v1/d0_history16_s14500_summary.json",
+          "/mnt/h3-wam/eval/history16-goal-object-gate-v1/d0_history16_s14500_summary.json",
+          "/mnt/h3-wam/eval/history16-s14500-selection-v1/d0_history16_s14500_failure_audit.json"
+        ],
+        "confirmation": {
+          "long_composition_candidate": "0/10",
+          "long_composition_fixed_parent": "0/10",
+          "object_candidate": "4/8",
+          "object_fixed_parent": "5/8",
+          "combined_trials0_3_long": "2/20 versus parent 1/20",
+          "combined_trials0_3_object": "9/16 versus parent 10/16",
+          "decision": "NO_GO_FUSION_UNSTABLE_ACROSS_TRIALS"
+        }
+      },
+      "s17000_rejected_rollout_gate": {
+        "libero_10_tasks": [0, 3, 7, 9],
+        "trials": [0, 1],
+        "candidate": "2/8",
+        "fixed_parent": "1/8",
+        "goal3_candidate": "0/2",
+        "goal3_fixed_parent": "0/2",
+        "object_regression": "2/8 versus fixed parent 5/8",
+        "artifact": "/mnt/h3-wam/eval/history16-long-composition-gate-v1/d0_history16_s17000_summary.json",
+        "failure_audit": "/mnt/h3-wam/eval/history16-goal-object-gate-v1/d0_history16_s17000_failure_audit.json",
+        "boundary": "Small long-composition gain is outweighed by a three-success Object regression."
+      },
+      "go_status": "NO_GO_FUSION",
+      "evidence_status": "S14500_MECHANISM_EVIDENCE_ONLY_UNSTABLE_ACROSS_TRIALS; S17000_FAIL_PAIRED_GATE",
+      "mechanical_gate": "Parent probe max_abs=0, frozen-parent gradient=0, history gradient/update finite and nonzero, atomic checkpoint restore passes.",
+      "promotion": "Increase fixed Goal3/LIBERO-10 0,3,7,9 successes and lose no more than one success on Object0,1,5,9.",
+      "stop": "s17000 failed Object regression; s14500 did not reproduce its long gain on independent trials2/3. Stop shallow-history fusion."
+    },
+    "C15": {
+      "name": "D0-dual-view-spatial-grid-KV",
+      "parent_lineage": "D0-H32-s14000/replan8",
+      "single_variable": "adaptive 1D pooling of the 7x14 dual-camera K/V grid to 32 tokens -> independent 4x4 pooling per camera, still 32 tokens",
+      "classification": "local contract correction motivated by the pinned DreamWAM carrier; not an official DreamWAM reproduction",
+      "mechanical_gate": {
+        "samples": 64,
+        "global_parallel_workers": 8,
+        "source_grid": [7, 14],
+        "output_grid_per_view": [4, 4],
+        "tokens": 32,
+        "all_finite": true,
+        "all_layer_storage_unique": true,
+        "status": "PASS_MECHANICAL_NOT_EFFECT_EVIDENCE",
+        "artifact": "/mnt/h3-wam/eval/c15-grid-cache-mechanical-v1/COMPLETED"
+      },
+      "adaptation_mechanical_gate": {
+        "global_batch": 8,
+        "steps": 1,
+        "samples": 8,
+        "completed_steps": 14001,
+        "all_block_gradients_finite_nonzero": true,
+        "head_update_max_abs": 0.000030517578125,
+        "strict_restore_probe_max_abs": 0.0,
+        "checkpoint_sha256": "4fbbb0db2c5990074645f74ba3a6e77489e025f8a64b2f82a7a087c18ab39512",
+        "status": "PASS_MECHANICAL_NOT_EFFECT_EVIDENCE",
+        "artifact": "/mnt/h3-wam/outputs/c15-grid-adaptation-mechanical-v1/COMPLETED"
+      },
+      "paired_canary_budget": {
+        "global_batch": 8,
+        "parent_steps": 14000,
+        "adaptation_steps": 1000,
+        "samples": 8000,
+        "sample_offset": 112000,
+        "effective_epochs": 0.03984480399,
+        "optimizer_scheduler_rng": "restored from the fixed parent",
+        "fixed_sibling": "existing D0-H32-s15000 on the exact same sample slice"
+      },
+      "go_status": "GO_CANARY",
+      "evidence_status": "NOT_EFFECT_EVIDENCE",
+      "automatic_evaluation": {
+        "balanced80": "scripts/h3wam/launch_c15_balanced80_gate.sh on 117.50.181.177:30907 after validation cache READY",
+        "closed_loop": "scripts/h3wam/launch_c15_spatial_object_gate.sh on 117.50.181.177:32409 after checkpoint READY",
+        "spatial_episodes": 20,
+        "object_regression_episodes": 8
+      },
+      "promotion": "Beat D0-s15000 offline under same noise, then exceed D0-s14000 7/20 Spatial while retaining at least 4/8 Object.",
+      "stop": "Stop if conditioning collapses, matched offline loses materially, Spatial does not exceed 7/20, or Object falls below 4/8."
+    }
+  },
+  "difference_matrix": [
+    {
+      "field": "backbone",
+      "parent": "frozen INT8 H3 same SHA",
+      "C02": "same",
+      "C14": "same",
+      "C15": "same",
+      "status": "ALIGNED"
+    },
+    {
+      "field": "visual carrier",
+      "parent": "layer49 repeated five times, 32 tokens",
+      "C02": "aligned layers9/19/29/39/49, 32 tokens each",
+      "C14": "same as parent",
+      "C15": "same layer49 repeated five times and same 32-token budget; independent 4x4 pooling per camera",
+      "status": "C02_INTENTIONAL"
+    },
+    {
+      "field": "temporal progress",
+      "parent": "rollout request sends 16 actions but D0 server ignores them",
+      "C02": "same as parent",
+      "C14": "normalized valid executed action history16",
+      "C15": "same as parent",
+      "status": "C14_INTENTIONAL"
+    },
+    {
+      "field": "trainable parameters",
+      "parent": "action expert training lineage",
+      "C02": "same action expert recipe",
+      "C14": "history adapter only; parent frozen",
+      "C15": "restore parent model, optimizer, scheduler and RNG; continue exact s14000-s15000 slice",
+      "status": "TRACK_SPECIFIC"
+    }
+  ],
+  "unresolved_differences": [
+    "DreamWAM does not officially support MiniMax-H3; C02 is a backbone port.",
+    "C14 compresses persistent action tokens into one zero-init context delta and is not an official LingBot reproduction.",
+    "C15 corrects a local 32-token pooling deviation, but DreamWAM itself uses neither MiniMax-H3 nor this compressed dual-camera grid.",
+    "The joint-delta failure taxonomy cannot prove subgoal completion or causal failure onset."
+  ],
+  "fact_rollout_transition_audit": {
+    "source_revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+    "episodes": 160,
+    "replan_states": 6208,
+    "causal_transitions": 6048,
+    "train_trials": [0, 1, 2],
+    "validation_trials": [3],
+    "split_overlap": 0,
+    "failure_onset": "UNKNOWN",
+    "counterfactual_action_outcome": "MISSING",
+    "value_only_diagnostic": "GO_CANARY_AFTER_FEATURE_TARGET_DOSSIER",
+    "failure_imitation": "NO_GO",
+    "best_of_n": "NO_GO_UNTIL_HELD_OUT_RANKING_PASSES",
+    "artifact": "/mnt/h3-wam/eval/audits/d0-h32-s14000-replan8-fact-transition-audit-v1.json"
+  },
+  "lineage": {
+    "incumbent": "D0-H32-s14000/replan8/no-ensemble",
+    "challengers": [
+      "C02 aligned-five-layer s14000 (rejected)",
+      "C14 executed-action-history16 adapter (mechanism only, fusion rejected)",
+      "C15 dual-view spatial grid K/V (active canary)"
+    ],
+    "track_winner": "none: C02 failed both final gates and C14 did not confirm across trials",
+    "fusion": "blocked; C15 spatial-topology canary is the next single-variable challenger"
+  }
+}

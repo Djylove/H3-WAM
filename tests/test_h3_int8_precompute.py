@@ -61,6 +61,29 @@ class StarWAMFeaturePoolingTest(unittest.TestCase):
         output[9]["k"].add_(1)
         torch.testing.assert_close(output[19]["k"], before)
 
+    def test_dual_view_grid_cache_matches_shared_online_pooling(self):
+        from fastwam.models.h3wam import pool_dual_view_grid_kv_tokens
+
+        captured = {
+            49: {
+                "k": torch.randn(1, 98, 2, 4),
+                "v": torch.randn(1, 98, 2, 4),
+            }
+        }
+        output = MODULE.prepare_dreamwam_kv_cache(
+            captured,
+            layers=(49,),
+            token_count=32,
+            pool_strategy=MODULE.DUAL_VIEW_GRID_KV_POOL,
+            grid_height=7,
+            grid_width=14,
+        )
+        for name in ("k", "v"):
+            expected = pool_dual_view_grid_kv_tokens(
+                captured[49][name], grid_height=7, grid_width=14
+            ).to(torch.bfloat16)
+            torch.testing.assert_close(output[49][name], expected, atol=0, rtol=0)
+
     def test_dreamwam_kv_capture_is_default_off(self):
         import sys
         from unittest.mock import patch

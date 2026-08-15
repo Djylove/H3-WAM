@@ -116,6 +116,7 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
         num_heads: int = 56,
         attn_head_dim: int = 128,
         freq_dim: int = 256,
+        history_action_steps: int = 0,
         eps: float = 1.0e-6,
     ) -> None:
         super().__init__()
@@ -157,8 +158,13 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
         self.attention_width = self.num_heads * self.attn_head_dim
         self.context_dim = int(context_dim)
         self.proprio_dim = int(proprio_dim)
+        self.action_dim = int(action_dim)
+        self.history_action_steps = int(history_action_steps)
+        if self.history_action_steps < 0:
+            raise ValueError("history_action_steps cannot be negative")
         self.action_expert: nn.Module | None = None
         self.proprio_encoder: nn.Module | None = None
+        self.history_action_encoder: nn.Module | None = None
         self._joint_mot_type = None
         if self.enabled:
             ActionDiT, JointMoT = _load_pinned_dreamwam_carrier()
@@ -174,6 +180,13 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
                 eps=eps,
             )
             self.proprio_encoder = nn.Linear(proprio_dim, context_dim)
+            if self.history_action_steps:
+                self.history_action_encoder = nn.Linear(
+                    self.history_action_steps * self.action_dim,
+                    context_dim,
+                    bias=False,
+                )
+                nn.init.zeros_(self.history_action_encoder.weight)
             self._joint_mot_type = JointMoT
 
     def _flatten_cache_tensor(
@@ -270,6 +283,8 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
         proprio: torch.Tensor,
         video_kv_cache: Mapping[int, Mapping[str, torch.Tensor]],
         text_mask: torch.Tensor | None = None,
+        executed_action_history: torch.Tensor | None = None,
+        executed_action_history_valid: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if (
             not self.enabled
@@ -299,7 +314,41 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
                 device=self.proprio_encoder.weight.device,
                 dtype=self.proprio_encoder.weight.dtype,
             )
-        ).unsqueeze(1)
+        )
+        if self.history_action_steps:
+            expected_history = (batch, self.history_action_steps, self.action_dim)
+            expected_valid = (batch, self.history_action_steps)
+            if (
+                executed_action_history is None
+                or tuple(executed_action_history.shape) != expected_history
+            ):
+                raise ValueError(
+                    "executed_action_history must have shape "
+                    f"{expected_history} when history conditioning is enabled"
+                )
+            if (
+                executed_action_history_valid is None
+                or tuple(executed_action_history_valid.shape) != expected_valid
+            ):
+                raise ValueError(
+                    "executed_action_history_valid must cover every history row"
+                )
+            assert self.history_action_encoder is not None
+            history = executed_action_history.to(
+                device=proprio_token.device,
+                dtype=proprio_token.dtype,
+            )
+            valid = executed_action_history_valid.to(
+                device=proprio_token.device,
+                dtype=proprio_token.dtype,
+            )
+            history = history * valid.unsqueeze(-1)
+            proprio_token = proprio_token + self.history_action_encoder(
+                history.flatten(1)
+            )
+        elif executed_action_history is not None or executed_action_history_valid is not None:
+            raise ValueError("action history was provided to a history-free carrier")
+        proprio_token = proprio_token.unsqueeze(1)
         context = torch.cat(
             (
                 text_context.to(device=proprio_token.device, dtype=proprio_token.dtype),

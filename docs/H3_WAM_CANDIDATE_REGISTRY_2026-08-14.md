@@ -1,6 +1,6 @@
 # H3-WAM 开源候选注册表与炼蛊谱系
 
-更新时间：2026-08-14（Asia/Shanghai）
+更新时间：2026-08-15（Asia/Shanghai）
 
 ## 目标与边界
 
@@ -33,7 +33,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | StarWAM | `cd76d96f273f` | clean | TRAINABLE | feature-conditioned、MoT、Shared-DiT 三家族、30层 ActionDiT | R1 有稀疏端口；缺统一 v7 dense 重测 |
 | DreamWAM | `6e989facc0c4` | clean | TRAINABLE | layer-wise video K/V、ActionDiT、RGB/motion/depth/DINO structured future | D/D0 carrier 已落地；完整 structured future 未晋级 |
 | ImageWAM | `5d4a341ed20a` | clean | TRAINABLE | source-conditioned target image/edit feature + ActionDiT | H3 首帧 I2V/target-image adapter 未完成 |
-| FACT | `618a6c168686` | clean | TRAINABLE | causal act-then-imagine、future state/value、failure-aware、best-of-N | 缺 canonical failure rollout 数据 |
+| FACT | `618a6c168686` | clean | TRAINABLE | causal act-then-imagine、future state/value、failure-aware、best-of-N | 已有6048条因果rollout transition；缺failure onset与反事实结果，暂只准value诊断 |
 | MiniWorld | `e484206bbd43` | clean | TRAINABLE | block-causal diffusion forcing、长度课程、rolling KV | 是 world model，不是可直接 rollout 的动作策略 |
 | LingBot-VA | `7c6ffa9bfc4b` | clean | TRAINABLE | shared video/action blocks、persistent KV、executed-action history | H3 shared 端口已测；完整 history 合同未对齐 |
 | DiT4DiT | `66a6f3a12e2c` | dirty 579；只读固定 commit | TRAINABLE | 中间层 visual feature + 独立 ActionDiT，video loss 更新 backbone | 本地早期探索不等价于官方完整端口 |
@@ -50,18 +50,20 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 |---|---|---|---|---|---|---|---|
 | C00 | incumbent | D0 sparse s963 | DreamWAM + local H3 adapter | 无 | 历史稀疏基线 | offline pass / rollout `0/2` | NOT_EVIDENCE_READY |
 | C01 | carrier | D0 dense | DreamWAM | C00 | 5 windows/episode → dense starts | cache running | GO_CANARY |
-| C02 | carrier | D dense five-layer K/V | DreamWAM | C01 fresh-init twin | layer49 repeat → aligned layers 9/19/29/39/49 | cache running | GO_CANARY after full audit |
+| C02 | carrier/spatial | D dense five-layer K/V | DreamWAM | D0-H32 matched training lineage | layer49 repeat → aligned layers 9/19/29/39/49 | s14000 Spatial5/20、Object3/8，均输父模型 | NO_GO；FAIL_PAIRED_GATE |
 | C03 | carrier/action | StarWAM dense full30 s100 anchor | StarWAM | historical v8 StarWAM s100 | v8 frame-indexed → common v7 valid-window split/cache | dossier pass；dual H3 cache running；historical s850/s913 condition collapse | GO_CANARY s100 only；NO_GO_LONG |
 | C04 | action/co-training | FastWAM-H3 | FastWAM | fixed FastWAM Wan baseline + C03 interface baseline | Wan video expert → H3 while preserving official action path | source pass；adapter incomplete | PROBE_ONLY |
 | C05 | carrier | ImageWAM-H3 target image | ImageWAM | carrier winner | video K/V → H3 target-image/edit representation | source pass；adapter incomplete | PROBE_ONLY |
 | C06 | carrier/action | DiT4DiT-H3 | DiT4DiT | carrier winner | selected intermediate H3 features + official ActionDiT | source pass；dirty vendor audit pending | PROBE_ONLY |
 | C07 | temporal/context | LingBot-H3 executed history16 | LingBot-VA | shared-H3 parent | explicit executed-action feedback；尚非 persistent observation KV | s2500 offline champion，但 fixed rollout `0/1` 且无接触 | NO_GO current port；persistent-KV 需新 dossier |
 | C08 | temporal/context | MiniWorld-H3 rolling memory | MiniWorld | C07 or carrier/action winner | rolling KV + diffusion-forcing curriculum | policy bridge absent | PROBE_ONLY |
-| C09 | consequence/ranking | FACT-lite H3 | FACT | carrier/action/context winner | causal future state/value head；action path cannot see future | future-proprio 与 future-H3 均通过 s100/s500 机制门；failure data absent | consequence mechanism champion；NO_GO value/ranking |
+| C09 | consequence/ranking | FACT-lite H3 | FACT | carrier/action/context winner | causal future state/value head；action path cannot see future | future-proprio/future-H3机制门通过；160条rollout已抽出6048 transitions，但failure onset未知 | GO_CANARY value-only dossier；NO_GO failure imitation/ranking |
 | C10 | consequence/ranking | FACT best-of-N | FACT | C09 | rank sampled action chunks by learned progress/value | waits C09 calibration | NO_GO parent gate |
 | C11 | structured future | DreamWAM motion/depth/DINO | DreamWAM | carrier/action winner | add exactly one structured future target per child | source pass；target caches pending | PROBE_ONLY |
 | C12 | action/co-training | Motus-H3 three-expert | Motus | best joint-training baseline | three-expert MoT | Stage-2/H3 mapping unknown | PROBE_ONLY |
 | C13 | consequence/state | Cosmos-H3 latent slots | Cosmos Policy | consequence winner parent | future state/value latent slots | scale/data mismatch open | PROBE_ONLY |
+| C14 | temporal/progress | D0-H32 executed-action history16 adapter | LingBot-VA persistent video/action KV + local D0 parent | D0-H32-s14000/replan8 | add zero-init 16-action progress adapter；freeze parent | s14500 trials0/1长程+1，但trials2/3无新增；s17000过训练 | 机制证据保留；NO_GO_FUSION |
+| C15 | carrier/spatial | D0 dual-view grid K/V | local H3 adapter + DreamWAM carrier | D0-H32-s14000/replan8 | 32-token一维池化 → 左右相机各4×4网格池化 | 64样本真实INT8机械门通过；8k严格兄弟缓存生成中 | GO_CANARY；NOT_EFFECT_EVIDENCE |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -183,3 +185,111 @@ carrier/action 赛道冠军
 每个子节点仅新增一个已经独立晋级的机制，并与父节点在同数据、预算、seed、solver 和 rollout 合同下
 配对。融合失败时淘汰组合而不是篡改父模型；只有最终节点通过统一 LIBERO benchmark、多 seed、消融、
 显存和延迟门，才称为“蛊王”。
+
+## 2026-08-15 组合/空间/对象选择专项
+
+可证伪假设：`D0-H32-s14000/replan8` 的剩余失败主要不是基础物体类别识别，而是视觉空间载体压缩与
+跨 replan 进度丢失；若该判断正确，C02 应在固定 Spatial 子集提高成功数，C14 应在固定 Goal/10
+组合子集增加成功且 Object 不下降超过 1 个 episode。任一候选只改善离线 MSE、没有增加 simulator
+predicate success，均判假并停止。
+
+### 当前闭环归因
+
+固定父模型、replan8、trial0–3 共160 episodes：Goal `10/40`、Object `28/40`、Spatial `17/40`、
+LIBERO-10 `2/40`，总计 `57/160=35.625%`。joint-delta 只作为失败诊断，不冒充成功：Object 的12次
+失败中8次已经搬动正确目标、没有明显错对象；Spatial 的23次失败中14次搬动正确 bowl、1次有明显
+错 bowl 证据；LIBERO-10 有19次部分必需目标进展与12次错对象/错阶段证据。原始审计在
+`/mnt/h3-wam/eval/audits/d0-h32-s14000-replan8-trials0123-failure-audit-v1.json`，160个结果文件的
+hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c4aa23019a2`。
+
+### 差异矩阵
+
+| 字段 | 父模型 | C02 五层空间载体 | C14 历史进度适配器 | 状态 |
+|---|---|---|---|---|
+| H3 | INT8、冻结、同 SHA | 相同 | 相同 | ALIGNED |
+| 动作专家 | DreamWAM 5-block ActionDiT | 相同初始化/训练合同 | 父模型全部冻结 | ALIGNED |
+| 视觉 K/V | layer49×5、32 token | layer9/19/29/39/49、各32 token | 相同父模型 | INTENTIONAL |
+| 历史 | rollout 虽发送16步但服务端忽略 | 仍忽略 | 16步真实已执行动作，左补零+valid mask | INTENTIONAL |
+| 数据/顺序 | v7 uniform，前112000样本到s14000 | 同 manifest、seed、sample offset | 从s14000后不重叠窗口训练新增adapter | ALIGNED / ADAPTER-ONLY |
+| 部署 | replan8、无ensemble | 通过门后同协议 | 通过门后同协议 | ALIGNED |
+
+未决差异：DreamWAM 官方没有 MiniMax-H3 端口，二者仍是 `backbone_port`；C14 把 LingBot-VA 官方
+持久 video/action KV 简化为零初始化的 action-history progress adapter，属于 `novel_composition`，
+不是官方复现。OptimusVLA 当前 GitHub 只有 README/assets、没有可训练实现，因此只作为结论补充并从
+训练候选排除；HELM 当前没有核验到官方训练仓库，也不占用 GPU 预算。
+
+### 预算、门槛与真实命令
+
+- C02：global batch8，从s963续至s14000，总112000样本，`0.557827` effective epoch；每1000步保存、
+  restore、balanced80。最后一次s3000→s14000恢复段实测墙钟69分04秒（此前s963→s3000不含在内）。真实命令：
+  `nohup bash scripts/h3wam/launch_dense_d0_horizon_long.sh d_h32_resume > /mnt/h3-wam/eval/d-h32-s14000-five-layer.queue.log 2>&1 &`。
+- C14机械门已通过：global batch8、1 step、8 samples，父模型 probe `max_abs=0`；五个 ActionDiT block
+  与 proprio gradient 全为0，history gradient `0.103162`、更新 `1.0073e-05`，原子checkpoint重新加载
+  `max_abs=0`。3k adapter canary 已完成：global batch8、24000样本、`0.119534` effective epoch、每500步
+  保存，最终checkpoint `d0_history16_s17000.pt`；真实命令为
+  `nohup bash scripts/h3wam/launch_dense_d0_history16_adapter.sh > /mnt/h3-wam/eval/d0-history16-adapter-s3000-v1.queue.log 2>&1 &`。
+  完整3k adapter段墙钟14分46秒。
+- C02 promotion：同父模型的固定 Spatial tasks `0–9`、trials0–1 必须超过父模型 `7/20`，同时固定
+  Object 子集不得下降超过1个成功；否则拒绝。
+- C14 promotion：固定 Goal task3 与 LIBERO-10 tasks0/3/7/9、每项trials0–1必须超过父模型；另跑
+  Object tasks0/1/5/9回归门。出现父模型条件依赖退化、Object下降>1或没有新增长程成功即停止。
+
+许可状态：C02 `FAIL_PAIRED_GATE / NO_GO`；C14-s14500只保留
+`MECHANISM_EVIDENCE / NO_GO_FUSION`，C14-s17000 `FAIL_PAIRED_GATE`；C15
+`GO_CANARY / NOT_EFFECT_EVIDENCE`。整体 incumbent 仍是
+`D0-H32-s14000 -> replan8 -> no ensemble`，尚无可融合的时间或空间赛道冠军。
+
+### 专项首轮结果（2026-08-15）
+
+- C14 的 s14500/s15000/s16000/s16500/s17000 已在固定episode-disjoint val40、相同噪声和10步Euler上
+  做零历史父对照、正确历史、错配历史评测。最终s17000 physical MSE为 `0.029188`，略优于零历史父
+  对照 `0.029282`；错配历史为 `0.029642`，正确历史输出相对错配历史 mean-absolute delta为
+  `0.024256`。语言/视觉响应分别为 `0.175044/0.110229`，没有条件坍塌。s14500离线最强
+  (`0.028316`)，曲线非单调，因此s17000不是自动最优。
+- C14 最终点的固定 LIBERO-10 tasks0/3/7/9、trials0/1 为 `2/8`，父模型同输入为 `1/8`；新增收益
+  集中在task3，候选两次均成功（255/359步），父模型只有trial1成功。Goal3仍为 `0/2`。这只证明一个
+  小的长程增益；Object0/1/5/9回归从父模型 `5/8` 降到 `2/8`，超过最多下降1次的预注册限制，故
+  s17000正式标为 `FAIL_PAIRED_GATE / NOT_EVIDENCE_READY`。失败审计显示Object失败为4次无目标接触、
+  2次搬动目标但未完成，并非明显选错物体；说明浅历史分支主要扰乱了接触/控制，而非改善目标绑定。
+- 因历史学习曲线非单调且s14500是预注册保存点中离线最优者，使用完全相同的18个长程/Goal/Object
+  episodes做了固定checkpoint-selection复核。s14500长程组合为 `2/10`（父模型 `1/10`），Object为
+  `5/8`（父模型 `5/8`），通过“长程增加且Object不少于4/8”的窄门；Object剩余3次失败均为无目标接触，
+  没有明显错对象证据。因此s14500只通过了首批checkpoint-selection窄门，不能据此称时间赛道winner。
+  独立trials2/3确认中，长程为 `0/10`，与父模型 `0/10` 相同；Object为 `4/8`，父模型 `5/8`。
+  合并trials0–3只是长程 `2/20 vs 1/20`、Object `9/16 vs 10/16`，新增成功集中在task3的前两个trial，
+  没有跨trial稳定复现。因此撤销“时间赛道winner”称号，只保留历史确实影响输出的机制证据。
+- C02 s6000 的 balanced80 相对同step D0：normalized MSE `0.097605 vs 0.110490`、physical MSE
+  `0.047004 vs 0.050610`、gripper macro-F1 `0.907355 vs 0.880319`；language sensitivity较低
+  (`0.162029 vs 0.194681`)，visual-shuffle action MAE略高 (`0.144402 vs 0.139896`)。因此五层载体
+  保持视觉依赖且中段离线更好，但仍必须由final s14000的固定Spatial闭环决定是否有效。
+- C02 s6000 与s8000的早期Spatial tasks0–7/trial0闭环均为 `0/8`；固定父擂主同任务为 `3/8`。s6000失败分解是
+  4次无目标接触、2次移动正确目标但未完成、2次明显错对象证据。由于s6000并非与父擂主同step的最终
+  promotion点，连续两个负点仍不提前中止预注册s14000长线，但已强烈反驳“对齐五层K/V自然改善空间关系”；
+  禁止把s6000/s8000离线改善解释为空间能力改善。
+- C02最终s14000 balanced80虽有 normalized/physical MSE `0.057962/0.025511`、gripper macro-F1
+  `0.942977`、语言/视觉响应 `0.206101/0.134579`，但固定Spatial仅 `5/20`（父 `7/20`），Object回归
+  `3/8`（父 `5/8`，且低于4/8下限）。112000样本后仍双门失败，故训练不足解释被排除，C02停止。
+- 对象选择不另起大模型：父模型Object全量已达 `28/40`，多数失败是正确目标已移动但未完成；C14与C02
+  都可能破坏Object。因此Object在下一轮作为硬回归门，主要优化转向长程结果判断与保留空间拓扑。
+- 新C15针对一个已核验的本地偏差：真实H3首帧条件K/V是双相机 `7×14=98` token，当前实现用
+  `adaptive_avg_pool1d`压到32，DreamWAM官方并无此压缩。C15保持32 token和相同存储，只对左右相机
+  分别做4×4二维池化。64个真实INT8样本、8卡机械审计全部finite、每层独立，峰值约20.1GiB；
+  artifact为 `/mnt/h3-wam/eval/c15-grid-cache-mechanical-v1/COMPLETED`。下一步从固定D0-s14000恢复
+  模型/optimizer/scheduler/RNG，在完全相同的112000–120000样本上训练1000步，与现成D0-s15000配对。
+  真实一步适配机械门也已通过：global batch8、8 samples、完成到s14001，五个block梯度均finite且非零，
+  head update `3.05176e-05`，保存后严格恢复的probe `max_abs=0.0`；checkpoint SHA256为
+  `4fbbb0db2c5990074645f74ba3a6e77489e025f8a64b2f82a7a087c18ab39512`，artifact在
+  `/mnt/h3-wam/outputs/c15-grid-adaptation-mechanical-v1/COMPLETED`。这仍只算链路证据，不算效果改善。
+  真实命令：`nohup bash scripts/h3wam/launch_c15_grid_cache_stage8k.sh ... &`，缓存READY后自动执行
+  `scripts/h3wam/launch_c15_grid_adaptation_s1000.sh`；在离线和Spatial闭环胜出前不称改善。
+  两条评测接力也已预置：30907的 `launch_c15_balanced80_gate.sh` 等验证缓存后做同噪声离线配对；
+  32409的 `launch_c15_spatial_object_gate.sh` 等checkpoint后立即跑Spatial 20 episodes和Object 8 episodes。
+  promotion保持Spatial严格超过父模型 `7/20` 且Object不少于 `4/8`，避免用空间提升掩盖对象选择退化。
+- FACT官方代码固定在 `618a6c168686`：其failure-aware训练依赖明确的failure activation，best-of-N依赖
+  校准的time-to-go/value排序。现有160条父模型rollout可组成6208个replan states和6048条因果transition，
+  train trials0/1/2与val trial3任务重叠但episode不重叠；然而没有failure onset与counterfactual action
+  outcome。因此只放行value-only feature/target dossier，不放行failure imitation或best-of-N闭环。
+  审计：`/mnt/h3-wam/eval/audits/d0-h32-s14000-replan8-fact-transition-audit-v1.json`。
+- 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
+  `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
+  该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。

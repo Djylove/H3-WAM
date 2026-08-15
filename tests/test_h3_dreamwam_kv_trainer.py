@@ -314,6 +314,48 @@ class DreamWAMKVTrainingContractTest(unittest.TestCase):
         }
         self.assertEqual(model_spec_differences, {"carrier_source_mode"})
 
+    def test_grid_adaptation_contract_records_parent_and_restored_optimizer(self):
+        spec, _ = self.build_model()
+        spec = MODULE.ModelSpec(
+            **{
+                **MODULE.asdict(spec),
+                "carrier_source_mode": MODULE.REPEAT_LAYER49_CARRIER_SOURCE,
+            }
+        )
+        args = Namespace(
+            expected_h3_checkpoint_sha256=MODULE.H3_INT8_CHECKPOINT_SHA256,
+            verify_h3_checkpoint_sha256=True,
+            kv_subdir="grid-kv",
+            kv_pool_strategy=MODULE.DUAL_VIEW_GRID_KV_STRATEGY,
+            capture_token_count=32,
+            action_horizon=32,
+            action_shift=5.0,
+            per_device_batch_size=1,
+            gradient_accumulation_steps=1,
+            num_workers=0,
+            seed=42,
+            learning_rate=1e-4,
+            min_learning_rate=1e-6,
+            warmup_steps=1000,
+            scheduler_horizon=21700,
+            initialization_kind="kv_pool_adaptation",
+            initialization_parent_sha256="a" * 64,
+            initialization_parent_completed_steps=14000,
+        )
+        dataset = Namespace(
+            first_checkpoint_path=Path("/models/h3"),
+            source_manifest_sha256="source",
+            source_manifest_items=100,
+            manifest_sha256="train",
+            manifest_items=80,
+            stats_sha256="stats",
+        )
+        contract = MODULE.checkpoint_contract(args, spec, dataset)
+        self.assertEqual(contract["kv_strategy"], MODULE.DUAL_VIEW_GRID_KV_STRATEGY)
+        self.assertEqual(contract["initialization_kind"], "kv_pool_adaptation")
+        self.assertEqual(contract["initialization_parent_completed_steps"], 14000)
+        self.assertTrue(contract["initialization_optimizer_scheduler_restored"])
+
     def batch(self):
         return {
             "sample_ids": ["probe"],

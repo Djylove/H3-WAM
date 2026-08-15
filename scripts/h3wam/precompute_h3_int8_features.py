@@ -24,11 +24,18 @@ PATCH_SIZE = (1, 2, 2)
 DREAMWAM_KV_SCHEMA = "h3_dreamwam_kv_v1"
 DREAMWAM_KV_LAYERS = (9, 19, 29, 39, 49)
 DREAMWAM_COMMIT = "6e989facc0c452fd3488d75f60bc36411005558c"
+SEQUENCE_KV_POOL = "adaptive_avg_pool1d_sequence_v1"
+DUAL_VIEW_GRID_KV_POOL = "dual_view_spatial_grid_4x4_each_v1"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest", type=Path)
+    parser.add_argument(
+        "--source-manifest",
+        type=Path,
+        help="Optional full provenance manifest when caching a strict split/slice.",
+    )
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--h3-checkpoint", type=Path, required=True)
     parser.add_argument("--output-subdir", default="h3_int8_last32_features")
@@ -60,6 +67,11 @@ def parse_args() -> argparse.Namespace:
         default=DREAMWAM_KV_LAYERS,
     )
     parser.add_argument("--capture-token-count", type=int, default=32)
+    parser.add_argument(
+        "--kv-pool-strategy",
+        choices=(SEQUENCE_KV_POOL, DUAL_VIEW_GRID_KV_POOL),
+        default=SEQUENCE_KV_POOL,
+    )
     parser.add_argument("--action-horizon", type=int, default=32)
     parser.add_argument("--target-latent-frames", type=int, default=12)
     parser.add_argument("--timestep", type=float, default=1.0)
@@ -76,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--sample-offset", type=int, default=0)
     parser.add_argument("--num-shards", type=int, default=1)
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--overwrite", action="store_true")
@@ -125,6 +138,9 @@ def prepare_dreamwam_kv_cache(
     *,
     layers: tuple[int, ...],
     token_count: int,
+    pool_strategy: str = SEQUENCE_KV_POOL,
+    grid_height: int | None = None,
+    grid_width: int | None = None,
 ) -> dict[int, dict[str, torch.Tensor]]:
     """Detach, pool and clone distinct per-layer K/V tensors for disk storage."""
 
@@ -147,7 +163,21 @@ def prepare_dreamwam_kv_cache(
                 raise ValueError(
                     f"captured layer {layer} {name} must be [1,tokens,heads,head_dim]"
                 )
-            tensor = pool_kv_tokens(source[0], token_count).to(
+            if pool_strategy == DUAL_VIEW_GRID_KV_POOL:
+                if grid_height is None or grid_width is None:
+                    raise ValueError("dual-view pooling requires the source grid shape")
+                from fastwam.models.h3wam import pool_dual_view_grid_kv_tokens
+
+                pooled = pool_dual_view_grid_kv_tokens(
+                    source,
+                    grid_height=grid_height,
+                    grid_width=grid_width,
+                )
+            elif pool_strategy == SEQUENCE_KV_POOL:
+                pooled = pool_kv_tokens(source[0], token_count)
+            else:
+                raise ValueError(f"unsupported K/V pool strategy {pool_strategy!r}")
+            tensor = pooled.to(
                 device="cpu", dtype=torch.bfloat16
             ).clone()
             if expected_shape is None:
@@ -174,6 +204,8 @@ def main() -> None:
         raise ValueError("shard-index must be in [0,num-shards)")
     if args.also_starwam_feature_cache and not args.dreamwam_kv_carrier:
         raise ValueError("--also-starwam-feature-cache requires --dreamwam-kv-carrier")
+    if args.kv_pool_strategy == DUAL_VIEW_GRID_KV_POOL and args.capture_token_count != 32:
+        raise ValueError("dual-view 4x4 pooling produces exactly 32 tokens")
 
     from diffusers.modular_pipelines.minimax_h3.before_denoise import (
         MiniMaxH3PrepareLayoutStep,
@@ -182,14 +214,28 @@ def main() -> None:
     )
     from fastwam.models.h3wam import H3Int8FeatureBackbone
 
-    rows = [
+    split_rows = [
         json.loads(line)
         for line in args.manifest.resolve().read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+    source_path = args.manifest if args.source_manifest is None else args.source_manifest
+    source_rows = [
+        json.loads(line)
+        for line in source_path.resolve().read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    source_by_id = {str(row["id"]): row for row in source_rows}
+    if len(source_by_id) != len(source_rows):
+        raise ValueError("source manifest contains duplicate ids")
+    if any(source_by_id.get(str(row["id"])) != row for row in split_rows):
+        raise ValueError("split manifest rows are not byte-identical source provenance")
+    if args.sample_offset < 0 or args.sample_offset >= len(split_rows):
+        raise ValueError("sample-offset must select an existing split row")
+    rows = split_rows[args.sample_offset :]
     if args.limit is not None:
         rows = rows[: args.limit]
-    manifest_items = len(rows)
+    manifest_items = len(source_rows)
     rows = rows[args.shard_index :: args.num_shards]
     if not rows:
         raise ValueError("selected manifest shard is empty")
@@ -359,6 +405,9 @@ def main() -> None:
                 result.captured_kv,
                 layers=layers,
                 token_count=args.capture_token_count,
+                pool_strategy=args.kv_pool_strategy,
+                grid_height=latent_height // PATCH_SIZE[1],
+                grid_width=latent_width // PATCH_SIZE[2],
             )
             finite_tensors = [
                 tensor
@@ -375,7 +424,7 @@ def main() -> None:
                 "capture_token_count": int(first_k.shape[0]),
                 "num_heads": int(first_k.shape[1]),
                 "attn_head_dim": int(first_k.shape[2]),
-                "capture_token_strategy": "adaptive_avg_pool1d_sequence_v1",
+                "capture_token_strategy": args.kv_pool_strategy,
                 "dreamwam_commit": DREAMWAM_COMMIT,
             }))
         if not args.dreamwam_kv_carrier or args.also_starwam_feature_cache:
