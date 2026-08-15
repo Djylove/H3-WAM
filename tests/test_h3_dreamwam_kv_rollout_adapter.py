@@ -32,6 +32,21 @@ ROLLOUT = load_script(
 
 
 class H3DreamWAMKVRolloutAdapterTest(unittest.TestCase):
+    def test_first_replan_horizon_changes_only_first_execution(self):
+        resolve = ROLLOUT.resolve_execution_horizon
+        self.assertEqual(
+            resolve(replans=0, replan_steps=8, first_replan_steps=16), 16
+        )
+        self.assertEqual(
+            resolve(replans=1, replan_steps=8, first_replan_steps=16), 8
+        )
+        self.assertEqual(
+            resolve(replans=7, replan_steps=8, first_replan_steps=16), 8
+        )
+        self.assertEqual(
+            resolve(replans=0, replan_steps=8, first_replan_steps=None), 8
+        )
+
     def test_first_action_noise_intervention_fixes_continuation_schedule(self):
         resolve = ROLLOUT.resolve_replan_noise_seed
         common = {

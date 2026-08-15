@@ -86,6 +86,10 @@ if [[ -n "${BRANCH_TRAJECTORY:-}" || -n "${BRANCH_INDEX:-}" || -n "${POLICY_NOIS
       --continuation-policy-noise-seed-base "${CONTINUATION_POLICY_NOISE_SEED_BASE}"
     )
   fi
+  if [[ -n "${FIRST_REPLAN_STEPS:-}" ]]; then
+    [[ "${FIRST_REPLAN_STEPS}" =~ ^[1-9][0-9]*$ ]]
+    branch_args+=(--first-replan-steps "${FIRST_REPLAN_STEPS}")
+  fi
 fi
 checkpoint="$(realpath "${checkpoint}")"
 checkpoint_name="$(basename "${checkpoint}" .pt)"

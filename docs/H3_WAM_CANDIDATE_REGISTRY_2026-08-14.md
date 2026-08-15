@@ -72,6 +72,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C21 | consequence/data | same-state stochastic-continuation canary | D0-H32-s14000/replan8/no-ensemble + C20 | C20 | 固定规范state/环境/模型，改变整条policy noise schedule；4 suite×4分支 | 16条中11成功；Object同状态3/4成功；四组动作均不同 | GO_ENTROPY_CALIBRATION_ONLY；NOT_EVIDENCE_READY |
 | C22 | consequence/data | multisuite stochastic-continuation entropy sweep | C21 | C21 | 8源episode×距成功1/3/5 replans×4 noise schedule | 96条71成功；7/24 mixed覆盖四suite | GO_CAUSAL_FIRST_ACTION_CANARY；NOT_EVIDENCE_READY |
 | C23 | consequence/action | first-action-only causal branch | C22高熵state + D0父策略 | C22 | 只改变首replan noise；同组后续noise逐值固定 | 32条18成功；Spatial d5同状态2/4；全部seed/动作审计通过 | GO_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY；NOT_EVIDENCE_READY |
+| C24 | consequence/action | first-action execution horizon sweep | C23同8 states/32 seeds | C23 horizon8 | 仅首chunk执行16或32步；后续仍replan8 | 预注册2×32分支 | RUNNING；NOT_EVIDENCE_READY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。

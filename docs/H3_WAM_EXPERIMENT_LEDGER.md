@@ -650,3 +650,16 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `/mnt/h3-wam/eval/c23-first-action-causal-canary-v1/COMPLETED`；SHA256分别为
   `05f18c76e9c460e06f8e4290f7a3332d2cf784ee35022dcb1973f63644cc3978`、
   `11dfef6ce6523ac58f8cb8aae7166e81173b2e3e7724b95332b9ab0348b4143f`。
+
+### 2026-08-15 — C24 first-action execution-horizon sweep（预注册）
+
+- 动机：C23固定后续随机性后仅`1/8`组mixed，可能是父策略每8步重规划把首动作差异快速纠正。直接
+  扩大几百条数据前，先测动作候选需要执行多长才产生可学习的因果结果差异。
+- 父项为C23 horizon8；复用同8个state、32个first seed和逐值相同的continuation seed schedule。
+  两个独立challenger分别只把首chunk执行长度改为16或32；从第二次replan起仍固定执行8步。
+- 每个challenger 8组×4分支、32条，合计64条、最多25600环境步；四节点各8 A800，按challenger
+  串行跑，避免GPU oversubscription。
+- 可证伪门：首动作必须32/32 bit-exact于C23、continuation seed合法、8组动作均不同；至少一个
+  challenger达到`>=3` mixed groups并覆盖`>=2` suites。通过才按胜出horizon扩episode-disjoint数据；
+  失败则停止“单纯延长首动作”路线。
+- 效果状态固定为`NOT_EVIDENCE_READY`；该轮只比较标签可辨识性，不宣称LIBERO成功率提升。

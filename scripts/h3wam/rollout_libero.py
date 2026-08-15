@@ -77,6 +77,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wait-steps", type=int, default=30)
     parser.add_argument("--replan-steps", type=int, default=10)
     parser.add_argument(
+        "--first-replan-steps",
+        type=int,
+        help="Execute this many actions only for the first replan, then use --replan-steps.",
+    )
+    parser.add_argument(
         "--action-horizon",
         type=int,
         default=32,
@@ -507,6 +512,16 @@ def resolve_replan_noise_seed(
     return episode_seed if fixed_replan_noise else episode_seed + replans
 
 
+def resolve_execution_horizon(
+    *, replans: int, replan_steps: int, first_replan_steps: int | None
+) -> int:
+    return (
+        first_replan_steps
+        if replans == 0 and first_replan_steps is not None
+        else replan_steps
+    )
+
+
 def run_episode(
     env,
     initial_state,
@@ -527,6 +542,7 @@ def run_episode(
     branch_start: dict | None = None,
     first_policy_noise_seed: int | None = None,
     continuation_policy_noise_seed_base: int | None = None,
+    first_replan_steps: int | None = None,
 ) -> tuple[dict, list[np.ndarray], dict[str, np.ndarray] | None]:
     if environment_seed is not None:
         env.seed(environment_seed)
@@ -700,10 +716,15 @@ def run_episode(
             normalized_action_max_abs_before_clamp.append(
                 float(max_abs_before_clamp)
             )
+        execution_steps = resolve_execution_horizon(
+            replans=replans,
+            replan_steps=replan_steps,
+            first_replan_steps=first_replan_steps,
+        )
         replans += 1
         if action_ensembler is not None:
             action_ensembler.add_actions(actions, step)
-            execution_horizon = min(replan_steps, max_steps - step)
+            execution_horizon = min(execution_steps, max_steps - step)
             ensemble_prediction_counts.extend(
                 action_ensembler.prediction_count(step + offset)
                 for offset in range(execution_horizon)
@@ -717,7 +738,7 @@ def run_episode(
             )
             action_ensembler.cleanup(step)
         else:
-            actions_to_execute = actions[:replan_steps]
+            actions_to_execute = actions[:execution_steps]
         for action in actions_to_execute:
             if save_video:
                 frames.append(frame_from_observation(obs))
@@ -823,6 +844,11 @@ def main() -> None:
         )
     if args.replan_steps > args.action_horizon:
         raise ValueError("replan-steps cannot exceed action-horizon")
+    if args.first_replan_steps is not None and (
+        args.first_replan_steps <= 0
+        or args.first_replan_steps > args.action_horizon
+    ):
+        raise ValueError("first-replan-steps must be in [1, action-horizon]")
     if args.environment_seed is not None and args.environment_seed < 0:
         raise ValueError("environment-seed must be non-negative")
     if args.policy_noise_seed_base is not None and args.policy_noise_seed_base < 0:
@@ -910,6 +936,7 @@ def main() -> None:
         "trials_per_task": len(trial_indices),
         "max_steps": args.max_steps,
         "replan_steps": args.replan_steps,
+        "first_replan_steps": args.first_replan_steps,
         "action_horizon": args.action_horizon,
         "wait_steps": args.wait_steps,
         "binarize_gripper": args.binarize_gripper,
@@ -1011,6 +1038,7 @@ def main() -> None:
                         continuation_policy_noise_seed_base=(
                             args.continuation_policy_noise_seed_base
                         ),
+                        first_replan_steps=args.first_replan_steps,
                     )
                     episode["trial"] = trial
                     if trajectory is not None:
