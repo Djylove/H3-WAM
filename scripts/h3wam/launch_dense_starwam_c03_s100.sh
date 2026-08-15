@@ -53,7 +53,19 @@ mkdir -p "${OUTPUT_ROOT}/checkpoints" "${OUTPUT_ROOT}/reports" "${OUTPUT_ROOT}/l
 printf '%s\n' "$(date -Iseconds)" > "${OUTPUT_ROOT}/STARTED"
 
 export PYTHONPATH="${PROJECT_ROOT}/src:${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
-export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+PYTORCH_CU13_LIB="$("${PYTHON_BIN}" - <<'PY'
+import sysconfig
+from pathlib import Path
+
+path = Path(sysconfig.get_paths()["purelib"]) / "nvidia" / "cu13" / "lib"
+if not (path / "libnvJitLink.so.13").is_file():
+    raise SystemExit(f"missing PyTorch-bundled cu13 runtime: {path}")
+print(path)
+PY
+)"
+# CUDA 13 base images may expose a system libnvJitLink that is ABI-incompatible
+# with the cu13 libraries bundled by this PyTorch environment.
+export LD_LIBRARY_PATH="${PYTORCH_CU13_LIB}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 export TMPDIR="${H3_WORKSPACE}/tmp/dense-starwam-c03"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 mkdir -p "${TMPDIR}"

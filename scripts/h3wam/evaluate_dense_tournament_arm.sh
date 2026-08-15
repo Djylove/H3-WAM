@@ -24,7 +24,19 @@ fi
 
 export CUDA_VISIBLE_DEVICES="${GPU_INDEX}"
 export PYTHONPATH="${PROJECT_ROOT}/src:${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
-export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+PYTORCH_CU13_LIB="$("${PYTHON_BIN}" - <<'PY'
+import sysconfig
+from pathlib import Path
+
+path = Path(sysconfig.get_paths()["purelib"]) / "nvidia" / "cu13" / "lib"
+if not (path / "libnvJitLink.so.13").is_file():
+    raise SystemExit(f"missing PyTorch-bundled cu13 runtime: {path}")
+print(path)
+PY
+)"
+# Keep the PyTorch wheel's cu13 runtime internally consistent on CUDA 13 base
+# images; otherwise the system libnvJitLink can break non-trivial BF16 GEMMs.
+export LD_LIBRARY_PATH="${PYTORCH_CU13_LIB}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
 cd "${PROJECT_ROOT}"
 
