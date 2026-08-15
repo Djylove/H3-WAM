@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,6 +32,35 @@ ROLLOUT = load_script(
 
 
 class H3DreamWAMKVRolloutAdapterTest(unittest.TestCase):
+    def test_branch_start_loads_only_state_step_and_previous_action(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trajectory.npz"
+            np.savez(
+                path,
+                step=np.asarray([0, 8], dtype=np.int64),
+                sim_state=np.arange(10, dtype=np.float64).reshape(2, 5),
+                previous_action=np.arange(14, dtype=np.float32).reshape(2, 7),
+                agentview_image=np.full((2, 2, 2, 3), 255, dtype=np.uint8),
+            )
+            branch = ROLLOUT.load_branch_start(path, 1)
+        self.assertEqual(branch["index"], 1)
+        self.assertEqual(branch["step"], 8)
+        np.testing.assert_array_equal(branch["sim_state"], np.arange(5, 10))
+        np.testing.assert_array_equal(branch["previous_action"], np.arange(7, 14))
+        self.assertNotIn("agentview_image", branch)
+
+    def test_branch_start_rejects_out_of_range_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trajectory.npz"
+            np.savez(
+                path,
+                step=np.asarray([0]),
+                sim_state=np.zeros((1, 5)),
+                previous_action=np.zeros((1, 7)),
+            )
+            with self.assertRaisesRegex(ValueError, "exceeds"):
+                ROLLOUT.load_branch_start(path, 1)
+
     def test_online_adapter_accepts_paired_d_and_d0_source_modes(self):
         resolve = SERVE.H3DreamWAMKVInt8Policy._resolve_candidate_source_mode
         self.assertEqual(

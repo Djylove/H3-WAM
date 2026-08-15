@@ -587,3 +587,21 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `PASS_MULTISUITE_BRANCH_REPEATABILITY_GATE`。
 - 训练许可仅为`GO_CANARY`采集小规模规范化分支outcome；效果仍`NOT_EVIDENCE_READY`。在真实
   alternative-action outcome、episode-disjoint split和ranking gate完成前，critic/best-of-N仍禁止。
+
+### 2026-08-15 — C21 same-state alternative-action outcome canary
+
+- 可证伪假设：固定规范LIBERO state、环境seed42、`D0-H32-s14000/replan8/no-ensemble`父模型，仅改变
+  policy diffusion-noise seed，必须使四组首动作块全部不同，并至少产生一组同状态混合成败结果。
+- 冻结选择为四suite各1个state、每state 4个noise offset；两波各占8张A800，最多6400环境步。
+  唯一变量是policy noise；checkpoint、H3 INT8权重、cache、task/trial、branch state、环境seed、
+  replan、horizon和无ensemble均固定。
+- 真实命令：
+  `nohup bash /mnt/h3-wam/candidate-d0-rollout-96976ce/project/scripts/h3wam/launch_c21_counterfactual_outcome_canary.sh > /mnt/h3-wam/logs/c21-counterfactual-outcome-canary-v1-launch.log 2>&1 &`
+- 结果：Goal `4/4`、Object `3/4`、Spatial `0/4`、LIBERO-10 `4/4`，合计`11/16`；Object是唯一
+  mixed-outcome组。各组最小首动作块RMS为`0.22723/0.14624/0.27201/0.09239`，全部通过
+  `>1e-6`动作多样性门；墙钟`280s`。
+- 判定为`PASS_COUNTERFACTUAL_OUTCOME_CANARY / GO_DATASET_EXPANSION / NOT_EVIDENCE_READY`。
+  这只证明可构造action-conditioned outcome监督，不证明critic、best-of-N或总体策略已变强。下一步须
+  扩展state覆盖，按源episode切分train/validation，并在冻结父策略上通过held-out ranking和闭环门。
+- artifact：`/mnt/h3-wam/eval/c21-counterfactual-outcome-canary-v1/COMPLETED`；SHA256
+  `c258cb829c45e504e03e5a183008d2820a1a32152bb8ff70723ba1acf8895f8c`。

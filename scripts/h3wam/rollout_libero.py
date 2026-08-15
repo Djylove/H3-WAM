@@ -84,6 +84,22 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model-evaluations", type=int, default=4)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--environment-seed",
+        type=int,
+        help="Decouple LIBERO reset randomization from policy diffusion noise.",
+    )
+    parser.add_argument(
+        "--policy-noise-seed-base",
+        type=int,
+        help="Exact first-replan diffusion seed; later replans increment by one.",
+    )
+    parser.add_argument(
+        "--start-trajectory",
+        type=Path,
+        help="Restore a canonical branch state from a saved rollout trajectory.",
+    )
+    parser.add_argument("--start-index", type=int)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--save-video", action="store_true")
     parser.add_argument(
@@ -433,6 +449,33 @@ def predict(
     return np.asarray(response["actions"], dtype=np.float32), response["metadata"], roundtrip_seconds
 
 
+def load_branch_start(path: Path, index: int) -> dict:
+    """Load one auditable branch state without trusting cached observations."""
+
+    path = path.resolve()
+    if index < 0:
+        raise ValueError("start-index must be non-negative")
+    with np.load(path, allow_pickle=False) as archive:
+        required = {"step", "sim_state", "previous_action"}
+        missing = required - set(archive.files)
+        if missing:
+            raise ValueError(f"branch trajectory misses fields: {sorted(missing)}")
+        count = int(archive["step"].shape[0])
+        if index >= count:
+            raise ValueError(f"start-index {index} exceeds {count} branch states")
+        if any(archive[name].shape[0] != count for name in required):
+            raise ValueError("branch trajectory fields have inconsistent row counts")
+        return {
+            "trajectory": str(path),
+            "index": index,
+            "step": int(archive["step"][index]),
+            "sim_state": np.asarray(archive["sim_state"][index], dtype=np.float64),
+            "previous_action": np.asarray(
+                archive["previous_action"][index], dtype=np.float32
+            ),
+        }
+
+
 def run_episode(
     env,
     initial_state,
@@ -449,9 +492,16 @@ def run_episode(
     fixed_noise_seed: int | None,
     episode_key: str,
     use_action_ensembler: bool,
+    environment_seed: int | None = None,
+    branch_start: dict | None = None,
 ) -> tuple[dict, list[np.ndarray], dict[str, np.ndarray] | None]:
+    if environment_seed is not None:
+        env.seed(environment_seed)
     env.reset()
-    obs = env.set_init_state(initial_state)
+    if branch_start is None:
+        obs = env.set_init_state(initial_state)
+    else:
+        obs = env.regenerate_obs_from_state(branch_start["sim_state"])
     frames = []
     trajectory: dict[str, list] | None = (
         {
@@ -471,8 +521,8 @@ def run_episode(
         if save_trajectory
         else None
     )
-    done = False
-    for _ in range(wait_steps):
+    done = bool(env.check_success()) if branch_start is not None else False
+    for _ in range(0 if branch_start is not None else wait_steps):
         obs, _, done, _ = env.step([0, 0, 0, 0, 0, 0, -1])
         if done:
             break
@@ -480,7 +530,7 @@ def run_episode(
     initial_object_joints = object_joint_state(env)
     max_object_joint_delta = {name: 0.0 for name in initial_object_joints}
 
-    step = 0
+    step = 0 if branch_start is None else int(branch_start["step"])
     replans = 0
     policy_seconds = []
     model_seconds = []
@@ -512,7 +562,12 @@ def run_episode(
         action_ensembler = None
     ensemble_prediction_counts = []
     done = bool(done)
-    previous_action = np.asarray([0, 0, 0, 0, 0, 0, -1], dtype=np.float32)
+    previous_action = np.asarray(
+        [0, 0, 0, 0, 0, 0, -1]
+        if branch_start is None
+        else branch_start["previous_action"],
+        dtype=np.float32,
+    )
     executed_actions: list[np.ndarray] = []
     while step < max_steps and not done:
         if trajectory is not None:
@@ -696,6 +751,17 @@ def run_episode(
             "initial_object_joints": initial_object_joints,
             "final_object_joints": object_joint_state(env),
             "max_object_joint_delta": max_object_joint_delta,
+            "branch_start": (
+                None
+                if branch_start is None
+                else {
+                    "trajectory": branch_start["trajectory"],
+                    "index": branch_start["index"],
+                    "step": branch_start["step"],
+                }
+            ),
+            "episode_seed": episode_seed,
+            "environment_seed": environment_seed,
         },
         frames,
         packed_trajectory,
@@ -715,6 +781,14 @@ def main() -> None:
         )
     if args.replan_steps > args.action_horizon:
         raise ValueError("replan-steps cannot exceed action-horizon")
+    if args.environment_seed is not None and args.environment_seed < 0:
+        raise ValueError("environment-seed must be non-negative")
+    if args.policy_noise_seed_base is not None and args.policy_noise_seed_base < 0:
+        raise ValueError("policy-noise-seed-base must be non-negative")
+    if (args.start_trajectory is None) != (args.start_index is None):
+        raise ValueError("--start-trajectory and --start-index must be provided together")
+    if args.start_trajectory is not None and args.wait_steps != 0:
+        raise ValueError("branch rollout requires --wait-steps 0")
     from libero.libero import benchmark
 
     from experiments.libero.libero_utils import get_libero_env
@@ -741,6 +815,14 @@ def main() -> None:
         task_ids = [language_to_id[language] for language in args.task_languages]
     else:
         task_ids = list(args.task_ids)
+
+    branch_start = (
+        None
+        if args.start_trajectory is None
+        else load_branch_start(args.start_trajectory, args.start_index)
+    )
+    if branch_start is not None and (len(task_ids) != 1 or len(trial_indices) != 1):
+        raise ValueError("branch rollout requires exactly one task and one trial label")
 
     args.output_dir = args.output_dir.resolve()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -772,6 +854,12 @@ def main() -> None:
         "binarize_gripper": args.binarize_gripper,
         "fixed_replan_noise": args.fixed_replan_noise,
         "fixed_noise_seed": args.fixed_noise_seed,
+        "environment_seed": args.environment_seed,
+        "policy_noise_seed_base": args.policy_noise_seed_base,
+        "start_trajectory": (
+            None if args.start_trajectory is None else str(args.start_trajectory.resolve())
+        ),
+        "start_index": args.start_index,
         "action_median_window": args.action_median_window,
         "action_scale": args.action_scale,
         "normalized_action_pre_clamp": args.normalized_action_pre_clamp,
@@ -822,7 +910,10 @@ def main() -> None:
                     f"task {task_id} has {len(initial_states)} initial states, "
                     f"but trial index {max(trial_indices)} was requested"
                 )
-            env, task_description = get_libero_env(task, 256, args.seed)
+            environment_seed = (
+                args.seed if args.environment_seed is None else args.environment_seed
+            )
+            env, task_description = get_libero_env(task, 256, environment_seed)
             task_result = {
                 "task_id": task_id,
                 "task": task_description,
@@ -835,7 +926,11 @@ def main() -> None:
                         initial_states[trial],
                         task_description,
                         connection,
-                        episode_seed=args.seed + task_id * 100_000 + trial * 1_000,
+                        episode_seed=(
+                            args.seed + task_id * 100_000 + trial * 1_000
+                            if args.policy_noise_seed_base is None
+                            else args.policy_noise_seed_base
+                        ),
                         max_steps=args.max_steps,
                         wait_steps=args.wait_steps,
                         replan_steps=args.replan_steps,
@@ -845,6 +940,8 @@ def main() -> None:
                         fixed_noise_seed=args.fixed_noise_seed,
                         episode_key=f"task{task_id}:trial{trial}",
                         use_action_ensembler=args.use_action_ensembler,
+                        environment_seed=args.environment_seed,
+                        branch_start=branch_start,
                     )
                     episode["trial"] = trial
                     if trajectory is not None:

@@ -69,6 +69,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C18 | temporal/value | time-blind expert progress diagnostic | C17冻结特征与split | C17 | 删除absolute-step，仅task+H3预测time-to-go | feature MAE下降53.8%，但shadow AUROC0.5469<0.65 | NO_GO_POLICY_INTEGRATION；需failure/action outcome |
 | C19 | deployment/data | old-trajectory exact restore | LIBERO `regenerate_obs_from_state` | D0保存的qpos/qvel/time | 要求恢复观测等于原轨迹观测 | state exact但图像/proprio不等；旧state缺observable动态 | NO_GO_ORIGINAL_OBSERVATION_CLAIM |
 | C20 | deployment/data | paired canonical branch restore | C19 + fixed per-reset seed | C19 | 两个独立env从同state执行同8步动作 | 四suite×3状态图像逐像素一致，数值差≤1e-10 | GO_COUNTERFACTUAL_COLLECTION_CANARY |
+| C21 | consequence/data | same-state diffusion-noise outcome canary | D0-H32-s14000/replan8/no-ensemble + C20 | C20 | 固定规范state/环境/模型，仅改变policy noise；4 suite×4分支 | 16条中11成功；Object同状态3/4成功；四组动作均不同 | GO_DATASET_EXPANSION；NOT_EVIDENCE_READY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -350,6 +351,15 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   均逐像素一致，proprio/state均在`1e-10`容差内，steps/success predicate一致。因此只放行小规模
   paired counterfactual collection canary；仍未得到alternative-action outcomes，不放行critic训练。
   artifact：`/mnt/h3-wam/eval/c20-libero-branch-repeatability-v2/COMPLETED`。
+- C21固定`D0-H32-s14000/replan8/no-ensemble`、环境seed42与四个规范branch state，唯一改变每次
+  rollout的policy diffusion-noise seed。四suite各4分支、共16条：Goal `4/4`、Object `3/4`、
+  Spatial `0/4`、LIBERO-10 `4/4`；Object形成一组同状态混合成败标签。四组最小首动作块pairwise
+  RMS分别为`0.22723/0.14624/0.27201/0.09239`，均高于`1e-6`，通过预注册的
+  `PASS_COUNTERFACTUAL_OUTCOME_CANARY`。预算为2 waves×8 A800、最多16×400环境步，实测墙钟
+  `280s`。该结果只放行episode-disjoint反事实数据扩量；尚未训练或验证critic/best-of-N，效果状态
+  仍为`NOT_EVIDENCE_READY`。artifact：
+  `/mnt/h3-wam/eval/c21-counterfactual-outcome-canary-v1/COMPLETED`，SHA256
+  `c258cb829c45e504e03e5a183008d2820a1a32152bb8ff70723ba1acf8895f8c`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。

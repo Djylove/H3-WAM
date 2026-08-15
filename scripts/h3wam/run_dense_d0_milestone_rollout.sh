@@ -62,6 +62,21 @@ if [[ -n "${H3_PROGRESS_PROBE:-}" ]]; then
   progress_args+=(--progress-probe "$(realpath "${H3_PROGRESS_PROBE}")")
   progress_suffix="_progress-shadow"
 fi
+branch_args=()
+wait_steps=30
+if [[ -n "${BRANCH_TRAJECTORY:-}" || -n "${BRANCH_INDEX:-}" || -n "${POLICY_NOISE_SEED_BASE:-}" ]]; then
+  test -f "${BRANCH_TRAJECTORY:?BRANCH_TRAJECTORY is required}"
+  [[ "${BRANCH_INDEX:?BRANCH_INDEX is required}" =~ ^[0-9]+$ ]]
+  [[ "${POLICY_NOISE_SEED_BASE:?POLICY_NOISE_SEED_BASE is required}" =~ ^[0-9]+$ ]]
+  [[ "${ENVIRONMENT_SEED:-42}" =~ ^[0-9]+$ ]]
+  wait_steps=0
+  branch_args+=(
+    --start-trajectory "$(realpath "${BRANCH_TRAJECTORY}")"
+    --start-index "${BRANCH_INDEX}"
+    --environment-seed "${ENVIRONMENT_SEED:-42}"
+    --policy-noise-seed-base "${POLICY_NOISE_SEED_BASE}"
+  )
+fi
 checkpoint="$(realpath "${checkpoint}")"
 checkpoint_name="$(basename "${checkpoint}" .pt)"
 output_root="${OUTPUT_ROOT:-${workspace}/outputs/eval-dense-d0-long/${checkpoint_name}_${suite_slug}_task${task_id}_trial${trial_index}_replan${replan_steps}${ensemble_suffix}${progress_suffix}}"
@@ -92,7 +107,7 @@ exec bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
   --task-ids "${task_id}" \
   --trial-indices "${trial_index}" \
   --max-steps 400 \
-  --wait-steps 30 \
+  --wait-steps "${wait_steps}" \
   --replan-steps "${replan_steps}" \
   --action-horizon "${action_horizon}" \
   --h3-feature-audio-horizon 32 \
@@ -100,6 +115,7 @@ exec bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
   --model-evaluations 10 \
   --seed 42 \
   --normalized-action-pre-clamp \
+  "${branch_args[@]}" \
   "${progress_args[@]}" \
   "${ensemble_args[@]}" \
   --output-dir "${output_root}" \

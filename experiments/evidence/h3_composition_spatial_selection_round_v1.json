@@ -438,6 +438,27 @@
       "evidence_status": "NOT_EVIDENCE_READY",
       "boundary": "Canonical paired branches are repeatable; fidelity to the original cached observation is not claimed, and alternative-action outcomes have not yet been collected.",
       "artifact": "/mnt/h3-wam/eval/c20-libero-branch-repeatability-v2/COMPLETED"
+    },
+    "C21": {
+      "name": "same-state-diffusion-noise-outcome-canary",
+      "classification": "controlled_data_collection_canary",
+      "parent_lineage": "D0-H32-s14000/replan8/no-ensemble + C20",
+      "source_registry": "docs/H3_WAM_CANDIDATE_REGISTRY_2026-08-14.md#C21",
+      "falsifiable_hypothesis": "At fixed canonical LIBERO state, changing only D0 diffusion noise produces distinct action chunks and at least one mixed success/failure group.",
+      "difference_matrix": [
+        {"field": "checkpoint/H3/cache", "parent": "fixed", "C21": "same", "status": "ALIGNED"},
+        {"field": "environment/task/trial/state", "parent": "fixed seed42 canonical branch", "C21": "same within group", "status": "ALIGNED"},
+        {"field": "policy diffusion noise", "parent": "one seed", "C21": "four preregistered offsets", "status": "ONLY_VARIABLE"}
+      ],
+      "budget": {"groups": 4, "branches_per_group": 4, "branches": 16, "waves": 2, "gpus_per_wave": 8, "max_environment_steps": 6400, "duration_seconds": 280},
+      "results": {"successful_branches": 11, "mixed_outcome_groups": 1, "all_groups_action_diverse": true, "goal_successes": 4, "object_successes": 3, "spatial_successes": 0, "libero10_successes": 4},
+      "promotion": "all groups action-diverse and at least one same-state mixed-outcome group",
+      "status": "PASS_COUNTERFACTUAL_OUTCOME_CANARY",
+      "go_status": "GO_DATASET_EXPANSION",
+      "evidence_status": "NOT_EVIDENCE_READY",
+      "boundary": "Pass authorizes episode-disjoint counterfactual collection only; critic training, best-of-N, and effect claims remain gated.",
+      "artifact": "/mnt/h3-wam/eval/c21-counterfactual-outcome-canary-v1/COMPLETED",
+      "artifact_sha256": "c258cb829c45e504e03e5a183008d2820a1a32152bb8ff70723ba1acf8895f8c"
     }
   },
   "difference_matrix": [
@@ -505,9 +526,10 @@
       "C17 expert progress value (feature pass, shadow rejected: time shortcut)",
       "C18 time-blind expert progress value (feature pass, shadow AUROC0.546875 rejected)"
       ,"C19 old trajectory original-observation restore (rejected)",
-      "C20 paired canonical branch restore (mechanical gate passed; collection pending)"
+      "C20 paired canonical branch restore (mechanical gate passed)",
+      "C21 same-state diffusion-noise outcome canary (passed; dataset expansion only)"
     ],
     "track_winner": "none: C02 and C15 failed final spatial/object gates; C14 did not confirm across trials",
-    "fusion": "blocked; C17/C18 both failed shadow and no action-conditioned outcome supervision exists"
+    "fusion": "blocked; C21 proves action-conditioned outcome supervision can be collected, but held-out ranking and closed-loop effect gates are not yet passed"
   }
 }
