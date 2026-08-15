@@ -945,3 +945,17 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   40个合格成功源覆盖3个suite，则全量取d3/d5并做candidate0 vs dense单次32步干预、共同replan8续跑。
   效果门为绝对成功率`+5pp`、净胜至少5、精确单侧McNemar `p<=0.05`且suite退化不超过5pp。即使PASS，
   因触发位置使用父轨迹 hindsight，也只放行可部署progress trigger研究，不恢复在线部署权限。
+- C54完成trials29..32共160/160条全新父轨迹，64个合格成功源覆盖四suite；全量冻结d3/d5共128组、
+  256条candidate0/dense配对，selection SHA256为
+  `20a8e4931896680b122dd7306f0b1e34412f08fef6c96c5427273dd9f243c9b2`。四节点动态队列完成256/256，
+  所有start state、candidate0 chunk、seed、C51身份及score variation机械门PASS，96/128选择非0动作。
+- 效果却明确FAIL：candidate0 `87/128`、dense `86/128`，配对`3胜4负121平`，绝对增益`-0.781pp`，
+  精确单侧McNemar `p=0.773438`；四suite安全门虽过，但所有预注册效果门失败。final report SHA256为
+  `e96f2d58a4f40ede0ca70061282f55843f8ab98bd82d4db7951a6e512ec0c595`。因此C50–C54稠密value只保留为
+  H3 representation/trajectory-value机制证据，禁止继续作为online reranker；C52的mixed-group显著性没有
+  在全新视觉源和全量配对中复现。
+- 失败原因不是步数或触发时机：scorer大量选择非0且机械合同精确，但其训练只见behavior-policy动作的
+  time-to-go/failure标签，没有直接学习候选动作的反事实优势；冻结原动作生成器再外挂value选择，偏离官方
+  FACT把action、future-state、value置于同一非线性Transformer联合训练的核心。下一条主线应回到动作生成：
+  H3冻结，联合训练小型action expert与future/value auxiliary，并对action-only D0做严格配对；不得再对
+  C53/C54调ranker阈值或补trial。

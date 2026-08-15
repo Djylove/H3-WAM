@@ -37,7 +37,23 @@
     "maximum_branch_rollouts": 320
   },
   "decision": {
-    "status": "GO_FRESH_PARENT_COLLECTION",
+    "status": "FAIL_C54_STATE_ALIGNED_REPLICATION",
+    "permission": "NO_GO_DENSE_VALUE_ONLINE",
+    "result": {
+      "eligible_sources": 64,
+      "groups": 128,
+      "candidate0_successes": 87,
+      "dense_bestof4_successes": 86,
+      "absolute_gain": -0.0078125,
+      "paired_wins": 3,
+      "paired_losses": 4,
+      "paired_ties": 121,
+      "one_sided_exact_mcnemar_p": 0.7734375,
+      "selected_nonzero": 96,
+      "sources_sha256": "79485a6ebb4feda4b214b8cab3dacbd90ad9b74c06a65977323e0965f70edeb5",
+      "branch_selection_sha256": "20a8e4931896680b122dd7306f0b1e34412f08fef6c96c5427273dd9f243c9b2",
+      "final_report_sha256": "e96f2d58a4f40ede0ca70061282f55843f8ab98bd82d4db7951a6e512ec0c595"
+    },
     "on_pass": "Conclude dense value works only with state-aligned triggering and develop a deployable progress trigger before benchmark expansion.",
     "on_fail": "Reject online use and treat C52 as source-reuse-limited offline evidence."
   }
