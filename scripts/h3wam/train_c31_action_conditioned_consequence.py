@@ -60,6 +60,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--projection-seed", type=int, default=20260815)
     parser.add_argument("--feature-input-scale", type=float, default=0.009606920816877307)
+    parser.add_argument(
+        "--target-error-scaling",
+        choices=("raw", "train_delta_std"),
+        default="raw",
+        help="Optionally weight future-current errors by train-only per-dimension std.",
+    )
     parser.add_argument("--minimum-relative-improvement", type=float, default=0.01)
     parser.add_argument("--minimum-shuffle-degradation", type=float, default=0.01)
     parser.add_argument("--device", default="cuda:0")
@@ -210,11 +216,13 @@ def arm_actions(batch: dict[str, Any], arm: str) -> torch.Tensor:
 
 @torch.inference_mode()
 def evaluate(
-    models: dict[str, torch.nn.Module], loader: DataLoader, device: torch.device
+    models: dict[str, torch.nn.Module], loader: DataLoader, device: torch.device,
+    target_error_scale: torch.Tensor,
 ) -> dict[str, Any]:
     for model in models.values():
         model.eval()
     sums: dict[str, float] = defaultdict(float)
+    raw_sums: dict[str, float] = defaultdict(float)
     counts: dict[str, int] = defaultdict(int)
     suite_sums: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     suite_counts: dict[str, int] = defaultdict(int)
@@ -236,8 +244,11 @@ def evaluate(
             prediction = model.forward_projected(
                 batch["current_proprio"], batch["current_projected"], actions
             )
-            squared[name] = (prediction.float() - batch["future_projected"].float()).square().mean(1)
+            raw_error = prediction.float() - batch["future_projected"].float()
+            raw_squared = raw_error.square().mean(1)
+            squared[name] = (raw_error / target_error_scale).square().mean(1)
             sums[name] += float(squared[name].sum())
+            raw_sums[name] += float(raw_squared.sum())
             counts[name] += int(len(squared[name]))
         for row, suite in enumerate(batch["suites"]):
             suite_counts[suite] += 1
@@ -246,6 +257,7 @@ def evaluate(
     return {
         "samples": sum(suite_counts.values()),
         "mse": {name: sums[name] / counts[name] for name in sorted(sums)},
+        "raw_mse": {name: raw_sums[name] / counts[name] for name in sorted(raw_sums)},
         "per_suite_mse": {
             suite: {
                 name: values[name] / suite_counts[suite] for name in sorted(values)
@@ -258,7 +270,7 @@ def evaluate(
 def checkpoint_payload(
     *, args: argparse.Namespace, step: int, models: dict[str, torch.nn.Module],
     model_kwargs: dict[str, Any], state_mean: torch.Tensor, state_std: torch.Tensor,
-    dataset_sha: str, feature_sha: str,
+    dataset_sha: str, feature_sha: str, target_error_scale: torch.Tensor,
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -270,7 +282,11 @@ def checkpoint_payload(
             name: {key: value.detach().cpu() for key, value in model.state_dict().items()}
             for name, model in models.items()
         },
-        "normalization": {"state_mean": state_mean, "state_std": state_std},
+        "normalization": {
+            "state_mean": state_mean, "state_std": state_std,
+            "target_error_scaling": args.target_error_scaling,
+            "target_error_scale": target_error_scale.detach().cpu(),
+        },
         "contract": {
             "dataset_sha256": dataset_sha,
             "features_sha256": feature_sha,
@@ -354,6 +370,16 @@ def main() -> None:
     train_proprio = torch.stack([states[group]["proprio"].float() for group in train_state_ids])
     state_mean = train_proprio.mean(0)
     state_std = train_proprio.std(0, correction=0).clamp_min(1.0e-6)
+    if args.target_error_scaling == "train_delta_std":
+        train_deltas = torch.stack([
+            future_projected[ordinal]
+            - current_projected[int(branches[ordinal]["group_id"])]
+            for ordinal in train_indices
+        ])
+        target_error_scale = train_deltas.std(0, correction=0).clamp_min(1.0e-6)
+    else:
+        target_error_scale = torch.ones(args.target_dim)
+    target_error_scale = target_error_scale.to(device=device)
     common = {
         "states": states, "branches": branches,
         "current_projected": current_projected,
@@ -381,7 +407,7 @@ def main() -> None:
         )
         for name, model in models.items()
     }
-    initial_metrics = evaluate(models, val_loader, device)
+    initial_metrics = evaluate(models, val_loader, device, target_error_scale)
     iterator = iter(train_loader)
     history = []
     started = time.perf_counter()
@@ -402,9 +428,10 @@ def main() -> None:
                 batch["current_proprio"], batch["current_projected"],
                 arm_actions(batch, name),
             )
-            loss = torch.nn.functional.mse_loss(
-                prediction.float(), batch["future_projected"].detach().float()
-            )
+            error = (
+                prediction.float() - batch["future_projected"].detach().float()
+            ) / target_error_scale
+            loss = error.square().mean()
             if not bool(torch.isfinite(loss)):
                 raise FloatingPointError(f"non-finite {name} loss at step {step}")
             loss.backward()
@@ -422,13 +449,14 @@ def main() -> None:
                 args=args, step=step, models=models, model_kwargs=model_kwargs,
                 state_mean=state_mean, state_std=state_std,
                 dataset_sha=dataset_sha, feature_sha=feature_sha,
+                target_error_scale=target_error_scale,
             )
             atomic_torch_save(
                 payload,
                 args.checkpoint_dir / f"{args.model_variant}_seed{args.seed}_step{step:05d}.pt",
             )
 
-    final_metrics = evaluate(models, val_loader, device)
+    final_metrics = evaluate(models, val_loader, device, target_error_scale)
     restore_batch = move(next(iter(val_loader)), device)
     final_checkpoint = args.checkpoint_dir / f"{args.model_variant}_seed{args.seed}_step{args.steps:05d}.pt"
     restored_payload = torch.load(final_checkpoint, map_location="cpu", weights_only=False)
@@ -491,6 +519,9 @@ def main() -> None:
             "effective_epochs": args.steps * args.batch_size / len(train_indices),
             "save_every": args.save_every, "learning_rate": args.learning_rate,
             "weight_decay": args.weight_decay, "seed": args.seed,
+            "target_error_scaling": args.target_error_scaling,
+            "target_error_scale_min": float(target_error_scale.min()),
+            "target_error_scale_max": float(target_error_scale.max()),
             "duration_seconds": time.perf_counter() - started,
             "parameter_count_per_arm": sum(p.numel() for p in initial.parameters()),
             "history": history,

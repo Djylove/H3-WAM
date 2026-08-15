@@ -30,6 +30,7 @@ def test_repeated_temporal_winner_is_selected(tmp_path, monkeypatch):
             "optimization": {
                 "seed": seed, "steps": 10000, "batch_size": 64,
                 "learning_rate": 3e-4, "weight_decay": 1e-2,
+                "target_error_scaling": "train_delta_std",
             },
             "final_metrics": {"mse": {"conditioned_true": mse}},
             "mechanism": {
@@ -49,3 +50,4 @@ def test_repeated_temporal_winner_is_selected(tmp_path, monkeypatch):
     assert result["selected_variant"] == "temporal"
     assert result["temporal_beats_flattened_both_seeds"] is True
     assert result["permission"] == "GO_FROZEN_CONSEQUENCE_VALUE_RANKING"
+    assert result["optimization_contract"][-1] == "train_delta_std"

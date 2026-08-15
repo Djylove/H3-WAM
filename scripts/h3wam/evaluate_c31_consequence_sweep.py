@@ -53,6 +53,7 @@ def main() -> None:
         (
             row["optimization"]["steps"], row["optimization"]["batch_size"],
             row["optimization"]["learning_rate"], row["optimization"]["weight_decay"],
+            row["optimization"].get("target_error_scaling", "raw"),
         )
         for _, _, row in reports
     }

@@ -1,0 +1,62 @@
+{
+  "experiment_id": "h3_c36_delta_scaled_consequence_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Train-only per-dimension scaling of the future-minus-current H3 error will prevent high-variance frozen-H3 directions from hiding the action-dependent consequence signal and make the conditioned temporal expert beat zero-action and shuffled controls in both seeds.",
+  "single_variable": "C36 changes only the consequence error metric from raw projected-H3 MSE to MSE divided by the train-only per-dimension standard deviation of future-minus-current H3; C35 data, features, models, seeds, optimizer, steps and gates remain fixed.",
+  "parent_baseline": "C35 SHA256 0967fb0301611d99c745ae3e959647479f150b37399744b9e8351685e80cfa8c: temporal beat flattened in both seeds and shuffle hurt 5.1%-6.1%, but seed314159 missed the independent gate by 0.38%, so repeated mechanism status remained FAIL and value ranking stayed blocked.",
+  "references": [
+    {"kind": "paper", "title": "FACT: A Failure-Aware Causal Transformer for World Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT train-stat normalized future-state target", "locator": "third_party/FACT/world_action_model/transformers/wa_transforms_lerobot.py", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "upstream_code", "title": "MiniWorld action-conditioned training", "locator": "third_party/MiniWorld", "revision": "e484206bbd4360ae56ed8abad51c83f2457ac092", "official": true},
+    {"kind": "local_implementation", "title": "C36 train-delta-scaled repeated sweep", "locator": "scripts/h3wam/launch_c36_delta_scaled_consequence_sweep.sh", "revision": "pending dossier commit"}
+  ],
+  "alignment": {
+    "architecture": [
+      {"field": "unchanged action-conditioned experts", "paper": "Action causally conditions future tokens.", "upstream_code": "FACT uses clean action K/V and MiniWorld temporally aligned action modulation.", "local": "The C35 flattened and eight-token temporal experts are reused byte-for-byte; H3 and the action parent remain frozen.", "status": "EQUIVALENT", "evidence": ["src/fastwam/models/h3wam/fact_lite_consequence.py", "C35 artifact SHA256 0967fb0301611d99c745ae3e959647479f150b37399744b9e8351685e80cfa8c"], "rationale": "Architecture is deliberately not a C36 variable."}
+    ],
+    "data": [
+      {"field": "unchanged source-disjoint C34", "paper": "Future targets and held-out outcomes come from separate trajectories.", "upstream_code": "FACT retains failures and computes normalization from training data.", "local": "The identical C34 dataset supplies 37 train, 8 consequence-validation and 52 reserved ranking sources; only the 296 train branches compute target scale.", "status": "EQUIVALENT", "evidence": ["C34 dataset SHA256 2a6c9252b8e77975f58920425bc18110fa8ea63bdc12c4c15571cfffeb9f7459"], "rationale": "No validation or C33 ranking feature contributes to normalization."}
+    ],
+    "action": [
+      {"field": "unchanged clean executed action", "paper": "Clean actions condition the associated future.", "upstream_code": "FACT and MiniWorld preserve action/future temporal alignment.", "local": "The same audited 32x7 executed prefixes and 221 zero-masked partial tails are consumed.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/prepare_c34_combined_consequence_ranking_dataset.py", "tests/test_c31_executed_action_contract.py"], "rationale": "Only error scaling changes."}
+    ],
+    "objective": [
+      {"field": "train-stat future-change scaling", "paper": "Future-state and visual objectives operate in normalized model spaces.", "upstream_code": "FACT computes norm_future_state=(future_state-state_mean)/state_std using training statistics.", "local": "Prediction and target errors are divided by the train-only per-dimension std of projected future H3 minus projected current H3; the same conditioned/shuffled/zero controls and 1% gates remain.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_c31_action_conditioned_consequence.py", "tests/test_c31_action_conditioned_consequence.py"], "rationale": "Frozen H3 is not robot state, so its action-relevant change is scaled directly instead of borrowing proprio statistics."}
+    ],
+    "optimization": [
+      {"field": "exact C35 matched budget", "paper": "Optimization is matched across ablations.", "upstream_code": "Target normalization does not alter optimizer topology.", "local": "Flattened/temporal x seeds42/314159, three arms each, 10,000 steps, batch64, AdamW3e-4/1e-2 and checkpoints every1,000 are unchanged.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c36_delta_scaled_consequence_sweep.sh"]}
+    ],
+    "evaluation": [
+      {"field": "unchanged held-out repeated gate", "paper": "Held-out future/value metrics gate downstream selection.", "upstream_code": "FACT uses unseen episodes before best-of-N.", "local": "Eight unseen consequence sources are evaluated in the predeclared scaled metric; both seeds must pass, while all 52 C33 sources remain untouched for later ranking.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c31_consequence_sweep.py", "C34 feature SHA256 4655d0783a443b4817f93f5368f7cace9996be7163dfa49b2080033b3b176f69"], "rationale": "C36 still makes no ranking or closed-loop claim."}
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT 618a6c16868699b6d4138941de6a863589ac00dd; MiniWorld e484206bbd4360ae56ed8abad51c83f2457ac092; C35 0967fb0301611d99c745ae3e959647479f150b37399744b9e8351685e80cfa8c."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["No model class or dimension differs from C35; temporal/flattened tests pass."]},
+    "data_contract": {"status": "PASS", "evidence": ["C34 identity fixed; target scale consumes train branches only; train/validation/ranking source overlap0."]},
+    "action_contract": {"status": "PASS", "evidence": ["All proposed actions match artifacts and unexecuted tails remain zero; 11 focused tests PASS."]},
+    "objective_contract": {"status": "PASS", "evidence": ["train_delta_std is an explicit fixed launcher argument; raw MSE remains diagnostic but cannot replace the preregistered scaled gate."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["C35-matched four jobs, 10,000 steps, batch64, seeds42/314159 and identical AdamW settings."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Eight consequence-validation sources only; C33 52-source ranking reserve remains unconsumed."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Scaling is a fixed train-stat tensor; actions remain detached and action-expert gradients remain finite/nonzero in tests."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["11 focused tests PASS; live train delta std spans 7.7573 to 24.9895 with no zero or non-finite dimensions."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Scaled two-step checkpoint stores the target scale and restores exactly under the existing strict production gate."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C35 repeated result and all four checkpoint/report hashes frozen before C36 implementation."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["C36 outcomes pending."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No value ranker or closed-loop selector is authorized yet."]}
+  },
+  "budget": {
+    "global_batch": 768,
+    "optimizer_steps": 10000,
+    "training_samples": 7680000,
+    "unique_windows": 296,
+    "effective_epochs": 25945.945945945947,
+    "gpu_count": 4,
+    "estimated_hours": 0.1
+  },
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "C35 showed reproducible action sensitivity but a marginal independent-baseline miss in one temporal seed. FACT's train-stat normalization and the measured 3.2x spread in H3 change scale justify this single-variable matched ablation before changing architecture.",
+    "launch_command": "On ports 32611/30907/32409/30234 set C36_RUN_INDEX=0/1/2/3 and run bash scripts/h3wam/launch_c36_delta_scaled_consequence_sweep.sh; aggregate all four reports with the unchanged sweep evaluator."
+  }
+}
