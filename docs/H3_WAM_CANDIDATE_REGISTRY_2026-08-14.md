@@ -305,6 +305,10 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   明示本地改动，FACT官方RobotWin为48，不能冒充复现。当前只放行冻结H3 progress head canary；未证明
   action-conditioned held-out ranking前仍禁止best-of-N。artifact：
   `/mnt/h3-wam/eval/expert-progress-targets-v1/report.json`。
+  冻结特征probe已在32611启动：每suite确定性分层抽train1000/val500，合计4000/2000；只压缩layer49
+  K/V为512维mean/std，用两路低优先级CPU读取，避免抢C15的GPU与共享I/O。promotion要求相对
+  task+absolute-step ridge的总MAE至少改善5%，且四个suite均不得退化超过5%。真实命令：
+  `nohup bash scripts/h3wam/launch_c17_progress_probe.sh > /mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1.queue.log 2>&1 &`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。

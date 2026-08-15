@@ -306,7 +306,17 @@
         "artifact": "/mnt/h3-wam/eval/expert-progress-targets-v1/report.json"
       },
       "go_status": "GO_PROGRESS_HEAD_CANARY",
-      "evidence_status": "TARGET_DOSSIER_PASS",
+      "evidence_status": "TARGET_DOSSIER_PASS; FROZEN_FEATURE_PROBE_ACTIVE",
+      "canary_budget": {
+        "train_samples": 4000,
+        "validation_samples": 2000,
+        "sampling": "1000/500 windows per suite, stratified over five value bins",
+        "feature": "layer49 concat(mean_k,std_k,mean_v,std_v) over token/head, 512D",
+        "baseline": "task context plus absolute step",
+        "workers": 2,
+        "launch_host": "117.50.181.177:32611",
+        "command": "nohup bash scripts/h3wam/launch_c17_progress_probe.sh > /mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1.queue.log 2>&1 &"
+      },
       "promotion": "Frozen-H3 progress head must improve held-out value MAE and task-progress calibration over step/context baselines, including LIBERO-10, before fusion.",
       "stop": "No best-of-N or policy claim until the critic is action-conditioned and ranks held-out alternative outcomes."
     }
