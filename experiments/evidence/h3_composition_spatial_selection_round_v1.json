@@ -502,6 +502,31 @@
       "boundary": "C23 proves causal first-action outcome labels can exist; one mixed group is insufficient to train or validate a general critic.",
       "artifact": "/mnt/h3-wam/eval/c23-first-action-causal-canary-v1/COMPLETED",
       "artifact_sha256": "11dfef6ce6523ac58f8cb8aae7166e81173b2e3e7724b95332b9ab0348b4143f"
+    },
+    "C24": {
+      "name": "first-action-execution-horizon-sweep",
+      "classification": "controlled_causal_label_yield_sweep",
+      "parent_lineage": "C23 horizon8",
+      "source_revision": "282fb94",
+      "falsifiable_hypothesis": "Changing only first action execution length to 16 or 32 yields at least three mixed groups over two suites for one candidate.",
+      "difference_matrix": [
+        {"field": "state/first chunk/noise schedules", "parent": "C23 fixed", "C24": "bit-exact same", "status": "ALIGNED"},
+        {"field": "later execution/replanning", "parent": "replan8", "C24": "replan8", "status": "ALIGNED"},
+        {"field": "first chunk execution", "parent": 8, "C24": [16, 32], "status": "ONLY_VARIABLE"}
+      ],
+      "budget": {"candidates": 2, "groups_per_candidate": 8, "branches_per_candidate": 32, "total_branches": 64, "max_environment_steps": 25600, "nodes": 4, "gpus_per_node": 8},
+      "results": {
+        "h16": {"successful_branches": 17, "mixed_outcome_groups": 2, "mixed_outcome_suites": ["libero_object", "libero_spatial"], "promotion_gate": false},
+        "h32": {"successful_branches": 16, "mixed_outcome_groups": 3, "mixed_outcome_suites": ["libero_10", "libero_spatial"], "promotion_gate": true},
+        "mechanical_gate": true,
+        "selected_horizon": 32
+      },
+      "status": "PASS_FIRST_ACTION_HORIZON_SWEEP",
+      "go_status": "GO_EPISODE_DISJOINT_CAUSAL_DATASET_H32_CANARY",
+      "evidence_status": "NOT_EVIDENCE_READY",
+      "boundary": "Horizon32 increases causal label yield on the canary; it is not yet a deployment or policy-effect winner.",
+      "artifact": "/mnt/h3-wam/eval/c24-first-action-horizon-sweep-v1/COMPLETED",
+      "artifact_sha256": "a85d7d0dd03c355906cfa5f8277b8abf3e1d2675b5291153a1fae03e8b53f54e"
     }
   },
   "difference_matrix": [
@@ -572,9 +597,10 @@
       "C20 paired canonical branch restore (mechanical gate passed)",
       "C21 same-state stochastic-continuation canary (passed; entropy calibration only after causal-label audit)",
       "C22 multisuite stochastic-continuation entropy sweep (passed; four-suite state calibration)",
-      "C23 first-action-only causal canary (passed; dataset canary only)"
+      "C23 first-action-only causal canary (passed; dataset canary only)",
+      "C24 first-action execution horizon sweep (h32 label-yield winner; effect unproven)"
     ],
     "track_winner": "none: C02 and C15 failed final spatial/object gates; C14 did not confirm across trials",
-    "fusion": "blocked; C23 establishes one causal mixed group, but episode-disjoint dataset scale, held-out ranking, and closed-loop effect gates remain"
+    "fusion": "blocked; C24 selects h32 for label collection, but episode-disjoint dataset scale, held-out ranking, and closed-loop effect gates remain"
   }
 }

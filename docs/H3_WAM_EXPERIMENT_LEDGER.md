@@ -663,3 +663,14 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   challenger达到`>=3` mixed groups并覆盖`>=2` suites。通过才按胜出horizon扩episode-disjoint数据；
   失败则停止“单纯延长首动作”路线。
 - 效果状态固定为`NOT_EVIDENCE_READY`；该轮只比较标签可辨识性，不宣称LIBERO成功率提升。
+
+### 2026-08-15 — C24 结果
+
+- horizon16：`17/32`成功，Object d5为`2/4`、Spatial d5为`3/4`，共2个mixed组覆盖2 suites；
+  未达到至少3组门。四shard墙钟`141/158/140/141s`。
+- horizon32：`16/32`成功；LIBERO-10 task3/d1为`3/4`、task5/d3为`2/4`、Spatial d5为`3/4`，
+  共3个mixed组覆盖2 suites，通过预注册门。四shard墙钟`139/156/139/139s`。
+- 两候选首动作均32/32 bit-exact于C23，continuation seed schedule和动作多样性均通过；唯一变量确为
+  首chunk执行长度。判定`PASS_FIRST_ACTION_HORIZON_SWEEP`，选择h32用于因果数据集canary。
+- 边界：h32仅提高标签可辨识性，尚未证明用h32部署、训练critic或best-of-N可提高LIBERO成功率。
+  artifact SHA256为`a85d7d0dd03c355906cfa5f8277b8abf3e1d2675b5291153a1fae03e8b53f54e`。

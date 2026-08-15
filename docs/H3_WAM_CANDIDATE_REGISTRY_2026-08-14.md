@@ -72,7 +72,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C21 | consequence/data | same-state stochastic-continuation canary | D0-H32-s14000/replan8/no-ensemble + C20 | C20 | 固定规范state/环境/模型，改变整条policy noise schedule；4 suite×4分支 | 16条中11成功；Object同状态3/4成功；四组动作均不同 | GO_ENTROPY_CALIBRATION_ONLY；NOT_EVIDENCE_READY |
 | C22 | consequence/data | multisuite stochastic-continuation entropy sweep | C21 | C21 | 8源episode×距成功1/3/5 replans×4 noise schedule | 96条71成功；7/24 mixed覆盖四suite | GO_CAUSAL_FIRST_ACTION_CANARY；NOT_EVIDENCE_READY |
 | C23 | consequence/action | first-action-only causal branch | C22高熵state + D0父策略 | C22 | 只改变首replan noise；同组后续noise逐值固定 | 32条18成功；Spatial d5同状态2/4；全部seed/动作审计通过 | GO_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY；NOT_EVIDENCE_READY |
-| C24 | consequence/action | first-action execution horizon sweep | C23同8 states/32 seeds | C23 horizon8 | 仅首chunk执行16或32步；后续仍replan8 | 预注册2×32分支 | RUNNING；NOT_EVIDENCE_READY |
+| C24 | consequence/action | first-action execution horizon sweep | C23同8 states/32 seeds | C23 horizon8 | 仅首chunk执行16或32步；后续仍replan8 | h16:2 mixed/2 suites；h32:3 mixed/2 suites | GO_CAUSAL_DATASET_H32；NOT_EVIDENCE_READY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -380,6 +380,12 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   仍不放行critic/best-of-N效果声明。artifact：
   `/mnt/h3-wam/eval/c23-first-action-causal-canary-v1/COMPLETED`，SHA256
   `11dfef6ce6523ac58f8cb8aae7166e81173b2e3e7724b95332b9ab0348b4143f`。
+- C24复用C23相同8 state/32 seed/continuation schedule，唯一改变首chunk执行长度；后续均保持
+  replan8。h16为`17/32`成功、2 mixed（Object/Spatial），未过门；h32为`16/32`成功、3 mixed
+  （LIBERO-10两组、Spatial一组），通过预注册的`>=3 mixed / >=2 suites`。两候选32/32首动作均
+  bit-exact于C23，seed/action机械门全过，选择h32放行episode-disjoint数据canary；这不代表部署
+  replan32已优于replan8。artifact：`/mnt/h3-wam/eval/c24-first-action-horizon-sweep-v1/COMPLETED`，
+  SHA256 `a85d7d0dd03c355906cfa5f8277b8abf3e1d2675b5291153a1fae03e8b53f54e`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。
