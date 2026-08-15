@@ -1,0 +1,11 @@
+{
+  "experiment_id": "h3_lingbot_shared_sync_v2_adapter_only_fresh_s500_closed_loop_v1",
+  "classification": "closed_loop_canary",
+  "status": "FAIL_CLOSED_LOOP",
+  "claim_boundary": "One fixed Goal task/trial rejects benchmark promotion but does not estimate general success rate.",
+  "source": {"stage": "/mnt/h3-wam/outputs/h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/shared_sync_v2_adapter_only_s5000_fresh_step000500.pt", "checkpoint_sha256": "06178f8ee377e78e3b020353f72a238f953d7d69fd71ed1b29b5b71978519e8f", "result": "/mnt/h3-wam/outputs/eval-h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/step000500_goal_task3_trial0_replan32/results.json", "trajectory": "/mnt/h3-wam/outputs/eval-h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/step000500_goal_task3_trial0_replan32/task03_trial00_trajectory.npz"},
+  "contract": {"suite": "libero_goal", "task_id": 3, "trial": 0, "task": "open the top drawer and put the bowl inside", "max_steps": 80, "wait_steps": 30, "replan_steps": 32, "action_horizon": 32, "sample_steps": 4, "world_size": 8, "normalization": "quantile", "normalized_clip_bound": 1.5},
+  "offline": {"causal_action_mse": 1.1491565331816673, "causal_video_mse": 0.6353397034108639, "causal_action_relative_improvement_over_step0": 0.1207599125, "causal_video_relative_improvement_over_step0": 0.0865837741},
+  "closed_loop": {"successes": 0, "episodes": 1, "success_rate": 0.0, "steps": 80, "replans": 3, "action_saturation_fraction": 0.09895833333333333, "mean_action_magnitude": 0.3397288918495178, "eef_position_range": [0.09657029807567596, 0.12638799846172333, 0.06845343112945557], "gripper_qpos_range": [0.03799667954444885, 0.03760799765586853], "max_object_joint_delta": 1.4739728534940433e-16, "mean_policy_roundtrip_seconds": 72.14520428531493},
+  "decision": {"training_permission": "GO_LONG", "evidence_status": "EVIDENCE_READY", "promotion": "STOP_S500_BENCHMARK", "rationale": "The new curve has its best offline adapter-only metric so far, but it still makes no measurable object contact. Continue only to the predeclared s1000 continuity/insufficient-budget gate; do not run the full benchmark."}
+}
