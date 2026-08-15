@@ -245,13 +245,38 @@
         "optimizer_scheduler_rng": "restored from the fixed parent",
         "fixed_sibling": "existing D0-H32-s15000 on the exact same sample slice"
       },
-      "go_status": "GO_CANARY",
-      "evidence_status": "NOT_EFFECT_EVIDENCE",
+      "paired_canary_training_result": {
+        "completed_steps": 15000,
+        "adaptation_steps": 1000,
+        "global_batch": 8,
+        "samples": 8000,
+        "effective_epochs": 0.039844804486524985,
+        "training_wall_seconds": 135.77581569796894,
+        "restore_wall_seconds": 40.784063952974975,
+        "all_block_gradients_finite_nonzero": true,
+        "strict_restore_probe_max_abs": 0.0,
+        "checkpoint_sha256": "ee6ad4df1cf1b0ca8229fc67c06ad9a554ad5f3406515ecaa7e9f85b83cd27e4",
+        "status": "PASS_TRAINING_AND_RESTORE_NOT_EFFECT_EVIDENCE",
+        "artifact": "/mnt/h3-wam/outputs/c15-d0-grid-adaptation-s1000-v1/COMPLETED"
+      },
+      "go_status": "NO_GO_FUSION",
+      "evidence_status": "FAIL_PAIRED_GATE; NOT_EVIDENCE_READY",
       "automatic_evaluation": {
-        "balanced80": "scripts/h3wam/launch_c15_balanced80_gate.sh on 117.50.181.177:30907 after validation cache READY",
+        "balanced80": "CANCELLED_AFTER_CLOSED_LOOP_STOP_CONDITION",
         "closed_loop": "scripts/h3wam/launch_c15_spatial_object_gate.sh on 117.50.181.177:32409 after checkpoint READY",
         "spatial_episodes": 20,
         "object_regression_episodes": 8
+      },
+      "closed_loop_result": {
+        "spatial_successes": 7,
+        "spatial_episodes": 20,
+        "fixed_parent_spatial": "7/20",
+        "object_successes": 2,
+        "object_episodes": 8,
+        "fixed_parent_object": "5/8",
+        "promotion_pass": false,
+        "status": "FAIL_PAIRED_GATE",
+        "artifact": "/mnt/h3-wam/eval/c15-grid-closed-loop-gate-v1/COMPLETED"
       },
       "promotion": "Beat D0-s15000 offline under same noise, then exceed D0-s14000 7/20 Spatial while retaining at least 4/8 Object.",
       "stop": "Stop if conditioning collapses, matched offline loses materially, Spatial does not exceed 7/20, or Object falls below 4/8."
@@ -396,11 +421,11 @@
     "challengers": [
       "C02 aligned-five-layer s14000 (rejected)",
       "C14 executed-action-history16 adapter (mechanism only, fusion rejected)",
-      "C15 dual-view spatial grid K/V (active canary)",
+      "C15 dual-view spatial grid K/V (rejected: Spatial tie, Object regression)",
       "C16 FACT-style rollout progress value (target dossier only)",
       "C17 expert progress value (feature gate passed; shadow integration pending)"
     ],
-    "track_winner": "none: C02 failed both final gates and C14 did not confirm across trials",
-    "fusion": "blocked; C15 spatial-topology canary is the next single-variable challenger"
+    "track_winner": "none: C02 and C15 failed final spatial/object gates; C14 did not confirm across trials",
+    "fusion": "blocked; C17 passed the progress feature gate but has not passed shadow or action-conditioned rollout gates"
   }
 }

@@ -63,9 +63,9 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C12 | action/co-training | Motus-H3 three-expert | Motus | best joint-training baseline | three-expert MoT | Stage-2/H3 mapping unknown | PROBE_ONLY |
 | C13 | consequence/state | Cosmos-H3 latent slots | Cosmos Policy | consequence winner parent | future state/value latent slots | scale/data mismatch open | PROBE_ONLY |
 | C14 | temporal/progress | D0-H32 executed-action history16 adapter | LingBot-VA persistent video/action KV + local D0 parent | D0-H32-s14000/replan8 | add zero-init 16-action progress adapter；freeze parent | s14500 trials0/1长程+1，但trials2/3无新增；s17000过训练 | 机制证据保留；NO_GO_FUSION |
-| C15 | carrier/spatial | D0 dual-view grid K/V | local H3 adapter + DreamWAM carrier | D0-H32-s14000/replan8 | 32-token一维池化 → 左右相机各4×4网格池化 | 64样本真实INT8机械门通过；8k严格兄弟缓存生成中 | GO_CANARY；NOT_EFFECT_EVIDENCE |
+| C15 | carrier/spatial | D0 dual-view grid K/V | local H3 adapter + DreamWAM carrier | D0-H32-s14000/replan8 | 32-token一维池化 → 左右相机各4×4网格池化 | Spatial7/20与父持平；Object2/8低于父5/8 | NO_GO；FAIL_PAIRED_GATE |
 | C16 | temporal/value | held-out progress value diagnostic | FACT | D0-H32-s14000 rollout trajectories | 只对成功轨迹按官方future-state time-to-go造target；失败轨迹右删失 | 1001 transitions；trial3 val238；LIBERO-10 val正样本0 | GO_DIAGNOSTIC；NO_GO_BEST_OF_N |
-| C17 | temporal/value | expert progress value diagnostic | FACT + v7 dense expert windows | frozen H3 carrier | future offset32的time-to-go target；不改动作策略 | train200779/val22150，episode overlap0，覆盖全部四suite | GO_PROGRESS_HEAD_CANARY |
+| C17 | temporal/value | expert progress value diagnostic | FACT + v7 dense expert windows | frozen H3 carrier | future offset32的time-to-go target；不改动作策略 | feature gate PASS，MAE下降29.3%；待shadow trace | GO_SHADOW_TRACE；NO_GO_BEST_OF_N |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -287,6 +287,14 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   两条评测接力也已预置：30907的 `launch_c15_balanced80_gate.sh` 等验证缓存后做同噪声离线配对；
   32409的 `launch_c15_spatial_object_gate.sh` 等checkpoint后立即跑Spatial 20 episodes和Object 8 episodes。
   promotion保持Spatial严格超过父模型 `7/20` 且Object不少于 `4/8`，避免用空间提升掩盖对象选择退化。
+  8k正式缓存已通过全量审计（missing/invalid均0）；1000步适配完成到s15000，global batch8、8000样本、
+  `0.039845` epoch，训练/严格恢复墙钟 `135.78/40.78s`，restore probe `max_abs=0.0`。checkpoint SHA256
+  `ee6ad4df1cf1b0ca8229fc67c06ad9a554ad5f3406515ecaa7e9f85b83cd27e4`。Spatial闭环已自动启动；
+  训练与恢复PASS仍不是效果证据，等待20+8固定闭环门。
+  最终闭环为Spatial `7/20`（父 `7/20`，未严格提高）、Object `2/8`（父 `5/8`且低于4/8下限），因此
+  `FAIL_PAIRED_GATE / NO_GO_FUSION`。30907的剩余验证缓存和balanced80等待队列已停止，保留已有缓存与
+  checkpoint作为负结果证据，不再为失败候选消耗8卡。artifact：
+  `/mnt/h3-wam/eval/c15-grid-closed-loop-gate-v1/COMPLETED`。
 - FACT官方代码固定在 `618a6c168686`：其failure-aware训练依赖明确的failure activation，best-of-N依赖
   校准的time-to-go/value排序。现有160条父模型rollout可组成6208个replan states和6048条因果transition，
   train trials0/1/2与val trial3任务重叠但episode不重叠；然而没有failure onset与counterfactual action
