@@ -1,0 +1,11 @@
+{
+  "experiment_id": "h3_lingbot_shared_sync_v2_adapter_only_fresh_s1000_closed_loop_v1",
+  "classification": "closed_loop_canary",
+  "status": "FAIL_CLOSED_LOOP",
+  "claim_boundary": "One fixed Goal task/trial rejects benchmark promotion; it does not estimate full-suite success rate.",
+  "source": {"stage": "/mnt/h3-wam/outputs/h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/shared_sync_v2_adapter_only_s5000_fresh_step001000.pt", "checkpoint_sha256": "a9dd299505ddc7154b800bf08f0965f2b65f2f8073b40c21bc6a49e81bb46270", "result": "/mnt/h3-wam/outputs/eval-h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/step001000_goal_task3_trial0_replan32/results.json", "trajectory": "/mnt/h3-wam/outputs/eval-h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/step001000_goal_task3_trial0_replan32/task03_trial00_trajectory.npz"},
+  "contract": {"suite": "libero_goal", "task_id": 3, "trial": 0, "task": "open the top drawer and put the bowl inside", "max_steps": 80, "wait_steps": 30, "replan_steps": 32, "action_horizon": 32, "sample_steps": 4, "world_size": 8, "normalization": "quantile", "normalized_clip_bound": 1.5},
+  "offline": {"causal_action_mse": 1.0744923919439315, "causal_video_mse": 0.6453129477798939, "causal_action_relative_improvement_over_step0": 0.1778867734675604, "causal_action_relative_improvement_over_s500": 0.06497299461111128},
+  "closed_loop": {"successes": 0, "episodes": 1, "success_rate": 0.0, "steps": 80, "replans": 3, "action_saturation_fraction": 0.06770833333333333, "mean_action_magnitude": 0.31715506315231323, "eef_position_range": [0.04400230944156647, 0.017951546236872673, 0.04497957229614258], "gripper_qpos_range": [0.03775763884186745, 0.037554144859313965], "max_object_joint_delta": 1.4603864450200843e-16, "mean_policy_roundtrip_seconds": 71.97588525568911, "duration_seconds": 317.01725906599313},
+  "decision": {"training_permission": "GO_LONG", "evidence_status": "EVIDENCE_READY", "promotion": "STOP_S1000_BENCHMARK", "rationale": "A 17.79% causal action-MSE improvement still produces no measurable object contact. Preserve the predeclared long curve as a diagnostic, but prioritize contact-phase sampling/objective changes over average-MSE-only scaling."}
+}
