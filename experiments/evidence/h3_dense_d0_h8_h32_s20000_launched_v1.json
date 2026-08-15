@@ -171,21 +171,66 @@
       "supported": "At exact s12000 on this preregistered two-task/eight-episode-per-arm screen, the H32 training-and-replan bundle beats H8 overall and uniquely solves the sustained push task; both solve the short object pick-place task at 2/4.",
       "not_supported": "This does not establish full LIBERO benchmark superiority, isolate training horizon from execution replan, or prove that H8 is globally inferior."
     },
-    "active_cross_task_s12000_screen": {
+    "cross_task_s12000_screen": {
       "node_port": 32409,
       "episodes": 8,
       "contract": "H32/H8 paired on object task1 trial0, spatial task0 trials1/2, and goal task3 trial4; max400 with each arm's matched execution horizon.",
-      "purpose": "Test whether the two-task lead transfers beyond goal5/object0; no full-benchmark claim is permitted from this screen."
+      "successes": {"h32": 0, "h8": 0},
+      "diagnostics": {
+        "h32_goal3_trial4": "Moved both target bowl 0.6229 and prerequisite top drawer 0.1557 but did not complete placement.",
+        "h8_object1_trial0": "Moved distractor tomato sauce 0.4946 while target cream cheese moved only 0.0370.",
+        "spatial_task0": "Both arms moved target bowl/plate but completed neither trial."
+      },
+      "results_sha256": [
+        "98d300c7a5a71068496b18ba69e832cb97e4d73c79c1ddb3c7fc40e578f70f21",
+        "9bbe8b92503e1b38828029831a20cd0c07ffb3eb88b318027ef94ab5a4c40bd0",
+        "8eef3b6b9865a2e6e3fbeaa5b923b5eb1f096f641bfbc1f84f2bc0d3decde823",
+        "26467d32868bb6639fe0f4f7fd2d2bd1b63491092793d0d2f0f2d7f206a86acc",
+        "25bba6c791c79dcc9b3b0b069317bf8e266d54bf6280b3d589cea5634c485237",
+        "d2de7d28bc678437e31602e78a496c84358818c7edd0fd49e17b1ee0a6f2dee3",
+        "1e0c8c64773951f3fa241ca2c595a190a4bc1baa8484e22d9270d78f93dab3a9",
+        "bfd0a5fa4636baab69d11c7237e31f7fb100dd16e66ba000c05d2f41e7a2ff97"
+      ],
+      "interpretation": "The two-task lead did not transfer to a success on this small cross-task screen. Evidence now points to sequence completion and object selection as the immediate closed-loop bottlenecks; no full-benchmark claim is permitted."
+    },
+    "h32_s14000_retest": {
+      "node_port": 32409,
+      "episodes": 8,
+      "contract": "H32 s14000 on the identical goal5/object0 trials0-3 used by the s12000 incumbent.",
+      "offline_physical_action_mse": 0.024190,
+      "rollout": {
+        "goal5": {"successes": 2, "episodes": 4, "success_trials": [0, 1], "success_steps": [229, 158]},
+        "object0": {"successes": 2, "episodes": 4, "success_trials": [0, 2], "success_steps": [141, 132]},
+        "aggregate": {"successes": 4, "episodes": 8}
+      },
+      "sorted_sha256_manifest_sha256": "5406b4cde0bfdc9797e5e2f57439435a72882f2d7744b825a3beca1b6d5c912d",
+      "interpretation": "The 17 percent lower physical MSE versus s12000 did not improve aggregate closed-loop success. Additional training changed which object-task seeds succeed, so checkpoint selection must remain rollout-gated."
+    },
+    "h32_s14000_replan8_ablation": {
+      "node_port": 32409,
+      "episodes": 8,
+      "fixed": "H32-trained s14000 checkpoint, action horizon32, goal5/object0 trials0-3, all policy/data/noise settings",
+      "single_variable": "execution replan steps32 -> 8",
+      "falsifiable_hypothesis": "More frequent replanning improves recovery/object precision and raises success above the replan32 baseline of 4/8.",
+      "rollout": {
+        "goal5": {"successes": 2, "episodes": 4, "success_trials": [1, 3], "success_steps": [218, 321]},
+        "object0": {"successes": 4, "episodes": 4, "success_trials": [0, 1, 2, 3], "success_steps": [232, 126, 246, 182]},
+        "aggregate": {"successes": 6, "episodes": 8}
+      },
+      "sorted_sha256_manifest_sha256": "3ac4cad16bea951752e2dff25618c02760086b76c6dd89d7e1eea68025bb108b",
+      "status": "EVIDENCE_READY_FOR_FIXED_TWO_TASK_DEPLOYMENT_ABLATION",
+      "interpretation": "At the identical checkpoint and episode seeds, replan8 raises aggregate success from 4/8 to 6/8 and object0 from 2/4 to 4/4. Long open-loop action execution was a material deployment bottleneck. This does not establish a full LIBERO success rate."
     },
     "queued_final_s20000_pair": {
       "node_port": 32409,
-      "queue_pid": 575539,
+      "queue_pid": 582490,
       "runner": "scripts/h3wam/queue_final_d0_s20000_rollout.sh",
       "episodes_per_arm": 8,
       "tasks": ["libero_goal task5 trials0-3", "libero_object task0 trials0-3"],
       "max_steps_per_episode": 400,
+      "deployment_replan_steps": 8,
       "launch_condition": "The active rollout batch has exited and both d0_h32_s20000.pt and d0_h8_s20000.pt exist.",
-      "falsifiable_checkpoint_gate": "Promote an s20000 checkpoint over the s12000 rollout incumbent only if it preserves non-collapsed offline conditioning and reaches at least the incumbent's 4/8 success count on the identical paired subset; otherwise retain s12000."
+      "falsifiable_checkpoint_gate": "Promote an s20000 checkpoint over the H32-s14000/replan8 rollout incumbent only if it preserves non-collapsed offline conditioning and reaches at least the incumbent's 6/8 success count on the identical paired subset; otherwise retain s14000/replan8."
     }
   },
   "retention_cleanup": {
@@ -213,5 +258,5 @@
     "promotion": "A checkpoint must retain non-collapsed visual/language counterfactual response and gripper control, then produce target contact or success in the fixed 400-step rollout.",
     "stop": "Stop a branch on non-finite gradients, exact-restore failure, sample overlap, or confirmed conditioning collapse across consecutive checkpoints."
   },
-  "fusion_lineage": "carrier incumbent D0 -> horizon track winner H8/H32 -> later add FACT consequence winner only after closed-loop action promotion"
+  "fusion_lineage": "D0 carrier -> H32 s12000/replan32 horizon winner -> H32 s14000/replan8 deployment winner -> final s20000 paired gate -> later FACT consequence winner only after closed-loop action promotion"
 }

@@ -130,6 +130,19 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
   排队最终 s20000 H32/H8 各8 episodes：仍用 goal5/object0 trials0–3 与 s12000 同输入复测。s20000
   只有在反事实条件响应不塌缩且成功数至少达到 s12000 H32 的 `4/8` 时才替换当前 rollout incumbent；
   否则保留 s12000，不能因为“步数更大”自动晋级。
+- 跨任务 screen 已完成，H32/H8 都是 `0/4`。这否定了把两任务 `4/8` 外推为泛化成功率：H32 在
+  goal3 trial4 同时移动了顶层抽屉 `0.1557` 和目标碗 `0.6229` 却未完成放置；H8 在 object1
+  trial0 主要移动错误的 tomato sauce `0.4946`，目标 cream cheese 仅 `0.0370`。当前闭环瓶颈
+  更具体地落在多阶段完成与对象选择。32409 已插入 H32-s14000 的相同8 episodes复测，之后自动接
+  s20000 配对评测。
+- H32-s14000 同输入复测仍为 `4/8`（goal5 `2/4`、object0 `2/4`）；相对 s12000 低约17%的离线
+  physical MSE 没有提高聚合成功率，且 object0 成功seed发生变化。现已固定 H32-s14000/action
+  horizon32，仅把执行 replan32 改为 replan8 再跑同8 episodes；这是拆解训练horizon与部署replan
+  耦合的单变量实验，假设是更频繁重规划能把成功率提高到 `>4/8`。
+- 上述单变量实验已完成：H32-s14000/replan8 达到 `6/8`，其中 goal5 `2/4`、object0 `4/4`；同一
+  checkpoint/replan32 是 `4/8`、object0 `2/4`。因此长32步开环执行是已证实的部署瓶颈，当前
+  rollout incumbent 更新为 H32-s14000/replan8。最终 s20000 队列同步改为两臂都用 replan8，只有
+  在同8 episodes 达到至少 `6/8` 且条件响应不塌缩时才替换 incumbent。
 
 ## 蛊王融合谱系
 

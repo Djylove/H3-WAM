@@ -33,7 +33,7 @@ launch_one() {
   local task="$5"
   local trial="$6"
   local log="${log_dir}/${suite}_task${task}_trial${trial}_${mode}.log"
-  env SUITE="${suite}" bash "${rollout_script}" \
+  env SUITE="${suite}" REPLAN_STEPS_OVERRIDE=8 bash "${rollout_script}" \
     "${mode}" "${checkpoint}" "${gpu}" "${task}" "${trial}" >"${log}" 2>&1 &
   wave_pids+=("$!")
 }

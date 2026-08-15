@@ -26,6 +26,13 @@ case "${mode}" in
     exit 2
     ;;
 esac
+if [[ -n "${REPLAN_STEPS_OVERRIDE:-}" ]]; then
+  [[ "${REPLAN_STEPS_OVERRIDE}" =~ ^[1-9][0-9]*$ ]] || {
+    echo "REPLAN_STEPS_OVERRIDE must be a positive integer" >&2
+    exit 2
+  }
+  replan_steps="${REPLAN_STEPS_OVERRIDE}"
+fi
 for value in "${gpu}" "${task_id}" "${trial_index}"; do
   [[ "${value}" =~ ^[0-9]+$ ]] || { echo "GPU/task/trial must be non-negative integers" >&2; exit 2; }
 done
