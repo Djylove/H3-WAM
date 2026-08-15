@@ -206,6 +206,36 @@ class FutureH3ConsequenceModel(nn.Module):
         current_target = self.project_features(h3_features)
         if current_target.shape[0] != current_proprio.shape[0]:
             raise ValueError("H3 feature batch must match current proprio batch")
+        return self.forward_projected(
+            current_proprio, current_target, candidate_actions
+        )
+
+    def forward_projected(
+        self,
+        current_proprio: torch.Tensor,
+        current_target: torch.Tensor,
+        candidate_actions: torch.Tensor,
+    ) -> torch.Tensor:
+        """Predict from an already fixed-projected current H3 observation."""
+
+        if current_proprio.ndim != 2 or current_proprio.shape[-1] != self.state_dim:
+            raise ValueError(
+                f"current_proprio must be [B,{self.state_dim}], got "
+                f"{tuple(current_proprio.shape)}"
+            )
+        if current_target.shape != (current_proprio.shape[0], self.target_dim):
+            raise ValueError(
+                f"current_target must be [B,{self.target_dim}], got "
+                f"{tuple(current_target.shape)}"
+            )
+        expected_action_shape = (
+            current_proprio.shape[0], self.action_horizon, self.action_dim
+        )
+        if tuple(candidate_actions.shape) != expected_action_shape:
+            raise ValueError(
+                f"candidate_actions must be {expected_action_shape}, got "
+                f"{tuple(candidate_actions.shape)}"
+            )
         read_only_actions = candidate_actions.detach()
         state = self.state_encoder(current_proprio.float())
         visual = self.visual_encoder(current_target)
@@ -322,6 +352,35 @@ class TemporalFutureH3ConsequenceModel(nn.Module):
         current_target = self.project_features(h3_features)
         if current_target.shape[0] != current_proprio.shape[0]:
             raise ValueError("H3 feature batch must match current proprio batch")
+        return self.forward_projected(
+            current_proprio, current_target, candidate_actions
+        )
+
+    def forward_projected(
+        self,
+        current_proprio: torch.Tensor,
+        current_target: torch.Tensor,
+        candidate_actions: torch.Tensor,
+    ) -> torch.Tensor:
+        """Predict from an already fixed-projected current H3 observation."""
+
+        if current_proprio.ndim != 2 or current_proprio.shape[-1] != self.state_dim:
+            raise ValueError(
+                f"current_proprio must be [B,{self.state_dim}], got "
+                f"{tuple(current_proprio.shape)}"
+            )
+        if current_target.shape != (current_proprio.shape[0], self.target_dim):
+            raise ValueError(
+                f"current_target must be [B,{self.target_dim}], got "
+                f"{tuple(current_target.shape)}"
+            )
+        expected = (
+            current_proprio.shape[0], self.action_horizon, self.action_dim
+        )
+        if tuple(candidate_actions.shape) != expected:
+            raise ValueError(
+                f"candidate_actions must be {expected}, got {tuple(candidate_actions.shape)}"
+            )
         actions = candidate_actions.detach().float().reshape(
             expected[0], self.action_tokens,
             self.actions_per_latent * self.action_dim,

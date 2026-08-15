@@ -47,6 +47,22 @@ def observation_proprio(
     }).float()
 
 
+def mask_unexecuted_action_tail(
+    proposed_actions: np.ndarray, *, executed_steps: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Zero the unexecuted tail while retaining an explicit padding mask."""
+
+    actions = np.asarray(proposed_actions, dtype=np.float32)
+    if actions.shape != (32, 7):
+        raise ValueError(f"proposed actions must be [32,7], got {actions.shape}")
+    if not 1 <= int(executed_steps) <= 32:
+        raise ValueError(f"executed_steps must be in [1,32], got {executed_steps}")
+    action_is_pad = np.arange(32) >= int(executed_steps)
+    executed_actions = actions.copy()
+    executed_actions[action_is_pad] = 0.0
+    return executed_actions, action_is_pad
+
+
 def load_branch(root: Path, row: dict) -> dict:
     directory = root / "runs" / run_name(row)
     result_path = directory / "results.json"
@@ -60,9 +76,13 @@ def load_branch(root: Path, row: dict) -> dict:
         missing = [field for field in TERMINAL_FIELDS if field not in trajectory.files]
         if missing:
             raise ValueError(f"missing terminal fields in {directory}: {missing}")
-        actions = np.asarray(episode["first_environment_action_chunk"], dtype=np.float32)
+        proposed_actions = np.asarray(
+            episode["first_environment_action_chunk"], dtype=np.float32
+        )
         stored_actions = np.asarray(trajectory["policy_actions"][0], dtype=np.float32)
-        if actions.shape != (32, 7) or not np.array_equal(actions, stored_actions):
+        if proposed_actions.shape != (32, 7) or not np.array_equal(
+            proposed_actions, stored_actions
+        ):
             raise ValueError(f"first action mismatch in {directory}")
         current_obs = {
             "agent": np.asarray(trajectory["agentview_image"][0], dtype=np.uint8).copy(),
@@ -110,10 +130,24 @@ def load_branch(root: Path, row: dict) -> dict:
                 "step": terminal_step,
                 "source": "terminal_within_first_chunk",
             }
+    executed_steps = int(future["step"] - current_obs["step"])
+    if not 1 <= executed_steps <= 32:
+        raise ValueError(f"invalid executed action length in {directory}: {executed_steps}")
+    executed_actions, action_is_pad = mask_unexecuted_action_tail(
+        proposed_actions, executed_steps=executed_steps
+    )
     return {
         "selection": row, "task_language": str(result["tasks"][0]["task"]),
         "success": bool(episode["success"]),
-        "environment_actions": torch.from_numpy(actions.copy()),
+        # Preserve the complete policy proposal for intervention identity, but
+        # expose only the prefix that the environment actually consumed to the
+        # causal consequence learner.  A terminal success can stop before the
+        # nominal 32-step chunk finishes; treating that tail as executed would
+        # create a false action -> future edge.
+        "proposed_environment_actions": torch.from_numpy(proposed_actions.copy()),
+        "executed_environment_actions": torch.from_numpy(executed_actions),
+        "action_is_pad": torch.from_numpy(action_is_pad),
+        "executed_action_steps": executed_steps,
         "current": current_obs, "future": future,
         "result_sha256": sha256_file(result_path),
         "trajectory_sha256": sha256_file(trajectory_path),
@@ -151,8 +185,8 @@ def main() -> None:
                 for item in items[1:]
             ):
                 raise ValueError(f"group {group_id} current {field} differs")
-        if len({tensor_sha256(item["environment_actions"]) for item in items}) != 4:
-            raise ValueError(f"group {group_id} candidate actions are not unique")
+        if len({tensor_sha256(item["proposed_environment_actions"]) for item in items}) != 4:
+            raise ValueError(f"group {group_id} proposed candidate actions are not unique")
         selection = first["selection"]
         successes = sum(int(item["success"]) for item in items)
         states.append({
@@ -176,7 +210,10 @@ def main() -> None:
                 "source_episode": row["source_episode"], "suite": row["suite"],
                 "split": row["split"], "noise_offset": int(row["noise_offset"]),
                 "success": item["success"],
-                "environment_actions": item["environment_actions"],
+                "proposed_environment_actions": item["proposed_environment_actions"],
+                "environment_actions": item["executed_environment_actions"],
+                "action_is_pad": item["action_is_pad"],
+                "executed_action_steps": item["executed_action_steps"],
                 "future_agentview_image": torch.from_numpy(future["agent"]),
                 "future_wristview_image": torch.from_numpy(future["wrist"]),
                 "future_proprio": future["proprio"],
@@ -196,9 +233,11 @@ def main() -> None:
         "audit": {
             "states": len(states), "branches": len(branches),
             "all_current_states_bit_exact_within_group": True,
-            "all_actions_match_results_and_trajectories": True,
+            "all_proposed_actions_match_results_and_trajectories": True,
+            "unexecuted_action_tails_zero_masked": True,
             "all_branches_have_post_action_consequence": True,
             "terminal_fallback_branches": sum(b["future_source"] == "terminal_within_first_chunk" for b in branches),
+            "partial_action_branches": sum(b["executed_action_steps"] < 32 for b in branches),
             "train_mixed_groups": train_mixed, "val_mixed_groups": val_mixed,
             "train_pairs": sum(states[g]["successes"] * (4 - states[g]["successes"]) for g in train_mixed),
             "val_pairs": sum(states[g]["successes"] * (4 - states[g]["successes"]) for g in val_mixed),

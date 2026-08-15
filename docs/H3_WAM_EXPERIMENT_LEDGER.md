@@ -787,3 +787,12 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   FACT意图只读clean-action K/V与冻结当前H3/state；candidate action在模块边界detach。flattened与
   temporal两种模型可使用相同future-H3 trainer和三臂控制。顺序敏感、动作梯度隔离、finite与旧future-H3
   测试共6项通过；只有C30数据门通过后才预注册同数据同预算训练。
+- C30运行期间进一步审计出首chunk内提前成功的动作合同：policy虽一次提出32步，但环境只执行到
+  terminal step，后半段不能称为clean executed action。C31因此同时保留完整proposal用于候选身份，并按
+  `future_step-current_step`记录`executed_action_steps`；未执行尾部显式zero-mask。该修正不改变正在运行
+  的C30 rollout或门槛，只修正随后冻结的数据语义；本地相关9项测试通过。
+- C31训练器已在结果未知时完成：对每个source-disjoint train/val branch使用真实current H3、masked
+  executed action和真实future H3，future仅作label；三臂为正确动作、同一bit-exact state内循环错配动作、
+  zero action。flattened与MiniWorld对齐的8-token temporal使用同样的10000 steps/batch64、每1000步
+  checkpoint，并做fresh restore。只有correct arm在未见source上同时击败两个控制且同状态shuffle使其
+  退化至少1%，才放行后续value ranking；C30未完成前状态仍为`HOLD_DATA_GATE`。

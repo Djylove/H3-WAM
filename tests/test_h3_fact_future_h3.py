@@ -33,6 +33,34 @@ TRAIN = load_module(
 
 
 class FactLiteFutureH3Test(unittest.TestCase):
+    def test_preprojected_forward_matches_raw_feature_forward(self):
+        torch.manual_seed(3)
+        inputs = {
+            "current_proprio": torch.randn(2, 3),
+            "h3_features": torch.randn(2, 5, 6),
+            "candidate_actions": torch.randn(2, 4, 2),
+        }
+        for model in (
+            MODEL.FutureH3ConsequenceModel(
+                state_dim=3, action_dim=2, action_horizon=4,
+                h3_feature_dim=6, target_dim=4, hidden_dim=8,
+                feature_input_scale=1.0, projection_seed=9,
+            ),
+            MODEL.TemporalFutureH3ConsequenceModel(
+                state_dim=3, action_dim=2, action_horizon=4,
+                actions_per_latent=2, h3_feature_dim=6, target_dim=4,
+                hidden_dim=8, num_heads=2, feature_input_scale=1.0,
+                projection_seed=9,
+            ),
+        ):
+            projected = model.project_features(inputs["h3_features"])
+            expected = model(**inputs)
+            actual = model.forward_projected(
+                inputs["current_proprio"], projected,
+                inputs["candidate_actions"],
+            )
+            torch.testing.assert_close(actual, expected, rtol=0.0, atol=0.0)
+
     def test_target_is_absent_from_forward_and_action_generator_is_detached(self):
         torch.manual_seed(7)
         generator = torch.nn.Linear(5, 8)
