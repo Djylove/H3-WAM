@@ -1,0 +1,43 @@
+{
+  "experiment_id": "h3_c52_fresh_counterfactual_value_ranking_v1",
+  "classification": "heldout_counterfactual_evaluation",
+  "hypothesis": "The C51-frozen FACT-style dense value expert ranks newly executed action alternatives above chance without fitting any branch outcome.",
+  "single_variable": "Within each bit-exact source state, only the first-replan diffusion noise offset changes among 0, 1000000, 2000000 and 3000000; continuation seeds and execution are identical.",
+  "parent_baseline": "C51 passed dense held-out trajectory value, but alternative-action ranking and online gain remain unproven.",
+  "references": [
+    {
+      "kind": "upstream_code",
+      "title": "FACT continuous value and joint future-state objective",
+      "locator": "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py:842",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "official": true
+    }
+  ],
+  "data_contract": {
+    "sources": "30 successful C47 final trajectories from fixed trials26/27",
+    "states": "d3 and d5 before parent success, 60 groups",
+    "branches": "four candidates per state, 240 newly executed outcomes",
+    "source_disclosure": "Source observations were read by C51 final; candidate branch outcomes did not exist and the checkpoint was frozen before C52.",
+    "execution": "first chunk32 followed by replan8 with a shared continuation-seed schedule"
+  },
+  "outcome_gate": {
+    "mechanical": "all 240 action, seed and consequence contracts exact",
+    "yield": ">=10 mixed groups across >=3 suites"
+  },
+  "ranking_gate": {
+    "pairwise_success_failure_accuracy": ">=0.60",
+    "mixed_group_top1_success": ">=0.60",
+    "one_sided_exact_stratified_permutation_p": "<=0.05",
+    "score_range": ">1e-6 in every group"
+  },
+  "budget": {
+    "gpu_count": 32,
+    "new_rollouts": 240,
+    "max_environment_steps": 96000
+  },
+  "decision": {
+    "status": "RUNNING_FROZEN_C52",
+    "on_pass": "Authorize only a fresh closed-loop dense-value canary.",
+    "on_fail": "Do not deploy this value expert online; diagnose action-distribution and failure-onset targets without reusing C52 to tune."
+  }
+}

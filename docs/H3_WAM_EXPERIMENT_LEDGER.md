@@ -899,3 +899,27 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   C47据此在结果前固定：C42的400条完整轨迹仅作dense-value train，新trials24/25作validation、26/27
   作one-shot final。四节点已各自采集一个trial；只有160/160轨迹完整且每角色成功/失败与suite覆盖过门，
   才允许并行生成真实INT8 H3特征并训练FACT式稠密value expert。
+
+### 2026-08-15 — C47–C52 FACT式稠密价值路线
+
+- C47完成新trials24..27的160/160条父策略轨迹。validation为27成功/53失败、3133个replan row；
+  final为30成功/50失败、3009个row，两个角色的成功均覆盖四suite，全部数据门PASS。完成artifact
+  SHA256为`96d27ac76865edffbaf0ee0adde7c572b2c09a081d05fb38cb7009dd61585364`。
+- C48把C42的400条训练episode及C47的validation/final按每个replan展开。每个32步动作窗口只拼接
+  实际执行的replan8前缀，终止尾部才置零并显式mask，拒绝把未执行proposal tail当因果动作。最终train/
+  validation/final分别为`15417/3133/3009`样本，共21559样本、22119个去重观测；dataset SHA256为
+  `d416d86c09ba334fae449a131510b84fa1d111e665a77eabfb248f1c79a5bc61`。
+- C49用32张A800逐观测在线运行INT8 H3固定特征合同，22119/22119个`[1,32,5376]` BF16结果均有限且
+  observation_id精确覆盖一次；随后沿C38固定随机投影冻结为256维，projected feature SHA256为
+  `a09917cea43072a85d4cb8dcb06441dae907832eff9b2728419cbf4cdf8cdcb2`。H3始终冻结，没有缓存标签泄漏。
+- C50对四个C38 seed各跑joint/frozen-consequence两臂，共8个10000-step任务；每批32成功/32失败，
+  联合拟合future-H3、future-state和连续value。只看validation后选择joint seed8675309 step10000；其
+  checkpoint SHA256为`d2f3a812eb1d4921efd6f2f9ee6f7f4f2736c516d338168b8110df281960907c`。
+- C51仅一次读取final：value MSE `0.188720`，相对train-mean baseline `0.258225`降低26.9%；rank
+  correlation `0.539721`，失败-成功value margin `0.656632`，shuffle action MSE `0.192992`高于clean
+  `0.188720`。所有预注册门PASS，但结论严格限于held-out trajectory value，尚不代表会选动作。
+- C52在C51 checkpoint冻结后，从C47 final的30条成功父轨迹取d3/d5共60个状态；每状态按C43原合同
+  新执行四个offset，共240个从未存在的反事实outcome。source observation曾用于C51 final，因此这不是
+  全新视觉源；但动作结果保持未见且不得调参。机械/产量门为至少10个mixed group覆盖3个suite；固定排序
+  门为pairwise/top1均至少60%、组内精确单侧permutation `p<=0.05`及所有组score range大于`1e-6`。
+  PASS也只放行新的闭环canary，不直接宣称在线收益。
