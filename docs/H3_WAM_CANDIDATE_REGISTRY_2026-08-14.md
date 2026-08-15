@@ -97,7 +97,9 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
   `NOT_EVIDENCE_READY`。后续融合谱系固定为 `D0 carrier -> horizon winner -> FACT consequence`。
 - 首个同 step 诊断点：H8-s1000 normalized/physical MSE 为 `0.246269/0.129493`，优于
   H32-s1000 的 `0.340939/0.157451`，且 H8 的 visual-shuffle penalty 为 `0.039905`；但
-  H32-s2000 已继续降到 `0.213848/0.106330`。这是离线学习曲线，不是闭环晋级结论。
+  H32-s2000 已继续降到 `0.213848/0.106330`。H8-s2000 进一步达到 `0.153454/0.081639`，
+  gripper accuracy `0.867188`（H32 `0.745703`），同 step 仍领先。这是离线学习曲线，不是
+  闭环晋级结论。
 - 缓存与相同输入的在线 H3 K/V 已有 bitwise parity（K/V `max_abs=0`）；缓存的真实边界是冻结
   H3、32-token 压缩以及 demo→rollout 分布偏移。H8 复用 H32 packed-layout cache，闭环前必须固定
   `feature_audio_horizon=32` 或补做 H8/H32 K/V parity。
