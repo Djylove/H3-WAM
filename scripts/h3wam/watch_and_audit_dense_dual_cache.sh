@@ -84,49 +84,11 @@ while (( stable_complete < 2 )); do
 done
 
 cd "${PROJECT_ROOT}"
-"${PYTHON_BIN}" scripts/h3wam/audit_h3_dreamwam_kv_cache.py \
-  "${MANIFEST}" \
-  --cache-root "${CACHE_ROOT}" \
-  --kv-subdir "${KV_SUBDIR}" \
-  --output "${AUDIT_ROOT}/dreamwam_kv_full.json" \
-  --limit "${EXPECTED_ITEMS}" \
-  --num-shards "${PRODUCER_SHARDS}" \
-  --expected-checkpoint "${H3_CHECKPOINT}"
-
-"${PYTHON_BIN}" scripts/h3wam/audit_h3_starwam_feature_cache.py \
-  "${MANIFEST}" \
-  --cache-root "${CACHE_ROOT}" \
-  --feature-subdir "${FEATURE_SUBDIR}" \
-  --output "${AUDIT_ROOT}/starwam_feature_full.json" \
-  --producer-num-shards "${PRODUCER_SHARDS}" \
-  --expected-checkpoint "${H3_CHECKPOINT}" \
-  --expected-checkpoint-sha256 "${H3_CHECKPOINT_SHA256}"
-
-"${PYTHON_BIN}" - "${AUDIT_ROOT}/dreamwam_kv_full.json" \
-  "${AUDIT_ROOT}/starwam_feature_full.json" "${READY_MARKER}" <<'PY'
-import json
-import os
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-kv_path, feature_path, output_path = map(Path, sys.argv[1:])
-kv = json.loads(kv_path.read_text())
-feature = json.loads(feature_path.read_text())
-if kv.get("valid") is not True or feature.get("valid") is not True:
-    raise SystemExit("both full audits must be valid before READY")
-payload = {
-    "ready": True,
-    "created_at": datetime.now(timezone.utc).isoformat(),
-    "dreamwam_kv_audit": str(kv_path),
-    "dreamwam_kv_aggregate_sha256": kv["aggregate_cache_sha256"],
-    "starwam_feature_audit": str(feature_path),
-    "starwam_feature_aggregate_sha256": feature["aggregate_cache_sha256"],
-    "manifest_sha256": kv["manifest_sha256"],
-    "checkpoint_sha256": feature["checkpoint_sha256"],
-}
-temporary = output_path.with_name(f".{output_path.name}.{os.getpid()}.partial")
-temporary.write_text(json.dumps(payload, indent=2) + "\n")
-os.replace(temporary, output_path)
-print(json.dumps(payload, sort_keys=True))
-PY
+exec env \
+  H3_WORKSPACE="${H3_WORKSPACE}" PROJECT_ROOT="${PROJECT_ROOT}" \
+  PYTHON_BIN="${PYTHON_BIN}" CANDIDATE_ROOT="${CANDIDATE_ROOT}" \
+  CACHE_ROOT="${CACHE_ROOT}" KV_SUBDIR="${KV_SUBDIR}" \
+  FEATURE_SUBDIR="${FEATURE_SUBDIR}" AUDIT_ROOT="${AUDIT_ROOT}" \
+  PRODUCER_SHARDS="${PRODUCER_SHARDS}" H3_CHECKPOINT="${H3_CHECKPOINT}" \
+  H3_CHECKPOINT_SHA256="${H3_CHECKPOINT_SHA256}" \
+  bash scripts/h3wam/run_parallel_dense_dual_cache_audit.sh
