@@ -868,3 +868,34 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - C43也已在C42 outcome前预注册：所有成功source取d3/d5状态、每状态4个first-action分支；组内仅首动作
   diffusion seed变化，后续seed逐值相同。train与fresh-final各需`>=24` mixed group且覆盖`>=3` suites，
   才允许C44重新训练和一次性验证powered consequence-value ranker。整个接力逐级FAIL即停止，不绕门。
+
+### 2026-08-16 — C42–C46 powered ranking与闭环否证
+
+- C42完成固定父策略trials12..21共400/400 episode、141成功；预先冻结的ranker-train/future-final各为
+  `70/71`个成功source，四suite均覆盖。完成artifact SHA256为
+  `86146292dd51df967ebb06a4624a784d0ebc98d937d18010f5d814fefa9df072`。
+- C43从141个成功源冻结282个bit-exact状态和1128个first-action分支，最终716成功；ranker-train与
+  fresh-final分别产生25/30个mixed group，所有机械动作、seed和source-role门通过。ordinal624曾在环境
+  rollout前因随机IPC端口冲突失败，残缺目录完整归档后按同state/seed结果式恢复；artifact SHA256为
+  `6c160030c3e8082a9a0b879a33be692303da21bdc1c878f9e66dc5959fb8944b`。
+- C44组合C34历史train与C43新train，共47个mixed group/154对拟合；C43 fresh-final 30组/98对只评一次。
+  四个冻结C38 temporal consequence ensemble取得fresh pairwise `67/98=68.367%`、top1 `23/30=76.667%`、
+  permutation `p=0.00271`，显著优于action-only `60/98=61.224%`及C40 `54.321%`，全部离线门PASS。
+  report/ranker SHA256为`bc73ba59db3e8c56bc5bf0d7b5bd02e3fe157d3955c5de0a92fe606c2e6bebcf`/
+  `cf583ac3a9205bfb38b63342970e27b8a44cb6a901bedaeb84b28959b9473e39`。结论边界仍只是独立源离线排序。
+- C44上线评分模块先对冻结final逐组回放，严格复现`67/98`和`23/30`，最大score-range误差
+  `1.43e-6`；随后C45在新trial22做四suite×tasks0..4的20对闭环。候选0为20/20精确父策略、916次
+  决策全部有分差且74.9%选择非0候选，但父策略`8/20`、best-of-4仅`3/20`，配对1胜6负，严格FAIL。
+  report SHA256为`cb69b94760b71d8c099c2643e8e70d0f0dd589dd21b2b85634c642aee80483eb`。
+- C45失败后查出两项真实合同错位：C43 seed偏移为`0/1e6/2e6/3e6`而C45为相邻seed；C43每状态只
+  干预一次，C44组合数据中943/1424分支完整执行32步，C45却每8步重排、最多50次。C46因此在新trial23让两臂step80
+  前完全相同，step80均执行32步；候选仅此处用原C43四seed排序，随后恢复replan8/sample1。
+- C46机械门全过：20/20 step80前状态及candidate0动作精确（1条在80前成功）、19次排序均有分差，
+  14/19选择非0；合同对齐消除了C45严重退化，但对照与候选同为`6/20`，配对1胜1负18同，严格FAIL。
+  report SHA256为`e8b3a3ed337c5440938c77e0f33cbbed547d971fcdc01b01c3aba39ed3822690`。因此C44线性
+  binary-success ranker正式`NO_GO`在线控制，不再换trial刷结果；consequence仅保留为离线机制证据。
+- 回看官方FACT `618a6c1`确认关键差异：其value target是每个future state的连续归一化time-to-go，失败
+  active段加penalty；value/future-state/action由同一非线性Transformer联合预测，而非64D线性二分类头。
+  C47据此在结果前固定：C42的400条完整轨迹仅作dense-value train，新trials24/25作validation、26/27
+  作one-shot final。四节点已各自采集一个trial；只有160/160轨迹完整且每角色成功/失败与suite覆盖过门，
+  才允许并行生成真实INT8 H3特征并训练FACT式稠密value expert。
