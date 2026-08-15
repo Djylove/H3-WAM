@@ -70,8 +70,8 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C19 | deployment/data | old-trajectory exact restore | LIBERO `regenerate_obs_from_state` | D0保存的qpos/qvel/time | 要求恢复观测等于原轨迹观测 | state exact但图像/proprio不等；旧state缺observable动态 | NO_GO_ORIGINAL_OBSERVATION_CLAIM |
 | C20 | deployment/data | paired canonical branch restore | C19 + fixed per-reset seed | C19 | 两个独立env从同state执行同8步动作 | 四suite×3状态图像逐像素一致，数值差≤1e-10 | GO_COUNTERFACTUAL_COLLECTION_CANARY |
 | C21 | consequence/data | same-state stochastic-continuation canary | D0-H32-s14000/replan8/no-ensemble + C20 | C20 | 固定规范state/环境/模型，改变整条policy noise schedule；4 suite×4分支 | 16条中11成功；Object同状态3/4成功；四组动作均不同 | GO_ENTROPY_CALIBRATION_ONLY；NOT_EVIDENCE_READY |
-| C22 | consequence/data | multisuite stochastic-continuation entropy sweep | C21 | C21 | 8源episode×距成功1/3/5 replans×4 noise schedule | 预注册96分支；寻找高熵时间带 | RUNNING；NOT_EVIDENCE_READY |
-| C23 | consequence/action | first-action-only causal branch | C22高熵state + D0父策略 | C22 | 只改变首replan noise；同组后续noise逐值固定 | seed resolver单测通过；等待C22选state | READY_AFTER_C22；NOT_EVIDENCE_READY |
+| C22 | consequence/data | multisuite stochastic-continuation entropy sweep | C21 | C21 | 8源episode×距成功1/3/5 replans×4 noise schedule | 96条71成功；7/24 mixed覆盖四suite | GO_CAUSAL_FIRST_ACTION_CANARY；NOT_EVIDENCE_READY |
+| C23 | consequence/action | first-action-only causal branch | C22高熵state + D0父策略 | C22 | 只改变首replan noise；同组后续noise逐值固定 | 32条18成功；Spatial d5同状态2/4；全部seed/动作审计通过 | GO_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY；NOT_EVIDENCE_READY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -364,6 +364,21 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   critic/best-of-N，效果状态仍为`NOT_EVIDENCE_READY`。artifact：
   `/mnt/h3-wam/eval/c21-counterfactual-outcome-canary-v1/COMPLETED`，SHA256
   `c258cb829c45e504e03e5a183008d2820a1a32152bb8ff70723ba1acf8895f8c`。
+- C22按预注册的8个成功源episode、距成功`1/3/5` replans和4条完整noise schedule完成96分支：
+  `71/96`成功、`7/24` mixed group，且Goal/Object/Spatial/LIBERO-10四suite均有mixed group；四个
+  shard各24条的墙钟为`457/453/458/460s`。所有组首动作均不同，通过
+  `PASS_COUNTERFACTUAL_ENTROPY_SWEEP`。30234首波因节点本地LIBERO site缺失而0结果退出，固定tar
+  恢复后仅重跑该shard；原traceback和incident JSON均保留。该门只选择高熵state，不是首动作因果
+  标签。artifact：`/mnt/h3-wam/eval/c22-counterfactual-entropy-sweep-v1/COMPLETED`，SHA256
+  `05f18c76e9c460e06f8e4290f7a3332d2cf784ee35022dcb1973f63644cc3978`。
+- C23由C22 Bernoulli entropy确定性选8个state（每suite先取1组，再全局排序），每组复用4个首动作
+  seed，但固定共同的后续seed schedule。机械smoke中首动作逐值复现C22，而结果由成功变失败，直接
+  证明C22 outcome受后续随机性混杂。正式32分支中`18/32`成功；Spatial task0/trial3/d5为`2/4`
+  mixed，其余组为0/4或4/4。32/32首动作与C22逐值一致，32/32 continuation schedule合法，8/8组
+  动作不同，判定`PASS_FIRST_ACTION_CAUSAL_CANARY`。这首次放行episode-disjoint因果数据集canary，
+  仍不放行critic/best-of-N效果声明。artifact：
+  `/mnt/h3-wam/eval/c23-first-action-causal-canary-v1/COMPLETED`，SHA256
+  `11dfef6ce6523ac58f8cb8aae7166e81173b2e3e7724b95332b9ab0348b4143f`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。

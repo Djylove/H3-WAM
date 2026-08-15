@@ -461,6 +461,47 @@
       "boundary": "Pass authorizes stochastic-continuation entropy calibration only; causal first-action data require C23 fixed continuation seeds, and critic/best-of-N/effect claims remain gated.",
       "artifact": "/mnt/h3-wam/eval/c21-counterfactual-outcome-canary-v1/COMPLETED",
       "artifact_sha256": "c258cb829c45e504e03e5a183008d2820a1a32152bb8ff70723ba1acf8895f8c"
+    },
+    "C22": {
+      "name": "multisuite-stochastic-continuation-entropy-sweep",
+      "classification": "controlled_state_entropy_calibration",
+      "parent_lineage": "C21 + D0-H32-s14000/replan8/no-ensemble",
+      "falsifiable_hypothesis": "All 24 groups are action-diverse and at least four mixed-outcome groups span at least two suites.",
+      "difference_matrix": [
+        {"field": "checkpoint/H3/cache/environment", "parent": "fixed", "C22": "same", "status": "ALIGNED"},
+        {"field": "calibration strata", "parent": "four C21 states", "C22": "8 source episodes at distances 1/3/5", "status": "INTENTIONAL"},
+        {"field": "within-group noise", "parent": "one full schedule", "C22": "four full schedules", "status": "ONLY_WITHIN_GROUP_VARIABLE"}
+      ],
+      "budget": {"source_episodes": 8, "groups": 24, "branches": 96, "max_environment_steps": 38400, "nodes": 4, "gpus_per_node": 8, "shard_duration_seconds": [457, 453, 458, 460]},
+      "results": {"successful_branches": 71, "mixed_outcome_groups": 7, "mixed_outcome_suites": ["libero_10", "libero_goal", "libero_object", "libero_spatial"], "all_groups_action_diverse": true},
+      "status": "PASS_COUNTERFACTUAL_ENTROPY_SWEEP",
+      "artifact_data_permission": "GO_TARGETED_COUNTERFACTUAL_DATASET",
+      "go_status": "GO_CAUSAL_FIRST_ACTION_CANARY",
+      "evidence_status": "NOT_EVIDENCE_READY",
+      "infra_incident": "30234 missed node-local LIBERO site; 8 import failures produced no results, logs were preserved, fixed tar restored, and only shard3 was rerun",
+      "boundary": "C22 selects high stochastic-continuation entropy states; it does not provide causal first-action labels.",
+      "artifact": "/mnt/h3-wam/eval/c22-counterfactual-entropy-sweep-v1/COMPLETED",
+      "artifact_sha256": "05f18c76e9c460e06f8e4290f7a3332d2cf784ee35022dcb1973f63644cc3978"
+    },
+    "C23": {
+      "name": "first-action-only-causal-canary",
+      "classification": "controlled_causal_action_data_canary",
+      "parent_lineage": "C22 high-entropy states + D0-H32-s14000/replan8/no-ensemble",
+      "source_revision": "dc3ab93",
+      "falsifiable_hypothesis": "Changing only first-replan diffusion noise while fixing every continuation noise seed reproduces C22 first chunks and yields at least one mixed-outcome group.",
+      "difference_matrix": [
+        {"field": "checkpoint/H3/cache/environment/state", "parent": "fixed", "C23": "same within group", "status": "ALIGNED"},
+        {"field": "first-replan diffusion seed", "parent": "one seed", "C23": "four C22-referenced seeds", "status": "ONLY_VARIABLE"},
+        {"field": "continuation diffusion seeds", "parent": "varied with C21/C22 offset", "C23": "identical exogenous schedule within group", "status": "CAUSAL_CONTROL"}
+      ],
+      "budget": {"groups": 8, "branches": 32, "max_environment_steps": 12800, "nodes": 4, "gpus_per_node": 8, "shard_duration_seconds": [137, 139, 160, 161]},
+      "results": {"successful_branches": 18, "mixed_outcome_groups": 1, "mixed_group": "libero_spatial/task0/trial3/distance5", "mixed_group_successes": 2, "all_first_chunks_exact_to_c22": true, "all_continuation_seed_schedules_valid": true, "all_groups_action_diverse": true},
+      "status": "PASS_FIRST_ACTION_CAUSAL_CANARY",
+      "go_status": "GO_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY",
+      "evidence_status": "NOT_EVIDENCE_READY",
+      "boundary": "C23 proves causal first-action outcome labels can exist; one mixed group is insufficient to train or validate a general critic.",
+      "artifact": "/mnt/h3-wam/eval/c23-first-action-causal-canary-v1/COMPLETED",
+      "artifact_sha256": "11dfef6ce6523ac58f8cb8aae7166e81173b2e3e7724b95332b9ab0348b4143f"
     }
   },
   "difference_matrix": [
@@ -529,9 +570,11 @@
       "C18 time-blind expert progress value (feature pass, shadow AUROC0.546875 rejected)"
       ,"C19 old trajectory original-observation restore (rejected)",
       "C20 paired canonical branch restore (mechanical gate passed)",
-      "C21 same-state stochastic-continuation canary (passed; entropy calibration only after causal-label audit)"
+      "C21 same-state stochastic-continuation canary (passed; entropy calibration only after causal-label audit)",
+      "C22 multisuite stochastic-continuation entropy sweep (passed; four-suite state calibration)",
+      "C23 first-action-only causal canary (passed; dataset canary only)"
     ],
     "track_winner": "none: C02 and C15 failed final spatial/object gates; C14 did not confirm across trials",
-    "fusion": "blocked; C21 proves state-level stochastic outcome variation, while causal first-action supervision awaits C23 fixed-continuation validation"
+    "fusion": "blocked; C23 establishes one causal mixed group, but episode-disjoint dataset scale, held-out ranking, and closed-loop effect gates remain"
   }
 }

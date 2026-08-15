@@ -629,3 +629,24 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `continuation_policy_noise_seed_base + replans - 1`。同组候选仅首动作seed不同，后续seed逐值一致。
 - 本地机制门：项目`.venv`运行`tests.test_h3_dreamwam_kv_rollout_adapter`共10项通过，包括两个不同
   first seed在replan1/4解析到完全相同continuation seed。真实闭环仍等待C22完成后选择高熵state。
+
+### 2026-08-15 — C22/C23 闭环结果
+
+- C22完成96/96：`71`成功、`7/24`同状态mixed group，覆盖全部四suite；动作多样性24/24通过。
+  高熵层为LIBERO-10 d1/d3/d5、Goal d3、Object d3/d5、Spatial d5。正式报告判定
+  `PASS_COUNTERFACTUAL_ENTROPY_SWEEP`，但按因果审计只放行C23，不直接形成critic标签。
+- 30234的C22首波因`/tmp/h3-wam-libero-site`缺失，8条在import阶段0结果退出；从共享固定
+  `/mnt/h3-wam/runtime/libero-site.tar`恢复并通过真实LIBERO import后，保留traceback并只重跑shard3。
+- C23 preregistration SHA256为`ffd760d84c7f2937ee5258fb8b1da0d2b8d7319620e2008322b7f90bd7330492`，
+  selection SHA256为`c7b1bd905f379b072d449a2972c4245e7009d73565759742e824feb940b298b4`。
+- C23机械smoke：首动作与C22 bit-exact、后续seed为固定`20000000..20000011`，但相同首动作的结果
+  从C22成功变为C23失败，证实C21/C22完整noise schedule标签不能冒充首动作因果标签。
+- C23正式32/32完成：`18`成功；只有Spatial task0/trial3/d5为`2/4` mixed。全部首动作bit-exact、
+  全部continuation schedule合法、8/8组动作不同；四shard墙钟`137/139/160/161s`，判定
+  `PASS_FIRST_ACTION_CAUSAL_CANARY / GO_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY`。
+- 效果仍为`NOT_EVIDENCE_READY`。下一数据门必须扩大源episode覆盖并按源episode隔离split；训练
+  critic后还需held-out within-state ranking与固定LIBERO闭环胜率两级门。
+- C22/C23 artifacts分别为`/mnt/h3-wam/eval/c22-counterfactual-entropy-sweep-v1/COMPLETED`和
+  `/mnt/h3-wam/eval/c23-first-action-causal-canary-v1/COMPLETED`；SHA256分别为
+  `05f18c76e9c460e06f8e4290f7a3332d2cf784ee35022dcb1973f63644cc3978`、
+  `11dfef6ce6523ac58f8cb8aae7166e81173b2e3e7724b95332b9ab0348b4143f`。
