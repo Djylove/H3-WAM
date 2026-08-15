@@ -6,7 +6,7 @@ PROJECT_ROOT="${H3_WORKSPACE}/project-adapter-sync-v2"
 PYTHON_BIN="${H3_WORKSPACE}/runtime/conda-py311/bin/python"
 STAGE="${H3_WORKSPACE}/outputs/h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/shared_sync_v2_adapter_only_s5000_fresh_step000500.pt"
 OUTPUT_DIR="${H3_WORKSPACE}/outputs/eval-h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/step000500_goal_task3_trial0_replan32"
-EVAL_LOCK="${H3_WORKSPACE}/tmp/h3-wam-eval-gpu.lock"
+EVAL_LOCK="/tmp/h3-wam-eval-gpu.lock"
 
 cd "${PROJECT_ROOT}"
 test -s "${STAGE}"

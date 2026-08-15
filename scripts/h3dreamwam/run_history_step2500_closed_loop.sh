@@ -6,7 +6,7 @@ PROJECT_ROOT="${H3_WORKSPACE}/project"
 PYTHON_BIN="${H3_WORKSPACE}/runtime/conda-py311/bin/python"
 STAGE="${H3_WORKSPACE}/outputs/h3-lingbot-history/history16_from_s5000_s3000_step002500.pt"
 OUTPUT_DIR="${H3_WORKSPACE}/outputs/eval-lingbot-history/history_step002500_goal_task3_trial0_replan16"
-EVAL_LOCK="${H3_WORKSPACE}/tmp/h3-wam-eval-gpu.lock"
+EVAL_LOCK="/tmp/h3-wam-eval-gpu.lock"
 
 cd "${PROJECT_ROOT}"
 test -s "${STAGE}"
