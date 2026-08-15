@@ -1,0 +1,109 @@
+{
+  "event": "h3_dense_dual_cache_ready_training_started",
+  "date": "2026-08-15",
+  "status": "TRAINING_STARTED_WAIT_FIRST_CHECKPOINT",
+  "effectiveness": "NOT_EVIDENCE_READY",
+  "code_identity": {
+    "repository_commit": "d6bc678",
+    "remote": "https://github.com/Djylove/H3-WAM.git",
+    "branch": "main",
+    "deployed_project_kind": "shared_copy_without_git_metadata",
+    "dreamwam_launcher_sha256": "9d53770f3111623836b0cc492c72b557f1f582fb654a65317e70bd7a5370f140",
+    "starwam_launcher_sha256": "346a09c264d894202097214b916a1e18dfb9d095dcab9edc9b0774ed5dce455f",
+    "scandir_reducer_sha256": "01cd89a4122e7c864bdfec2ecaf6bac797decf07e90bffde87a4d04bf19eb3d4"
+  },
+  "cache_audit": {
+    "ready_created_at_utc": "2026-08-15T00:54:09.484290+00:00",
+    "ready_marker": "/mnt/h3-wam/dense-d0-v1-96976ce/cache_generation/full_audit/DUAL_CACHE_AUDIT_READY.json",
+    "combined_report": "/mnt/h3-wam/dense-d0-v1-96976ce/cache_generation/full_audit/dense_dual_cache_full.json",
+    "manifest_rows": 222929,
+    "manifest_sha256": "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9",
+    "duplicate_manifest_ids": 0,
+    "h3_checkpoint_sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+    "dreamwam_kv": {
+      "audit_shards": 32,
+      "audited_rows": 222929,
+      "total_bytes": 1023875410917,
+      "aggregate_sha256": "0ffd6c99a7ceb7269221afb31ee51a453da19ebe2676a421ffc1939c35a0cbc6",
+      "missing": 0,
+      "extra": 0,
+      "temporary": 0,
+      "tensor_metadata_errors": 0,
+      "valid": true
+    },
+    "starwam_feature": {
+      "audit_shards": 32,
+      "audited_rows": 222929,
+      "total_bytes": 77288312976,
+      "aggregate_sha256": "27642b45858e00c73d34ff3edb2402c88d791f0d74b20688cb0b13a136b1e31e",
+      "missing": 0,
+      "extra": 0,
+      "temporary": 0,
+      "tensor_metadata_errors": 0,
+      "valid": true
+    }
+  },
+  "infrastructure_recovery": {
+    "classification": "INFRASTRUCTURE_ONLY_NOT_A_POLICY_RESULT",
+    "orphan_temporary_files": {
+      "count": 3,
+      "producer_processes_found": 0,
+      "action": "MOVED_NOT_DELETED",
+      "recoverable_quarantine": "/mnt/h3-wam/dense-d0-v1-96976ce/cache_generation/full_audit/stale_tmp_quarantine_20260815",
+      "files": [
+        {
+          "name": ".libero_10_ep000174_s000035.pt.5567.tmp",
+          "bytes": 0,
+          "final_bytes": 4592773,
+          "final_sha256": "0e7baaec2e96e70ab2f40adc5712f9e05fa2eed587bc824b0ddd1e0c8aef9201"
+        },
+        {
+          "name": ".libero_10_ep000175_s000067.pt.180770.tmp",
+          "bytes": 3215360,
+          "final_bytes": 4592805,
+          "final_sha256": "9954ade88643bc2dccbaed8e8e5151308f60fd1f94322fd2ca27f11194fc8367"
+        },
+        {
+          "name": ".libero_10_ep000203_s000069.pt.618279.tmp",
+          "bytes": 0,
+          "final_bytes": 4592805,
+          "final_sha256": "5d34af18587361a1d1ea637cb9056a685be0e148b7fcbad035e70bc7e130b737"
+        }
+      ]
+    },
+    "aborted_oversubscribed_audit": "/mnt/h3-wam/dense-d0-v1-96976ce/cache_generation/full_audit/aborted_oversubscribed_20260815",
+    "aborted_slow_path_scan": "/mnt/h3-wam/dense-d0-v1-96976ce/cache_generation/full_audit/aborted_slow_path_scan_20260815",
+    "final_audit_behavior": "64 single-threaded content shards plus exact scandir directory identity reduction"
+  },
+  "training_started": [
+    {
+      "candidate": "D0 repeated-layer49 control",
+      "node_port": 30907,
+      "started_at_utc": "2026-08-15T00:54:39+00:00",
+      "gpus": 8,
+      "first_milestone": 10
+    },
+    {
+      "candidate": "D DreamWAM aligned five-layer K/V carrier",
+      "node_port": 32611,
+      "started_at_utc": "2026-08-15T00:54:44+00:00",
+      "gpus": 8,
+      "first_milestone": 10
+    },
+    {
+      "candidate": "C03 StarWAM action expert anchor",
+      "node_port": 32409,
+      "started_at_utc": "2026-08-15T00:54:20+00:00",
+      "gpus": 8,
+      "first_milestone": 1,
+      "long_training_permission": "NO_GO"
+    }
+  ],
+  "evaluation": {
+    "watchers_alive": true,
+    "node_port": 30234,
+    "gpus_reserved": [0, 1, 2],
+    "state": "WAIT_FIRST_CHECKPOINT",
+    "effectiveness_claim": "PROHIBITED_UNTIL_BALANCED80_REPORTS"
+  }
+}
