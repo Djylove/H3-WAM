@@ -71,17 +71,26 @@ def load_reports(args: argparse.Namespace, mode: str) -> tuple[list[dict[str, An
 
 
 def audit_directory(path: Path, expected_ids: set[str]) -> dict[str, Any]:
-    entries = list(path.iterdir()) if path.is_dir() else []
-    completed = {
-        item.stem
-        for item in entries
-        if item.is_file() and item.suffix == ".pt" and not item.name.startswith(".")
-    }
-    temporary = sorted(
-        item.name
-        for item in entries
-        if item.is_file() and (item.name.startswith(".") or item.suffix != ".pt")
-    )
+    completed: set[str] = set()
+    temporary: list[str] = []
+    if path.is_dir():
+        # os.scandir can consume the file type returned by readdir/readdirplus.
+        # Path.iterdir() followed by Path.is_file() issues one stat per cache
+        # entry, which is prohibitively slow for 200k+ files on shared storage.
+        # Do not follow symlinks: any non-regular entry is an audit failure.
+        with os.scandir(path) as entries:
+            for entry in entries:
+                name = entry.name
+                regular_pt = (
+                    entry.is_file(follow_symlinks=False)
+                    and name.endswith(".pt")
+                    and not name.startswith(".")
+                )
+                if regular_pt:
+                    completed.add(name[:-3])
+                else:
+                    temporary.append(name)
+    temporary.sort()
     missing = sorted(expected_ids - completed)
     extra = sorted(completed - expected_ids)
     return {

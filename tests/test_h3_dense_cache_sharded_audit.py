@@ -25,6 +25,20 @@ def test_directory_identity_requires_exact_ids_and_no_temporary_files(tmp_path: 
     assert result["temporary_count"] == 1
 
 
+def test_directory_identity_rejects_non_regular_and_disguised_entries(tmp_path: Path) -> None:
+    (tmp_path / "a.pt").write_bytes(b"a")
+    (tmp_path / "b.pt").mkdir()
+    (tmp_path / "c.pt").symlink_to(tmp_path / "a.pt")
+    (tmp_path / "note.txt").write_text("not a cache entry")
+
+    result = MODULE.audit_directory(tmp_path, {"a"})
+
+    assert result["valid"] is False
+    assert result["completed_files"] == 1
+    assert result["temporary_count"] == 3
+    assert result["temporary_examples"] == ["b.pt", "c.pt", "note.txt"]
+
+
 def test_shard_aggregate_is_order_stable_and_counts_full_coverage() -> None:
     reports = [
         {
