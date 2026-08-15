@@ -88,6 +88,7 @@
 | E47 | repaired LingBot adapter-only fresh s5000 | s1000 配方完全不变；从确定性初值连续5000步；global batch8；每500步独立 val40/sample40 | s500 causal video/action `0.635340/1.149157`，相对 step0 改善 `8.66%/12.08%`，action 已优于旧 s1000 的`1.166916`；长线 step665 有限 | 固定 Goal task3/trial0 待运行 | `GO_LONG / NOT_EVIDENCE_READY`；s500 通过离线门并获闭环 canary，s1000继续做新旧曲线连续性审计 |
 | E48 | FACT-lite future-proprio F1 s500 | E45 完全相同三臂和1024/256 split；仅100→500步 | val MSE `0.012862` vs shuffled-train `0.068679` vs independent `0.073846`；正确模型 shuffle 后 `0.212931`；restore diff0 | 不适用 | 机制门重复通过；停止扩大同一 target，放行独立 future-H3 s100；value/ranking 继续受 failure data gate 阻塞 |
 | E49 | FACT-lite future-H3 F1H s100/s500 | current/start+32 H3 layer49 mean 经固定256D投影；三臂同初始化、1024/256 episode-disjoint | s100 增益约`3.10%-4.08%`；s500 MSE `180.116` vs shuffled-train `194.065` vs independent `193.492`，正确模型 shuffle 后`212.738`，增益`6.91%-18.11%`；restore diff0 | 不适用 | s100/s500 重复通过，成为 consequence 机制冠军；停止孤立 target 扩步，value/ranking 继续受 canonical failure data gate 阻塞 |
+| E50 | executed-history16 s2500 闭环 | history 曲线最佳点 causal action/video `0.376101/0.255801`；Goal task3/trial0；replan16 | saturation `2.60%`；EEF 三轴范围`0.122/0.0968/0.229m`；物体最大位移`7.90e-17` | `0/1` | 离线最优点仍无物体接触；`FAIL_CLOSED_LOOP / STOP_HISTORY_BENCHMARK`，上下文线不能凭离线 MSE 晋级 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 

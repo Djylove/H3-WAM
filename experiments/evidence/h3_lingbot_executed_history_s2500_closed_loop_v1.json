@@ -1,0 +1,11 @@
+{
+  "experiment_id": "h3_lingbot_executed_history_s2500_closed_loop_v1",
+  "classification": "closed_loop_canary",
+  "status": "FAIL_CLOSED_LOOP",
+  "claim_boundary": "One fixed Goal task/trial rejects benchmark promotion but does not estimate general success rate.",
+  "source": {"stage": "/mnt/h3-wam/outputs/h3-lingbot-history/history16_from_s5000_s3000_step002500.pt", "offline_curve_log": "/mnt/h3-wam/logs/history16_s3000_eval_watcher_32409.log", "result": "/mnt/h3-wam/outputs/eval-lingbot-history/history_step002500_goal_task3_trial0_replan16/results.json", "trajectory": "/mnt/h3-wam/outputs/eval-lingbot-history/history_step002500_goal_task3_trial0_replan16/task03_trial00_trajectory.npz"},
+  "contract": {"suite": "libero_goal", "task_id": 3, "trial": 0, "task": "open the top drawer and put the bowl inside", "max_steps": 80, "wait_steps": 30, "replan_steps": 16, "action_horizon": 32, "sample_steps": 4, "executed_action_history_steps": 16, "world_size": 8, "normalization": "quantile", "normalized_clip_bound": 1.5},
+  "offline": {"causal_action_mse": 0.3761012841016054, "causal_video_mse": 0.25580140165984633, "teacher_forced_action_mse": 0.3452006749808788, "teacher_forced_video_mse": 0.09054869581013918},
+  "closed_loop": {"successes": 0, "episodes": 1, "success_rate": 0.0, "steps": 80, "replans": 5, "action_saturation_fraction": 0.026041666666666664, "mean_action_magnitude": 0.21800208389759063, "eef_position_range": [0.12207794189453125, 0.09676674753427505, 0.22870957851409912], "gripper_qpos_range": [0.0042372941970825195, 0.004264947026968002], "max_object_joint_delta": 7.899768079272507e-17, "mean_policy_roundtrip_seconds": 72.38424372700975},
+  "decision": {"training_permission": "NO_GO", "evidence_status": "EVIDENCE_READY", "promotion": "STOP_HISTORY_BENCHMARK", "rationale": "The best offline history checkpoint moves the end effector over a large range but makes no measurable object contact. Offline error reduction alone does not promote the context route."}
+}

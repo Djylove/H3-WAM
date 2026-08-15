@@ -55,7 +55,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C04 | action/co-training | FastWAM-H3 | FastWAM | fixed FastWAM Wan baseline + C03 interface baseline | Wan video expert → H3 while preserving official action path | source pass；adapter incomplete | PROBE_ONLY |
 | C05 | carrier | ImageWAM-H3 target image | ImageWAM | carrier winner | video K/V → H3 target-image/edit representation | source pass；adapter incomplete | PROBE_ONLY |
 | C06 | carrier/action | DiT4DiT-H3 | DiT4DiT | carrier winner | selected intermediate H3 features + official ActionDiT | source pass；dirty vendor audit pending | PROBE_ONLY |
-| C07 | temporal/context | LingBot-H3 persistent history | LingBot-VA | carrier/action winner | persistent observation KV + executed-action feedback | partial H3 port；contract mismatch open | PROBE_ONLY |
+| C07 | temporal/context | LingBot-H3 executed history16 | LingBot-VA | shared-H3 parent | explicit executed-action feedback；尚非 persistent observation KV | s2500 offline champion，但 fixed rollout `0/1` 且无接触 | NO_GO current port；persistent-KV 需新 dossier |
 | C08 | temporal/context | MiniWorld-H3 rolling memory | MiniWorld | C07 or carrier/action winner | rolling KV + diffusion-forcing curriculum | policy bridge absent | PROBE_ONLY |
 | C09 | consequence/ranking | FACT-lite H3 | FACT | carrier/action/context winner | causal future state/value head；action path cannot see future | future-proprio 与 future-H3 均通过 s100/s500 机制门；failure data absent | consequence mechanism champion；NO_GO value/ranking |
 | C10 | consequence/ranking | FACT best-of-N | FACT | C09 | rank sampled action chunks by learned progress/value | waits C09 calibration | NO_GO parent gate |
