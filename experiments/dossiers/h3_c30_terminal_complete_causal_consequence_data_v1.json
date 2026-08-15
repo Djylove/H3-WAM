@@ -1,0 +1,37 @@
+{
+  "experiment_id": "h3_c30_terminal_complete_causal_consequence_data_v1",
+  "classification": "novel_composition",
+  "hypothesis": "Fresh C29 source episodes yield enough within-state mixed outcomes across at least three LIBERO suites while preserving a real post-action observation for every branch, enabling action-conditioned future/value training without dropping fast successes.",
+  "single_variable": "Within each bit-exact restored state, only the first-replan policy diffusion seed changes; the first action executes for 32 steps, and every continuation uses the same replan8 seed schedule.",
+  "parent_baseline": "C29 fixed D0-H32-s14000 source expansion passed with 61 fresh successful trial4..7 episodes; C28 static H3-action ranking failed on previously consumed episodes.",
+  "references": [
+    {"kind": "paper", "title": "FACT: A Failure-Aware Causal Transformer for World Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT clean-action conditioned future/value path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "upstream_code", "title": "MiniWorld action-to-video latent alignment", "locator": "third_party/MiniWorld", "revision": "e484206bbd4360ae56ed8abad51c83f2457ac092", "official": true},
+    {"kind": "local_implementation", "title": "C30 terminal-complete causal branch contract", "locator": "scripts/h3wam/evaluate_c30_action_conditioned_causal_dataset.py", "revision": "104a98e"}
+  ],
+  "alignment": {
+    "architecture": [{"field": "action-conditioned consequence prerequisite", "paper": "Future state, value and video condition on the clean executed action.", "upstream_code": "FACT uses a clean-action K/V slot; MiniWorld aligns action chunks to video latent time.", "local": "C30 records exact current state, clean executed 32-step action and its real post-action observation for a later temporal consequence adapter.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c30_action_conditioned_causal_dataset.py"], "rationale": "C30 is the data prerequisite and does not yet fit the adapter."}],
+    "data": [{"field": "success and failure consequences", "paper": "Failure rollouts retain future and value supervision.", "upstream_code": "Observed future targets are trained for success and failure episodes.", "local": "Four candidate first actions are rolled out from 122 states across 61 fresh source episodes; every trajectory must contain terminal observations.", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/eval/c30-action-conditioned-causal-dataset-v1/preregistration.json"], "rationale": "The observed consequence is never used as critic input at candidate selection time."}],
+    "action": [{"field": "clean action temporal span", "paper": "The executed action chunk conditions future targets.", "upstream_code": "FACT clean action tokens are K/V-only; MiniWorld groups four actions per latent frame.", "local": "The exact result/trajectory-matched environment-domain 32x7 action is retained, with first chunk32 and continuation replan8.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/launch_c30_action_conditioned_causal_shard.sh"], "rationale": "Temporal tokenization occurs only during later model training."}],
+    "objective": [{"field": "collection gate", "paper": "Future/value objectives require outcome-diverse consequences.", "upstream_code": "Training consumes real future observations and failure value labels.", "local": "C30 requires at least 10 train and 4 untouched validation mixed groups across at least three suites plus 488/488 valid consequence observations.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/evaluate_c30_action_conditioned_causal_dataset.py"], "rationale": "No optimization is authorized unless the causal data gate passes."}],
+    "optimization": [{"field": "parameter updates", "paper": "World/action/value parameters train after data assembly.", "upstream_code": "Rollout generation itself is inference-only.", "local": "C30 updates zero parameters and runs 488 simulator branches on 32 GPUs.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c30_action_conditioned_causal_shard.sh"]}],
+    "evaluation": [{"field": "fresh split and consequence completeness", "paper": "Generalization is evaluated on held-out rollouts.", "upstream_code": "Evaluation episodes are distinct from training records.", "local": "45 train and 16 validation source episodes are suite-stratified and frozen before branch outcomes; terminal/replan consequence fields are hard audited.", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/eval/c30-action-conditioned-causal-dataset-v1/preregistration.json"], "rationale": "This gate authorizes training but is not itself an effect result."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["C29 COMPLETED SHA256 132c2409753f15a75f5c836590d8a760d2a31e9e913422f7973e11fb654868c6"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["terminal observation and temporal consequence code fixed before C30 outcomes"]},
+    "data_contract": {"status": "PASS", "evidence": ["61 sources, 122 states, 488 branches frozen"]},
+    "action_contract": {"status": "PASS", "evidence": ["first chunk32; continuation replan8; candidate seed only first replan"]},
+    "objective_contract": {"status": "PASS", "evidence": ["mixed-group and consequence-completeness thresholds fixed"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["zero optimizer steps in collection"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["45/16 source split frozen before branch outcomes"]},
+    "gradient_path": {"status": "PASS", "evidence": ["inference-only collection"]}
+  },
+  "budget": {"global_batch": 1, "optimizer_steps": 488, "training_samples": 488, "unique_windows": 488, "effective_epochs": 1.0, "gpu_count": 32, "estimated_hours": 0.6},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "C29 provides sufficient new source episodes, and C30 closes the terminal-observation bias before any action-conditioned consequence training.",
+    "launch_command": "On ports 32611/30907/32409/30234 respectively: C30_SHARD=0/1/2/3 bash scripts/h3wam/launch_c30_action_conditioned_causal_shard.sh"
+  }
+}

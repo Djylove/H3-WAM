@@ -40,5 +40,13 @@
     "status": "GO_CANARY",
     "rationale": "C28 consumed all prior fresh sources and showed static ranking does not generalize; complete trial4..7 collection is the bounded prerequisite for a new action-conditioned consequence split.",
     "launch_command": "On ports 32611/30907/32409/30234 respectively: C29_TRIAL=4/5/6/7 bash scripts/h3wam/launch_c29_parent_source_trial.sh"
+  },
+  "result": {
+    "status": "PASS_C29_FRESH_PARENT_SOURCE_EXPANSION",
+    "decision": "GO_ACTION_CONDITIONED_CAUSAL_DATASET",
+    "metrics": {"episodes": 160, "successes": 61, "libero_goal": 8, "libero_object": 30, "libero_spatial": 17, "libero_10": 6},
+    "artifact": "/mnt/h3-wam/eval/c29-fresh-parent-sources-v1/COMPLETED",
+    "artifact_sha256": "132c2409753f15a75f5c836590d8a760d2a31e9e913422f7973e11fb654868c6",
+    "boundary": "This is a fixed-parent source inventory, not a candidate model comparison."
   }
 }

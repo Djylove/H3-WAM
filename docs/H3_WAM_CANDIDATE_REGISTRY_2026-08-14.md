@@ -77,6 +77,8 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C26 | consequence/ranking | frozen-parent causal action critic | FACT consequence + D0 live H3 + C25 | C25 | action-only、H3×action、FACT consequence三臂；21 train pairs/9 untouched val pairs | train均21/21；val为0/9、4/9、0/9，全部失败；H3 top1 2/3、p=0.6875 | NO_GO_BEST_OF_N；小样本跨episode反转 |
 | C27 | consequence/data | fresh expanded causal action outcomes | C25 execution contract | C26失败诊断 | 排除全部C22/C25源episode；39新源episode/78 state组/312分支；先冻结split | 312/312完成；198成功；train 13 mixed/42 pairs，fresh val 4 mixed/12 pairs，三suite均覆盖 | PASS_DATA_GATE；仅放行C28一次确认 |
 | C28 | consequence/ranking | fresh frozen-H3 action critic confirmation | C26 train-LOO selected config | C27 passed data | C25全部转train+C27 train；C27 val保持新鲜；10 full-pair steps；action-only与H3×action | train H3 65/72；fresh val H3 6/12/top1 2/4/p=.586，action-only 7/12/top1 2/4 | NO_GO_BEST_OF_N；静态H3×action不跨episode泛化 |
+| C29 | consequence/data | fresh parent source expansion | D0-H32-s14000/replan8 | C28失败后需新验证源 | 全四suite/tasks0..9/trials4..7，固定父、160 episodes | 61/160成功；Goal8/Object30/Spatial17/LIBERO-10 6；预注册源门全过 | PASS；放行terminal-complete因果分支 |
+| C30 | consequence/data | terminal-complete causal outcomes | C29 fresh successes | FACT + MiniWorld clean-action future contract | 61源/122 state/488 branches；45/16源split；首chunk32、后续8；每branch强制动作后观测 | 运行前冻结；prereg SHA `3fc656e`，selection SHA `d2cc42f` | GO_CANARY；尚无模型效果结论 |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。

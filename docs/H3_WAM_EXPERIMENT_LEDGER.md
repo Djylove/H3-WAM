@@ -762,3 +762,28 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64`，导致32409上的INT8 H3前向报cuBLAS
   初始化错误；不带该环境的探针在30907/32409/30234也失败。补齐环境后，三节点最小BF16 matmul全部
   通过，故不是GPU/节点故障。C27特征与C28训练已在32611完成，模型结果不受此启动合同事件影响。
+
+### 2026-08-15 — C29/C30 action-conditioned consequence 数据转向
+
+- C28失败后重新逐行对齐官方代码：FACT `618a6c1`在teacher forcing和stage2 inference中把clean action
+  作为future state/value/video的K/V-only条件；MiniWorld `e484206`把每4个原始动作对齐到一个视频
+  latent frame，并经action encoder与AdaLN-LoRA注入。当前C28仅有静态state×action特征，不等价于
+  action→future机制，因此停止给静态critic增加步数。
+- C29保持`D0-H32-s14000/replan8/no-ensemble`完全不变，完整补跑四suite、tasks0..9、trials4..7。
+  160/160完成、61成功：Goal8、Object30、Spatial17、LIBERO-10 6；全部预注册源门通过。四节点各40条，
+  墙钟`989/980/950/984s`，artifact SHA256
+  `132c2409753f15a75f5c836590d8a760d2a31e9e913422f7973e11fb654868c6`。这只是新鲜源库存，不是候选对比。
+- 旧branch轨迹只保存重规划前观测，C27有122个首chunk内成功分支仅1行，若训练future target会系统性
+  丢掉最快成功样本。后续rollout新增独立terminal双相机/proprio/sim-state/step/action字段，不改变旧行轴、
+  动作或控制；本地12项rollout合同测试通过。C30强制每branch存在terminal字段：有row1时使用start+32
+  观测，否则只允许首chunk内terminal作为直接动作后果。
+- C30在查看branch outcome前冻结C29的61个成功源：每源距离终点3/5两个state，共122组/488分支；
+  suite-stratified source split为45 train/16 val。组内唯一变量仍为first action seed，continuation seed逐值
+  相同；数据门为train mixed>=10、val mixed>=4、覆盖>=3 suites且488/488动作后观测合法。
+  preregistration/selection SHA256为
+  `3fc656ef9e24abdb5be843ee199d16bee8a9f915b1c9666f6c5600a23cf14c78`、
+  `d2cc42f650e482fc09651ecd5f463fcc34cb3d02a51a8b98bd2ab8d4bb5c1e8a`；训练前仍为`NOT_EVIDENCE_READY`。
+- 已实现新的temporal consequence adapter：32步动作按MiniWorld合同变为8个有序token，future query按
+  FACT意图只读clean-action K/V与冻结当前H3/state；candidate action在模块边界detach。flattened与
+  temporal两种模型可使用相同future-H3 trainer和三臂控制。顺序敏感、动作梯度隔离、finite与旧future-H3
+  测试共6项通过；只有C30数据门通过后才预注册同数据同预算训练。
