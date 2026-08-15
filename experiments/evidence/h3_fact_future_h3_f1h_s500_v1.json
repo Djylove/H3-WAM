@@ -1,0 +1,11 @@
+{
+  "experiment_id": "h3_fact_future_h3_f1h_s500_v1",
+  "classification": "scale_ladder",
+  "status": "PASS_MECHANISM_GATE",
+  "claim_boundary": "Action-conditioned future-H3 signal strengthens at 500 steps; this is not a value, ranking, policy or LIBERO success result.",
+  "source": {"fact_commit": "618a6c16868699b6d4138941de6a863589ac00dd", "h3_checkpoint_sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a", "cloud_report": "/mnt/h3-wam/outputs/fact-lite-future-h3-v1/f1h_s500.json", "checkpoint_sha256": "ab35da3021a2a593e52ad354263386decd36fa00557b6b831a0aa0a481c4a263"},
+  "data": {"eligible_train": 151435, "eligible_validation": 16710, "train_selected": 1024, "validation_selected": 256, "episode_overlap": 0, "window_overlap": 0, "train_selected_ids_sha256": "6cdbebf8d2c84e6d6814bfd0930e69afcb5ec1e62389db5e0def832c2c34633d", "validation_selected_ids_sha256": "503fdce252b43c2fe511bafbeb40788b67e84c7da0156b1b3d1621f426b5fc49"},
+  "budget": {"gpu_count": 1, "optimizer_steps": 500, "batch_size": 16, "training_samples": 8000, "effective_selected_subset_epochs": 7.8125, "duration_seconds": 81.03423046600074},
+  "metrics": {"conditioned_true_mse": 180.11588191986084, "shuffled_at_eval_mse": 212.73781394958496, "shuffled_trained_mse": 194.06490802764893, "independent_mse": 193.49231624603271, "conditioned_gain_over_independent": 0.06913160473598982, "conditioned_gain_over_shuffled_train": 0.0718781476236844, "conditioned_shuffle_degradation": 0.18111635510431354, "fresh_restore_max_abs": 0.0},
+  "decision": {"training_permission": "NO_GO", "evidence_status": "EVIDENCE_READY", "next": "Stop scaling the isolated target. Preserve it as a candidate consequence feature; value/ranking integration remains blocked until canonical success/failure supervision exists."}
+}

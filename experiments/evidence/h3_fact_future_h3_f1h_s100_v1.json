@@ -1,0 +1,11 @@
+{
+  "experiment_id": "h3_fact_future_h3_f1h_s100_v1",
+  "classification": "novel_composition",
+  "status": "PASS_MECHANISM_GATE",
+  "claim_boundary": "Correct actions modestly improve prediction of a fixed future-H3 projection; no policy, value, ranking or LIBERO success claim.",
+  "source": {"fact_commit": "618a6c16868699b6d4138941de6a863589ac00dd", "h3_checkpoint_sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a", "cloud_report": "/mnt/h3-wam/outputs/fact-lite-future-h3-v1/f1h_s100.json", "checkpoint_sha256": "faed00df9c0fd601c8e13339e27690c873d67997e94c8b1b403c967c2646a143"},
+  "data": {"eligible_train": 151435, "eligible_validation": 16710, "train_selected": 1024, "validation_selected": 256, "train_tasks": 40, "validation_tasks": 39, "episode_overlap": 0, "window_overlap": 0, "train_selected_ids_sha256": "6cdbebf8d2c84e6d6814bfd0930e69afcb5ec1e62389db5e0def832c2c34633d", "validation_selected_ids_sha256": "503fdce252b43c2fe511bafbeb40788b67e84c7da0156b1b3d1621f426b5fc49"},
+  "budget": {"gpu_count": 1, "optimizer_steps": 100, "batch_size": 16, "training_samples": 1600, "duration_seconds": 36.09663211402949},
+  "metrics": {"initial_conditioned_mse": 223.49109935760498, "conditioned_true_mse": 203.53887939453125, "shuffled_at_eval_mse": 211.84272956848145, "shuffled_trained_mse": 210.18738269805908, "independent_mse": 210.04285430908203, "conditioned_gain_over_independent": 0.03096499014901054, "conditioned_gain_over_shuffled_train": 0.031631314963746514, "conditioned_shuffle_degradation": 0.04079736607891193, "fresh_restore_max_abs": 0.0},
+  "decision": {"training_permission": "GO_CANARY", "evidence_status": "EVIDENCE_READY", "next": "Repeat at s500 because the signal is positive but modest; no value/ranking promotion."}
+}

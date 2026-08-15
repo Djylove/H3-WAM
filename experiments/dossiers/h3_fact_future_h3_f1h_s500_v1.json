@@ -1,0 +1,36 @@
+{
+  "experiment_id": "h3_fact_future_h3_f1h_s500_v1",
+  "classification": "scale_ladder",
+  "hypothesis": "The modest s100 action-conditioned future-H3 gain persists at 500 steps under the identical three-arm intervention.",
+  "single_variable": "Increase optimizer steps from 100 to 500; selected rows, projection, initialization, model, controls, seed and thresholds remain unchanged.",
+  "parent_baseline": "f1h s100: projected validation MSE 203.5389 versus independent 210.0429 and shuffled-trained 210.1874; shuffled-at-eval 211.8427.",
+  "references": [
+    {"kind": "upstream_code", "title": "FACT causal action-to-consequence path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 FACT-lite future-H3 consequence canary", "locator": "scripts/h3wam/train_h3_fact_future_h3.py", "revision": "75f352e", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "action-conditioned future representation", "paper": "Action conditions future image/state/value.", "upstream_code": "Future image tokens after clean action.", "local": "Detached actions condition a fixed future-H3 projection predictor.", "status": "INTENTIONAL_DEVIATION", "evidence": ["experiments/dossiers/h3_fact_future_h3_f1h_s100_v1.json"], "rationale": "Unchanged from the s100 child."}],
+    "data": [{"field": "paired rows", "paper": "Future observation follows action segment.", "upstream_code": "Future image record.", "local": "Same 1024/256 exact start+32 joins and ID hashes as s100.", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/outputs/fact-lite-future-h3-v1/f1h_s100.json"], "rationale": "No data variable changes."}],
+    "action": [{"field": "three-arm intervention", "paper": "Clean action conditioning.", "upstream_code": "Ground-truth/generated action.", "local": "Correct, deranged or zero horizon32 action.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_h3_fact_future_h3.py"], "rationale": "No action variable changes."}],
+    "objective": [{"field": "future-H3 projected MSE", "paper": "Future RGB latent flow.", "upstream_code": "Trainable future image tokens.", "local": "Same fixed seeded 256D projection target.", "status": "INTENTIONAL_DEVIATION", "evidence": ["FutureH3ConsequenceModel.fixed_projection"], "rationale": "Only budget changes."}],
+    "optimization": [{"field": "scale repeat", "paper": "150k steps, batch256.", "upstream_code": "Full FACT training.", "local": "500 steps, batch16, 8000 samples over selected subset.", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "Bounded persistence check, not convergence."}],
+    "evaluation": [{"field": "same mechanism gate", "paper": "Task/value/ranking.", "upstream_code": "Two-stage prediction and best-of-N.", "local": "Same fixed validation rows and three 1% thresholds.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_h3_fact_future_h3.py"], "rationale": "No ranking claim."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Pinned source and H3 SHA."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["s100 real run and tests pass."]},
+    "data_contract": {"status": "PASS", "evidence": ["s100 reports zero split overlap and exact future joins."]},
+    "action_contract": {"status": "PASS", "evidence": ["Same intervention."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Fixed non-trainable projection."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Only 100 to 500 steps changes."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Same deterministic evaluation."]},
+    "gradient_path": {"status": "PASS", "evidence": ["s100 positive finite gradients and no upstream gradient."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["s100 completed finite."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["s100 restore max_abs0."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["s100 passed all three mechanism gates by 3.10%-4.08%."]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["s100 PASS_MECHANISM_GATE."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Not applicable to consequence-only head."]}
+  },
+  "budget": {"gpu_count": 1, "optimizer_steps": 500, "batch_size": 16, "training_samples": 8000, "train_selected": 1024, "validation_selected": 256, "effective_selected_subset_epochs": 7.8125},
+  "decision": {"status": "GO_CANARY", "rationale": "s100 passed narrowly but consistently across all controls; the predeclared same-contract s500 persistence check is warranted. Do not add value/ranking yet.", "launch_command": "Same f1h command as s100 with --steps 500 and f1h_s500 output/checkpoint paths."}
+}

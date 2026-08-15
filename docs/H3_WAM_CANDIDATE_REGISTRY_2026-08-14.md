@@ -57,7 +57,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C06 | carrier/action | DiT4DiT-H3 | DiT4DiT | carrier winner | selected intermediate H3 features + official ActionDiT | source pass；dirty vendor audit pending | PROBE_ONLY |
 | C07 | temporal/context | LingBot-H3 persistent history | LingBot-VA | carrier/action winner | persistent observation KV + executed-action feedback | partial H3 port；contract mismatch open | PROBE_ONLY |
 | C08 | temporal/context | MiniWorld-H3 rolling memory | MiniWorld | C07 or carrier/action winner | rolling KV + diffusion-forcing curriculum | policy bridge absent | PROBE_ONLY |
-| C09 | consequence/ranking | FACT-lite H3 | FACT | carrier/action/context winner | causal future state/value head；action path cannot see future | future-proprio s100/s500 mechanism pass；future-H3 s100 armed；failure data absent | GO_CANARY future-H3；NO_GO value/ranking |
+| C09 | consequence/ranking | FACT-lite H3 | FACT | carrier/action/context winner | causal future state/value head；action path cannot see future | future-proprio 与 future-H3 均通过 s100/s500 机制门；failure data absent | consequence mechanism champion；NO_GO value/ranking |
 | C10 | consequence/ranking | FACT best-of-N | FACT | C09 | rank sampled action chunks by learned progress/value | waits C09 calibration | NO_GO parent gate |
 | C11 | structured future | DreamWAM motion/depth/DINO | DreamWAM | carrier/action winner | add exactly one structured future target per child | source pass；target caches pending | PROBE_ONLY |
 | C12 | action/co-training | Motus-H3 three-expert | Motus | best joint-training baseline | three-expert MoT | Stage-2/H3 mapping unknown | PROBE_ONLY |
