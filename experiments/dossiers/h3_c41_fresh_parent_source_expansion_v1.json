@@ -1,0 +1,32 @@
+{
+  "experiment_id": "h3_c41_fresh_parent_source_expansion_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Complete trial12..15 parent-policy collection supplies at least 32 new successful source episodes with broad suite coverage for a larger causal ranking dataset.",
+  "single_variable": "Only the never-consumed LIBERO init-state trial index changes to12..15; parent D0-H32-s14000, replan8, suite/task grid, simulator, seed and rollout contract remain fixed.",
+  "parent_baseline": "C40 fresh ranking failed at54.32% pairwise and p0.303 despite beating action-only by13.58 points; only22 mixed train groups/74 pairs were available, so further C33 tuning is forbidden and new sources are required.",
+  "references": [
+    {"kind": "paper", "title": "FACT failure-aware rollout expansion", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT rollout/value data path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "local_implementation", "title": "C41 full source grid launcher", "locator": "scripts/h3wam/launch_c41_parent_source_trial.sh", "revision": "C41 preregistration commit"}
+  ],
+  "alignment": {
+    "architecture": [{"field": "fixed parent policy", "paper": "Collect failures and successes from a fixed policy.", "upstream_code": "FACT retains rollout outcomes before value fitting.", "local": "Frozen D0-H32-s14000 generates every source.", "status": "EXACT", "evidence": ["scripts/h3wam/run_champion_all_tasks_trial0.sh"]}],
+    "data": [{"field": "complete new source grid", "paper": "Broad rollouts support failure-aware learning.", "upstream_code": "All valid episodes are retained.", "local": "All4 suites x10 tasks x trials12..15 are collected before source success is audited.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c41_parent_source_expansion.py"], "rationale": "Trials12..15 are absent from all prior causal branches."}],
+    "action": [{"field": "unchanged parent action execution", "paper": "Executed actions determine rollout outcomes.", "upstream_code": "Fixed policy actions execute in simulator.", "local": "H32 first action and replan8 continuation are unchanged.", "status": "EXACT", "evidence": ["scripts/h3wam/run_dense_d0_milestone_rollout.sh"]}],
+    "objective": [{"field": "collection-only source gate", "paper": "Value learning needs outcome-diverse sources.", "upstream_code": "Rollout collection precedes training.", "local": "No model updates; require>=32 successes and suite minima before counterfactual branches.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/evaluate_c41_parent_source_expansion.py"], "rationale": "This stage makes no effect claim."}],
+    "optimization": [{"field": "parameter updates", "paper": "None during rollout collection.", "upstream_code": "Inference-only data generation.", "local": "Zero optimizer steps over32 GPUs.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c41_parent_source_trial.sh"]}],
+    "evaluation": [{"field": "pre-outcome role split", "paper": "Final evaluation stays separate from training.", "upstream_code": "Held-out episodes are not fitted.", "local": "Trials12..14 are future ranker-train sources; trial15 is reserved before counterfactual outcomes exist.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c41_parent_source_expansion.py"], "rationale": "The next branch stage must preserve this role."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT commit fixed; D0-H32-s14000 checkpoint fixed."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Inference-only fixed parent."]},
+    "data_contract": {"status": "PASS", "evidence": ["160 complete predeclared episodes; trial roles fixed before results."]},
+    "action_contract": {"status": "PASS", "evidence": ["Same H32/replan8 contract as C32."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Source count and suite minima fixed."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["No gradients or optimizer."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Trial15 reserved for the next final branch split."]},
+    "gradient_path": {"status": "PASS", "evidence": ["No training path."]}
+  },
+  "budget": {"global_batch": 32, "optimizer_steps": 5, "training_samples": 160, "unique_windows": 160, "effective_epochs": 1.0, "gpu_count": 32, "estimated_hours": 0.5},
+  "decision": {"status": "GO_CANARY", "rationale": "C40 indicates positive but statistically insufficient transfer; a complete new grid is the valid way to increase train pairs while preserving a new final set.", "launch_command": "Run C41_TRIAL=12/13/14/15 on ports32611/30907/32409/30234 respectively."}
+}
