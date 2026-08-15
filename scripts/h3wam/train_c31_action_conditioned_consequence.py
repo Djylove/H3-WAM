@@ -483,6 +483,7 @@ def main() -> None:
         for name, model in models.items():
             restored = model_class(**model_kwargs).to(device)
             restored.load_state_dict(restored_payload["models"][name], strict=True)
+            restored.eval()
             actions = arm_actions(restore_batch, name)
             expected = model.forward_projected(
                 restore_batch["current_proprio"], restore_batch["current_projected"], actions
