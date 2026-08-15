@@ -1,0 +1,40 @@
+{
+  "experiment_id": "h3_fact_future_h3_f1h_s100_v1",
+  "classification": "novel_composition",
+  "hypothesis": "Given the same current H3 observation and proprioception, the correct 32-step action chunk predicts the H3 observation representation at start+32 better than either deranged or zero actions.",
+  "single_variable": "Consequence target changes from future proprio to a fixed 256D random projection of mean-pooled future H3 layer49 features; the three-arm intervention, rows, seed and thresholds remain fixed.",
+  "parent_baseline": "Future-proprio F1 passed at s100 and s500; this child has its own co-trained action-independent baseline and does not inherit effectiveness from the proprio target.",
+  "references": [
+    {"kind": "upstream_code", "title": "FACT causal action-to-consequence path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 FACT-lite future-H3 consequence canary", "locator": "scripts/h3wam/train_h3_fact_future_h3.py", "revision": "this dossier commit", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "action-conditioned future representation", "paper": "Clean action conditions future image/state/value under a causal mask.", "upstream_code": "Future image latents are produced after clean action tokens.", "local": "Detached action plus current frozen H3/state predicts a fixed projection of future frozen H3.", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3wam/fact_lite_consequence.py"], "rationale": "H3 representation replaces RGB VAE latent to match the frozen INT8 carrier."}],
+    "data": [{"field": "temporal join", "paper": "Future observation follows the action segment.", "upstream_code": "Dataset emits a future image record.", "local": "Exact source-manifest row at the same episode and start+32; missing rows and changed context are rejected.", "status": "EQUIVALENT", "evidence": ["tests/test_h3_fact_future_h3.py"], "rationale": "Dense stride permits an auditable future observation join."}],
+    "action": [{"field": "candidate action intervention", "paper": "Clean action conditions future prediction.", "upstream_code": "Ground-truth/generated clean action tokens.", "local": "Correct, deranged or zero normalized 32x7 action.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_h3_fact_future_h3.py"], "rationale": "Same no-self-map control as F1 proprio."}],
+    "objective": [{"field": "future visual consequence", "paper": "Future RGB latent flow loss.", "upstream_code": "Trainable Wan future image tokens.", "local": "MSE on a non-trainable seeded 256D projection of frozen H3 layer49 mean features.", "status": "INTENTIONAL_DEVIATION", "evidence": ["FutureH3ConsequenceModel.fixed_projection"], "rationale": "The projection is saved in the checkpoint and cannot collapse to improve the metric."}],
+    "optimization": [{"field": "bounded canary", "paper": "150k steps, global batch256.", "upstream_code": "Full unified FACT training.", "local": "100 steps, batch16, 1600 samples from a fixed 1024-row subset.", "status": "INTENTIONAL_DEVIATION", "evidence": ["decision.launch_command"], "rationale": "This only gates whether action-conditioned future visual signal exists."}],
+    "evaluation": [{"field": "paired mechanism gate", "paper": "Task/value/ranking evaluation.", "upstream_code": "Two-stage future prediction and best-of-N.", "local": "256 episode-disjoint rows; correct vs independent, shuffled-trained and shuffled-at-eval with three 1% gates.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_h3_fact_future_h3.py"], "rationale": "Ranking and closed-loop remain blocked."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT and H3 identities fixed."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Future target is absent from forward; fixed projection is a persistent non-trainable buffer."]},
+    "data_contract": {"status": "PASS", "evidence": ["Exact start+32 join and episode-disjoint split tests pass."]},
+    "action_contract": {"status": "PASS", "evidence": ["Same horizon32 unpadded intervention as F1 proprio."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Future features and projection target are detached."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Three arms share initialization, rows and optimizer hyperparameters."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Predeclared paired thresholds and deterministic selection."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Unit test proves upstream action generator receives no gradient while consequence action encoder does."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Two-step CPU main completed."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Two-step CPU fresh restore max_abs0."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["F1 proprio s500 mechanism pass; this run also contains an independent co-trained baseline."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Pending real v7 s100 result."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Not applicable to representation-only consequence expert."]}
+  },
+  "budget": {"gpu_count": 1, "optimizer_steps": 100, "batch_size": 16, "training_samples": 1600, "train_selected": 1024, "validation_selected": 256, "effective_selected_subset_epochs": 1.5625, "effective_full_train_epochs": 0.007969},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The state consequence parent repeated successfully and the future-H3 implementation passes temporal-join, no-leak, finite-gradient and restore tests. Only one real s100 mechanism canary is authorized.",
+    "launch_command": "CUDA_VISIBLE_DEVICES=1 /mnt/h3-wam/runtime/h3-int8-native/bin/python scripts/h3wam/train_h3_fact_future_h3.py --train-manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl --val-manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_val.jsonl --source-manifest /mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_all.jsonl --cache-root /mnt/h3-wam/data/v7_dense_h3_cache --feature-subdir h3_int8_starwam_last32_dense_v1 --steps 100 --train-limit 1024 --val-limit 256 --batch-size 16 --target-dim 256 --hidden-dim 256 --seed 42 --verify-h3-checkpoint-sha256 --output /mnt/h3-wam/outputs/fact-lite-future-h3-v1/f1h_s100.json --checkpoint /mnt/h3-wam/outputs/fact-lite-future-h3-v1/f1h_s100.pt"
+  }
+}

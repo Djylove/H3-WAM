@@ -110,6 +110,110 @@ class FutureProprioConsequenceModel(nn.Module):
         return current_proprio.float() + delta
 
 
+class FutureH3ConsequenceModel(nn.Module):
+    """Predict a fixed random projection of future H3 observation features."""
+
+    def __init__(
+        self,
+        *,
+        state_dim: int = 8,
+        action_dim: int = 7,
+        action_horizon: int = 32,
+        h3_feature_dim: int = 5376,
+        target_dim: int = 256,
+        hidden_dim: int = 256,
+        feature_input_scale: float = 0.009606920816877307,
+        projection_seed: int = 20260815,
+    ) -> None:
+        super().__init__()
+        if min(
+            state_dim,
+            action_dim,
+            action_horizon,
+            h3_feature_dim,
+            target_dim,
+            hidden_dim,
+        ) <= 0:
+            raise ValueError("all consequence-model dimensions must be positive")
+        if feature_input_scale <= 0:
+            raise ValueError("feature_input_scale must be positive")
+        self.state_dim = int(state_dim)
+        self.action_dim = int(action_dim)
+        self.action_horizon = int(action_horizon)
+        self.h3_feature_dim = int(h3_feature_dim)
+        self.target_dim = int(target_dim)
+        self.feature_input_scale = float(feature_input_scale)
+        self.projection_seed = int(projection_seed)
+
+        generator = torch.Generator(device="cpu").manual_seed(self.projection_seed)
+        projection = torch.randn(
+            self.h3_feature_dim, self.target_dim, generator=generator
+        ) / self.h3_feature_dim**0.5
+        self.register_buffer("fixed_projection", projection, persistent=True)
+        self.state_encoder = nn.Sequential(
+            nn.Linear(self.state_dim, hidden_dim),
+            nn.SiLU(),
+            nn.LayerNorm(hidden_dim),
+        )
+        self.visual_encoder = nn.Sequential(
+            nn.Linear(self.target_dim, hidden_dim),
+            nn.SiLU(),
+            nn.LayerNorm(hidden_dim),
+        )
+        self.action_encoder = nn.Sequential(
+            nn.Linear(self.action_horizon * self.action_dim, hidden_dim),
+            nn.SiLU(),
+            nn.LayerNorm(hidden_dim),
+        )
+        self.predictor = nn.Sequential(
+            nn.Linear(3 * hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, self.target_dim),
+        )
+
+    def project_features(self, h3_features: torch.Tensor) -> torch.Tensor:
+        if h3_features.ndim == 4 and h3_features.shape[1] == 1:
+            h3_features = h3_features[:, 0]
+        if h3_features.ndim != 3 or h3_features.shape[-1] != self.h3_feature_dim:
+            raise ValueError(
+                "h3_features must be [B,T,F] (or [B,1,T,F]) with "
+                f"F={self.h3_feature_dim}, got {tuple(h3_features.shape)}"
+            )
+        pooled = h3_features.float().mean(dim=1) * self.feature_input_scale
+        return pooled @ self.fixed_projection.to(pooled)
+
+    def forward(
+        self,
+        current_proprio: torch.Tensor,
+        h3_features: torch.Tensor,
+        candidate_actions: torch.Tensor,
+    ) -> torch.Tensor:
+        if current_proprio.ndim != 2 or current_proprio.shape[-1] != self.state_dim:
+            raise ValueError(
+                f"current_proprio must be [B,{self.state_dim}], got "
+                f"{tuple(current_proprio.shape)}"
+            )
+        expected_action_shape = (
+            current_proprio.shape[0],
+            self.action_horizon,
+            self.action_dim,
+        )
+        if tuple(candidate_actions.shape) != expected_action_shape:
+            raise ValueError(
+                f"candidate_actions must be {expected_action_shape}, got "
+                f"{tuple(candidate_actions.shape)}"
+            )
+        current_target = self.project_features(h3_features)
+        if current_target.shape[0] != current_proprio.shape[0]:
+            raise ValueError("H3 feature batch must match current proprio batch")
+        read_only_actions = candidate_actions.detach()
+        state = self.state_encoder(current_proprio.float())
+        visual = self.visual_encoder(current_target)
+        action = self.action_encoder(read_only_actions.float().flatten(1))
+        delta = self.predictor(torch.cat((state, visual, action), dim=-1))
+        return current_target + delta
+
+
 def future_proprio_mse(
     model: FutureProprioConsequenceModel,
     *,
@@ -124,6 +228,24 @@ def future_proprio_mse(
         raise ValueError("future_proprio must match current_proprio shape")
     prediction = model(current_proprio, h3_features, candidate_actions)
     return prediction, F.mse_loss(prediction.float(), future_proprio.detach().float())
+
+
+def future_h3_mse(
+    model: FutureH3ConsequenceModel,
+    *,
+    current_proprio: torch.Tensor,
+    h3_features: torch.Tensor,
+    candidate_actions: torch.Tensor,
+    future_h3_features: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return future-H3 projection prediction and target-isolated MSE."""
+
+    prediction = model(current_proprio, h3_features, candidate_actions)
+    with torch.no_grad():
+        target = model.project_features(future_h3_features.detach())
+    if prediction.shape != target.shape:
+        raise ValueError("future H3 projection must match prediction shape")
+    return prediction, F.mse_loss(prediction.float(), target.float())
 
 
 def deranged_batch_indices(batch_size: int, *, device: torch.device | None = None) -> torch.Tensor:
@@ -152,8 +274,10 @@ def actions_for_arm(actions: torch.Tensor, arm: str) -> torch.Tensor:
 
 
 __all__ = [
+    "FutureH3ConsequenceModel",
     "FutureProprioConsequenceModel",
     "actions_for_arm",
     "deranged_batch_indices",
     "future_proprio_mse",
+    "future_h3_mse",
 ]

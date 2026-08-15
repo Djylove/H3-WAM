@@ -1,0 +1,11 @@
+{
+  "experiment_id": "h3_fact_future_proprio_f1_s500_v1",
+  "classification": "scale_ladder",
+  "status": "PASS_MECHANISM_GATE",
+  "claim_boundary": "The correct action-to-future-proprio signal repeats at 500 steps; no policy, value, ranking or LIBERO success claim.",
+  "source": {"fact_commit": "618a6c16868699b6d4138941de6a863589ac00dd", "h3_checkpoint_sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a", "cloud_report": "/mnt/h3-wam/outputs/fact-lite-future-proprio-v1/f1_s500.json", "checkpoint_sha256": "0d3bfcfb91dc56b6dc9ddffb73e327d8155fb7267e98ef87cb82cfcfdd7d2b02"},
+  "data": {"train_selected": 1024, "validation_selected": 256, "train_tasks": 40, "validation_tasks": 39, "episode_overlap": 0, "window_overlap": 0, "train_selected_ids_sha256": "82c878d2e911e8764869861ad08d8248384e702810cb983bcc1c338c617d9f27", "validation_selected_ids_sha256": "a5c9505ac6916cb0431a7c6d569343264b7c2cc05a059f6bf84df032c735ab63"},
+  "budget": {"gpu_count": 1, "optimizer_steps": 500, "batch_size": 16, "training_samples": 8000, "effective_selected_subset_epochs": 7.8125, "duration_seconds": 63.973664478980936},
+  "metrics": {"conditioned_true_mse": 0.012861851922934875, "shuffled_at_eval_mse": 0.21293113101273775, "shuffled_trained_mse": 0.06867881817743182, "independent_mse": 0.0738464870955795, "conditioned_gain_over_independent": 0.8258298745302836, "conditioned_gain_over_shuffled_train": 0.8127246178041931, "conditioned_shuffle_degradation": 15.55524665410315, "fresh_restore_max_abs": 0.0},
+  "decision": {"training_permission": "GO_CANARY", "evidence_status": "EVIDENCE_READY", "next": "Stop scaling this target; open future-H3 as a separate child. Failure-aware value/ranking still require canonical failure data."}
+}

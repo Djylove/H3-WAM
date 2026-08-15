@@ -86,6 +86,7 @@
 | E45 | FACT-lite H3 future-proprio F1 s100 | 同 H3/state 输入下，正确 horizon32 动作 vs batch derangement vs zero-action；episode-disjoint 1024/256 | val MSE `0.016670` vs shuffled-train `0.108835` vs independent `0.113512`；正确模型 shuffle 后 `0.235171`；restore diff0 | 不适用 | 三个预注册机制门均通过；`PASS_MECHANISM_GATE / EVIDENCE_READY`，只放行同合同 s500，不声称策略或成功率 |
 | E46 | repaired LingBot adapter-only s1000 闭环 | Goal task3/trial0；80步；horizon/replan32；4-step flow；quantile clip1.5 | action saturation `9.375%`；EEF 三轴移动范围 `0.0586/0.0566/0.0408m`；物体最大位移 `1.46e-16` | `0/1` | 服务与恢复成功但无物体接触；`FAIL_CLOSED_LOOP`，停止 s1000 benchmark 晋级；保留已批准的独立 5000-step 诊断曲线 |
 | E47 | repaired LingBot adapter-only fresh s5000 | s1000 配方完全不变；从确定性初值连续5000步；global batch8；每500步独立 val40/sample40 | 运行中；step311 有限，8卡约`37.54 GiB/GPU`、利用率约100% | 首个候选里程碑待 s500 | `GO_LONG / NOT_EVIDENCE_READY`；s1000需同时复核与旧曲线连续性，只有选中里程碑通过闭环才跑 benchmark |
+| E48 | FACT-lite future-proprio F1 s500 | E45 完全相同三臂和1024/256 split；仅100→500步 | val MSE `0.012862` vs shuffled-train `0.068679` vs independent `0.073846`；正确模型 shuffle 后 `0.212931`；restore diff0 | 不适用 | 机制门重复通过；停止扩大同一 target，放行独立 future-H3 s100；value/ranking 继续受 failure data gate 阻塞 |
 
 ## 2026-08-13 LingBot 核心结构纠偏
 
