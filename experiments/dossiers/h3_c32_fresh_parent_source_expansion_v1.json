@@ -32,5 +32,13 @@
     "status": "GO_CANARY",
     "rationale": "C30 is retained as a failed preregistered experiment; new trial8..11 sources are the shortest unbiased route to a genuinely fresh ranking validation set.",
     "launch_command": "On ports 32611/30907/32409/30234: C32_TRIAL=8/9/10/11 bash scripts/h3wam/launch_c32_parent_source_trial.sh"
+  },
+  "result": {
+    "status": "PASS_C32_FRESH_PARENT_SOURCE_EXPANSION",
+    "decision": "GO_FRESH_RANKING_VALIDATION_COLLECTION",
+    "metrics": {"episodes": 160, "successes": 52, "libero_10": 4, "libero_goal": 9, "libero_object": 25, "libero_spatial": 14},
+    "artifact": "/mnt/h3-wam/eval/c32-fresh-parent-sources-v1/COMPLETED",
+    "artifact_sha256": "158b57c012e956a44a542e61e58238aa640b6f5d3abbd35d7d9389d6f62dc3e2",
+    "boundary": "Fixed-parent source inventory only; not a model comparison."
   }
 }

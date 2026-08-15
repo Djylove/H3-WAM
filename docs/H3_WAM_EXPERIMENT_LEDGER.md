@@ -813,3 +813,12 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   d3/d5 state、每state四个first-action seed，后续seed逐值固定。C33全部source标记
   `fresh_ranking_val`，不得训练或选择consequence结构；放行门固定为fresh mixed groups `>=8`且覆盖
   `>=3` suites，同时要求动作/seed/terminal consequence机械门全过。
+- C32已完成160/160并通过：52成功源，其中LIBERO-10/Goal/Object/Spatial为`4/9/25/14`；四节点
+  trial8/9/10/11均完整，artifact SHA256
+  `158b57c012e956a44a542e61e58238aa640b6f5d3abbd35d7d9389d6f62dc3e2`。C33据此冻结52源、104 state、
+  416 branches；preregistration/selection SHA256分别为
+  `94aeb3b69d7b03fd3852c6ced1654012be14379c9707da1350c573907c4a7481`、
+  `19ebca8a5af70971404a03af6ca16681c16f4ca32011fde45fcfc92b73ff15dc`。
+- C33自动prepare watcher的shell内联Python引号被远端shell剥离而报SyntaxError；C32 artifact本身正常，
+  随后用相同已提交脚本手工执行并得到上述固定哈希。该事件发生在任何C33 outcome前，只影响自动化，
+  不改变selection、数据门或模型结论。

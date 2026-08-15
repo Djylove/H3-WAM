@@ -1,0 +1,37 @@
+{
+  "experiment_id": "h3_c33_fresh_ranking_causal_dataset_v1",
+  "classification": "novel_composition",
+  "hypothesis": "The 52 never-consumed C32 success sources yield at least eight fresh within-state mixed ranking groups across at least three LIBERO suites while preserving exact action consequences.",
+  "single_variable": "Within each bit-exact restored trial8..11 state, only the first-replan policy diffusion seed changes; the first chunk executes up to 32 steps and every continuation uses the same replan8 seed schedule.",
+  "parent_baseline": "C30 produced 25 train mixed groups but only 3 validation mixed groups against a preregistered requirement of 4 and was retained as FAIL; C32 then passed with 52 wholly new successful trial8..11 sources.",
+  "references": [
+    {"kind": "paper", "title": "FACT: A Failure-Aware Causal Transformer for World Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT clean-action conditioned future and value data path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "upstream_code", "title": "MiniWorld temporal action alignment", "locator": "third_party/MiniWorld", "revision": "e484206bbd4360ae56ed8abad51c83f2457ac092", "official": true},
+    {"kind": "local_implementation", "title": "C33 fresh ranking branch contract", "locator": "scripts/h3wam/evaluate_c33_fresh_ranking_dataset.py", "revision": "be7deaa"}
+  ],
+  "alignment": {
+    "architecture": [{"field": "fixed policy consequence collection", "paper": "Future/value targets follow clean executed actions from a fixed policy.", "upstream_code": "FACT collects observed future and value labels without changing the sampled action.", "local": "C33 freezes D0-H32-s14000 and changes only first-action diffusion seed.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/launch_c33_fresh_ranking_shard.sh"], "rationale": "No model trains in C33."}],
+    "data": [{"field": "unconsumed validation sources", "paper": "Ranking evaluation uses held-out outcomes.", "upstream_code": "Evaluation episodes are distinct from fitting records.", "local": "All 52 C32 trial8..11 successes supply d3/d5 states; all 104 groups are marked fresh_ranking_val.", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/eval/c33-fresh-ranking-causal-v1/preregistration.json"], "rationale": "No C21-C30 branch used these trials."}],
+    "action": [{"field": "clean executed prefix", "paper": "Observed consequences condition on executed action tokens.", "upstream_code": "FACT uses clean actions; MiniWorld aligns action chunks to video time.", "local": "Exact result/trajectory 32x7 proposal is retained and terminal execution length is audited for later tail masking.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c33_fresh_ranking_dataset.py"], "rationale": "The model-free collection preserves enough information to distinguish proposal from executed prefix."}],
+    "objective": [{"field": "fresh ranking data gate", "paper": "Value/ranking needs success and failure outcomes.", "upstream_code": "Failure-aware training retains both labels.", "local": "C33 requires at least eight mixed groups over at least three suites plus complete consequences.", "status": "INTENTIONAL_DEVIATION", "evidence": ["/mnt/h3-wam/eval/c33-fresh-ranking-causal-v1/preregistration.json"], "rationale": "This gates later value ranking and is not itself an optimization objective."}],
+    "optimization": [{"field": "parameter updates", "paper": "Optimization follows collection.", "upstream_code": "Rollout generation is inference-only.", "local": "Zero parameter updates; 416 simulator branches run over 32 GPUs.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c33_fresh_ranking_shard.sh"]}],
+    "evaluation": [{"field": "fresh-source mechanical and outcome audit", "paper": "Held-out value is judged on unseen rollouts.", "upstream_code": "Evaluation keeps episode identity and outcomes.", "local": "All branches require terminal/replan consequences, exact actions, fixed continuations and mixed outcomes before any ranking evaluation.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c33_fresh_ranking_dataset.py"], "rationale": "Passing authorizes a later model comparison, not a LIBERO effect claim."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["C32 artifact SHA256 158b57c012e956a44a542e61e58238aa640b6f5d3abbd35d7d9389d6f62dc3e2"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["fixed D0-H32-s14000 parent; collection only"]},
+    "data_contract": {"status": "PASS", "evidence": ["52 sources, 104 states, 416 branches frozen before C33 outcomes"]},
+    "action_contract": {"status": "PASS", "evidence": ["first chunk32; continuation replan8; exact action/trajectory audit"]},
+    "objective_contract": {"status": "PASS", "evidence": ["eight mixed groups and three-suite threshold fixed"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["inference-only collection"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["all sources exclusively fresh_ranking_val"]},
+    "gradient_path": {"status": "PASS", "evidence": ["no optimizer or gradient path"]}
+  },
+  "budget": {"global_batch": 32, "optimizer_steps": 13, "training_samples": 416, "unique_windows": 416, "effective_epochs": 1.0, "gpu_count": 32, "estimated_hours": 0.6},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "C30's fixed validation gate failed and is not relaxed; C33 spends bounded rollout compute to create a genuinely untouched validation set large enough for consequence-value ranking.",
+    "launch_command": "On ports 32611/30907/32409/30234: C33_SHARD=0/1/2/3 bash scripts/h3wam/launch_c33_fresh_ranking_shard.sh"
+  }
+}
