@@ -189,6 +189,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--consequence-best-of-n", type=int, default=1)
     parser.add_argument(
+        "--consequence-candidate-seed-offset", type=int, action="append", default=[]
+    )
+    parser.add_argument("--consequence-selection-min-step", type=int, default=0)
+    parser.add_argument("--consequence-selection-max-step", type=int)
+    parser.add_argument("--scheduled-long-replan-step", type=int)
+    parser.add_argument("--scheduled-long-replan-steps", type=int)
+    parser.add_argument(
         "--h3-feature-ablation", choices=("none", "zero"), default="none"
     )
     parser.add_argument("--h3-action-mode", type=int)
@@ -263,6 +270,18 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
         if args.lock_h3_action_mode
         else "--no-lock-h3-action-mode",
     ]
+    for offset in args.consequence_candidate_seed_offset:
+        command.extend(("--consequence-candidate-seed-offset", str(offset)))
+    if args.consequence_selection_max_step is not None:
+        command.extend((
+            "--consequence-selection-max-step",
+            str(args.consequence_selection_max_step),
+        ))
+    if args.consequence_selection_min_step:
+        command.extend((
+            "--consequence-selection-min-step",
+            str(args.consequence_selection_min_step),
+        ))
     if args.policy in ("h3", "h3_feature"):
         for flag, value in (
             ("--comfy-root", args.comfy_root),
@@ -581,6 +600,8 @@ def run_episode(
     first_policy_noise_seed: int | None = None,
     continuation_policy_noise_seed_base: int | None = None,
     first_replan_steps: int | None = None,
+    scheduled_long_replan_step: int | None = None,
+    scheduled_long_replan_steps: int | None = None,
 ) -> tuple[dict, list[np.ndarray], dict[str, np.ndarray] | None]:
     if environment_seed is not None:
         env.seed(environment_seed)
@@ -781,6 +802,9 @@ def run_episode(
             replan_steps=replan_steps,
             first_replan_steps=first_replan_steps,
         )
+        if scheduled_long_replan_step is not None and step == scheduled_long_replan_step:
+            assert scheduled_long_replan_steps is not None
+            execution_steps = scheduled_long_replan_steps
         replans += 1
         if action_ensembler is not None:
             action_ensembler.add_actions(actions, step)
@@ -923,6 +947,13 @@ def main() -> None:
         or args.first_replan_steps > args.action_horizon
     ):
         raise ValueError("first-replan-steps must be in [1, action-horizon]")
+    scheduled = (args.scheduled_long_replan_step, args.scheduled_long_replan_steps)
+    if (scheduled[0] is None) != (scheduled[1] is None):
+        raise ValueError("scheduled long-replan step and steps must be passed together")
+    if scheduled[0] is not None and (
+        scheduled[0] < 0 or scheduled[1] <= 0 or scheduled[1] > args.action_horizon
+    ):
+        raise ValueError("invalid scheduled long-replan contract")
     if args.environment_seed is not None and args.environment_seed < 0:
         raise ValueError("environment-seed must be non-negative")
     if args.policy_noise_seed_base is not None and args.policy_noise_seed_base < 0:
@@ -1031,6 +1062,11 @@ def main() -> None:
         "normalized_action_pre_clamp": args.normalized_action_pre_clamp,
         "sample_ensemble_size": args.sample_ensemble_size,
         "consequence_best_of_n": args.consequence_best_of_n,
+        "consequence_candidate_seed_offsets": args.consequence_candidate_seed_offset,
+        "consequence_selection_max_step": args.consequence_selection_max_step,
+        "consequence_selection_min_step": args.consequence_selection_min_step,
+        "scheduled_long_replan_step": args.scheduled_long_replan_step,
+        "scheduled_long_replan_steps": args.scheduled_long_replan_steps,
         "consequence_ranker_checkpoint": (
             None
             if args.consequence_ranker_checkpoint is None
@@ -1122,6 +1158,8 @@ def main() -> None:
                             args.continuation_policy_noise_seed_base
                         ),
                         first_replan_steps=args.first_replan_steps,
+                        scheduled_long_replan_step=args.scheduled_long_replan_step,
+                        scheduled_long_replan_steps=args.scheduled_long_replan_steps,
                     )
                     episode["trial"] = trial
                     if trajectory is not None:

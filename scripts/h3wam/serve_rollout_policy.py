@@ -155,6 +155,24 @@ def parse_args() -> argparse.Namespace:
         help="Generate N independent action chunks and select by the C44 ranker.",
     )
     parser.add_argument(
+        "--consequence-candidate-seed-offset",
+        type=int,
+        action="append",
+        default=[],
+        help="Explicit frozen seed offset per best-of-N candidate.",
+    )
+    parser.add_argument(
+        "--consequence-selection-min-step",
+        type=int,
+        default=0,
+        help="Rank only requests at or after this environment step.",
+    )
+    parser.add_argument(
+        "--consequence-selection-max-step",
+        type=int,
+        help="Rank only requests with environment step below this exclusive bound.",
+    )
+    parser.add_argument(
         "--h3-feature-ablation",
         choices=("none", "zero"),
         default="none",
@@ -1693,8 +1711,43 @@ class H3DreamWAMKVInt8Policy:
                 raise ValueError("C44 ranker was trained only for a 32-action horizon")
             if self.feature_ablation != "none":
                 raise ValueError("C44 ranker does not support H3 feature ablation")
+            offsets = (
+                list(args.consequence_candidate_seed_offset)
+                if args.consequence_candidate_seed_offset
+                else list(range(self.consequence_best_of_n))
+            )
+            if len(offsets) != self.consequence_best_of_n:
+                raise ValueError("candidate seed offsets must match consequence-best-of-n")
+            if offsets[0] != 0 or len(set(offsets)) != len(offsets) or min(offsets) < 0:
+                raise ValueError("candidate seed offsets must be unique, nonnegative and start at 0")
+            self.consequence_candidate_seed_offsets = tuple(offsets)
+            self.consequence_selection_min_step = int(
+                args.consequence_selection_min_step
+            )
+            self.consequence_selection_max_step = args.consequence_selection_max_step
+            if self.consequence_selection_min_step < 0:
+                raise ValueError("consequence-selection-min-step must be nonnegative")
+            if (
+                self.consequence_selection_max_step is not None
+                and self.consequence_selection_max_step <= 0
+            ):
+                raise ValueError("consequence-selection-max-step must be positive")
+            if (
+                self.consequence_selection_max_step is not None
+                and self.consequence_selection_min_step
+                >= self.consequence_selection_max_step
+            ):
+                raise ValueError("consequence selection step interval is empty")
         elif self.consequence_best_of_n != 1:
             raise ValueError("consequence-best-of-n > 1 requires a C44 ranker")
+        else:
+            if args.consequence_candidate_seed_offset:
+                raise ValueError("candidate seed offsets require a C44 ranker")
+            if args.consequence_selection_max_step is not None:
+                raise ValueError("selection max step requires a C44 ranker")
+            self.consequence_candidate_seed_offsets = (0,)
+            self.consequence_selection_min_step = 0
+            self.consequence_selection_max_step = None
         if self.action_scale <= 0:
             raise ValueError("action-scale must be positive")
 
@@ -1930,6 +1983,13 @@ class H3DreamWAMKVInt8Policy:
         )
 
         task_context = self._task_context(str(request["task"]))
+        rank_this_request = self.consequence_ranker is not None and (
+            int(request.get("step", 0)) >= self.consequence_selection_min_step
+            and (
+                self.consequence_selection_max_step is None
+                or int(request.get("step", 0)) < self.consequence_selection_max_step
+            )
+        )
         pixels = preprocess_libero_cameras(
             request["agentview_image"], request["wristview_image"]
         )
@@ -1959,7 +2019,7 @@ class H3DreamWAMKVInt8Policy:
             task_context["token_tags"],
         )
         consequence_hidden = None
-        if self.int8_hidden_provider is not None:
+        if rank_this_request:
             consequence_hidden = self.int8_hidden_provider(
                 first_frame,
                 task_context["context"],
@@ -2054,12 +2114,17 @@ class H3DreamWAMKVInt8Policy:
         action_samples = []
         generated_samples = (
             self.consequence_best_of_n
-            if self.consequence_ranker is not None
+            if rank_this_request
             else self.sample_ensemble_size
         )
         for sample_index in range(generated_samples):
             generator = torch.Generator(device=self.device).manual_seed(
-                int(request["seed"]) + sample_index
+                int(request["seed"])
+                + (
+                    self.consequence_candidate_seed_offsets[sample_index]
+                    if rank_this_request
+                    else sample_index
+                )
             )
             actions = torch.randn(
                 (1, self.horizon, 7),
@@ -2086,7 +2151,7 @@ class H3DreamWAMKVInt8Policy:
             action_samples.append(actions)
         normalized_actions = (
             action_samples[0]
-            if self.consequence_ranker is not None
+            if rank_this_request
             else torch.stack(action_samples).mean(dim=0)
         )
         torch.cuda.synchronize(self.device)
@@ -2095,7 +2160,7 @@ class H3DreamWAMKVInt8Policy:
         candidate_environment_actions = []
         candidate_decode_reports = []
         candidates_to_decode = (
-            action_samples if self.consequence_ranker is not None else [normalized_actions]
+            action_samples if rank_this_request else [normalized_actions]
         )
         for candidate in candidates_to_decode:
             decoded, report = libero_environment_actions(
@@ -2112,7 +2177,7 @@ class H3DreamWAMKVInt8Policy:
             candidate_decode_reports.append(report)
         selected_index = 0
         candidate_scores = None
-        if self.consequence_ranker is not None:
+        if rank_this_request:
             raw_state = torch.as_tensor(
                 libero_observation_state(request), device=self.device, dtype=torch.float32
             )
@@ -2162,27 +2227,31 @@ class H3DreamWAMKVInt8Policy:
             "consequence_best_of_n": self.consequence_best_of_n,
             "consequence_candidate_seeds": (
                 None
-                if self.consequence_ranker is None
-                else [int(request["seed"]) + index for index in range(generated_samples)]
+                if not rank_this_request
+                else [
+                    int(request["seed"]) + offset
+                    for offset in self.consequence_candidate_seed_offsets
+                ]
             ),
             "consequence_candidate_scores": candidate_scores,
             "consequence_candidate0_first_environment_action": (
                 None
-                if self.consequence_ranker is None
+                if not rank_this_request
                 else candidate_environment_actions[0][0].tolist()
             ),
             "consequence_candidate0_environment_action_chunk": (
                 None
-                if self.consequence_ranker is None
+                if not rank_this_request
                 else candidate_environment_actions[0].tolist()
             ),
             "consequence_selected_index": (
-                None if self.consequence_ranker is None else selected_index
+                None if not rank_this_request else selected_index
             ),
             "consequence_selected_seed": (
                 None
-                if self.consequence_ranker is None
-                else int(request["seed"]) + selected_index
+                if not rank_this_request
+                else int(request["seed"])
+                + self.consequence_candidate_seed_offsets[selected_index]
             ),
             "consequence_score_range": (
                 None
@@ -2194,6 +2263,13 @@ class H3DreamWAMKVInt8Policy:
                 if self.consequence_ranker is None
                 else self.consequence_ranker.ranker_checkpoint_sha256
             ),
+            "consequence_candidate_seed_offsets": (
+                None
+                if self.consequence_ranker is None
+                else list(self.consequence_candidate_seed_offsets)
+            ),
+            "consequence_selection_max_step": self.consequence_selection_max_step,
+            "consequence_selection_min_step": self.consequence_selection_min_step,
             "consequence_checkpoint_sha256": (
                 None
                 if self.consequence_ranker is None

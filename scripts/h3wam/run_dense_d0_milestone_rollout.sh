@@ -76,6 +76,21 @@ if [[ -n "${CONSEQUENCE_RANKER_CHECKPOINT:-}" ]]; then
     --consequence-ranker-checkpoint "$(realpath "${CONSEQUENCE_RANKER_CHECKPOINT}")"
     --consequence-best-of-n "${CONSEQUENCE_BEST_OF_N:-4}"
   )
+  if [[ -n "${CONSEQUENCE_CANDIDATE_SEED_OFFSETS:-}" ]]; then
+    IFS=':' read -r -a consequence_offsets <<<"${CONSEQUENCE_CANDIDATE_SEED_OFFSETS}"
+    for consequence_offset in "${consequence_offsets[@]}"; do
+      [[ "${consequence_offset}" =~ ^[0-9]+$ ]]
+      consequence_args+=(--consequence-candidate-seed-offset "${consequence_offset}")
+    done
+  fi
+  if [[ -n "${CONSEQUENCE_SELECTION_MAX_STEP:-}" ]]; then
+    [[ "${CONSEQUENCE_SELECTION_MAX_STEP}" =~ ^[1-9][0-9]*$ ]]
+    consequence_args+=(--consequence-selection-max-step "${CONSEQUENCE_SELECTION_MAX_STEP}")
+  fi
+  if [[ -n "${CONSEQUENCE_SELECTION_MIN_STEP:-}" ]]; then
+    [[ "${CONSEQUENCE_SELECTION_MIN_STEP}" =~ ^[0-9]+$ ]]
+    consequence_args+=(--consequence-selection-min-step "${CONSEQUENCE_SELECTION_MIN_STEP}")
+  fi
   for consequence_model in "${consequence_models[@]}"; do
     test -f "${consequence_model}"
     consequence_args+=(--consequence-model-checkpoint "$(realpath "${consequence_model}")")
@@ -113,6 +128,15 @@ if [[ -n "${BRANCH_TRAJECTORY:-}" || -n "${BRANCH_INDEX:-}" || -n "${POLICY_NOIS
     [[ "${FIRST_REPLAN_STEPS}" =~ ^[1-9][0-9]*$ ]]
     branch_args+=(--first-replan-steps "${FIRST_REPLAN_STEPS}")
   fi
+fi
+scheduled_replan_args=()
+if [[ -n "${SCHEDULED_LONG_REPLAN_STEP:-}" || -n "${SCHEDULED_LONG_REPLAN_STEPS:-}" ]]; then
+  [[ "${SCHEDULED_LONG_REPLAN_STEP:?}" =~ ^[0-9]+$ ]]
+  [[ "${SCHEDULED_LONG_REPLAN_STEPS:?}" =~ ^[1-9][0-9]*$ ]]
+  scheduled_replan_args+=(
+    --scheduled-long-replan-step "${SCHEDULED_LONG_REPLAN_STEP}"
+    --scheduled-long-replan-steps "${SCHEDULED_LONG_REPLAN_STEPS}"
+  )
 fi
 checkpoint="$(realpath "${checkpoint}")"
 checkpoint_name="$(basename "${checkpoint}" .pt)"
@@ -153,6 +177,7 @@ exec bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
   --seed 42 \
   --normalized-action-pre-clamp \
   "${branch_args[@]}" \
+  "${scheduled_replan_args[@]}" \
   "${progress_args[@]}" \
   "${consequence_args[@]}" \
   "${ensemble_args[@]}" \

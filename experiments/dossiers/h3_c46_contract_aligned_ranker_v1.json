@@ -1,0 +1,12 @@
+{
+  "experiment_id": "h3_c46_contract_aligned_ranker_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Removing the two measured C45 deployment gaps lets frozen C44 ranking improve a matched single-intervention control by at least 2/20.",
+  "single_variable": "At step80 both arms execute one 32-action chunk; control uses candidate0, candidate selects best-of4, then both return to replan8 sample1. All prior actions and the pre-intervention simulator state must be exact.",
+  "parent_baseline": "C45 failed 3/20 versus8/20 while ranking every8 steps with adjacent seeds; C43 used one 32-step intervention and offsets0/1e6/2e6/3e6.",
+  "data_contract": {"suites": ["libero_goal", "libero_object", "libero_spatial", "libero_10"], "tasks": [0,1,2,3,4], "trial": 23, "paired_episodes": 20, "intervention_step": 80},
+  "action_contract": {"horizon": 32, "normal_replan": 8, "intervention_execution": 32, "rankings_per_eligible_episode": 1, "seed_offsets": [0,1000000,2000000,3000000]},
+  "gates": {"identity": "exact pre-step80 state and exact candidate0 chunk; exact C43 seeds", "mechanism": "one varied ranking per eligible episode; nonzero selection>=20%", "effect": "candidate>=control+2, wins>=3, net wins>=2, no suite regresses >1/5"},
+  "budget": {"gpu_count": 32, "total_rollouts": 40, "estimated_hours": 2.0},
+  "decision": {"status": "GO_CANARY", "on_pass": "Broaden only the contract-aligned intervention.", "on_fail": "Reject C44 ranker for online control; retain offline diagnostic value only."}
+}
