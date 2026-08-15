@@ -327,17 +327,25 @@ def main() -> None:
         for index, ordinal in enumerate(ordered):
             shuffled_ordinals[ordinal] = ordered[(index + 1) % len(ordered)]
 
-    train_state_ids = [int(s["group_id"]) for s in states if s["split"] == "train"]
-    val_state_ids = [int(s["group_id"]) for s in states if s["split"] == "val"]
-    train_indices = [int(b["ordinal"]) for b in branches if b["split"] == "train"]
-    val_indices = [int(b["ordinal"]) for b in branches if b["split"] == "val"]
+    train_state_ids = [
+        int(s["group_id"]) for s in states if s["consequence_split"] == "train"
+    ]
+    val_state_ids = [
+        int(s["group_id"]) for s in states if s["consequence_split"] == "validation"
+    ]
+    train_indices = [
+        int(b["ordinal"]) for b in branches if b["consequence_split"] == "train"
+    ]
+    val_indices = [
+        int(b["ordinal"]) for b in branches if b["consequence_split"] == "validation"
+    ]
     train_sources = {str(states[group]["source_episode"]) for group in train_state_ids}
     val_sources = {str(states[group]["source_episode"]) for group in val_state_ids}
     if not train_indices or not val_indices or train_sources & val_sources:
         raise ValueError("C31 requires non-empty source-disjoint train/validation")
     train_proprio = torch.stack([states[group]["proprio"].float() for group in train_state_ids])
     state_mean = train_proprio.mean(0)
-    state_std = train_proprio.std(0).clamp_min(1.0e-6)
+    state_std = train_proprio.std(0, correction=0).clamp_min(1.0e-6)
     common = {
         "states": states, "branches": branches,
         "current_projected": current_projected,
@@ -459,6 +467,9 @@ def main() -> None:
         "data": {
             "train_sources": len(train_sources), "validation_sources": len(val_sources),
             "source_overlap": len(train_sources & val_sources),
+            "reserved_ranking_validation_sources": int(
+                data["audit"]["reserved_ranking_validation_sources"]
+            ),
             "train_states": len(train_state_ids), "validation_states": len(val_state_ids),
             "train_branches": len(train_indices), "validation_branches": len(val_indices),
             "partial_action_branches": int(data["audit"]["partial_action_branches"]),

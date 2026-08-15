@@ -32,6 +32,9 @@ def test_two_step_temporal_training_writes_audited_checkpoints(tmp_path, monkeyp
         states.append({
             "group_id": group,
             "split": split,
+            "consequence_split": "train" if group == 0 else (
+                "validation" if group == 1 else "reserved_ranking_val"
+            ),
             "suite": "libero_goal",
             "source_episode": f"source-{group}",
             "proprio": torch.linspace(0, 1, 8) + group,
@@ -47,6 +50,7 @@ def test_two_step_temporal_training_writes_audited_checkpoints(tmp_path, monkeyp
                 "ordinal": ordinal,
                 "group_id": group,
                 "split": split,
+                "consequence_split": states[-1]["consequence_split"],
                 "environment_actions": actions,
                 "action_is_pad": pad,
             })
@@ -55,7 +59,10 @@ def test_two_step_temporal_training_writes_audited_checkpoints(tmp_path, monkeyp
         "format": MODULE.DATA_FORMAT,
         "states": states,
         "branches": branches,
-        "audit": {"partial_action_branches": 3},
+        "audit": {
+            "partial_action_branches": 3,
+            "reserved_ranking_validation_sources": 1,
+        },
     }, dataset)
     features = tmp_path / "features.pt"
     torch.save({

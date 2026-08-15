@@ -56,3 +56,47 @@
 - 哪些 H3 参数被 video/action/aux loss 实际更新。
 
 只要其中一项没有直接测试，就标 `UNKNOWN`，最多允许工程 smoke，不允许长训。
+
+## 因果动作 critic 与 best-of-N 数据门
+
+动作候选排序的有效样本量不能用总 branch 数表示。若每个固定状态采样多个动作，只有同时含成功和
+失败的 `mixed group` 能提供 within-state 排序监督；其正 pair 数为
+`n_success × n_failure`。预注册、训练预算和放行结论必须同时报告：源 episode 数、mixed group 数、
+train/validation pair 数与 suite 覆盖。
+
+1. 同组必须固定 checkpoint、规范化恢复状态、环境 seed、后续 policy-noise schedule、执行 horizon
+   与 evaluator；只改变首动作生成随机性。起点观测/状态和候选动作要逐字节或按预注册容差审计。
+2. critic 输入只能含决策时可见的第0行状态和候选动作。后续 replan observation、最终状态、steps、
+   success predicate 都属于标签侧，进入输入即为泄漏。
+3. 至少保留 action-only shortcut 与 state-only/tie control。state-conditioned critic 必须在未见源
+   episode 的 within-state ranking 上击败 shortcut，才能进入 best-of-N；训练 pair 满分不算机制证据。
+4. 当训练 pair 接近100%而 episode-disjoint ranking反转或退到随机时，分类为小样本/动作捷径泛化
+   失败，不靠增加同一批 pair 的 epochs 修复。先用 train-group-only leave-one-episode-out选容量与正则，
+   再扩大新的因果源 episode。
+5. validation outcome 一旦被读取，就永久降为 exploratory。任何在该结果之后选择的步数、正则、
+   投影、特征或融合，都必须在结果生成前冻结一批全新 source episodes 才能恢复 confirmatory 身份。
+6. best-of-N 仍是独立闭环效果门：held-out ranking通过只允许固定父策略的 `N=1` 对 `N>1` canary，
+   不能直接宣称 LIBERO 成功率或通用 WAM 能力提高。
+
+## Action-conditioned consequence 数据与模型门
+
+静态 `current-state feature × flattened action` critic 不等价于 action-conditioned world model。
+当它在训练 pair 拟合更强、fresh episode ranking却不优于action-only时，停止增加同批epochs；下一机制
+必须显式建模 `clean action -> future state/value/video`，并重新冻结未消费source episodes。
+
+1. 代码对齐应区分三类路径：DreamWAM的future supervision通过共享video/action attention塑造动作；
+   MiniWorld把固定数量原始动作对齐到video latent time并逐层调制；FACT先生成动作，再把clean action
+   作为K/V-only条件预测future/value。三者不能用一个无时间结构的action flatten head互相冒充。
+2. action-conditioned adapter必须保持动作时间顺序。若video VAE每个latent frame对应`k`个动作，就预注册
+   `k`和token count；至少保留flattened等预算基线与action shuffle/independent控制。
+3. future/value loss不得回传到候选动作生成器：用因果attention mask或模块边界detach直接测试。报告
+   action encoder非零finite梯度，同时断言输入candidate action/upstream policy梯度为零。
+4. rollout日志必须同时覆盖成功和失败的动作后果。只在replan前存观测会遗漏“首chunk内成功”样本，
+   导致成功标签选择偏差；应另存post-execution terminal observation，不要为补终态而扩展旧replan行轴。
+5. future target优先取执行完整首chunk后的下一replan观测；若episode在首chunk内成功，可取terminal
+   observation，但必须记录实际terminal step且证明`start < terminal <= start+horizon`。超出首chunk的
+   terminal混有continuation policy，不能当首动作直接后果。
+6. 当前状态与候选动作是在线输入；future image/state、terminal、steps和success永远是标签侧。数据冻结
+   artifact应分别保存current/action/future/value及hash，训练loader必须有防future泄漏测试。
+7. future prediction门只证明动作影响后果表示；必须再过fresh within-state value ranking，最后才允许
+   `N=1`对`N>1`闭环。任一级失败都不能用上一层的MSE改善宣称动作生成或LIBERO成功率提高。

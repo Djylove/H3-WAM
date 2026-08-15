@@ -796,3 +796,7 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   zero action。flattened与MiniWorld对齐的8-token temporal使用同样的10000 steps/batch64、每1000步
   checkpoint，并做fresh restore。只有correct arm在未见source上同时击败两个控制且同状态shuffle使其
   退化至少1%，才放行后续value ranking；C30未完成前状态仍为`HOLD_DATA_GATE`。
+- 为避免同一validation被连续用于“选consequence结构”和“证明动作ranking”，C31在未读取C30 outcome时
+  又冻结了三级source用途：只从原C30 train源按suite哈希划出约20%作consequence validation；其余作
+  consequence train；原C30的16个val source全部标记`reserved_ranking_val`，C31 future-MSE训练与选型
+  均不读取。这样后续value head可用原train mixed groups训练，并仍有完整的fresh-source ranking终验集。

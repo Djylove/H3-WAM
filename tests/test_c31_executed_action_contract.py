@@ -43,3 +43,21 @@ def test_full_chunk_has_no_padding_and_invalid_lengths_fail():
         MODULE.mask_unexecuted_action_tail(proposed, executed_steps=0)
     with pytest.raises(ValueError):
         MODULE.mask_unexecuted_action_tail(proposed, executed_steps=33)
+
+
+def test_consequence_split_never_consumes_original_ranking_validation():
+    rows = []
+    for suite in ("libero_goal", "libero_object"):
+        for source in range(5):
+            rows.append({
+                "suite": suite, "source_episode": f"{suite}-train-{source}",
+                "split": "train",
+            })
+        rows.append({
+            "suite": suite, "source_episode": f"{suite}-rank-val",
+            "split": "val",
+        })
+    splits = MODULE.consequence_source_splits(rows)
+    assert sum(value == "validation" for value in splits.values()) == 2
+    assert sum(value == "reserved_ranking_val" for value in splits.values()) == 2
+    assert splits["libero_goal-rank-val"] == "reserved_ranking_val"

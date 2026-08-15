@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from collections import defaultdict
@@ -61,6 +62,33 @@ def mask_unexecuted_action_tail(
     executed_actions = actions.copy()
     executed_actions[action_is_pad] = 0.0
     return executed_actions, action_is_pad
+
+
+def consequence_source_splits(selections: list[dict]) -> dict[str, str]:
+    """Reserve original C30 val and carve tune sources from C30 train only."""
+
+    by_suite: dict[str, set[str]] = defaultdict(set)
+    result: dict[str, str] = {}
+    for row in selections:
+        source = str(row["source_episode"])
+        if row["split"] == "val":
+            result[source] = "reserved_ranking_val"
+        elif row["split"] == "train":
+            by_suite[str(row["suite"])].add(source)
+        else:
+            raise ValueError(f"unknown C30 split: {row['split']}")
+    for suite, sources in sorted(by_suite.items()):
+        ordered = sorted(
+            sources,
+            key=lambda source: hashlib.sha256(
+                f"c31-consequence-validation-v1|{suite}|{source}".encode()
+            ).hexdigest(),
+        )
+        validation_count = max(1, len(ordered) // 5)
+        validation = set(ordered[:validation_count])
+        for source in ordered:
+            result[source] = "validation" if source in validation else "train"
+    return result
 
 
 def load_branch(root: Path, row: dict) -> dict:
@@ -166,6 +194,7 @@ def main() -> None:
     if len(selections) != int(completion["branches"]):
         raise ValueError("C30 completion/selection branch count mismatch")
     loaded = [load_branch(root, row) for row in selections]
+    consequence_splits = consequence_source_splits(selections)
     grouped: dict[int, list[dict]] = defaultdict(list)
     for branch in loaded:
         grouped[int(branch["selection"]["group_id"])].append(branch)
@@ -193,6 +222,7 @@ def main() -> None:
             "group_id": group_id, "source_episode": selection["source_episode"],
             "suite": selection["suite"], "task": int(selection["task"]),
             "trial": int(selection["trial"]), "split": selection["split"],
+            "consequence_split": consequence_splits[str(selection["source_episode"])],
             "distance_replans": int(selection["distance_replans"]),
             "task_language": first["task_language"],
             "absolute_step": first["current"]["step"],
@@ -209,6 +239,7 @@ def main() -> None:
                 "ordinal": int(row["ordinal"]), "group_id": group_id,
                 "source_episode": row["source_episode"], "suite": row["suite"],
                 "split": row["split"], "noise_offset": int(row["noise_offset"]),
+                "consequence_split": consequence_splits[str(row["source_episode"])],
                 "success": item["success"],
                 "proposed_environment_actions": item["proposed_environment_actions"],
                 "environment_actions": item["executed_environment_actions"],
@@ -238,6 +269,16 @@ def main() -> None:
             "all_branches_have_post_action_consequence": True,
             "terminal_fallback_branches": sum(b["future_source"] == "terminal_within_first_chunk" for b in branches),
             "partial_action_branches": sum(b["executed_action_steps"] < 32 for b in branches),
+            "consequence_train_sources": len({
+                s["source_episode"] for s in states if s["consequence_split"] == "train"
+            }),
+            "consequence_validation_sources": len({
+                s["source_episode"] for s in states if s["consequence_split"] == "validation"
+            }),
+            "reserved_ranking_validation_sources": len({
+                s["source_episode"] for s in states
+                if s["consequence_split"] == "reserved_ranking_val"
+            }),
             "train_mixed_groups": train_mixed, "val_mixed_groups": val_mixed,
             "train_pairs": sum(states[g]["successes"] * (4 - states[g]["successes"]) for g in train_mixed),
             "val_pairs": sum(states[g]["successes"] * (4 - states[g]["successes"]) for g in val_mixed),
