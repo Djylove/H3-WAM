@@ -19,6 +19,15 @@ class H3ProgressProbeTest(unittest.TestCase):
         prediction = probe.ridge_predict(x, y, x, 1e-6)
         self.assertLess(float((prediction - y).abs().mean()), 1e-5)
 
+    def test_fitted_state_restores_prediction(self):
+        x = torch.arange(20, dtype=torch.double).unsqueeze(1)
+        y = x[:, 0] / 20
+        prediction, state = probe.ridge_fit_predict(x, y, x, 1e-6)
+        restored_x = (x - state["mean"]) / state["std"]
+        restored_x = torch.cat((torch.ones((20, 1), dtype=torch.double), restored_x), dim=1)
+        restored = (restored_x @ state["weights"]).clamp(0, 1)
+        self.assertTrue(torch.equal(prediction, restored))
+
 
 if __name__ == "__main__":
     unittest.main()

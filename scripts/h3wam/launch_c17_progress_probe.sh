@@ -34,5 +34,6 @@ run_split val 500
 "${python_bin}" scripts/h3wam/evaluate_h3_progress_probe.py \
   --train "${output_root}/features/train_shard_0.pt" "${output_root}/features/train_shard_1.pt" \
   --val "${output_root}/features/val_shard_0.pt" "${output_root}/features/val_shard_1.pt" \
-  --output "${output_root}/COMPLETED" >"${output_root}/logs/evaluation.log" 2>&1
+  --output "${output_root}/COMPLETED" --save-probe "${output_root}/probe.pt" \
+  >"${output_root}/logs/evaluation.log" 2>&1
 cat "${output_root}/COMPLETED"

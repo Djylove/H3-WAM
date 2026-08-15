@@ -314,6 +314,8 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   超出task+absolute-step的阶段进度信息，C17晋级shadow progress trace；但它尚未看到可验证的备选动作
   outcome，因此仍不授权best-of-N或声称动作生成改善。artifact：
   `/mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1/COMPLETED`。
+  同一拟合已导出为17KB严格契约权重 `probe.pt`（40 contexts、553维标准化输入、554个含bias权重），
+  restore复算与原预测逐元素一致；下一步只做闭环shadow trace，不直接改动作。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。

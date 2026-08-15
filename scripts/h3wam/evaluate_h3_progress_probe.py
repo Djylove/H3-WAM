@@ -17,6 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val", type=Path, nargs="+", required=True)
     parser.add_argument("--ridge", type=float, default=0.01)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--save-probe", type=Path)
     return parser.parse_args()
 
 
@@ -39,14 +40,18 @@ def load(paths: list[Path]) -> dict:
     }
 
 
-def ridge_predict(train_x, train_y, val_x, ridge):
+def ridge_fit_predict(train_x, train_y, val_x, ridge):
     mean, std = train_x.mean(0), train_x.std(0, unbiased=False).clamp_min(1e-6)
     train_x = (train_x - mean) / std; val_x = (val_x - mean) / std
     train_x = torch.cat((torch.ones((len(train_x), 1), dtype=train_x.dtype), train_x), dim=1)
     val_x = torch.cat((torch.ones((len(val_x), 1), dtype=val_x.dtype), val_x), dim=1)
     penalty = torch.eye(train_x.shape[1], dtype=train_x.dtype) * ridge; penalty[0, 0] = 0
     weights = torch.linalg.solve(train_x.T @ train_x + penalty, train_x.T @ train_y)
-    return (val_x @ weights).clamp(0, 1)
+    return (val_x @ weights).clamp(0, 1), {"mean": mean, "std": std, "weights": weights}
+
+
+def ridge_predict(train_x, train_y, val_x, ridge):
+    return ridge_fit_predict(train_x, train_y, val_x, ridge)[0]
 
 
 def metrics(target, prediction, suites):
@@ -79,7 +84,9 @@ def main() -> None:
     train, val = load(args.train), load(args.val)
     contexts = sorted(set(train["context_id"]))
     baseline = ridge_predict(design(train, contexts, False), train["target"], design(val, contexts, False), args.ridge)
-    h3 = ridge_predict(design(train, contexts, True), train["target"], design(val, contexts, True), args.ridge)
+    h3, probe_state = ridge_fit_predict(
+        design(train, contexts, True), train["target"], design(val, contexts, True), args.ridge
+    )
     baseline_metrics, h3_metrics = metrics(val["target"], baseline, val["suite"]), metrics(val["target"], h3, val["suite"])
     ratio = h3_metrics["all"]["mae"] / baseline_metrics["all"]["mae"]
     per_suite_guard = all(h3_metrics[s]["mae"] <= 1.05 * baseline_metrics[s]["mae"] for s in sorted(set(val["suite"])))
@@ -99,6 +106,22 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(f".{output.name}.{os.getpid()}.partial")
     temporary.write_text(json.dumps(report, indent=2) + "\n"); os.replace(temporary, output)
+    if args.save_probe is not None:
+        probe = args.save_probe.resolve()
+        if probe.exists(): raise FileExistsError(f"refusing to overwrite {probe}")
+        payload = {
+            "format": "h3wam-frozen-h3-progress-ridge-v1", "ridge": args.ridge,
+            "contexts": contexts,
+            "design_contract": "context onehot + absolute_step/400 + layer49 K/V 512D compact feature",
+            "feature_contract": "concat(mean_k,std_k,mean_v,std_v) over token/head",
+            "mean": probe_state["mean"], "std": probe_state["std"], "weights": probe_state["weights"],
+            "train_selection_sha256": train["selection_sha256"],
+            "validation_selection_sha256": val["selection_sha256"],
+            "validation_status": report["status"],
+        }
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        probe_temporary = probe.with_name(f".{probe.name}.{os.getpid()}.partial")
+        torch.save(payload, probe_temporary); os.replace(probe_temporary, probe)
     print(json.dumps(report, indent=2))
 
 

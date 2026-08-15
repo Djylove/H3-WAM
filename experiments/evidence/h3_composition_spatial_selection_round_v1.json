@@ -327,7 +327,10 @@
         "libero_10_h3_mae": 0.05789386378633448,
         "all_four_suites_improved": true,
         "status": "PASS_PROGRESS_FEATURE_GATE",
-        "artifact": "/mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1/COMPLETED"
+        "artifact": "/mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1/COMPLETED",
+        "restorable_probe": "/mnt/h3-wam/eval/c17-frozen-h3-progress-probe-v1/probe.pt",
+        "probe_parameters": 554,
+        "probe_contexts": 40
       },
       "promotion": "Frozen-H3 progress head must improve held-out value MAE and task-progress calibration over step/context baselines, including LIBERO-10, before fusion.",
       "stop": "Feature gate passed, but no best-of-N or policy claim until a shadow progress trace passes and the critic is action-conditioned with held-out alternative outcomes."
