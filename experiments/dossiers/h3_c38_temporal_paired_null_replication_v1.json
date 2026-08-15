@@ -1,0 +1,38 @@
+{
+  "experiment_id": "h3_c38_temporal_paired_null_replication_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "The no-dropout temporal consequence expert will reproduce a same-model true-action advantage over null and shuffled actions in four wholly new optimization seeds, authorizing evaluation on the untouched C33 ranking set.",
+  "single_variable": "C38 fixes the repeatedly superior temporal/raw architecture and removes C37's harmful condition dropout; four new seeds replace all previously inspected seeds while the paired-null and shuffle thresholds, data, features, optimizer and 10,000-step budget remain fixed.",
+  "parent_baseline": "C37 SHA256 0017c1dc5b97f7cac6ac38bb4513d0dbb8862fb46df0397b408e73928e30e62a failed because 10% dropout made paired-null seed-dependent, while shuffle and shuffled-train controls remained positive. C35's post-hoc no-dropout paired result motivates C38 but is excluded from promotion evidence.",
+  "references": [
+    {"kind": "paper", "title": "MiniWorld action-conditioned world model", "locator": "third_party/MiniWorld/README.md", "revision": "repository documentation"},
+    {"kind": "upstream_code", "title": "MiniWorld optional structured condition dropout", "locator": "third_party/MiniWorld/miniworld/miniworld.py", "revision": "e484206bbd4360ae56ed8abad51c83f2457ac092", "official": true},
+    {"kind": "upstream_code", "title": "FACT clean-action future path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "local_implementation", "title": "C38 four-new-seed temporal replication", "locator": "scripts/h3wam/launch_c38_temporal_paired_null_replication.sh", "revision": "C38 implementation commit"}
+  ],
+  "alignment": {
+    "architecture": [{"field": "temporal action-conditioned future expert", "paper": "Actions condition future video tokens in temporal order.", "upstream_code": "MiniWorld aligns action chunks to latent frames; FACT exposes clean action K/V to future targets.", "local": "Eight ordered four-action tokens condition a frozen-H3 future query; this exact C35/C37 temporal class is unchanged.", "status": "EQUIVALENT", "evidence": ["src/fastwam/models/h3wam/fact_lite_consequence.py", "tests/test_temporal_future_h3_consequence.py"], "rationale": "C38 is replication, not a new architecture."}],
+    "data": [{"field": "selection versus untouched final test", "paper": "Model selection and final evaluation remain separate.", "upstream_code": "Held-out episodes gate downstream selection.", "local": "C34's 8-source consequence validation is explicitly consumed selection data; C33's 52 sources/416 branches remain untouched for final ranking evaluation.", "status": "EQUIVALENT", "evidence": ["C34 dataset SHA256 2a6c9252b8e77975f58920425bc18110fa8ea63bdc12c4c15571cfffeb9f7459", "C33 SHA256 0bee853840820ba8fdeb5635759a8dea6fe7b1c39bfcac4e2bac7a5766929514"], "rationale": "C38 alone cannot be an effectiveness claim."}],
+    "action": [{"field": "clean no-dropout action", "paper": "Future targets condition on clean actions.", "upstream_code": "MiniWorld permits cond_dropout_prob=0; FACT teacher-forces clean action tokens.", "local": "All conditioned training rows receive the exact audited executed prefix; null and same-state shuffle appear only in paired validation probes.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/launch_c38_temporal_paired_null_replication.sh"], "rationale": "This removes the sole C37 training change."}],
+    "objective": [{"field": "four-seed paired mechanism", "paper": "Same-model conditional effects isolate conditioning.", "upstream_code": "MiniWorld conditional/null passes share weights.", "local": "Each new seed must pass true>null>=1%, true>shuffled-trained>=1%, shuffle degradation>=1%, finite gradients and exact restore.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c38_paired_null_replication.py"], "rationale": "Four new seeds test robustness without retroactively accepting C35."}],
+    "optimization": [{"field": "fixed long replication", "paper": "Matched optimization supports ablation.", "upstream_code": "Condition dropout is configurable without other optimizer changes.", "local": "Seeds161803/271828/8675309/20260815 each run temporal/raw, 10,000 steps, batch64, AdamW3e-4/1e-2, checkpoint every1,000.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/launch_c38_temporal_paired_null_replication.sh"], "rationale": "Four independent fits replace a two-seed architecture sweep because temporal already won C35 and C36."}],
+    "evaluation": [{"field": "bounded selection permission", "paper": "Mechanism checks precede downstream ranking.", "upstream_code": "FACT future prediction precedes best-of-N value selection.", "local": "Only 4/4 PASS grants GO_FRESH_RANKING_VALIDATION; no C38 metric is called fresh evidence.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c38_paired_null_replication.py"], "rationale": "The untouched C33 ranking test remains mandatory."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["MiniWorld e484206bbd4360ae56ed8abad51c83f2457ac092; FACT 618a6c16868699b6d4138941de6a863589ac00dd; C37 0017c1dc5b97f7cac6ac38bb4513d0dbb8862fb46df0397b408e73928e30e62a."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Temporal class unchanged and repeatedly lower error than flattened before C38."]},
+    "data_contract": {"status": "PASS", "evidence": ["C34 selection and C33 final ranking roles are explicit and source-disjoint."]},
+    "action_contract": {"status": "PASS", "evidence": ["No dropout; exact executed prefix and zero tail contracts unchanged."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Four seeds and all 1% paired gates fixed before C38 outcomes."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Four temporal/raw/no-drop jobs, each 10,000 steps and batch64."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Consumed selection boundary explicit; C33 untouched final test required."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Actions detached; temporal action encoder receives finite nonzero gradients."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["12 focused tests including four-seed aggregator PASS."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Production trainer saves every1,000 and exact-restores the final checkpoint."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C35/C36/C37 FAIL artifacts fixed; no prior seed is reused."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["C38 outcomes pending."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Fresh ranking and closed-loop stages remain pending."]}
+  },
+  "budget": {"global_batch": 768, "optimizer_steps": 10000, "training_samples": 7680000, "unique_windows": 296, "effective_epochs": 25945.945945945947, "gpu_count": 4, "estimated_hours": 0.1},
+  "decision": {"status": "GO_LONG", "rationale": "C37 isolates condition dropout as harmful, while temporal action sensitivity remains stable. Four wholly new fits are the bounded replication needed before consuming the final C33 ranking set.", "launch_command": "On ports32611/30907/32409/30234 set C38_RUN_INDEX=0/1/2/3 and run bash scripts/h3wam/launch_c38_temporal_paired_null_replication.sh; aggregate only all four reports."}
+}
