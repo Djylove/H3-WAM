@@ -575,3 +575,15 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 两轮均未更新任何动作/H3参数，不涉及global batch、effective epoch或训练checkpoint；各16 episode、
   最多6400环境步、实测344秒。结论是成功专家time-to-go不足以训练闭环停滞critic；停止该标签路线，
   action-conditioned ranking继续`NO_GO`，直到具备failure onset或counterfactual action outcome。
+
+### 2026-08-15 — C19/C20 counterfactual branch restore contract
+
+- C19证明旧轨迹的LIBERO flattened state（time/qpos/qvel）能max-abs0写回，但恢复观测不等于旧轨迹
+  缓存；旧轨迹不能支持“原观测精确接管”声明。
+- C20首跑发现LIBERO `seed()`修改process-global RNG，两个env顺序reset会得到不同world layout；该
+  harness失败保留在`c20-libero-branch-repeatability-v1`，不计方法结果。
+- v2在每次reset前重设seed42：四suite各3个状态、每状态两独立env执行同一8步chunk；起点和终点
+  双相机图像逐像素一致，proprio/state差≤`1e-10`，steps/success一致，通过
+  `PASS_MULTISUITE_BRANCH_REPEATABILITY_GATE`。
+- 训练许可仅为`GO_CANARY`采集小规模规范化分支outcome；效果仍`NOT_EVIDENCE_READY`。在真实
+  alternative-action outcome、episode-disjoint split和ranking gate完成前，critic/best-of-N仍禁止。

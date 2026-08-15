@@ -67,6 +67,8 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C16 | temporal/value | held-out progress value diagnostic | FACT | D0-H32-s14000 rollout trajectories | 只对成功轨迹按官方future-state time-to-go造target；失败轨迹右删失 | 1001 transitions；trial3 val238；LIBERO-10 val正样本0 | GO_DIAGNOSTIC；NO_GO_BEST_OF_N |
 | C17 | temporal/value | expert progress value diagnostic | FACT + v7 dense expert windows | frozen H3 carrier | task+absolute-step+H3预测offset32 time-to-go；不改动作 | feature PASS，但shadow AUROC0.1875；absolute-step形成时间捷径 | NO_GO_POLICY_INTEGRATION；保留诊断证据 |
 | C18 | temporal/value | time-blind expert progress diagnostic | C17冻结特征与split | C17 | 删除absolute-step，仅task+H3预测time-to-go | feature MAE下降53.8%，但shadow AUROC0.5469<0.65 | NO_GO_POLICY_INTEGRATION；需failure/action outcome |
+| C19 | deployment/data | old-trajectory exact restore | LIBERO `regenerate_obs_from_state` | D0保存的qpos/qvel/time | 要求恢复观测等于原轨迹观测 | state exact但图像/proprio不等；旧state缺observable动态 | NO_GO_ORIGINAL_OBSERVATION_CLAIM |
+| C20 | deployment/data | paired canonical branch restore | C19 + fixed per-reset seed | C19 | 两个独立env从同state执行同8步动作 | 四suite×3状态图像逐像素一致，数值差≤1e-10 | GO_COUNTERFACTUAL_COLLECTION_CANARY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -338,6 +340,16 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   failure onset或同状态备选动作outcome。artifacts：
   `/mnt/h3-wam/eval/c18-timeblind-progress-probe-v1/COMPLETED`、
   `/mnt/h3-wam/eval/c18-timeblind-progress-shadow-v1/report.json`。
+- C19检查旧轨迹能否恢复到原始观测：四suite各取失败episode的首/中/末，共12个state。LIBERO
+  `get_sim_state()`保存的time/qpos/qvel可max-abs0写回，但恢复后的图像与proprio不等于旧缓存，故不能
+  把旧trajectory state称为“原轨迹精确快照”。artifact：
+  `/mnt/h3-wam/eval/c19-libero-state-restore-v1/COMPLETED`。
+- C20改问counterfactual真正需要的可证伪问题：两个独立env从同一规范化恢复state开始，执行同一8步
+  chunk，是否得到相同起点/终点。首跑遗漏LIBERO `seed()`使用process-global RNG，Goal/Spatial的
+  reset布局不同，保留为harness失败；v2在每次reset前固定seed42后，四suite×3状态的双相机起点/终点
+  均逐像素一致，proprio/state均在`1e-10`容差内，steps/success predicate一致。因此只放行小规模
+  paired counterfactual collection canary；仍未得到alternative-action outcomes，不放行critic训练。
+  artifact：`/mnt/h3-wam/eval/c20-libero-branch-repeatability-v2/COMPLETED`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。

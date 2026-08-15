@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import numpy as np
 
+from scripts.h3wam.audit_libero_trajectory_restore import comparison
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "h3wam" / "audit_fact_rollout_transitions.py"
@@ -21,6 +23,19 @@ SPEC.loader.exec_module(MODULE)
 
 
 class FactRolloutTransitionAuditTest(unittest.TestCase):
+    def test_restore_comparison_reports_exact_and_numeric_error(self):
+        exact = comparison(
+            np.asarray([1, 2], dtype=np.uint8),
+            np.asarray([1, 2], dtype=np.uint8),
+        )
+        self.assertEqual(exact["max_abs"], 0.0)
+        self.assertEqual(exact["exact_fraction"], 1.0)
+        changed = comparison(
+            np.asarray([1.0, 2.0]), np.asarray([1.0, 2.25])
+        )
+        self.assertEqual(changed["max_abs"], 0.25)
+        self.assertEqual(changed["exact_fraction"], 0.5)
+
     def write_episode(self, root: Path, trial: int, success: bool) -> None:
         directory = root / f"d0_h32_s14000_object_task0_trial{trial}_replan8"
         directory.mkdir()

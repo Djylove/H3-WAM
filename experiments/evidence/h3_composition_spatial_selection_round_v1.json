@@ -412,6 +412,32 @@
       "evidence_status": "FAIL_PROGRESS_SHADOW_GATE",
       "promotion": "AUROC>=0.65 with exact parent actions/outcomes and successful median delta<0",
       "stop": "Do not tune this expert-only label further; require failure onset or held-out alternative-action outcomes before action-conditioned critic work."
+    },
+    "C19": {
+      "name": "old-trajectory-original-observation-restore",
+      "classification": "deployment_contract_audit",
+      "single_variable": "restore saved LIBERO flattened time/qpos/qvel and compare to original cached observation",
+      "cases": 4,
+      "states": 12,
+      "state_restore_max_abs": 0.0,
+      "status": "FAIL_MULTISUITE_EXACT_RESTORE_GATE",
+      "go_status": "NO_GO_ORIGINAL_OBSERVATION_CLAIM",
+      "artifact": "/mnt/h3-wam/eval/c19-libero-state-restore-v1/COMPLETED"
+    },
+    "C20": {
+      "name": "paired-canonical-branch-repeatability",
+      "classification": "deployment_contract_audit",
+      "parent_lineage": "C19",
+      "single_variable": "compare two independently reset, identically seeded environments restored from the same state and executing the same 8-step chunk",
+      "cases": 4,
+      "states": 12,
+      "image_contract": "pixel exact at branch start and 8-step end",
+      "numeric_tolerance": 1e-10,
+      "status": "PASS_MULTISUITE_BRANCH_REPEATABILITY_GATE",
+      "go_status": "GO_COUNTERFACTUAL_COLLECTION_CANARY",
+      "evidence_status": "NOT_EVIDENCE_READY",
+      "boundary": "Canonical paired branches are repeatable; fidelity to the original cached observation is not claimed, and alternative-action outcomes have not yet been collected.",
+      "artifact": "/mnt/h3-wam/eval/c20-libero-branch-repeatability-v2/COMPLETED"
     }
   },
   "difference_matrix": [
@@ -478,6 +504,8 @@
       "C16 FACT-style rollout progress value (target dossier only)",
       "C17 expert progress value (feature pass, shadow rejected: time shortcut)",
       "C18 time-blind expert progress value (feature pass, shadow AUROC0.546875 rejected)"
+      ,"C19 old trajectory original-observation restore (rejected)",
+      "C20 paired canonical branch restore (mechanical gate passed; collection pending)"
     ],
     "track_winner": "none: C02 and C15 failed final spatial/object gates; C14 did not confirm across trials",
     "fusion": "blocked; C17/C18 both failed shadow and no action-conditioned outcome supervision exists"
