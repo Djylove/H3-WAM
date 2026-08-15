@@ -165,6 +165,10 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
   `1/10`。成功覆盖14个不同任务，不是针对单任务过拟合；泛化集中在单阶段对象迁移，长程组合仍弱。
   该数字只代表每任务一次的coverage，不冒充官方benchmark。已启动相同40任务的trial1复验，检查
   35%是否依赖单一初始状态。
+- trial1 为 `15/40=37.5%`；两轮合计 `29/80=36.25%`，Goal/Object/Spatial/LIBERO-10 分别
+  `4/20、16/20、7/20、2/20`。8个任务两次均成功，21/40任务至少成功一次，说明trial0不是单一
+  初始状态偶然。已排队trial2和trial3再加80 episodes，总覆盖将达到160 episodes；仍不冒充官方
+  50-trial benchmark。
 
 ## 蛊王融合谱系
 

@@ -312,12 +312,46 @@
       "claim_boundary": "This proves success on 14 distinct tasks in a one-trial-per-task coverage screen. It is not the official multi-trial LIBERO benchmark success rate.",
       "interpretation": "Generalization is strongest on single-stage object transfer (8/10), partial on spatial relations (4/10), and weak on long-horizon/compositional Goal and LIBERO-10 tasks (1/10 each)."
     },
-    "active_champion_all40_trial1_replication": {
+    "champion_all40_trial1_replication": {
       "node_port": 32409,
-      "queue_pid": 616236,
+      "completed_queue_pid": 616236,
       "runner": "TRIAL_INDEX=1 scripts/h3wam/run_champion_all_tasks_trial0.sh",
       "episodes": 40,
       "purpose": "Repeat all 40 tasks on a second fixed initial state to test whether the 35 percent trial0 coverage is seed-specific.",
+      "successes": 15,
+      "success_rate": 0.375,
+      "by_suite": {
+        "libero_goal": {"successes": 3, "episodes": 10},
+        "libero_object": {"successes": 8, "episodes": 10},
+        "libero_spatial": {"successes": 3, "episodes": 10},
+        "libero_10": {"successes": 1, "episodes": 10}
+      },
+      "sorted_sha256_manifest_sha256": "27225a95e4df776f8e41b19920ffe8512d5d06a000d03e071555589d23dc9ccd",
+      "status": "EVIDENCE_READY_FOR_SECOND_TRIAL_ALL_TASK_COVERAGE"
+    },
+    "champion_all40_trials0_1_aggregate": {
+      "episodes": 80,
+      "successes": 29,
+      "success_rate": 0.3625,
+      "by_suite": {
+        "libero_goal": {"successes": 4, "episodes": 20},
+        "libero_object": {"successes": 16, "episodes": 20},
+        "libero_spatial": {"successes": 7, "episodes": 20},
+        "libero_10": {"successes": 2, "episodes": 20}
+      },
+      "tasks_success_both_trials": 8,
+      "tasks_success_at_least_once": 21,
+      "tasks_fail_both_trials": 19,
+      "sorted_sha256_manifest_sha256": "63f3abab9adb482f585e9b4a94966653d689d88837b117c58877b7effa2fc7ae",
+      "status": "EVIDENCE_READY_FOR_TWO_TRIAL_COVERAGE_NOT_OFFICIAL_BENCHMARK",
+      "interpretation": "Trial0 and trial1 totals are consistent at 35 and 37.5 percent. Object transfer is robust at 80 percent while long-horizon/compositional suites remain the dominant bottleneck."
+    },
+    "active_champion_all40_trials2_3_extension": {
+      "node_port": 32409,
+      "queue_pid": 632687,
+      "runner": "TRIAL_INDEX=2 then TRIAL_INDEX=3 with scripts/h3wam/run_champion_all_tasks_trial0.sh",
+      "additional_episodes": 80,
+      "planned_total_episodes_trials0_3": 160,
       "status": "NOT_EVIDENCE_READY_RUNNING"
     }
   },
