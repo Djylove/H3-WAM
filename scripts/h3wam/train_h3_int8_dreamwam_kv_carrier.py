@@ -320,6 +320,13 @@ class CachedDreamWAMKVDataset(Dataset):
         )
         if not first_payload.get("checkpoint"):
             raise ValueError("DreamWAM K/V cache is missing its H3 checkpoint identity")
+        self.cache_action_horizon = int(first_payload.get("action_horizon", 0))
+        if self.cache_action_horizon < self.action_horizon:
+            raise ValueError(
+                "DreamWAM K/V cache action horizon is shorter than the requested "
+                f"training target: cache={self.cache_action_horizon}, "
+                f"requested={self.action_horizon}"
+            )
         self.first_checkpoint_path = Path(first_payload["checkpoint"])
 
     def __len__(self) -> int:
@@ -341,7 +348,6 @@ class CachedDreamWAMKVDataset(Dataset):
             "capture_token_strategy": DREAMWAM_KV_STRATEGY,
             "dreamwam_commit": DREAMWAM_COMMIT,
             "context_id": str(row["context_id"]),
-            "action_horizon": self.action_horizon,
             "backbone": CACHE_BACKBONE,
             "quantization": CACHE_QUANTIZATION,
             "manifest_items": self.source_manifest_items,
@@ -355,6 +361,12 @@ class CachedDreamWAMKVDataset(Dataset):
                     f"DreamWAM K/V cache mismatch for {sample_id}: "
                     f"{key}={actual!r}, expected {expected_value!r}"
                 )
+        if int(payload.get("action_horizon", 0)) != self.cache_action_horizon:
+            raise ValueError(
+                f"DreamWAM K/V cache mismatch for {sample_id}: "
+                f"action_horizon={payload.get('action_horizon')!r}, "
+                f"expected source horizon {self.cache_action_horizon!r}"
+            )
         if not math.isclose(float(payload.get("timestep", -1.0)), 1.0):
             raise ValueError(f"K/V cache timestep must be 1.0 for {sample_id}")
         if Path(payload.get("checkpoint", "")) != self.first_checkpoint_path:

@@ -250,11 +250,12 @@ def _require_contract(
         "kv_tokens": 32,
         "kv_num_heads": int(model_spec["num_heads"]),
         "kv_attn_head_dim": int(model_spec["attn_head_dim"]),
-        "action_horizon": 32,
     }
     for key, expected in numeric_contract.items():
         if int(contract.get(key, -1)) != expected:
             raise ValueError(f"Candidate D {key} differs from audited protocol")
+    if int(contract.get("action_horizon", -1)) not in {8, 32}:
+        raise ValueError("Candidate D action_horizon must be one of the audited H8/H32 pair")
     expected_bytes = CANDIDATE_D.h3_kv_cache_bytes(
         layers=len(layers),
         tokens=int(contract["kv_tokens"]),
@@ -326,7 +327,6 @@ class CachedDreamWAMKVValidationDataset(PROTOCOL.CachedLast32ValidationDataset):
             "capture_token_strategy": CANDIDATE_D.DREAMWAM_KV_STRATEGY,
             "dreamwam_commit": CANDIDATE_D.DREAMWAM_COMMIT,
             "context_id": expected_context_id,
-            "action_horizon": self.action_horizon,
             "backbone": CANDIDATE_D.CACHE_BACKBONE,
             "quantization": CANDIDATE_D.CACHE_QUANTIZATION,
             "manifest_items": self.source_manifest_items,
@@ -340,6 +340,12 @@ class CachedDreamWAMKVValidationDataset(PROTOCOL.CachedLast32ValidationDataset):
                     f"DreamWAM K/V cache mismatch for {sample_id}: "
                     f"{key}={actual!r}, expected {expected_value!r}"
                 )
+        cache_action_horizon = int(payload.get("action_horizon", 0))
+        if cache_action_horizon < self.action_horizon:
+            raise ValueError(
+                f"DreamWAM K/V cache horizon {cache_action_horizon} is shorter than "
+                f"the evaluated action horizon {self.action_horizon}"
+            )
         if not math.isclose(float(payload.get("timestep", -1.0)), EXPECTED_KV_TIMESTEP):
             raise ValueError(f"K/V cache timestep must be 1.0 for {sample_id}")
         if Path(payload.get("checkpoint", "")) != self.h3_checkpoint_path:

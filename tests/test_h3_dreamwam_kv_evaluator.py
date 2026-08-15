@@ -360,6 +360,20 @@ class DreamWAMKVEvaluatorTest(unittest.TestCase):
             self.assertEqual(item["visual_shuffle_source_id"], "b")
             self.assertFalse(torch.equal(item["features"], item["shuffled_features"]))
 
+            short_dataset = EVAL.CachedDreamWAMKVValidationDataset(
+                rows,
+                cache_root=root,
+                kv_subdir="kv",
+                source_manifest_items=2,
+                model_spec=model_spec,
+                action_horizon=8,
+                h3_checkpoint_path="/models/h3",
+                visual_feature_shuffle={"a": "b", "b": "a"},
+            )
+            short_item = short_dataset[0]
+            self.assertEqual(tuple(short_item["actions"].shape), (8, 7))
+            self.assertEqual(tuple(short_item["raw_actions"].shape), (8, 7))
+
 
 if __name__ == "__main__":
     unittest.main()

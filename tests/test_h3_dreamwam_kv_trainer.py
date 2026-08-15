@@ -130,6 +130,25 @@ class DreamWAMKVDatasetTest(unittest.TestCase):
                     (1, 5, 2, 4),
                 )
 
+    def test_h32_feature_cache_can_train_a_shorter_h2_action_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, _ = self.build_cache(root)
+            dataset = MODULE.CachedDreamWAMKVDataset(
+                manifest,
+                root,
+                "kv",
+                carrier_layers=self.layers,
+                capture_token_count=5,
+                num_heads=2,
+                attn_head_dim=4,
+                action_horizon=2,
+            )
+            item = dataset[0]
+            self.assertEqual(tuple(item["actions"].shape), (2, 7))
+            self.assertEqual(tuple(item["action_is_pad"].shape), (2,))
+            self.assertEqual(dataset.cache_action_horizon, 4)
+
     def test_schema_rejects_storage_alias_after_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

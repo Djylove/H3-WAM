@@ -1,0 +1,126 @@
+{
+  "experiment_id": "h3_dense_d0_h8_h32_s20000_launched_v1",
+  "date": "2026-08-15",
+  "classification": "controlled_ablation",
+  "hypothesis": "At matched dense samples, H8 will improve contact-critical action control over H32 without losing H3 visual conditioning, while the continued H32 arm determines whether its s963 failure was simply undertraining.",
+  "source_identity": {
+    "dreamwam_commit": "6e989facc0c452fd3488d75f60bc36411005558c",
+    "fastwam_commit": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+    "starwam_commit": "cd76d96f273f81e228a05f40f9697fe2514e2356",
+    "fact_commit": "618a6c16868699b6d4138941de6a863589ac00dd",
+    "local_commit": "5658b94406887bc494e14e17c70b2b7945f5e199",
+    "dossier": "experiments/dossiers/h3_dense_d0_h8_h32_s20000_v1.json",
+    "dossier_long_validation": "PASS"
+  },
+  "candidate_registry": {
+    "incumbent": "D0 H32 dense s963; physical MSE 0.1330554, ADE 0.8997891, gripper macro-F1 0.6859585",
+    "control": "D0 H32 strict schema2 continuation to s20000",
+    "challenger": "D0 H8 fresh matched-sample training to s20000",
+    "track": "action objective / deployment horizon",
+    "excluded_this_round": {
+      "aligned_five_layer_D": "Lost the dense paired s963 action/range gate to D0.",
+      "StarWAM_R1_Candidate_F": "Late checkpoints confirmed conditioning collapse and zero visual-projector gradient.",
+      "LingBot_executed_history": "Existing port improved teacher-forced metrics but failed fixed rollout contact.",
+      "FACT_value_ranking": "Future consequence mechanism passed, but canonical success/failure/progress supervision is absent.",
+      "H3_full_or_tail_update": "World/video improvement repeatedly failed to translate to causal action and closed-loop control."
+    }
+  },
+  "difference_matrix": [
+    {"field": "H3 carrier", "h32": "frozen INT8 H3 layer49 repeated across five DreamWAM blocks", "h8": "identical", "status": "EXACT"},
+    {"field": "action horizon", "h32": 32, "h8": 8, "status": "INTENTIONAL_DEVIATION"},
+    {"field": "data", "h32": "same ordered rows0:160000", "h8": "same ordered rows0:160000", "status": "EXACT"},
+    {"field": "objective/optimizer", "h32": "shift5 flow, AdamW1e-4, warmup1000/cosine21700", "h8": "identical", "status": "EXACT"},
+    {"field": "initialization", "h32": "strict resume from dense s963 with optimizer/scheduler/RNG", "h8": "fresh seed42 because output shape differs", "status": "INTENTIONAL_DEVIATION"},
+    {"field": "closed-loop replan", "h32": "pending matched 400-step replan32 and replan8 diagnostic", "h8": "pending 400-step replan8", "status": "UNKNOWN"}
+  ],
+  "budget_per_arm": {
+    "global_batch": 8,
+    "optimizer_steps": 20000,
+    "training_samples": 160000,
+    "unique_train_windows": 200779,
+    "effective_epochs": 0.7968960901299459,
+    "gpu_count": 8,
+    "checkpoint_interval_steps": 1000,
+    "estimated_wall_hours_per_arm": 1.5,
+    "estimate_basis": "calibrated from the first 1000-step save/restore/balanced80 cycle"
+  },
+  "launches": [
+    {
+      "node_port": 30907,
+      "pid": 641256,
+      "mode": "h32_resume",
+      "output": "/mnt/h3-wam/outputs/dense-carrier-d0-h32-s20000-v1",
+      "log": "/mnt/h3-wam/logs/dense-d0-long/dense_d0_h32_s20000.log"
+    },
+    {
+      "node_port": 32611,
+      "pid": 189272,
+      "mode": "h8_fresh",
+      "output": "/mnt/h3-wam/outputs/dense-carrier-d0-h8-s20000-v1",
+      "log": "/mnt/h3-wam/logs/dense-d0-long/dense_d0_h8_s20000.log"
+    }
+  ],
+  "infrastructure_recovery": {
+    "first_h8_attempt": "Rejected before optimizer step because source K/V cache metadata recorded action_horizon32 while the requested target was H8.",
+    "classification": "INFRASTRUCTURE_CONTRACT_NOT_POLICY_RESULT",
+    "fix": "Allow an audited source cache horizon greater than or equal to the target action horizon; actions and pad mask remain strictly sliced to the requested horizon.",
+    "safety_boundary": "A shorter source cache may not serve a longer target horizon.",
+    "tests": "20 tests and 7 subtests passed in the cloud runtime before relaunch.",
+    "failed_output_cleanup": "The checkpoint-free 11 KiB failed output root was deleted; the failure class is preserved here."
+  },
+  "first_milestone_observation": {
+    "status": "DIAGNOSTIC_ONLY_NOT_CLOSED_LOOP_EVIDENCE",
+    "h32_s1000": {
+      "normalized_action_mse": 0.3409389521771897,
+      "physical_action_mse": 0.15745059534440153,
+      "gripper_accuracy": 0.626953125,
+      "visual_shuffle_normalized_mse_penalty": 0.020199971700484265
+    },
+    "h8_s1000": {
+      "normalized_action_mse": 0.246268135502448,
+      "physical_action_mse": 0.12949283939116674,
+      "gripper_accuracy": 0.8546875,
+      "visual_shuffle_normalized_mse_penalty": 0.03990508032381643,
+      "language_relative_l2_prediction_delta": 0.1779966335682002
+    },
+    "h32_s2000": {
+      "normalized_action_mse": 0.21384794780169614,
+      "physical_action_mse": 0.1063298134633653,
+      "gripper_accuracy": 0.745703125,
+      "visual_shuffle_normalized_mse_penalty": 0.0217028518625349
+    },
+    "interpretation": "H8 leads the same-step H32 s1000 offline action and visual-dependence diagnostics, while H32 continues improving at s2000. Horizon-dependent valid-step counts mean this is a learning-curve diagnostic, not a policy promotion or direct closed-loop claim."
+  },
+  "cache_gap_boundary": {
+    "same_input_train_online_parity": "PASS_BITWISE_EXACT on the selected D0 contract: K max_abs 0 and V max_abs 0 in experiments/evidence/h3_candidate_d0_s963_closed_loop_canary_v1.json.",
+    "not_a_cache_artifact": "The disk tensor is the same pooled BF16 frozen-INT8-H3 K/V consumed by online rollout when preprocessing, H3 hash, packed layout, timesteps, layer and token contracts match.",
+    "real_representation_gap": "Static cache freezes H3 and blocks action-loss gradients into it; 32-token pooling and D0 layer49 repetition are explicit model approximations; demo-to-rollout observation shift remains.",
+    "h8_unresolved": "H8 currently slices action targets from an H32-layout source cache. Deployment must either retain feature_audio_horizon=32 or prove H8-layout versus H32-layout K/V parity before promotion."
+  },
+  "retention_cleanup": {
+    "deleted_files": 143,
+    "deleted_bytes": 1000255423688,
+    "recoverable": false,
+    "reproducible_from_pinned_sources": true,
+    "deleted_classes": [
+      "39 pre-sync LingBot shared checkpoints",
+      "14 superseded/conditioning-collapsed StarWAM checkpoints",
+      "10 dense tournament intermediate checkpoints",
+      "80 retired full/tail H3 intermediate FSDP shards"
+    ],
+    "retained": [
+      "all reports, logs and evaluator JSON",
+      "dense D s963, D0 s963 and C03 s100",
+      "final representative full/tail H3 shard sets",
+      "current fresh shared-adapter learning curve",
+      "all model inputs and feature caches"
+    ]
+  },
+  "gates": {
+    "training_permission": "GO_LONG",
+    "effect_status": "NOT_EVIDENCE_READY",
+    "promotion": "A checkpoint must retain non-collapsed visual/language counterfactual response and gripper control, then produce target contact or success in the fixed 400-step rollout.",
+    "stop": "Stop a branch on non-finite gradients, exact-restore failure, sample overlap, or confirmed conditioning collapse across consecutive checkpoints."
+  },
+  "fusion_lineage": "carrier incumbent D0 -> horizon track winner H8/H32 -> later add FACT consequence winner only after closed-loop action promotion"
+}

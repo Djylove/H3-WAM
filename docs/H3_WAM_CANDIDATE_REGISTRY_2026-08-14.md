@@ -84,6 +84,24 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 当前 C01/C02 的完整规模预算为每臂 `25,097` steps、约 `8.5 h / 8×A800`；只有 s963 paired gate
 胜者继续完整 dense epoch。C03 之后的吞吐、显存和墙钟为 `UNKNOWN`，必须先用真实 H3 probe 测量。
 
+## 2026-08-15 长预算更新
+
+- dense D/D0 已在相同 7,704 样本上完成 paired gate；aligned five-layer D 未击败 repeat-layer49 D0，
+  所以 D0 是当前 carrier/action 擂主，不是最终赛道冠军。
+- 为排除训练不足，D0-H32 从严格可恢复的 s963 续训到 s20000；同时以 H8 作为唯一 horizon 变量从
+  同 seed 新训到 s20000。每臂 global batch8、160,000 样本、`0.796896` effective epoch，每1000步
+  保存并跑同一个 balanced-80 反事实 evaluator。
+- H8 来源于5090已验证的短 action chunk 控制经验，但这里使用统一四套 LIBERO dense 数据和 D0 flow
+  expert，因此属于新的 controlled ablation，不继承单任务成功率结论。
+- 训练许可 `GO_LONG`；在固定400-step闭环出现目标接触/成功前，效果状态仍为
+  `NOT_EVIDENCE_READY`。后续融合谱系固定为 `D0 carrier -> horizon winner -> FACT consequence`。
+- 首个同 step 诊断点：H8-s1000 normalized/physical MSE 为 `0.246269/0.129493`，优于
+  H32-s1000 的 `0.340939/0.157451`，且 H8 的 visual-shuffle penalty 为 `0.039905`；但
+  H32-s2000 已继续降到 `0.213848/0.106330`。这是离线学习曲线，不是闭环晋级结论。
+- 缓存与相同输入的在线 H3 K/V 已有 bitwise parity（K/V `max_abs=0`）；缓存的真实边界是冻结
+  H3、32-token 压缩以及 demo→rollout 分布偏移。H8 复用 H32 packed-layout cache，闭环前必须固定
+  `feature_audio_horizon=32` 或补做 H8/H32 K/V parity。
+
 ## 蛊王融合谱系
 
 ```text

@@ -1,0 +1,41 @@
+{
+  "experiment_id": "h3_dense_d0_h8_h32_s20000_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "At matched dense samples, reducing the frozen-H3 D0 action horizon from 32 to 8 will preserve visual conditioning while improving contact-critical physical and gripper metrics, and the H32 control will determine whether the prior failure was only undertraining.",
+  "single_variable": "action_horizon: direct parent/control H32 versus challenger H8; carrier, INT8 H3 cache, model family, optimizer, data order, normalization, seed and evaluator remain fixed.",
+  "parent_baseline": "Dense D0 H32 s963 at /mnt/h3-wam/outputs/dense-carrier-tournament-v1/d0/checkpoints/d0_s963.pt; balanced-80 physical MSE 0.1330554, ADE 0.8997891, gripper macro-F1 0.6859585, exact restore max_abs0.",
+  "references": [
+    {"kind": "paper", "title": "DreamWAM", "locator": "https://arxiv.org/abs/2608.04996", "revision": "supplementary", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Official DreamWAM repository", "locator": "https://github.com/hustvl/DreamWAM.git", "revision": "6e989facc0c452fd3488d75f60bc36411005558c", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 DreamWAM D0 trainer/evaluator", "locator": "scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py", "revision": "5658b94406887bc494e14e17c70b2b7945f5e199 + audited H32-cache/H8-target compatibility patch and launcher", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "D0 carrier and action expert", "paper": "DreamWAM per-block video K/V action expert", "upstream_code": "five action blocks consume video K/V", "local": "repeat independent clones of frozen INT8 H3 layer49 K/V for all five blocks; H8 only changes action token count", "status": "INTENTIONAL_DEVIATION", "evidence": ["tests/test_h3_dreamwam_kv_carrier.py", "tests/test_h3_dreamwam_kv_trainer.py"], "rationale": "D0 already won the paired dense carrier gate; H8 is the only new action variable."}],
+    "data": [{"field": "dense episode-disjoint windows", "paper": "robot trajectories", "upstream_code": "trajectory windows", "local": "same ordered 160,000 unique rows from 200,779 train windows, 1,542 train episodes and 170 disjoint validation episodes", "status": "EQUIVALENT", "evidence": ["/mnt/h3-wam/data/v7_multisuite_dense_candidate/candidate_report.json", "experiments/dossiers/h3_candidate_d_vs_d0_dense_v7_paired_v1.json"], "rationale": "Both horizons consume exactly the same start states; H8 slices only the future action target."}],
+    "action": [{"field": "action horizon and deployment motivation", "paper": "DreamWAM uses chunked action generation", "upstream_code": "chunk length is configurable", "local": "7D minmax-clip5 actions; H32 is direct parent and H8 is the sole ablation motivated by the 5090 H8 closed-loop successes", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py:156", "docs/H3_WAM_DEVELOPMENT_PLAN.md:322"], "rationale": "H8 tests temporal control granularity without changing carrier or representation."}],
+    "objective": [{"field": "shifted flow action objective", "paper": "flow action expert", "upstream_code": "DreamWAM ActionDiT with flow", "local": "continuous-FP32 shift5 velocity loss for both arms", "status": "EXACT", "evidence": ["scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py", "third_party/DreamWAM/dreamwam/models/action_expert.py"], "rationale": "No auxiliary loss changes across horizons."}],
+    "optimization": [{"field": "20k matched learning curve", "paper": "not used as an exact budget", "upstream_code": "AdamW warmup/cosine", "local": "8 GPUs, global batch8, 20,000 steps, 160,000 unique samples, 0.796896 effective epoch, AdamW 1e-4, warmup1000, cosine horizon21700; checkpoint/eval every1000", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/launch_dense_d0_horizon_long.sh"], "rationale": "The bounded long run explicitly removes the undertraining explanation while remaining below one dense epoch."}],
+    "evaluation": [{"field": "balanced-80 and subsequent rollout", "paper": "LIBERO success predicate", "upstream_code": "closed-loop evaluation", "local": "same fixed 40-task balanced-80, seed42, 10-step Euler, language replacement and no-self-map visual shuffle every1000; selected milestones later use matched 400-step replan8/32 rollout", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_h3_dreamwam_kv_carrier.py", "scripts/h3wam/rollout_libero.py"], "rationale": "Offline evaluation guards conditioning during the long run; only simulator success promotes a model."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["DreamWAM fixed at clean commit 6e989facc0c452fd3488d75f60bc36411005558c."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Trainer tests exercise configurable action_horizon=4 and exact H32 restore; H8 changes only token count/output shape."]},
+    "data_contract": {"status": "PASS", "evidence": ["200,779 dense train rows; train/val episode overlap0; cache audit aggregate 0ffd6c99a7ceb7269221afb31ee51a453da19ebe2676a421ffc1939c35a0cbc6."]},
+    "action_contract": {"status": "PASS", "evidence": ["7D delta action/gripper semantics and train-only stats SHA256 6f7e9f4a2232a798e4e30ad26f5748e71aeeda7fa54cb6ea2d0a3ec7d290e814 are unchanged."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Pinned continuous-FP32 shift5 flow objective is unchanged."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Schema2 stores optimizer/scheduler/RNG; explicit disjoint offsets cover rows0:160000 exactly once; H32 parent contains rows0:7704."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Balanced-80 selected IDs SHA256 26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Dense D0 H32 s10-s963 has finite nonzero gradients in all five action blocks and proprio path."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Same trainer/model family completed dense H32 s963; H8 configurability is covered by trainer tests and the launcher fresh-restores s1000 before continuing."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Dense D0 H32 s963 schema2 checkpoint restored with max_abs0 and SHA256 0a72d829a70f6b408f9aedeeae4dac6734e1c67cc29bf3fca85a8fd1f5234cc5."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["Dense D0 H32 s963 balanced-80 and checkpoint identity are fixed before launch."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["H8 versus H32 matched-sample results are pending."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No dense long milestone has completed the matched 400-step rollout yet."]}
+  },
+  "budget": {"global_batch": 8, "optimizer_steps": 20000, "training_samples": 160000, "unique_windows": 200779, "effective_epochs": 0.7968960901299459, "gpu_count": 16, "estimated_hours": 1.5, "estimated_wall_hours_per_arm": 1.5, "estimate_basis": "calibrated from the first 1000-step save/restore/balanced80 cycle"},
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "The D0 parent is conditioned, finite and exactly restorable but has seen only 3.84% of one dense epoch. Running matched H32/H8 curves to 20k is a bounded way to remove undertraining and test the action-horizon variable while preserving a separate evaluation node.",
+    "launch_command": "On 30907: PROJECT_ROOT=/mnt/h3-wam/candidate-d0-rollout-96976ce/project H3_WORKSPACE=/mnt/h3-wam bash scripts/h3wam/launch_dense_d0_horizon_long.sh h32_resume; on 32611 use the same command with h8_fresh."
+  }
+}
