@@ -492,7 +492,7 @@ def run_episode(
     action_head_gripper_disagreements = []
     action_head_switch_gate_probabilities = []
     if use_action_ensembler:
-        from fastwam.models.h3wam import ActionEnsembler
+        from fastwam.action_ensembler import ActionEnsembler
 
         action_ensembler = ActionEnsembler()
     else:

@@ -45,9 +45,19 @@ case "${suite}" in
   *) echo "unsupported SUITE=${suite}" >&2; exit 2 ;;
 esac
 suite_slug="${suite#libero_}"
+ensemble_args=()
+ensemble_suffix=""
+case "${USE_ACTION_ENSEMBLER:-0}" in
+  0|false|FALSE|no|NO|"") ;;
+  1|true|TRUE|yes|YES)
+    ensemble_args+=(--use-action-ensembler)
+    ensemble_suffix="_ensemble"
+    ;;
+  *) echo "USE_ACTION_ENSEMBLER must be boolean" >&2; exit 2 ;;
+esac
 checkpoint="$(realpath "${checkpoint}")"
 checkpoint_name="$(basename "${checkpoint}" .pt)"
-output_root="${OUTPUT_ROOT:-${workspace}/outputs/eval-dense-d0-long/${checkpoint_name}_${suite_slug}_task${task_id}_trial${trial_index}_replan${replan_steps}}"
+output_root="${OUTPUT_ROOT:-${workspace}/outputs/eval-dense-d0-long/${checkpoint_name}_${suite_slug}_task${task_id}_trial${trial_index}_replan${replan_steps}${ensemble_suffix}}"
 
 test -f "${checkpoint}"
 test -f "${project}/scripts/h3wam/rollout_libero.py"
@@ -83,6 +93,7 @@ exec bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
   --model-evaluations 10 \
   --seed 42 \
   --normalized-action-pre-clamp \
+  "${ensemble_args[@]}" \
   --output-dir "${output_root}" \
   --save-video \
   --save-trajectories

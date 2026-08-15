@@ -147,6 +147,20 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
   离线条件响应仍健康。它没有达到预注册的 `>=6/8` 晋级线，明确拒绝并保留 H32-s14000/replan8。
   这表明继续优化偏向短 pick-place，却损失持续 push，训练步数与闭环能力不是单调关系。H8-s20000
   完成后，自动队列会跳过已有H32结果，只补H8的8 episodes。
+- s20000 最终配对完成：统一replan8后，H32为 `4/8`、H8为 `2/8`；H8的 goal5/object0 分别
+  `0/4、2/4`，与s12000聚合结果相同，继续训练没有提升。两者均未达到 H32-s14000/replan8 的
+  `6/8`，所以最终checkpoint都不晋级。已启动 H32-s14000/replan4 的同8 episodes单变量消融；
+  因推理调用约翻倍，只有达到 `>=7/8` 才替换replan8。
+- replan4 仅 `3/8`（goal5 `0/4`、object0 `3/4`），拒绝晋级。同checkpoint曲线为 replan32
+  `4/8`、replan8 `6/8`、replan4 `3/8`，说明太短会打断动作时序意图。下一项固定replan8，启用
+  仓库中已实现并有单测的 FastWAM-style temporal action ensemble；仅平均重叠chunk，不增加重规划
+  次数，必须在同8 episodes超过 `6/8` 才晋级。
+- temporal ensemble 为 `5/8`（goal5 `2/4`、object0 `3/4`），也拒绝晋级。首次运行在仿真环境
+  因重依赖导入缺少safetensors，分类为基础设施失败；已把ActionEnsembler拆为轻量模块，云端直导入和
+  14项部署单测通过后重跑，空输出完整隔离保留。当前冠军固定为 H32-s14000/replan8/no-ensemble。
+- 已开始冠军的全任务广度screen：LIBERO Goal/Object/Spatial/10各10任务、每任务固定trial0，共40
+  episodes（5波×8卡、最多16000仿真步）。该结果只作为每任务一次的coverage screen，不能冒充官方
+  多trial benchmark；其目的是真正暴露跨任务泛化瓶颈，并决定下一轮该改数据、目标还是动作执行。
 
 ## 蛊王融合谱系
 

@@ -237,16 +237,69 @@
       "promotion_status": "REJECT_KEEP_H32_S14000_REPLAN8",
       "interpretation": "Continuing from s14000 to s20000 preserved 4/4 object pick-place but reduced goal5 sustained-push success from 2/4 to 0/4. More optimization is not monotonically better for closed-loop behavior."
     },
-    "queued_final_s20000_pair": {
+    "final_s20000_pair": {
       "node_port": 32409,
-      "queue_pid": 582689,
+      "completed_queue_pid": 582689,
       "runner": "scripts/h3wam/queue_final_d0_s20000_rollout.sh",
       "episodes_per_arm": 8,
       "tasks": ["libero_goal task5 trials0-3", "libero_object task0 trials0-3"],
       "max_steps_per_episode": 400,
       "deployment_replan_steps": 8,
-      "launch_condition": "The active rollout batch has exited and both d0_h32_s20000.pt and d0_h8_s20000.pt exist.",
-      "falsifiable_checkpoint_gate": "Promote an s20000 checkpoint over the H32-s14000/replan8 rollout incumbent only if it preserves non-collapsed offline conditioning and reaches at least the incumbent's 6/8 success count on the identical paired subset; otherwise retain s14000/replan8."
+      "h32": {"successes": 4, "episodes": 8, "goal5": "0/4", "object0": "4/4"},
+      "h8": {
+        "checkpoint_sha256": "ce21e1b03af4ebba402a1a2cc143e993c98c093f07dc9e77c76d59b8a6857f0d",
+        "offline": {"normalized_action_mse": 0.0634357079646309, "physical_action_mse": 0.024634756232967448, "gripper_accuracy": 0.9265625, "language_relative_l2_prediction_delta": 0.4053654061817604, "visual_shuffle_normalized_mse_penalty": 0.07031179755893911},
+        "successes": 2,
+        "episodes": 8,
+        "goal5": "0/4",
+        "object0": "2/4",
+        "success_trials": [0, 2],
+        "success_steps": [142, 130],
+        "sorted_sha256_manifest_sha256": "c728de4da40b0a524d2e3e9d21659f6bbf81e2839edbe2053c6a50129306fe8b"
+      },
+      "result": "H32 wins the exact s20000/replan8 paired subset 4/8 versus 2/8, but neither final checkpoint reaches the H32-s14000/replan8 incumbent's 6/8. Both final checkpoints are rejected for deployment promotion."
+    },
+    "h32_s14000_replan4_ablation": {
+      "node_port": 32409,
+      "fixed": "H32 s14000 checkpoint, action horizon32, goal5/object0 trials0-3, policy/data/noise settings",
+      "single_variable": "execution replan steps8 -> 4",
+      "episodes": 8,
+      "promotion_gate": "At least 7/8 successes are required because replan4 approximately doubles policy inference calls relative to the 6/8 replan8 incumbent.",
+      "rollout": {"goal5": "0/4", "object0": "3/4", "aggregate": "3/8"},
+      "sorted_sha256_manifest_sha256": "3929701658a2592412364f8ebfa4c3b0c55797824b73864a5dad5891c2616b5b",
+      "promotion_status": "REJECT_KEEP_REPLAN8",
+      "interpretation": "Replan4 underperforms replan8 despite more frequent feedback. The observed same-checkpoint curve is replan32 4/8, replan8 6/8, replan4 3/8; temporal intent is disrupted when chunks are shortened too aggressively."
+    },
+    "h32_s14000_replan8_temporal_ensemble": {
+      "node_port": 32409,
+      "source_method": "FastWAM-style ActionEnsembler already implemented and unit-tested in this repository",
+      "fixed": "H32 s14000, action horizon32, replan8, goal5/object0 trials0-3, policy/data/noise settings",
+      "single_variable": "average all overlapping action chunks at each absolute execution timestamp",
+      "promotion_gate": "Must exceed the non-ensemble 6/8 incumbent on the identical eight episodes; equal success does not justify changing the contract.",
+      "rollout": {"goal5": "2/4", "object0": "3/4", "aggregate": "5/8", "mean_overlapping_predictions": "3.67-3.88"},
+      "sorted_sha256_manifest_sha256": "165f2e467f25c3d7cbeb012beed422a0dd69f0e295caacbe7e7e11522df343dd",
+      "promotion_status": "REJECT_KEEP_NO_ENSEMBLE",
+      "infrastructure_recovery": {
+        "first_attempt": "All eight simulator processes failed before rollout because importing fastwam.models.h3wam pulled safetensors into the lightweight simulator environment.",
+        "classification": "INFRASTRUCTURE_IMPORT_NOT_POLICY_RESULT",
+        "fix": "Moved ActionEnsembler to dependency-light fastwam.action_ensembler and retained the h3wam re-export.",
+        "tests": "Simulator-environment direct import passed; 14 deployment unit tests passed in the H3 runtime.",
+        "quarantine": "/mnt/h3-wam/eval/quarantine/ensemble_import_failure_20260815T0549Z"
+      },
+      "interpretation": "Temporal averaging preserves goal5 but loses one object0 success, so it does not improve the incumbent on this fixed subset."
+    },
+    "active_champion_all40_trial0_screen": {
+      "node_port": 32409,
+      "queue_pid": 599536,
+      "runner": "scripts/h3wam/run_champion_all_tasks_trial0.sh",
+      "checkpoint": "D0 H32 s14000",
+      "deployment": "action horizon32, replan8, no temporal ensemble",
+      "scope": "libero_goal/object/spatial/10, task IDs0-9, trial0, max400",
+      "episodes": 40,
+      "maximum_simulator_steps": 16000,
+      "waves": 5,
+      "status": "NOT_EVIDENCE_READY_RUNNING",
+      "claim_boundary": "This is a one-trial-per-task coverage screen, not the official multi-trial LIBERO benchmark."
     }
   },
   "retention_cleanup": {
@@ -274,5 +327,5 @@
     "promotion": "A checkpoint must retain non-collapsed visual/language counterfactual response and gripper control, then produce target contact or success in the fixed 400-step rollout.",
     "stop": "Stop a branch on non-finite gradients, exact-restore failure, sample overlap, or confirmed conditioning collapse across consecutive checkpoints."
   },
-  "fusion_lineage": "D0 carrier -> H32 s12000/replan32 horizon winner -> H32 s14000/replan8 deployment winner -> final s20000 paired gate -> later FACT consequence winner only after closed-loop action promotion"
+  "fusion_lineage": "D0 carrier -> H32 s12000/replan32 horizon winner -> H32 s14000/replan8 deployment winner -> s20000 finals rejected -> replan4 deployment challenger -> later FACT consequence winner only after closed-loop action promotion"
 }
