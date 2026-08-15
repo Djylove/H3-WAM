@@ -64,7 +64,30 @@ if [[ -n "${H3_PROGRESS_PROBE:-}" ]]; then
 fi
 consequence_args=()
 consequence_suffix=""
-if [[ -n "${CONSEQUENCE_RANKER_CHECKPOINT:-}" ]]; then
+if [[ -n "${DENSE_VALUE_CHECKPOINT:-}" ]]; then
+  test -f "${DENSE_VALUE_CHECKPOINT}"
+  test -f "${DENSE_VALUE_FINAL_REPORT:?set the PASS C51 final report}"
+  [[ "${CONSEQUENCE_BEST_OF_N:-4}" =~ ^[2-9][0-9]*$ ]]
+  consequence_args+=(
+    --dense-value-checkpoint "$(realpath "${DENSE_VALUE_CHECKPOINT}")"
+    --dense-value-final-report "$(realpath "${DENSE_VALUE_FINAL_REPORT}")"
+    --consequence-best-of-n "${CONSEQUENCE_BEST_OF_N:-4}"
+  )
+  if [[ -n "${CONSEQUENCE_CANDIDATE_SEED_OFFSETS:-}" ]]; then
+    IFS=':' read -r -a consequence_offsets <<<"${CONSEQUENCE_CANDIDATE_SEED_OFFSETS}"
+    for consequence_offset in "${consequence_offsets[@]}"; do
+      [[ "${consequence_offset}" =~ ^[0-9]+$ ]]
+      consequence_args+=(--consequence-candidate-seed-offset "${consequence_offset}")
+    done
+  fi
+  if [[ -n "${CONSEQUENCE_SELECTION_MAX_STEP:-}" ]]; then
+    consequence_args+=(--consequence-selection-max-step "${CONSEQUENCE_SELECTION_MAX_STEP}")
+  fi
+  if [[ -n "${CONSEQUENCE_SELECTION_MIN_STEP:-}" ]]; then
+    consequence_args+=(--consequence-selection-min-step "${CONSEQUENCE_SELECTION_MIN_STEP}")
+  fi
+  consequence_suffix="_c51-dense-bestof${CONSEQUENCE_BEST_OF_N:-4}"
+elif [[ -n "${CONSEQUENCE_RANKER_CHECKPOINT:-}" ]]; then
   test -f "${CONSEQUENCE_RANKER_CHECKPOINT}"
   [[ "${CONSEQUENCE_BEST_OF_N:-4}" =~ ^[2-9][0-9]*$ ]]
   IFS=':' read -r -a consequence_models <<<"${CONSEQUENCE_MODEL_CHECKPOINTS:?set colon-separated C38 consequence checkpoints}"
@@ -96,7 +119,7 @@ if [[ -n "${CONSEQUENCE_RANKER_CHECKPOINT:-}" ]]; then
     consequence_args+=(--consequence-model-checkpoint "$(realpath "${consequence_model}")")
   done
   consequence_suffix="_c44-bestof${CONSEQUENCE_BEST_OF_N:-4}"
-elif [[ -n "${CONSEQUENCE_MODEL_CHECKPOINTS:-}" || -n "${CONSEQUENCE_BEST_OF_N:-}" ]]; then
+elif [[ -n "${CONSEQUENCE_MODEL_CHECKPOINTS:-}" || -n "${CONSEQUENCE_BEST_OF_N:-}" || -n "${DENSE_VALUE_FINAL_REPORT:-}" ]]; then
   echo "consequence model paths/N require CONSEQUENCE_RANKER_CHECKPOINT" >&2
   exit 2
 fi

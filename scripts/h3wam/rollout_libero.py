@@ -187,6 +187,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--consequence-model-checkpoint", type=Path, action="append", default=[]
     )
+    parser.add_argument("--dense-value-checkpoint", type=Path)
+    parser.add_argument("--dense-value-final-report", type=Path)
     parser.add_argument("--consequence-best-of-n", type=int, default=1)
     parser.add_argument(
         "--consequence-candidate-seed-offset", type=int, action="append", default=[]
@@ -362,6 +364,17 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                     command.extend((
                         "--consequence-model-checkpoint", str(checkpoint.resolve())
                     ))
+            if args.dense_value_checkpoint is not None:
+                if args.dense_value_final_report is None:
+                    raise ValueError("dense value checkpoint requires C51 final report")
+                command.extend((
+                    "--dense-value-checkpoint",
+                    str(args.dense_value_checkpoint.resolve()),
+                    "--dense-value-final-report",
+                    str(args.dense_value_final_report.resolve()),
+                ))
+            elif args.dense_value_final_report is not None:
+                raise ValueError("dense value final report requires checkpoint")
         elif args.progress_probe is not None:
             raise ValueError("--progress-probe requires h3_dreamwam_kv_int8")
         if args.h3_feature_audio_horizon is not None:
@@ -665,6 +678,8 @@ def run_episode(
     consequence_score_ranges = []
     consequence_candidate_scores = []
     consequence_candidate_seeds = []
+    action_ranker_types = []
+    consequence_ranker_sha256s = []
     first_consequence_candidate0_chunk = None
     progress_values = []
     replan_noise_seeds = []
@@ -767,6 +782,10 @@ def run_episode(
             )
             consequence_candidate_seeds.append(
                 [int(value) for value in metadata["consequence_candidate_seeds"]]
+            )
+            action_ranker_types.append(str(metadata["action_ranker_type"]))
+            consequence_ranker_sha256s.append(
+                str(metadata["consequence_ranker_sha256"])
             )
             if first_consequence_candidate0_chunk is None:
                 first_consequence_candidate0_chunk = metadata[
@@ -879,6 +898,8 @@ def run_episode(
             "consequence_score_ranges": consequence_score_ranges,
             "consequence_candidate_scores": consequence_candidate_scores,
             "consequence_candidate_seeds": consequence_candidate_seeds,
+            "action_ranker_types": action_ranker_types,
+            "consequence_ranker_sha256s": consequence_ranker_sha256s,
             "first_consequence_candidate0_chunk": first_consequence_candidate0_chunk,
             "progress_values": progress_values,
             "progress_first": progress_values[0] if progress_values else None,

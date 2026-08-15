@@ -36,7 +36,18 @@
     "max_environment_steps": 96000
   },
   "decision": {
-    "status": "RUNNING_FROZEN_C52",
+    "status": "PASS_C52_FROZEN_DENSE_VALUE_RANKING",
+    "result": {
+      "mixed_groups": 17,
+      "success_failure_pairs": 56,
+      "pairwise_accuracy": 0.6607142857142857,
+      "top1_success": 0.8235294117647058,
+      "candidate0_success": 0.7647058823529411,
+      "random_top1_expectation": 0.5882352941176471,
+      "one_sided_exact_permutation_p": 0.038920108535530164,
+      "outcomes_sha256": "a894dd73767d5d27aaa2daaa24ac10547fca7ec46871bdb72ff17bb7a59a236f",
+      "ranking_result_sha256": "d6de1463dce1e7e172836d871c639c8f934ba82a719ad910853096f8cd0127a8"
+    },
     "on_pass": "Authorize only a fresh closed-loop dense-value canary.",
     "on_fail": "Do not deploy this value expert online; diagnose action-distribution and failure-onset targets without reusing C52 to tune."
   }

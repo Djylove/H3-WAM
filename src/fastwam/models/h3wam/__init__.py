@@ -104,6 +104,7 @@ from .consequence_action_ranker import (
     FrozenConsequenceActionRanker,
 )
 from .dense_future_value import DenseTemporalFutureValueModel
+from .dense_value_action_ranker import FrozenDenseValueActionRanker
 __all__ = [
     "ActionEnsembler",
     "action_denormalization_bounds",
@@ -175,6 +176,7 @@ __all__ = [
     "C44_RANKER_FORMAT",
     "FrozenConsequenceActionRanker",
     "DenseTemporalFutureValueModel",
+    "FrozenDenseValueActionRanker",
     "DEFAULT_OFFICIAL_H3_LORA_TARGETS",
     "inject_official_h3_lora",
     "load_cached_task_context",

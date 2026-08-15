@@ -923,3 +923,15 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   全新视觉源；但动作结果保持未见且不得调参。机械/产量门为至少10个mixed group覆盖3个suite；固定排序
   门为pairwise/top1均至少60%、组内精确单侧permutation `p<=0.05`及所有组score range大于`1e-6`。
   PASS也只放行新的闭环canary，不直接宣称在线收益。
+- C52实际完成240/240分支、148成功，机械门全过；得到17个mixed group、覆盖LIBERO-10/Object/
+  Spatial，56个成功-失败对中排对`37/56=66.071%`。mixed-group top1为`14/17=82.353%`，同组
+  candidate0为`76.471%`、随机期望为`58.824%`；精确组内单侧permutation `p=0.038920`，最小组内
+  score range `0.059310`，所有预注册门PASS。outcomes/ranking SHA256分别为
+  `a894dd73767d5d27aaa2daaa24ac10547fca7ec46871bdb72ff17bb7a59a236f`和
+  `d6de1463dce1e7e172836d871c639c8f934ba82a719ad910853096f8cd0127a8`。这首次证明冻结稠密value能对
+  未见反事实动作结果做显著排序，但source observation曾用于C51 final，且仍不等于闭环提升。
+- C53因此在任何trial28 outcome前冻结：四suite×tasks0..4共20对；两臂step80前完全同轨，均在step80
+  执行32步，candidate只在此处按C52四offset排序一次，之后恢复replan8。效果门复用C46：candidate至少
+  比control多2成功、至少3胜、净胜至少2且任何suite退化不超过1/5。首次启动在仿真前暴露外层CLI未转发
+  dense checkpoint/report，未产生candidate outcome；错误日志原样归档，补齐纯机械转发后按同一预注册
+  trial/state/seed恢复，不改变门槛。

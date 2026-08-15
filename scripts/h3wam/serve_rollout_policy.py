@@ -149,6 +149,16 @@ def parse_args() -> argparse.Namespace:
         help="One frozen C38 temporal consequence member; pass exactly four.",
     )
     parser.add_argument(
+        "--dense-value-checkpoint",
+        type=Path,
+        help="Frozen C51 dense value expert used for best-of-N selection.",
+    )
+    parser.add_argument(
+        "--dense-value-final-report",
+        type=Path,
+        help="PASS C51 report that pins the dense value checkpoint.",
+    )
+    parser.add_argument(
         "--consequence-best-of-n",
         type=int,
         default=1,
@@ -1697,11 +1707,23 @@ class H3DreamWAMKVInt8Policy:
         self.consequence_best_of_n = int(args.consequence_best_of_n)
         if self.consequence_best_of_n <= 0:
             raise ValueError("consequence-best-of-n must be positive")
-        ranker_requested = args.consequence_ranker_checkpoint is not None
-        if ranker_requested != bool(args.consequence_model_checkpoint):
+        c44_ranker_requested = args.consequence_ranker_checkpoint is not None
+        if c44_ranker_requested != bool(args.consequence_model_checkpoint):
             raise ValueError(
                 "C44 ranker and its consequence checkpoints must be passed together"
             )
+        dense_ranker_requested = (
+            args.dense_value_checkpoint is not None
+            or args.dense_value_final_report is not None
+        )
+        if dense_ranker_requested and (
+            args.dense_value_checkpoint is None
+            or args.dense_value_final_report is None
+        ):
+            raise ValueError("dense value checkpoint and C51 report must be passed together")
+        if c44_ranker_requested and dense_ranker_requested:
+            raise ValueError("C44 and C51 online rankers are mutually exclusive")
+        ranker_requested = c44_ranker_requested or dense_ranker_requested
         if ranker_requested:
             if self.consequence_best_of_n < 2:
                 raise ValueError("C44 online selection requires consequence-best-of-n >= 2")
@@ -1803,6 +1825,7 @@ class H3DreamWAMKVInt8Policy:
 
         from fastwam.models.h3wam import (
             FrozenConsequenceActionRanker,
+            FrozenDenseValueActionRanker,
             FrozenH3ProgressProbe,
             H3DreamWAMKVCarrierPolicy,
             H3Int8FeatureBackbone,
@@ -1881,14 +1904,24 @@ class H3DreamWAMKVInt8Policy:
                     capture_compatibility="none",
                 ),
             )
-            self.consequence_ranker = FrozenConsequenceActionRanker(
-                args.consequence_ranker_checkpoint,
-                args.consequence_model_checkpoint,
-                device=self.device,
-            )
+            if c44_ranker_requested:
+                self.consequence_ranker = FrozenConsequenceActionRanker(
+                    args.consequence_ranker_checkpoint,
+                    args.consequence_model_checkpoint,
+                    device=self.device,
+                )
+                self.action_ranker_type = "c44_consequence"
+            else:
+                self.consequence_ranker = FrozenDenseValueActionRanker(
+                    args.dense_value_checkpoint,
+                    args.dense_value_final_report,
+                    device=self.device,
+                )
+                self.action_ranker_type = "c51_dense_value"
         else:
             self.int8_hidden_provider = None
             self.consequence_ranker = None
+            self.action_ranker_type = None
         if args.progress_probe is not None:
             if kv_pool_strategy != "adaptive_avg_pool1d_sequence_v1":
                 raise ValueError(
@@ -2263,6 +2296,7 @@ class H3DreamWAMKVInt8Policy:
                 if self.consequence_ranker is None
                 else self.consequence_ranker.ranker_checkpoint_sha256
             ),
+            "action_ranker_type": self.action_ranker_type,
             "consequence_candidate_seed_offsets": (
                 None
                 if self.consequence_ranker is None

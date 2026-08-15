@@ -1,0 +1,12 @@
+{
+  "experiment_id": "h3_c53_dense_value_canary_v1",
+  "classification": "paired_closed_loop_canary",
+  "hypothesis": "One contract-aligned intervention selected by the C52-passing frozen dense value expert improves paired LIBERO success over candidate0 without repeated online distribution shift.",
+  "single_variable": "At environment step80 only, control executes candidate0 for32 steps while the candidate selects one of four C52 seed offsets by frozen dense value; before step80 and after the chunk both use identical parent replan8 behavior.",
+  "parent_baseline": "D0-H32-s14000/replan8/sample1 on wholly new trial28.",
+  "data_contract": {"suites": ["libero_goal", "libero_object", "libero_spatial", "libero_10"], "tasks": "0..4", "trial": 28, "pairs": 20, "rollouts": 40},
+  "model_contract": {"dense_value_checkpoint_sha256": "d2f3a812eb1d4921efd6f2f9ee6f7f4f2736c516d338168b8110df281960907c", "candidate_offsets": [0, 1000000, 2000000, 3000000], "ranking_step": 80, "execution_chunk": 32, "rankings_per_eligible_episode": 1},
+  "gates": {"mechanical": "exact step80 prestate, candidate0 action, seed offsets, frozen ranker identity and score variation", "selection": ">=20% nonzero selections", "effect": "candidate >= control+2; >=3 paired wins; net wins>=2; no suite regresses by >1/5"},
+  "budget": {"gpu_count": 32, "rollouts": 40, "max_environment_steps": 16000},
+  "decision": {"status": "GO_LAUNCH", "on_pass": "Expand to the full LIBERO benchmark with a fixed sparse intervention schedule.", "on_fail": "Reject online dense value selection; preserve C52 only as offline counterfactual evidence."}
+}
