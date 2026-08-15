@@ -68,6 +68,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--minimum-relative-improvement", type=float, default=0.01)
     parser.add_argument("--minimum-shuffle-degradation", type=float, default=0.01)
+    parser.add_argument("--condition-dropout-prob", type=float, default=0.0)
+    parser.add_argument(
+        "--mechanism-gate", choices=("separate_independent", "paired_null"),
+        default="separate_independent",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--experiment-id", default="h3_c31_action_conditioned_consequence_v1"
@@ -230,6 +235,9 @@ def evaluate(
         batch = move(raw, device)
         probes = {
             "conditioned_true": (models["conditioned"], batch["actions"]),
+            "conditioned_with_zero": (
+                models["conditioned"], torch.zeros_like(batch["actions"])
+            ),
             "conditioned_within_state_shuffled": (
                 models["conditioned"], batch["shuffled_actions"]
             ),
@@ -294,6 +302,8 @@ def checkpoint_payload(
             "candidate_actions_detached_in_model": True,
             "unexecuted_action_tail_zero_masked": True,
             "shuffle_control": "cyclic_other_candidate_within_same_exact_state",
+            "condition_dropout_prob": args.condition_dropout_prob,
+            "mechanism_gate": args.mechanism_gate,
             "source_split_frozen_before_c30_outcomes": True,
         },
     }
@@ -305,6 +315,8 @@ def main() -> None:
         raise FileExistsError(f"refusing to overwrite {args.output}")
     if min(args.steps, args.save_every, args.batch_size) <= 0:
         raise ValueError("steps, save-every and batch-size must be positive")
+    if not 0.0 <= args.condition_dropout_prob < 1.0:
+        raise ValueError("condition-dropout-prob must be in [0,1)")
     if args.steps % args.save_every:
         raise ValueError("steps must be divisible by save-every")
     device = torch.device(args.device)
@@ -424,9 +436,15 @@ def main() -> None:
             model, optimizer = models[name], optimizers[name]
             model.train()
             optimizer.zero_grad(set_to_none=True)
+            actions = arm_actions(batch, name)
+            if name == "conditioned" and args.condition_dropout_prob > 0:
+                drop = torch.rand(
+                    actions.shape[0], device=actions.device
+                ) < args.condition_dropout_prob
+                actions = actions.masked_fill(drop[:, None, None], 0)
             prediction = model.forward_projected(
                 batch["current_proprio"], batch["current_projected"],
-                arm_actions(batch, name),
+                actions,
             )
             error = (
                 prediction.float() - batch["future_projected"].detach().float()
@@ -476,10 +494,12 @@ def main() -> None:
                 restore_max_abs, float((expected - actual).abs().max())
             )
     conditioned = final_metrics["mse"]["conditioned_true"]
+    paired_null = final_metrics["mse"]["conditioned_with_zero"]
     independent = final_metrics["mse"]["independent"]
     shuffled_train = final_metrics["mse"]["shuffled_train_true"]
     conditioned_shuffle = final_metrics["mse"]["conditioned_within_state_shuffled"]
     independent_gain = (independent - conditioned) / max(independent, 1.0e-12)
+    paired_null_gain = (paired_null - conditioned) / max(paired_null, 1.0e-12)
     shuffled_train_gain = (shuffled_train - conditioned) / max(shuffled_train, 1.0e-12)
     shuffle_degradation = (conditioned_shuffle - conditioned) / max(conditioned, 1.0e-12)
     finite = all(math.isfinite(float(value)) for value in final_metrics["mse"].values())
@@ -487,10 +507,21 @@ def main() -> None:
         "all_metrics_finite": finite,
         "fresh_restore_exact": restore_max_abs == 0.0,
         "conditioned_beats_independent": independent_gain >= args.minimum_relative_improvement,
+        "conditioned_beats_paired_null": paired_null_gain >= args.minimum_relative_improvement,
         "conditioned_beats_shuffled_train": shuffled_train_gain >= args.minimum_relative_improvement,
         "within_state_shuffle_hurts_conditioned": shuffle_degradation >= args.minimum_shuffle_degradation,
     }
-    passed = all(gate.values())
+    required_gate_keys = [
+        "all_metrics_finite", "fresh_restore_exact",
+        "conditioned_beats_shuffled_train",
+        "within_state_shuffle_hurts_conditioned",
+        (
+            "conditioned_beats_paired_null"
+            if args.mechanism_gate == "paired_null"
+            else "conditioned_beats_independent"
+        ),
+    ]
+    passed = all(gate[key] for key in required_gate_keys)
     report = {
         "experiment_id": args.experiment_id,
         "status": "PASS_C31_ACTION_CONDITIONED_CONSEQUENCE" if passed else "FAIL_C31_ACTION_CONDITIONED_CONSEQUENCE",
@@ -520,6 +551,8 @@ def main() -> None:
             "save_every": args.save_every, "learning_rate": args.learning_rate,
             "weight_decay": args.weight_decay, "seed": args.seed,
             "target_error_scaling": args.target_error_scaling,
+            "condition_dropout_prob": args.condition_dropout_prob,
+            "mechanism_gate": args.mechanism_gate,
             "target_error_scale_min": float(target_error_scale.min()),
             "target_error_scale_max": float(target_error_scale.max()),
             "duration_seconds": time.perf_counter() - started,
@@ -530,6 +563,7 @@ def main() -> None:
         "final_metrics": final_metrics,
         "mechanism": {
             "conditioned_gain_over_independent": independent_gain,
+            "conditioned_gain_over_paired_null": paired_null_gain,
             "conditioned_gain_over_shuffled_train": shuffled_train_gain,
             "conditioned_within_state_shuffle_degradation": shuffle_degradation,
             "fresh_restore_max_abs": restore_max_abs,
@@ -537,6 +571,7 @@ def main() -> None:
                 "relative_improvement": args.minimum_relative_improvement,
                 "shuffle_degradation": args.minimum_shuffle_degradation,
             },
+            "required_gate_keys": required_gate_keys,
             "gate": gate,
         },
         "checkpoint": str(final_checkpoint),

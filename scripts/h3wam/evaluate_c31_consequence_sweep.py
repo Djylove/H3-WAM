@@ -54,6 +54,8 @@ def main() -> None:
             row["optimization"]["steps"], row["optimization"]["batch_size"],
             row["optimization"]["learning_rate"], row["optimization"]["weight_decay"],
             row["optimization"].get("target_error_scaling", "raw"),
+            row["optimization"].get("condition_dropout_prob", 0.0),
+            row["optimization"].get("mechanism_gate", "separate_independent"),
         )
         for _, _, row in reports
     }
@@ -68,6 +70,9 @@ def main() -> None:
             "variant": key[0], "seed": key[1], "passed": passed,
             "conditioned_true_mse": metric,
             "gain_over_independent": row["mechanism"]["conditioned_gain_over_independent"],
+            "gain_over_paired_null": row["mechanism"].get(
+                "conditioned_gain_over_paired_null", 0.0
+            ),
             "gain_over_shuffled_train": row["mechanism"]["conditioned_gain_over_shuffled_train"],
             "within_state_shuffle_degradation": row["mechanism"]["conditioned_within_state_shuffle_degradation"],
             "report": str(path.resolve()), "report_sha256": sha256_file(path),
@@ -84,6 +89,7 @@ def main() -> None:
             "passes": sum(row["passed"] for row in rows),
             "mean_conditioned_true_mse": sum(row["conditioned_true_mse"] for row in rows) / len(rows),
             "minimum_gain_over_independent": min(row["gain_over_independent"] for row in rows),
+            "minimum_gain_over_paired_null": min(row["gain_over_paired_null"] for row in rows),
             "minimum_gain_over_shuffled_train": min(row["gain_over_shuffled_train"] for row in rows),
             "minimum_within_state_shuffle_degradation": min(row["within_state_shuffle_degradation"] for row in rows),
         }

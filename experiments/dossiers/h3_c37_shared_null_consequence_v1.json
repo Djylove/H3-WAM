@@ -1,0 +1,54 @@
+{
+  "experiment_id": "h3_c37_shared_null_consequence_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "A train/inference-consistent shared null-action path will reproduce the action-conditioned future-H3 signal in both seeds when true, null and shuffled actions are evaluated through the same fitted model.",
+  "single_variable": "Relative to raw-target C35, C37 changes only the action-control route: the conditioned model receives 10% structured whole-sample zero-action dropout during training and is gated by paired true-versus-null inference from that same model; data, features, architecture, optimizer, steps, seeds and shuffle gate remain fixed.",
+  "parent_baseline": "C35 and C36 both retained strict FAIL because separately fitted independent models crossed the 1% gate in only one temporal seed each. A post-hoc diagnostic, not used as evidence, found that each frozen C35 conditioned model itself improved true versus zero action by 16.8%-22.6%; C37 preregisters a clean replication before making any mechanism claim.",
+  "references": [
+    {"kind": "paper", "title": "MiniWorld: action-conditioned streaming video world model", "locator": "third_party/MiniWorld/README.md", "revision": "repository documentation"},
+    {"kind": "upstream_code", "title": "MiniWorld structured condition dropout and train/infer null route", "locator": "third_party/MiniWorld/miniworld/miniworld.py", "revision": "e484206bbd4360ae56ed8abad51c83f2457ac092", "official": true},
+    {"kind": "upstream_code", "title": "FACT clean-action future path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "local_implementation", "title": "C37 shared-null repeated consequence sweep", "locator": "scripts/h3wam/launch_c37_shared_null_consequence_sweep.sh", "revision": "C37 implementation commit"}
+  ],
+  "alignment": {
+    "architecture": [
+      {"field": "shared conditional/unconditional weights", "paper": "Conditional and unconditional predictions share the world model.", "upstream_code": "MiniWorld _make_uncond routes the same network through its null conditioning branch.", "local": "C37 evaluates true, zero and within-state shuffled actions through the identical conditioned consequence expert; flattened and temporal encoders are unchanged from C35.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_c31_action_conditioned_consequence.py", "third_party/MiniWorld/miniworld/denoiser.py:213"], "rationale": "Paired predictions remove independent-model optimization variance from the causal comparison."}
+    ],
+    "data": [
+      {"field": "unchanged C34 source split", "paper": "Held-out trajectories evaluate conditioning.", "upstream_code": "Condition dropout changes inputs, not episode identity.", "local": "The same 37 train, 8 consequence-validation and 52 reserved ranking sources are used; dropout is sampled only inside train batches.", "status": "EXACT", "evidence": ["C34 dataset SHA256 2a6c9252b8e77975f58920425bc18110fa8ea63bdc12c4c15571cfffeb9f7459"]}
+    ],
+    "action": [
+      {"field": "structured whole-action null", "paper": "Classifier-free conditioning trains conditional and null paths in one model.", "upstream_code": "MiniWorld defaults wm_cond_dropout_prob to 0.1 and uses the same null route at inference.", "local": "With probability0.1 the complete 32x7 clean action prefix becomes zero for a conditioned training row; validation compares exact true, exact zero and exact same-state shuffled prefixes.", "status": "INTENTIONAL_DEVIATION", "evidence": ["third_party/MiniWorld/miniworld/train.py:346", "scripts/h3wam/launch_c37_shared_null_consequence_sweep.sh"], "rationale": "The local action encoder's bias and temporal positions provide a learned response to the zero sequence instead of adding a new explicit null parameter, keeping the C35 architecture fixed."}
+    ],
+    "objective": [
+      {"field": "paired action mechanism gate", "paper": "Conditional guidance is the difference between same-model conditional and null predictions.", "upstream_code": "MiniWorld combines v_uncond and v_cond from shared weights.", "local": "PASS requires same-model true action to beat null by at least1%, true action to beat the separately shuffled-trained diagnostic by at least1%, and same-model shuffle to hurt by at least1%; all must repeat in both seeds.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_c31_action_conditioned_consequence.py", "scripts/h3wam/evaluate_c31_consequence_sweep.py"], "rationale": "The separately trained independent arm remains diagnostic and cannot veto or create the paired shared-model claim."}
+    ],
+    "optimization": [
+      {"field": "C35-matched repeated budget", "paper": "Conditional dropout is trained jointly with the main objective.", "upstream_code": "MiniWorld samples structured dropout during ordinary training.", "local": "Flattened/temporal x seeds42/314159; three equal-capacity diagnostics; 10,000 steps, batch64, AdamW3e-4/1e-2, raw target and save interval1,000.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/launch_c37_shared_null_consequence_sweep.sh"], "rationale": "Keeping the C35 budget isolates the shared-null control route."}
+    ],
+    "evaluation": [
+      {"field": "source-held-out repeated shared-model effect", "paper": "Conditioning effects are assessed on held-out data before downstream use.", "upstream_code": "MiniWorld uses the trained null branch for inference guidance.", "local": "Only 8 unseen consequence sources determine the repeated gate; all 52 C33 ranking sources remain untouched until C37 passes.", "status": "EQUIVALENT", "evidence": ["C34 feature SHA256 4655d0783a443b4817f93f5368f7cace9996be7163dfa49b2080033b3b176f69"], "rationale": "A C37 pass establishes a future-H3 action mechanism only, not ranking or LIBERO success."}
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["MiniWorld e484206bbd4360ae56ed8abad51c83f2457ac092; FACT 618a6c16868699b6d4138941de6a863589ac00dd; C35 0967fb0301611d99c745ae3e959647479f150b37399744b9e8351685e80cfa8c; C36 2bdb0cb622ba79ec5abbb0a82c848d71e3e70b78385b29288f9fb32ae9371e8a."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["C35 model classes unchanged; same conditioned weights serve true/null/shuffle evaluation."]},
+    "data_contract": {"status": "PASS", "evidence": ["C34 source identities and zero-overlap splits unchanged."]},
+    "action_contract": {"status": "PASS", "evidence": ["Structured dropout zeros a complete input row only; executed prefixes and padded tails remain audited; 11 focused tests PASS."]},
+    "objective_contract": {"status": "PASS", "evidence": ["paired_null gate, 0.1 condition dropout and unchanged 1% thresholds are launcher-fixed before outcomes."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Four fixed jobs, 10,000 steps, batch64, raw target and exact C35 optimizer settings."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Same-model paired null and shuffle on 8 unseen sources; C33 ranking set unconsumed."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Actions remain detached; structured dropout changes only read-only inputs; expert gradients are finite and nonzero in tests."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["11 focused tests include dropout, paired-null metrics and report/checkpoint contracts."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Checkpoint records dropout probability and gate mode and passes strict exact restore."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C35/C36 formal FAIL artifacts frozen; post-hoc C35 same-model diagnostic explicitly excluded from promotion evidence."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["C37 preregistered replication pending."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Value ranking remains blocked until repeated C37 PASS."]}
+  },
+  "budget": {"global_batch": 768, "optimizer_steps": 10000, "training_samples": 7680000, "unique_windows": 296, "effective_epochs": 25945.945945945947, "gpu_count": 4, "estimated_hours": 0.1},
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "Both prior sweeps show repeated shuffle sensitivity while the separately trained independent arm changes ordering across seeds. MiniWorld's official shared null-conditioning path directly addresses that confound, and the strong post-hoc paired diagnostic justifies a clean preregistered replication rather than a retroactive gate change.",
+    "launch_command": "On ports 32611/30907/32409/30234 set C37_RUN_INDEX=0/1/2/3 and run bash scripts/h3wam/launch_c37_shared_null_consequence_sweep.sh; aggregate only all four preregistered reports."
+  }
+}

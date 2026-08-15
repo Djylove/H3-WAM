@@ -88,6 +88,8 @@ def test_two_step_temporal_training_writes_audited_checkpoints(tmp_path, monkeyp
         "--hidden-dim", "8",
         "--num-heads", "2",
         "--target-error-scaling", "train_delta_std",
+        "--condition-dropout-prob", "0.1",
+        "--mechanism-gate", "paired_null",
         "--device", "cpu",
     ])
     MODULE.main()
@@ -97,9 +99,14 @@ def test_two_step_temporal_training_writes_audited_checkpoints(tmp_path, monkeyp
     assert result["data"]["reserved_ranking_validation_sources"] == 1
     assert result["optimization"]["effective_train_examples"] == 8
     assert result["optimization"]["target_error_scaling"] == "train_delta_std"
+    assert result["optimization"]["condition_dropout_prob"] == 0.1
+    assert result["optimization"]["mechanism_gate"] == "paired_null"
+    assert "conditioned_with_zero" in result["final_metrics"]["mse"]
     checkpoint = torch.load(
         checkpoint_dir / "temporal_seed42_step00002.pt", weights_only=False
     )
     assert checkpoint["completed_steps"] == 2
     assert checkpoint["contract"]["unexecuted_action_tail_zero_masked"] is True
+    assert checkpoint["contract"]["condition_dropout_prob"] == 0.1
+    assert checkpoint["contract"]["mechanism_gate"] == "paired_null"
     assert checkpoint["normalization"]["target_error_scaling"] == "train_delta_std"
