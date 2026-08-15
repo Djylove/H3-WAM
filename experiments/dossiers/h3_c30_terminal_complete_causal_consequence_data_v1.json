@@ -33,5 +33,13 @@
     "status": "GO_CANARY",
     "rationale": "C29 provides sufficient new source episodes, and C30 closes the terminal-observation bias before any action-conditioned consequence training.",
     "launch_command": "On ports 32611/30907/32409/30234 respectively: C30_SHARD=0/1/2/3 bash scripts/h3wam/launch_c30_action_conditioned_causal_shard.sh"
+  },
+  "result": {
+    "status": "FAIL_C30_ACTION_CONDITIONED_CAUSAL_DATASET",
+    "decision": "NO_GO_ACTION_CONDITIONED_CONSEQUENCE_TRAINING",
+    "metrics": {"branches": 488, "successes": 317, "mixed_groups": 28, "train_mixed": 25, "validation_mixed": 3, "mixed_suites": 4, "terminal_fallback_branches": 147},
+    "artifact": "/mnt/h3-wam/eval/c30-action-conditioned-causal-dataset-v1/COMPLETED",
+    "artifact_sha256": "758b24be6197a520850ff3ec6190139eda13737c03d92a9a8eeddbe491d28578",
+    "boundary": "All mechanical and consequence fields passed, but the fixed validation requirement was >=4 mixed groups and only 3 occurred. The threshold is not relaxed post hoc; C31 formal training remains blocked."
   }
 }

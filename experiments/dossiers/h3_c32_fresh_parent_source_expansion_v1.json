@@ -1,0 +1,36 @@
+{
+  "experiment_id": "h3_c32_fresh_parent_source_expansion_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "The unchanged D0-H32-s14000 parent yields enough wholly new trial8..11 successes to build a fresh ranking validation set after C30 missed its preregistered validation mixed-group threshold by one.",
+  "single_variable": "Only LIBERO benchmark initial-state trial index changes from C29 trials4..7 to never-consumed trials8..11; checkpoint, action path, task inventory, seeds, replan8 and no-ensemble stay fixed.",
+  "parent_baseline": "C29 trials4..7 yielded 61/160 successful sources; C30 then produced 25 train but only 3 validation mixed groups against a fixed requirement of 4, so C30 formally failed and no C31 training launched.",
+  "references": [
+    {"kind": "paper", "title": "FACT: A Failure-Aware Causal Transformer for World Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT failure rollout and held-out consequence evaluation", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "local_implementation", "title": "C32 fixed-parent source expansion", "locator": "scripts/h3wam/launch_c32_parent_source_trial.sh", "revision": "this dossier commit"}
+  ],
+  "alignment": {
+    "architecture": [{"field": "fixed parent", "paper": "Collect new outcomes from a fixed policy.", "upstream_code": "Rollout collection does not change the policy.", "local": "Frozen D0-H32-s14000 generates every C32 source.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/run_dense_d0_milestone_rollout.sh"], "rationale": "This is source collection, not training."}],
+    "data": [{"field": "fresh complete index range", "paper": "Held-out consequences require unconsumed episodes.", "upstream_code": "Evaluation rollouts are disjoint from training records.", "local": "All suite/task/trial8..11 combinations are enumerated before success is known.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c32_parent_source_expansion.py"], "rationale": "No C21..C30 branch used trial8..11."}],
+    "action": [{"field": "executed action", "paper": "Actions execute in the environment.", "upstream_code": "Rollouts use decoded robot actions.", "local": "The audited environment-domain H32/replan8 path is unchanged.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/run_dense_d0_milestone_rollout.sh"], "rationale": "No action candidate change occurs in C32."}],
+    "objective": [{"field": "source inventory gate", "paper": "Diverse outcomes support later value learning.", "upstream_code": "Success/failure records remain available.", "local": "C32 gates only source count and suite coverage and cannot claim an effect.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/evaluate_c32_parent_source_expansion.py"], "rationale": "Causal branches and ranking are later experiments."}],
+    "optimization": [{"field": "updates", "paper": "Optimization follows data assembly.", "upstream_code": "Collection is inference-only.", "local": "Zero parameter updates; 32 GPUs execute 160 episodes.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c32_parent_source_trial.sh"]}],
+    "evaluation": [{"field": "complete source audit", "paper": "Held-out rollouts use fixed tasks and episodes.", "upstream_code": "Evaluation enumerates episode identities.", "local": "All 160 exact paths and suite success counts are audited.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c32_parent_source_expansion.py"], "rationale": "This only decides whether to collect fresh causal validation branches."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["D0-H32-s14000 identity unchanged from C29/C30"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["no model or adapter changes"]},
+    "data_contract": {"status": "PASS", "evidence": ["all suites/tasks and trials8..11 fixed before launch"]},
+    "action_contract": {"status": "PASS", "evidence": ["existing audited D0 environment action path"]},
+    "objective_contract": {"status": "PASS", "evidence": ["collection-only source thresholds fixed"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["inference-only by construction"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["minimum total/per-suite success thresholds fixed before results"]},
+    "gradient_path": {"status": "PASS", "evidence": ["no optimizer or gradient path"]}
+  },
+  "budget": {"global_batch": 32, "optimizer_steps": 5, "training_samples": 160, "unique_windows": 160, "effective_epochs": 1.0, "gpu_count": 32, "estimated_hours": 0.35},
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "C30 is retained as a failed preregistered experiment; new trial8..11 sources are the shortest unbiased route to a genuinely fresh ranking validation set.",
+    "launch_command": "On ports 32611/30907/32409/30234: C32_TRIAL=8/9/10/11 bash scripts/h3wam/launch_c32_parent_source_trial.sh"
+  }
+}

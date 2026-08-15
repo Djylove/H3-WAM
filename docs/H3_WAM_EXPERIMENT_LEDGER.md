@@ -800,3 +800,12 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   又冻结了三级source用途：只从原C30 train源按suite哈希划出约20%作consequence validation；其余作
   consequence train；原C30的16个val source全部标记`reserved_ranking_val`，C31 future-MSE训练与选型
   均不读取。这样后续value head可用原train mixed groups训练，并仍有完整的fresh-source ranking终验集。
+- C30最终488/488完成、317成功，122组中28组mixed并覆盖四suite；动作多样性、source split、seed
+  schedule和488个post-action consequence全部通过，147条首chunk内成功使用独立terminal观测。但预注册
+  要求validation mixed `>=4`，实际train/val为`25/3`，故严格判定
+  `FAIL_C30_ACTION_CONDITIONED_CAUSAL_DATASET / NO_GO_ACTION_CONDITIONED_CONSEQUENCE_TRAINING`，不把门槛
+  事后从4降到3。artifact SHA256为
+  `758b24be6197a520850ff3ec6190139eda13737c03d92a9a8eeddbe491d28578`；自动C31冻结已按设计停止。
+- 新建C32而不消费C30 val调参：固定同一D0-H32-s14000/replan8/no-ensemble父策略，完整枚举从未进入
+  C21–C30的trials8..11、四suite×10 tasks×4 trials=160 episodes。C32仅建立新鲜source库存；成功数
+  与per-suite门在结果前固定，后续新的causal branch仍需独立预注册。四个trial可在四节点各8卡并行。
