@@ -25,6 +25,10 @@ C27 = load_module(
     "prepare_c27_expanded_causal_dataset_test_module",
     ROOT / "scripts/h3wam/prepare_c27_expanded_causal_dataset.py",
 )
+C28 = load_module(
+    "train_c28_fresh_causal_action_critic_test_module",
+    ROOT / "scripts/h3wam/train_c28_fresh_causal_action_critic.py",
+)
 
 
 def test_pairwise_metrics_and_exact_permutation_use_only_within_group_order():
@@ -84,3 +88,46 @@ def test_c27_split_is_deterministic_stratified_and_source_isolated():
         rows = [row for row in records if row["suite"] == suite]
         assert sum(first[row["source_episode"]] == "val" for row in rows) == expected_validation
         assert all(first[row["source_episode"]] in ("train", "val") for row in rows)
+
+
+def test_c28_combination_consumes_old_validation_as_train_but_keeps_c27_fresh():
+    c25 = {
+        "format": "h3wam-c26-causal-critic-dataset-v1",
+        "states": [
+            {"group_id": 0, "split": "train", "source_episode": "old-train"},
+            {"group_id": 1, "split": "val", "source_episode": "old-val"},
+        ],
+        "branches": [
+            {"group_id": 0, "split": "train", "source_episode": "old-train"},
+            {"group_id": 1, "split": "val", "source_episode": "old-val"},
+        ],
+    }
+    c27 = {
+        "format": "h3wam-c27-causal-critic-dataset-v1",
+        "states": [
+            {"group_id": 0, "split": "train", "source_episode": "fresh-train"},
+            {"group_id": 1, "split": "val", "source_episode": "fresh-val"},
+        ],
+        "branches": [
+            {"group_id": 0, "split": "train", "source_episode": "fresh-train"},
+            {"group_id": 1, "split": "val", "source_episode": "fresh-val"},
+        ],
+    }
+    combined = C28.combine_datasets(c25, c27)
+    assert [row["group_id"] for row in combined["states"]] == [0, 1, 2, 3]
+    assert [row["split"] for row in combined["states"]] == [
+        "train", "train", "train", "val"
+    ]
+
+
+def test_c28_permutation_pvalue_uses_exact_small_space():
+    group_ids = torch.tensor([0, 0, 0, 0, 1, 1, 1, 1])
+    labels = torch.tensor([1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0])
+    scores = labels * 2.0
+    metric = C26.ranking_metrics(scores, group_ids, labels, [0, 1])
+    result = C28.permutation_pvalue(
+        scores, group_ids, labels, [0, 1], metric["pairwise_correct"]
+    )
+    assert result["mode"] == "exact"
+    assert result["space"] == 36
+    assert result["value"] < 0.2

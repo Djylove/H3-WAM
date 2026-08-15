@@ -26,7 +26,10 @@ from fastwam.models.h3wam import (
 )
 
 
-FORMAT = "h3wam-c26-live-h3-features-v1"
+FORMAT_BY_DATASET = {
+    "h3wam-c26-causal-critic-dataset-v1": "h3wam-c26-live-h3-features-v1",
+    "h3wam-c27-causal-critic-dataset-v1": "h3wam-c27-live-h3-features-v1",
+}
 EXPECTED_H3_SHA256 = "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
 EXPECTED_SOURCE_SHA256 = "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9"
 
@@ -86,11 +89,13 @@ def main() -> None:
     source_manifest = args.source_manifest.resolve()
     h3_checkpoint = args.h3_checkpoint.resolve()
     dataset = torch.load(dataset_path, map_location="cpu", weights_only=False)
-    if dataset.get("format") != "h3wam-c26-causal-critic-dataset-v1":
+    if dataset.get("format") not in FORMAT_BY_DATASET:
         raise ValueError("unsupported C26 dataset format")
     states = dataset.get("states")
-    if not isinstance(states, list) or len(states) != 32:
-        raise ValueError("C26 feature extraction requires exactly 32 states")
+    if not isinstance(states, list) or not states:
+        raise ValueError("causal H3 feature extraction requires non-empty states")
+    if [int(state["group_id"]) for state in states] != list(range(len(states))):
+        raise ValueError("causal state group ids must be contiguous and ordered")
     h3_sha256 = sha256_file(h3_checkpoint)
     source_sha256 = sha256_file(source_manifest)
     if h3_sha256 != EXPECTED_H3_SHA256:
@@ -193,7 +198,7 @@ def main() -> None:
             }), flush=True)
 
     result = {
-        "format": FORMAT,
+        "format": FORMAT_BY_DATASET[dataset["format"]],
         "dataset_path": str(dataset_path),
         "dataset_sha256": sha256_file(dataset_path),
         "group_ids": torch.tensor([int(state["group_id"]) for state in states]),
