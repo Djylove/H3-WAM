@@ -674,3 +674,15 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   首chunk执行长度。判定`PASS_FIRST_ACTION_HORIZON_SWEEP`，选择h32用于因果数据集canary。
 - 边界：h32仅提高标签可辨识性，尚未证明用h32部署、训练critic或best-of-N可提高LIBERO成功率。
   artifact SHA256为`a85d7d0dd03c355906cfa5f8277b8abf3e1d2675b5291153a1fae03e8b53f54e`。
+
+### 2026-08-15 — C25 episode-disjoint causal dataset canary（预注册）
+
+- 固定C24胜出的首chunk执行32、后续replan8与同组continuation seed；组内唯一变量仍为first seed。
+- 选择14个新的/隔离源episode、32个state组、每组4候选，共128分支；train22组、held-out val10组。
+  Goal/Object/Spatial各4个源episode，LIBERO-10因父策略仅2个成功源episode而各分配train/val一个。
+- 同一源episode的所有distance/state/branch强制留在一个split；Goal/Object/Spatial的val还选择不同
+  task以加强泛化审计。C23/C24用过的Goal/Object/Spatial源episode不进入C25。
+- 预算为4节点×8 A800、每节点32条/4 waves、最多51200环境步。
+- 放行门：机械合同全过，mixed group总数`>=8`、train `>=4`、val `>=2`，且覆盖`>=3` suites。
+  通过才允许冻结H3/action父策略训练小critic canary；失败不训练通用critic。
+- 效果仍固定`NOT_EVIDENCE_READY`；该门只判断数据是否足够支持可审计训练。
