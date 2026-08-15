@@ -161,6 +161,10 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 - 已开始冠军的全任务广度screen：LIBERO Goal/Object/Spatial/10各10任务、每任务固定trial0，共40
   episodes（5波×8卡、最多16000仿真步）。该结果只作为每任务一次的coverage screen，不能冒充官方
   多trial benchmark；其目的是真正暴露跨任务泛化瓶颈，并决定下一轮该改数据、目标还是动作执行。
+- 全40任务trial0已完成 `14/40=35%`：Goal `1/10`、Object `8/10`、Spatial `4/10`、LIBERO-10
+  `1/10`。成功覆盖14个不同任务，不是针对单任务过拟合；泛化集中在单阶段对象迁移，长程组合仍弱。
+  该数字只代表每任务一次的coverage，不冒充官方benchmark。已启动相同40任务的trial1复验，检查
+  35%是否依赖单一初始状态。
 
 ## 蛊王融合谱系
 

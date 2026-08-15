@@ -288,9 +288,9 @@
       },
       "interpretation": "Temporal averaging preserves goal5 but loses one object0 success, so it does not improve the incumbent on this fixed subset."
     },
-    "active_champion_all40_trial0_screen": {
+    "champion_all40_trial0_screen": {
       "node_port": 32409,
-      "queue_pid": 599536,
+      "completed_queue_pid": 599536,
       "runner": "scripts/h3wam/run_champion_all_tasks_trial0.sh",
       "checkpoint": "D0 H32 s14000",
       "deployment": "action horizon32, replan8, no temporal ensemble",
@@ -298,8 +298,27 @@
       "episodes": 40,
       "maximum_simulator_steps": 16000,
       "waves": 5,
-      "status": "NOT_EVIDENCE_READY_RUNNING",
-      "claim_boundary": "This is a one-trial-per-task coverage screen, not the official multi-trial LIBERO benchmark."
+      "successes": 14,
+      "success_rate": 0.35,
+      "by_suite": {
+        "libero_goal": {"successes": 1, "episodes": 10},
+        "libero_object": {"successes": 8, "episodes": 10},
+        "libero_spatial": {"successes": 4, "episodes": 10},
+        "libero_10": {"successes": 1, "episodes": 10}
+      },
+      "successful_task_count": 14,
+      "sorted_sha256_manifest_sha256": "153627e717716bf55c3a24122e7e75b6ab9071cb7dc485de71730988846cfa17",
+      "status": "EVIDENCE_READY_FOR_ONE_TRIAL_ALL_TASK_COVERAGE",
+      "claim_boundary": "This proves success on 14 distinct tasks in a one-trial-per-task coverage screen. It is not the official multi-trial LIBERO benchmark success rate.",
+      "interpretation": "Generalization is strongest on single-stage object transfer (8/10), partial on spatial relations (4/10), and weak on long-horizon/compositional Goal and LIBERO-10 tasks (1/10 each)."
+    },
+    "active_champion_all40_trial1_replication": {
+      "node_port": 32409,
+      "queue_pid": 616236,
+      "runner": "TRIAL_INDEX=1 scripts/h3wam/run_champion_all_tasks_trial0.sh",
+      "episodes": 40,
+      "purpose": "Repeat all 40 tasks on a second fixed initial state to test whether the 35 percent trial0 coverage is seed-specific.",
+      "status": "NOT_EVIDENCE_READY_RUNNING"
     }
   },
   "retention_cleanup": {
