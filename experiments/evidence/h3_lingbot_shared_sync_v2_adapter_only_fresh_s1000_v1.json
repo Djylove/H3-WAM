@@ -1,0 +1,11 @@
+{
+  "experiment_id": "h3_lingbot_shared_sync_v2_adapter_only_fresh_s1000_v1",
+  "classification": "scale_ladder_milestone",
+  "status": "PASS_OFFLINE_GATE",
+  "claim_boundary": "Fixed val40/sample40 evidence only; effectiveness remains blocked on the new s1000 closed-loop canary.",
+  "source": {"stage": "/mnt/h3-wam/outputs/h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/shared_sync_v2_adapter_only_s5000_fresh_step001000.pt", "checkpoint_sha256": "a9dd299505ddc7154b800bf08f0965f2b65f2f8073b40c21bc6a49e81bb46270", "evaluation": "/mnt/h3-wam/outputs/eval-h3-lingbot-shared-sync-v2-adapter-only-s5000-fresh/shared_sync_v2_adapter_only_s5000_fresh_step1000_complete.json"},
+  "parent_baseline": {"name": "shared_sync_clean_init_sample40", "causal_video_mse": 0.6955631747841835, "causal_action_mse": 1.3069883286952972},
+  "budget": {"gpu_count": 8, "global_batch": 8, "optimizer_steps": 1000, "training_samples": 8000, "unique_windows": 200779, "effective_epochs": 0.0398448045},
+  "metrics": {"evaluated_samples": 40, "teacher_forced_video_mse": 0.15218717493116857, "teacher_forced_action_mse": 0.8326428771018982, "causal_video_mse": 0.6453129477798939, "causal_action_mse": 1.0744923919439315, "causal_action_relative_improvement_over_step0": 0.1778867734675604, "causal_video_relative_improvement_over_step0": 0.07224394393777538, "causal_action_relative_improvement_over_s500": 0.06497299461111128, "causal_video_regression_from_s500": 0.015697499015861892, "causal_action_relative_improvement_over_old_s1000": 0.07920348446187213},
+  "decision": {"training_permission": "GO_LONG", "evidence_status": "NOT_EVIDENCE_READY", "offline_gate": "PASS", "next": "Run the same Goal task3/trial0/replan32 canary. Continue the scale curve while it runs, but full benchmark promotion requires closed-loop contact or success."}
+}
