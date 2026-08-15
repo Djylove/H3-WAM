@@ -1,0 +1,32 @@
+{
+  "experiment_id": "h3_c42_fresh_parent_source_expansion_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Ten complete, never-consumed fixed-parent trials provide at least 36 successful source episodes in each predeclared ranker-train and final role, so the next causal ranking experiment is not bottlenecked by C40's 22 train mixed groups.",
+  "single_variable": "Only LIBERO init-state trial changes from C41 trials12..15 to the added trials16..21; parent, checkpoint, action horizon, replan interval, suite/task grid and simulator remain frozen.",
+  "parent_baseline": "C40 failed fresh ranking at54.32% pairwise and p0.303 with22 train mixed groups. C41 starts the disjoint expansion but reserves only trial15 for final testing, which is not expected to support a powered fresh comparison alone.",
+  "references": [
+    {"kind": "paper", "title": "FACT failure-aware rollout expansion", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT rollout/value data path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "local_implementation", "title": "C42 complete source expansion", "locator": "scripts/h3wam/evaluate_c42_parent_source_expansion.py", "revision": "C42 preregistration commit"}
+  ],
+  "alignment": {
+    "architecture": [{"field": "fixed parent policy", "paper": "Collect diverse outcomes from a fixed policy before value fitting.", "upstream_code": "FACT retains rollout outcomes under one policy snapshot.", "local": "Every source uses frozen D0-H32-s14000/replan8.", "status": "EXACT", "evidence": ["scripts/h3wam/run_champion_all_tasks_trial0.sh"]}],
+    "data": [{"field": "source-disjoint role split", "paper": "Value training and final evaluation use distinct episodes.", "upstream_code": "Failure-aware value data retain episode identity.", "local": "Train trials12,13,14,16,17 and final trials15,18,19,20,21 are fixed before C42 outcomes are inspected.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c42_parent_source_expansion.py"], "rationale": "C41's predeclared trial15 final role is preserved."}],
+    "action": [{"field": "unchanged parent execution", "paper": "Observed outcomes follow executed policy actions.", "upstream_code": "Fixed actions are executed in simulation.", "local": "H32 first action and replan8 continuation remain unchanged.", "status": "EXACT", "evidence": ["scripts/h3wam/run_dense_d0_milestone_rollout.sh"]}],
+    "objective": [{"field": "collection-only sufficiency gate", "paper": "Outcome-diverse data precede ranker optimization.", "upstream_code": "Rollouts are collected before value fitting.", "local": "Require at least36 successful sources and three represented suites in each role.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/evaluate_c42_parent_source_expansion.py"], "rationale": "This is a data sufficiency gate and makes no model-effect claim."}],
+    "optimization": [{"field": "parameter updates", "paper": "None during data collection.", "upstream_code": "Rollout collection is inference-only.", "local": "Zero optimizer steps across240 new episodes.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c42_parent_source_trial.sh"]}],
+    "evaluation": [{"field": "pre-outcome train/final roles", "paper": "The final set is untouched by fitting or selection.", "upstream_code": "Held-out episode outcomes remain outside training.", "local": "Five train trials and five final trials are immutable for C43.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c42_parent_source_expansion.py"], "rationale": "C43 must preserve these roles at branch level."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["D0-H32-s14000 checkpoint and FACT commit remain fixed."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Inference-only fixed parent."]},
+    "data_contract": {"status": "PASS", "evidence": ["Trials and roles fixed before inspecting C42 outcomes."]},
+    "action_contract": {"status": "PASS", "evidence": ["Same H32/replan8 action contract."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Source-count and suite-coverage thresholds fixed."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["No gradients or optimizer."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Five-trial final role cannot train or select C43."]},
+    "gradient_path": {"status": "PASS", "evidence": ["No training path."]}
+  },
+  "budget": {"global_batch": 32, "optimizer_steps": 0, "training_samples": 240, "unique_windows": 240, "effective_epochs": 1.0, "gpu_count": 32, "estimated_hours": 1.0},
+  "decision": {"status": "GO_CANARY", "rationale": "C40's positive ensemble-over-action-only margin warrants more independent source coverage, while its non-significant final result forbids more tuning on C33.", "launch_command": "After C41 PASS, run trials16/17/18/19 on the four nodes; then trials20/21 on the first two nodes; audit all trials12..21 once."}
+}
