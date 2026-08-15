@@ -809,3 +809,7 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 新建C32而不消费C30 val调参：固定同一D0-H32-s14000/replan8/no-ensemble父策略，完整枚举从未进入
   C21–C30的trials8..11、四suite×10 tasks×4 trials=160 episodes。C32仅建立新鲜source库存；成功数
   与per-suite门在结果前固定，后续新的causal branch仍需独立预注册。四个trial可在四节点各8卡并行。
+- C33采集器与审计器已提前实现但保持`HOLD_PARENT_GATE`：只有C32通过后，才从其成功源各取距成功
+  d3/d5 state、每state四个first-action seed，后续seed逐值固定。C33全部source标记
+  `fresh_ranking_val`，不得训练或选择consequence结构；放行门固定为fresh mixed groups `>=8`且覆盖
+  `>=3` suites，同时要求动作/seed/terminal consequence机械门全过。

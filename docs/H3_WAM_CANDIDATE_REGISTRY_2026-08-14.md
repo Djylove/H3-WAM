@@ -81,6 +81,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C30 | consequence/data | terminal-complete causal outcomes | C29 fresh successes | FACT + MiniWorld clean-action future contract | 61源/122 state/488 branches；45/16源split；首chunk32、后续8；每branch强制动作后观测 | 488/488、317成功、28 mixed；train25但val仅3<门槛4；terminal fallback147 | FAIL_DATA_GATE；不事后降门槛 |
 | C31 | consequence/model | action-conditioned future-H3 adapter | C30 causal consequences | FACT clean-action K/V + MiniWorld 4-action/latent alignment | flattened与8-token temporal同数据同预算；correct、同状态错配、zero-action三臂；原C30 val全留给ranking | 代码与11项测试通过；C30严格门失败，正式训练未启动 | HOLD_DATA_GATE；只准另立exploratory子项 |
 | C32 | consequence/data | fresh parent source expansion trials8..11 | fixed D0-H32-s14000/replan8 | C30 val shortfall | 四suite/tasks0..9/trials8..11完整160 episode；唯一变量为未消费init trial | dossier与机械验证通过，准备四节点并行 | GO_CANARY；只补全新held-out源 |
+| C33 | consequence/data | fresh ranking causal outcomes | C32 passed successes | C30 causal execution contract | C32每个成功源取d3/d5、每state四个first seed；全部只作fresh ranking val | 采集/审计代码就绪；等待C32 source gate后冻结准确预算 | HOLD_PARENT_GATE；不得消费C30旧val代替 |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
