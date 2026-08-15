@@ -1,0 +1,13 @@
+{
+  "experiment_id":"h3_c48_fact_dense_value_dataset_v1",
+  "classification":"data_preparation",
+  "hypothesis":"Dense trajectory time-to-go plus failure-penalty supervision closes the value-label gap identified by C45/C46 while preserving exact executed-action causality.",
+  "single_variable":"Convert frozen parent trajectories into every-replan 32-step windows; no model parameters update and C47 final remains role-isolated.",
+  "parent_baseline":"C44 linear binary ranking passed offline but C45/C46 gave no online gain; FACT official code uses continuous future time-to-go plus failure penalty at every state.",
+  "references":[{"kind":"upstream_code","title":"FACT value target","locator":"third_party/FACT/world_action_model/transformers/wa_transforms_lerobot.py:496","revision":"618a6c16868699b6d4138941de6a863589ac00dd","official":true}],
+  "data_contract":{"train":"C42 trials12..21","validation":"C47 trials24..25","final":"C47 trials26..27","sampling":"every replan row","future_horizon":32,"deduplication":"unique row/terminal observations"},
+  "action_contract":{"clean_actions":"concatenate the actually executed first8 actions from up to four consecutive parent proposals","terminal_tail":"zero padded and explicitly masked","proposed_unexecuted_tail":"excluded"},
+  "objective_contract":{"success_value":"remaining steps after future / episode terminal steps","failure_value":"same base + 1.0 penalty","lower_is_better":true,"range":[0.0,2.0]},
+  "gates":{"source":"C42 and C47 PASS hashes","mechanical":"all episode replan axes and32x7 proposals valid; contiguous sample/observation ids","role_isolation":"train/validation/final episode identities disjoint"},
+  "decision":{"status":"HOLD_C47_GATE","on_pass":"Prepare C48 then shard live INT8 H3 features across32 GPUs.","on_fail":"Do not prepare or train dense value."}
+}
