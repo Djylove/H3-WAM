@@ -1,0 +1,12 @@
+{
+  "experiment_id": "h3_c47_fact_dense_value_sources_v1",
+  "classification": "data_expansion",
+  "hypothesis": "Four wholly new parent trials provide enough successful and failed full trajectories to train and independently validate FACT-style dense time-to-go plus failure-penalty value supervision.",
+  "single_variable": "The frozen D0-H32-s14000/replan8/sample1 parent is evaluated on new trials24..27; no model changes or candidate ranking are active.",
+  "parent_baseline": "C45/C46 rejected the C44 binary pairwise linear head. Official FACT instead trains continuous time-to-go value on every trajectory state and adds a failure penalty.",
+  "references": [{"kind":"upstream_code","title":"FACT LeRobot dense value target","locator":"third_party/FACT/world_action_model/transformers/wa_transforms_lerobot.py:496","revision":"618a6c16868699b6d4138941de6a863589ac00dd","official":true},{"kind":"upstream_code","title":"FACT joint value MSE","locator":"third_party/FACT/world_action_model/trainer/wa_casual_trainer.py:852","revision":"618a6c16868699b6d4138941de6a863589ac00dd","official":true}],
+  "data_contract": {"train":"C42 trials12..21, 400 episodes","validation_trials":[24,25],"final_trials":[26,27],"suites":["libero_goal","libero_object","libero_spatial","libero_10"],"tasks":"0..9","save_trajectories":true},
+  "gates": {"completeness":"160/160 results and trajectories with exact 32x7 action rows","coverage":"each new role has >=20 successes, >=20 failures, successes in >=3 suites"},
+  "budget": {"gpu_count":32,"new_rollouts":160,"estimated_hours":0.5},
+  "decision": {"status":"GO_COLLECTION","on_pass":"Freeze dense replan samples and shard live INT8 H3 feature extraction; train-only C42 chooses model, C47 validation selects, C47 final remains one-shot.","on_fail":"Do not relax coverage; collect another predeclared trial block."}
+}
