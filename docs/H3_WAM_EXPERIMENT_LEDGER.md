@@ -935,3 +935,13 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   比control多2成功、至少3胜、净胜至少2且任何suite退化不超过1/5。首次启动在仿真前暴露外层CLI未转发
   dense checkpoint/report，未产生candidate outcome；错误日志原样归档，补齐纯机械转发后按同一预注册
   trial/state/seed恢复，不改变门槛。
+- C53最终40/40闭环、20/20可排序，所有step80 prestate、candidate0 chunk、四seed、冻结C51身份及
+  score variation机械门全过，15/20选择非0。control为`7/20`、dense为`8/20`，配对`1胜0负19平`；
+  唯一差异为正向且四suite均未退化，但没有达到预注册的`+2/3胜/净胜2`效果门，因此严格FAIL，权限
+  `NO_GO_DENSE_VALUE_ONLINE`。report SHA256为
+  `ae9b2f421d51193882a91c9a3e7546d03cacdbc712d274c34e44035621571045`，不得靠增加trial重复同一检验刷门。
+- 失败后确认一个预先存在而非事后造出的合同差异：C52所有状态是父策略成功前d3/d5，C53却固定step80；
+  前者是近成功状态分布，后者不是。C54因此在看新outcome前冻结trials29..32共160条全新父轨迹；若至少
+  40个合格成功源覆盖3个suite，则全量取d3/d5并做candidate0 vs dense单次32步干预、共同replan8续跑。
+  效果门为绝对成功率`+5pp`、净胜至少5、精确单侧McNemar `p<=0.05`且suite退化不超过5pp。即使PASS，
+  因触发位置使用父轨迹 hindsight，也只放行可部署progress trigger研究，不恢复在线部署权限。

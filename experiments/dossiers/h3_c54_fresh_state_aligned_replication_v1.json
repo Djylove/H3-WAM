@@ -1,0 +1,44 @@
+{
+  "experiment_id": "h3_c54_fresh_state_aligned_replication_v1",
+  "classification": "fresh_source_causal_replication",
+  "hypothesis": "The C52-passing dense value expert improves candidate0 continuations when tested on wholly new visual sources at the same d3/d5-before-parent-success state distribution used by C52.",
+  "single_variable": "At each frozen new source state, control executes offset0 for32 steps while candidate selects one of offsets 0, 1000000, 2000000 and 3000000 once; both then use identical replan8 continuation seeds.",
+  "parent_baseline": "D0-H32-s14000/replan8/sample1 on trials29..32, which did not exist during C50-C53.",
+  "diagnostic_reason": "C53 intervened at fixed step80 whereas C52 evidence came from d3/d5 before successful termination; C54 tests this pre-existing state-distribution mismatch without tuning on C53 outcomes.",
+  "source_contract": {
+    "trials": [29, 30, 31, 32],
+    "suites": ["libero_goal", "libero_object", "libero_spatial", "libero_10"],
+    "tasks": "0..9",
+    "episodes": 160,
+    "eligible": "successful parent with both d3 and d5 replan rows"
+  },
+  "source_gate": {
+    "completeness": "160/160 exact trajectories",
+    "yield": ">=40 eligible successful sources across >=3 suites",
+    "selection": "all eligible sources, both d3 and d5; no outcome-based subsampling"
+  },
+  "branch_contract": {
+    "arms": ["candidate0", "dense_bestof4"],
+    "first_chunk": 32,
+    "continuation_replan": 8,
+    "rankings_per_candidate_episode": 1,
+    "dense_value_checkpoint_sha256": "d2f3a812eb1d4921efd6f2f9ee6f7f4f2736c516d338168b8110df281960907c"
+  },
+  "effect_gate": {
+    "mechanical": "bit-exact start state, candidate0 action, continuation seeds, ranker identity and score variation",
+    "absolute_success_gain": ">=0.05",
+    "paired_net_wins": ">=5",
+    "one_sided_exact_mcnemar_p": "<=0.05",
+    "suite_safety": "no suite success rate regresses by >0.05"
+  },
+  "budget": {
+    "gpu_count": 32,
+    "parent_rollouts": 160,
+    "maximum_branch_rollouts": 320
+  },
+  "decision": {
+    "status": "GO_FRESH_PARENT_COLLECTION",
+    "on_pass": "Conclude dense value works only with state-aligned triggering and develop a deployable progress trigger before benchmark expansion.",
+    "on_fail": "Reject online use and treat C52 as source-reuse-limited offline evidence."
+  }
+}

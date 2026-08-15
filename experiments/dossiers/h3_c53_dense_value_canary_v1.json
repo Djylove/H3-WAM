@@ -8,5 +8,16 @@
   "model_contract": {"dense_value_checkpoint_sha256": "d2f3a812eb1d4921efd6f2f9ee6f7f4f2736c516d338168b8110df281960907c", "candidate_offsets": [0, 1000000, 2000000, 3000000], "ranking_step": 80, "execution_chunk": 32, "rankings_per_eligible_episode": 1},
   "gates": {"mechanical": "exact step80 prestate, candidate0 action, seed offsets, frozen ranker identity and score variation", "selection": ">=20% nonzero selections", "effect": "candidate >= control+2; >=3 paired wins; net wins>=2; no suite regresses by >1/5"},
   "budget": {"gpu_count": 32, "rollouts": 40, "max_environment_steps": 16000},
-  "decision": {"status": "GO_LAUNCH", "on_pass": "Expand to the full LIBERO benchmark with a fixed sparse intervention schedule.", "on_fail": "Reject online dense value selection; preserve C52 only as offline counterfactual evidence."}
+  "result": {
+    "control_successes": 7,
+    "dense_bestof4_successes": 8,
+    "paired_wins": 1,
+    "paired_losses": 0,
+    "paired_ties": 19,
+    "eligible_pairs": 20,
+    "selected_nonzero": 15,
+    "minimum_score_range": 0.1407865285873413,
+    "final_report_sha256": "ae9b2f421d51193882a91c9a3e7546d03cacdbc712d274c34e44035621571045"
+  },
+  "decision": {"status": "FAIL_C53_DENSE_VALUE_CANARY", "permission": "NO_GO_DENSE_VALUE_ONLINE", "on_pass": "Expand to the full LIBERO benchmark with a fixed sparse intervention schedule.", "on_fail": "Reject online dense value selection; preserve C52 only as offline counterfactual evidence."}
 }
