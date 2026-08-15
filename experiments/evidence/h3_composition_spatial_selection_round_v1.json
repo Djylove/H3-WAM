@@ -255,6 +255,60 @@
       },
       "promotion": "Beat D0-s15000 offline under same noise, then exceed D0-s14000 7/20 Spatial while retaining at least 4/8 Object.",
       "stop": "Stop if conditioning collapses, matched offline loses materially, Spatial does not exceed 7/20, or Object falls below 4/8."
+    },
+    "C16": {
+      "name": "FACT-style-held-out-progress-value-diagnostic",
+      "parent_lineage": "D0-H32-s14000/replan8 rollout trajectories",
+      "classification": "official-code-aligned target dossier; diagnostic only",
+      "source": {
+        "project": "FACT",
+        "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+        "wa_transforms_lerobot_sha256": "ed76964b005420e752d15d140156962d6c18abd40e58f9140313857d5ebd7110"
+      },
+      "target_contract": "future_state_index=i+1; raw=(N-future_state_index-1)/(N-1); failures excluded as right-censored",
+      "dataset": {
+        "successful_transitions": 1001,
+        "train_transitions": 763,
+        "validation_transitions": 238,
+        "successful_train_episodes": 43,
+        "successful_validation_episodes": 14,
+        "censored_failure_episodes": 103,
+        "validation_suite_transition_counts": {"goal": 91, "object": 88, "spatial": 59, "10": 0},
+        "manifest_sha256": "386b4e574c13635007e04a1b19f0867434eacd24f32984e0f3b02df30619c587",
+        "artifact": "/mnt/h3-wam/eval/fact-value-target-dossier-v1/report.json"
+      },
+      "go_status": "GO_PROGRESS_DIAGNOSTIC_ONLY",
+      "evidence_status": "TARGET_DOSSIER_PASS",
+      "promotion": "Held-out trial3 progress ranking must beat episode-mean and step-index baselines before any policy integration.",
+      "stop": "Do not train failure penalties or enable best-of-N: failure onset and counterfactual alternative-action outcomes are absent; no successful LIBERO-10 validation episode exists."
+    },
+    "C17": {
+      "name": "expert-demonstration-progress-value-diagnostic",
+      "parent_lineage": "v7 multisuite dense expert windows plus frozen H3 carrier",
+      "classification": "FACT-inspired local adaptation; not an official FACT reproduction",
+      "source": {
+        "project": "FACT",
+        "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+        "wa_transforms_lerobot_sha256": "ed76964b005420e752d15d140156962d6c18abd40e58f9140313857d5ebd7110"
+      },
+      "single_variable": "attach future time-to-go targets to existing frozen-H3 expert windows; no action-policy parameter update",
+      "official_difference": "future offset32 follows local H3 action horizon; FACT RobotWin uses NUM_FRAMES48",
+      "dataset": {
+        "train_windows": 200779,
+        "train_episodes": 1542,
+        "validation_windows": 22150,
+        "validation_episodes": 170,
+        "episode_overlap": 0,
+        "train_by_suite": {"libero_10": 82760, "libero_goal": 35183, "libero_object": 47529, "libero_spatial": 35307},
+        "validation_by_suite": {"libero_10": 9104, "libero_goal": 3856, "libero_object": 5156, "libero_spatial": 4034},
+        "train_manifest_sha256": "4d1e99e5a1e429fbf7c413e9585dd1b1e22a37f929d02b6bfa780414cf3d5d3d",
+        "validation_manifest_sha256": "3941893af51f429896da206a999ecef05c8234b64ba836981995f7ec15c89413",
+        "artifact": "/mnt/h3-wam/eval/expert-progress-targets-v1/report.json"
+      },
+      "go_status": "GO_PROGRESS_HEAD_CANARY",
+      "evidence_status": "TARGET_DOSSIER_PASS",
+      "promotion": "Frozen-H3 progress head must improve held-out value MAE and task-progress calibration over step/context baselines, including LIBERO-10, before fusion.",
+      "stop": "No best-of-N or policy claim until the critic is action-conditioned and ranks held-out alternative outcomes."
     }
   },
   "difference_matrix": [
@@ -317,7 +371,9 @@
     "challengers": [
       "C02 aligned-five-layer s14000 (rejected)",
       "C14 executed-action-history16 adapter (mechanism only, fusion rejected)",
-      "C15 dual-view spatial grid K/V (active canary)"
+      "C15 dual-view spatial grid K/V (active canary)",
+      "C16 FACT-style rollout progress value (target dossier only)",
+      "C17 expert progress value (target dossier passed)"
     ],
     "track_winner": "none: C02 failed both final gates and C14 did not confirm across trials",
     "fusion": "blocked; C15 spatial-topology canary is the next single-variable challenger"

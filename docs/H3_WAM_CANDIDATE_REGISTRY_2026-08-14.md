@@ -64,6 +64,8 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C13 | consequence/state | Cosmos-H3 latent slots | Cosmos Policy | consequence winner parent | future state/value latent slots | scale/data mismatch open | PROBE_ONLY |
 | C14 | temporal/progress | D0-H32 executed-action history16 adapter | LingBot-VA persistent video/action KV + local D0 parent | D0-H32-s14000/replan8 | add zero-init 16-action progress adapter；freeze parent | s14500 trials0/1长程+1，但trials2/3无新增；s17000过训练 | 机制证据保留；NO_GO_FUSION |
 | C15 | carrier/spatial | D0 dual-view grid K/V | local H3 adapter + DreamWAM carrier | D0-H32-s14000/replan8 | 32-token一维池化 → 左右相机各4×4网格池化 | 64样本真实INT8机械门通过；8k严格兄弟缓存生成中 | GO_CANARY；NOT_EFFECT_EVIDENCE |
+| C16 | temporal/value | held-out progress value diagnostic | FACT | D0-H32-s14000 rollout trajectories | 只对成功轨迹按官方future-state time-to-go造target；失败轨迹右删失 | 1001 transitions；trial3 val238；LIBERO-10 val正样本0 | GO_DIAGNOSTIC；NO_GO_BEST_OF_N |
+| C17 | temporal/value | expert progress value diagnostic | FACT + v7 dense expert windows | frozen H3 carrier | future offset32的time-to-go target；不改动作策略 | train200779/val22150，episode overlap0，覆盖全部四suite | GO_PROGRESS_HEAD_CANARY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -290,6 +292,19 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   train trials0/1/2与val trial3任务重叠但episode不重叠；然而没有failure onset与counterfactual action
   outcome。因此只放行value-only feature/target dossier，不放行failure imitation或best-of-N闭环。
   审计：`/mnt/h3-wam/eval/audits/d0-h32-s14000-replan8-fact-transition-audit-v1.json`。
+- C16继续逐行对齐FACT官方transform（commit `618a6c168686`，文件SHA256
+  `ed76964b005420e752d15d140156962d6c18abd40e58f9140313857d5ebd7110`），冻结出1001条可监督成功
+  transition：train763、trial3 val238，来自43/14个成功episode；103个失败episode因没有failure onset全部按右删失，
+  不伪造惩罚target。val只有Goal91/Object88/Spatial59条，LIBERO-10为0，因此目前只放行“冻结H3特征能否预测
+  held-out进度”的诊断，不放行failure training或best-of-N。artifact：
+  `/mnt/h3-wam/eval/fact-value-target-dossier-v1/report.json`；manifest SHA256
+  `386b4e574c13635007e04a1b19f0867434eacd24f32984e0f3b02df30619c587`。
+- 为补上C16没有LIBERO-10正样本的问题，C17从现有v7专家窗口冻结出progress targets：future index为
+  `min(start+32,length-1)`，raw value为 `(length-future-1)/(length-1)`。train200779窗/1542 episodes，
+  val22150窗/170 episodes，episode overlap0；其中LIBERO-10为82760/9104窗。offset32是按本项目H32做的
+  明示本地改动，FACT官方RobotWin为48，不能冒充复现。当前只放行冻结H3 progress head canary；未证明
+  action-conditioned held-out ranking前仍禁止best-of-N。artifact：
+  `/mnt/h3-wam/eval/expert-progress-targets-v1/report.json`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。
