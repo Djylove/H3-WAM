@@ -63,6 +63,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--minimum-relative-improvement", type=float, default=0.01)
     parser.add_argument("--minimum-shuffle-degradation", type=float, default=0.01)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--experiment-id", default="h3_c31_action_conditioned_consequence_v1"
+    )
     return parser.parse_args()
 
 
@@ -461,7 +464,7 @@ def main() -> None:
     }
     passed = all(gate.values())
     report = {
-        "experiment_id": "h3_c31_action_conditioned_consequence_v1",
+        "experiment_id": args.experiment_id,
         "status": "PASS_C31_ACTION_CONDITIONED_CONSEQUENCE" if passed else "FAIL_C31_ACTION_CONDITIONED_CONSEQUENCE",
         "claim_boundary": "Held-out-source future-H3 consequence mechanism only; no ranking or closed-loop claim.",
         "model_variant": args.model_variant,

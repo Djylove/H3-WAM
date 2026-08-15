@@ -21,6 +21,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--experiment-id", default="h3_c31_action_conditioned_consequence_sweep_v1"
+    )
     return parser.parse_args()
 
 
@@ -98,7 +101,7 @@ def main() -> None:
     )
     passed = winner is not None
     result = {
-        "experiment_id": "h3_c31_action_conditioned_consequence_sweep_v1",
+        "experiment_id": args.experiment_id,
         "status": (
             "PASS_C31_REPEATED_ACTION_CONDITIONED_CONSEQUENCE"
             if passed else "FAIL_C31_REPEATED_ACTION_CONDITIONED_CONSEQUENCE"

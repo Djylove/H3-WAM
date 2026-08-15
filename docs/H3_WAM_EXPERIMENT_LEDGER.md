@@ -827,3 +827,7 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   C33若通过，其52个source/104 states/416 branches全部只作fresh ranking validation。组合数据预计为
   194 states/776 branches，在线INT8 H3需抽取970个current/future样本；C34格式、特征路由、masked
   executed-action loader及现有future-H3模型共12项测试通过。C33未通过前保持`HOLD_C33_GATE`。
+- C35训练矩阵也已在C33 outcome未知时固定：flattened/temporal各跑seed42与314159，共4个独立job；
+  每job内部为correct、同状态错配、zero-action三臂，steps10000、batch64、LR3e-4、WD1e-2，每1000步
+  保存并做fresh restore。四job分散到四节点GPU0，避免共享CPU projection争用；C34真实hash和long
+  dossier未通过前launcher硬拒绝启动。

@@ -83,6 +83,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C32 | consequence/data | fresh parent source expansion trials8..11 | fixed D0-H32-s14000/replan8 | C30 val shortfall | 四suite/tasks0..9/trials8..11完整160 episode；唯一变量为未消费init trial | PASS：52/160成功；10/Goal/Object/Spatial为4/9/25/14 | GO_FRESH_RANKING_VALIDATION_COLLECTION |
 | C33 | consequence/data | fresh ranking causal outcomes | C32 passed successes | C30 causal execution contract | 52源×d3/d5×四first seed=104 states/416 branches；全部只作fresh ranking val | prereg/selection冻结，dossier通过 | GO_CANARY；不得消费C30旧val代替 |
 | C34 | consequence/data | combined consequence/ranking freeze | C30 train + C33 fresh val | FACT consequence split contract | 只复用C30的45个train源；明确排除其16个旧val源；C33全部只作ranking val | 拼接器、H3特征路由和loader兼容已通过12项测试 | HOLD_C33_GATE；C33通过后立即冻结 |
+| C35 | consequence/model | repeated action-conditioned future-H3 | C34 combined freeze | FACT clean-action + MiniWorld temporal alignment | flattened/temporal×seed42/314159；三臂action intervention；各10000步/每1000保存 | launcher与restore/aggregate路径就绪；等待C34 hash后生成long dossier | HOLD_C34_GATE；不得提前训练 |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
