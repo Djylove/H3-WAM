@@ -454,9 +454,11 @@
       "results": {"successful_branches": 11, "mixed_outcome_groups": 1, "all_groups_action_diverse": true, "goal_successes": 4, "object_successes": 3, "spatial_successes": 0, "libero10_successes": 4},
       "promotion": "all groups action-diverse and at least one same-state mixed-outcome group",
       "status": "PASS_COUNTERFACTUAL_OUTCOME_CANARY",
-      "go_status": "GO_DATASET_EXPANSION",
+      "artifact_go_status": "GO_DATASET_EXPANSION",
+      "go_status": "GO_ENTROPY_CALIBRATION_ONLY",
       "evidence_status": "NOT_EVIDENCE_READY",
-      "boundary": "Pass authorizes episode-disjoint counterfactual collection only; critic training, best-of-N, and effect claims remain gated.",
+      "post_audit": "policy-noise-seed-base changes every later replan seed, so final outcome is not causally attributable to the first action chunk; the artifact permission is superseded by this narrower gate",
+      "boundary": "Pass authorizes stochastic-continuation entropy calibration only; causal first-action data require C23 fixed continuation seeds, and critic/best-of-N/effect claims remain gated.",
       "artifact": "/mnt/h3-wam/eval/c21-counterfactual-outcome-canary-v1/COMPLETED",
       "artifact_sha256": "c258cb829c45e504e03e5a183008d2820a1a32152bb8ff70723ba1acf8895f8c"
     }
@@ -527,9 +529,9 @@
       "C18 time-blind expert progress value (feature pass, shadow AUROC0.546875 rejected)"
       ,"C19 old trajectory original-observation restore (rejected)",
       "C20 paired canonical branch restore (mechanical gate passed)",
-      "C21 same-state diffusion-noise outcome canary (passed; dataset expansion only)"
+      "C21 same-state stochastic-continuation canary (passed; entropy calibration only after causal-label audit)"
     ],
     "track_winner": "none: C02 and C15 failed final spatial/object gates; C14 did not confirm across trials",
-    "fusion": "blocked; C21 proves action-conditioned outcome supervision can be collected, but held-out ranking and closed-loop effect gates are not yet passed"
+    "fusion": "blocked; C21 proves state-level stochastic outcome variation, while causal first-action supervision awaits C23 fixed-continuation validation"
   }
 }

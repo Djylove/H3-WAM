@@ -95,6 +95,16 @@ def parse_args() -> argparse.Namespace:
         help="Exact first-replan diffusion seed; later replans increment by one.",
     )
     parser.add_argument(
+        "--first-policy-noise-seed",
+        type=int,
+        help="Causal branch intervention seed used only for the first replan.",
+    )
+    parser.add_argument(
+        "--continuation-policy-noise-seed-base",
+        type=int,
+        help="Fixed second-replan seed; later continuation replans increment by one.",
+    )
+    parser.add_argument(
         "--start-trajectory",
         type=Path,
         help="Restore a canonical branch state from a saved rollout trajectory.",
@@ -476,6 +486,27 @@ def load_branch_start(path: Path, index: int) -> dict:
         }
 
 
+def resolve_replan_noise_seed(
+    *,
+    episode_seed: int,
+    replans: int,
+    fixed_replan_noise: bool,
+    fixed_noise_seed: int | None,
+    first_policy_noise_seed: int | None,
+    continuation_policy_noise_seed_base: int | None,
+) -> int:
+    """Resolve an auditable seed schedule, including first-action interventions."""
+
+    if fixed_noise_seed is not None:
+        return fixed_noise_seed
+    if first_policy_noise_seed is not None:
+        if replans == 0:
+            return first_policy_noise_seed
+        assert continuation_policy_noise_seed_base is not None
+        return continuation_policy_noise_seed_base + replans - 1
+    return episode_seed if fixed_replan_noise else episode_seed + replans
+
+
 def run_episode(
     env,
     initial_state,
@@ -494,6 +525,8 @@ def run_episode(
     use_action_ensembler: bool,
     environment_seed: int | None = None,
     branch_start: dict | None = None,
+    first_policy_noise_seed: int | None = None,
+    continuation_policy_noise_seed_base: int | None = None,
 ) -> tuple[dict, list[np.ndarray], dict[str, np.ndarray] | None]:
     if environment_seed is not None:
         env.seed(environment_seed)
@@ -554,6 +587,7 @@ def run_episode(
     action_head_gripper_disagreements = []
     action_head_switch_gate_probabilities = []
     progress_values = []
+    replan_noise_seeds = []
     if use_action_ensembler:
         from fastwam.action_ensembler import ActionEnsembler
 
@@ -593,13 +627,20 @@ def run_episode(
             trajectory["sim_state"].append(
                 np.asarray(env.get_sim_state(), dtype=np.float64)
             )
+        replan_noise_seed = resolve_replan_noise_seed(
+            episode_seed=episode_seed,
+            replans=replans,
+            fixed_replan_noise=fixed_replan_noise,
+            fixed_noise_seed=fixed_noise_seed,
+            first_policy_noise_seed=first_policy_noise_seed,
+            continuation_policy_noise_seed_base=continuation_policy_noise_seed_base,
+        )
+        replan_noise_seeds.append(replan_noise_seed)
         actions, metadata, roundtrip = predict(
             connection,
             obs,
             task,
-            fixed_noise_seed
-            if fixed_noise_seed is not None
-            else (episode_seed if fixed_replan_noise else episode_seed + replans),
+            replan_noise_seed,
             episode_key,
             step,
             previous_action,
@@ -762,6 +803,7 @@ def run_episode(
             ),
             "episode_seed": episode_seed,
             "environment_seed": environment_seed,
+            "replan_noise_seeds": replan_noise_seeds,
         },
         frames,
         packed_trajectory,
@@ -785,6 +827,25 @@ def main() -> None:
         raise ValueError("environment-seed must be non-negative")
     if args.policy_noise_seed_base is not None and args.policy_noise_seed_base < 0:
         raise ValueError("policy-noise-seed-base must be non-negative")
+    causal_seeds = (
+        args.first_policy_noise_seed,
+        args.continuation_policy_noise_seed_base,
+    )
+    if (causal_seeds[0] is None) != (causal_seeds[1] is None):
+        raise ValueError(
+            "--first-policy-noise-seed and --continuation-policy-noise-seed-base "
+            "must be provided together"
+        )
+    if any(seed is not None and seed < 0 for seed in causal_seeds):
+        raise ValueError("causal policy noise seeds must be non-negative")
+    if causal_seeds[0] is not None and (
+        args.policy_noise_seed_base is not None
+        or args.fixed_noise_seed is not None
+        or args.fixed_replan_noise
+    ):
+        raise ValueError(
+            "first-action intervention cannot be combined with legacy or fixed noise modes"
+        )
     if (args.start_trajectory is None) != (args.start_index is None):
         raise ValueError("--start-trajectory and --start-index must be provided together")
     if args.start_trajectory is not None and args.wait_steps != 0:
@@ -856,6 +917,10 @@ def main() -> None:
         "fixed_noise_seed": args.fixed_noise_seed,
         "environment_seed": args.environment_seed,
         "policy_noise_seed_base": args.policy_noise_seed_base,
+        "first_policy_noise_seed": args.first_policy_noise_seed,
+        "continuation_policy_noise_seed_base": (
+            args.continuation_policy_noise_seed_base
+        ),
         "start_trajectory": (
             None if args.start_trajectory is None else str(args.start_trajectory.resolve())
         ),
@@ -942,6 +1007,10 @@ def main() -> None:
                         use_action_ensembler=args.use_action_ensembler,
                         environment_seed=args.environment_seed,
                         branch_start=branch_start,
+                        first_policy_noise_seed=args.first_policy_noise_seed,
+                        continuation_policy_noise_seed_base=(
+                            args.continuation_policy_noise_seed_base
+                        ),
                     )
                     episode["trial"] = trial
                     if trajectory is not None:

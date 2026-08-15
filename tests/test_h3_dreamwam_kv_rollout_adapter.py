@@ -32,6 +32,30 @@ ROLLOUT = load_script(
 
 
 class H3DreamWAMKVRolloutAdapterTest(unittest.TestCase):
+    def test_first_action_noise_intervention_fixes_continuation_schedule(self):
+        resolve = ROLLOUT.resolve_replan_noise_seed
+        common = {
+            "episode_seed": 42,
+            "fixed_replan_noise": False,
+            "fixed_noise_seed": None,
+            "continuation_policy_noise_seed_base": 9_000_000,
+        }
+        self.assertEqual(
+            resolve(**common, replans=0, first_policy_noise_seed=101), 101
+        )
+        self.assertEqual(
+            resolve(**common, replans=0, first_policy_noise_seed=202), 202
+        )
+        for first_seed in (101, 202):
+            self.assertEqual(
+                resolve(**common, replans=1, first_policy_noise_seed=first_seed),
+                9_000_000,
+            )
+            self.assertEqual(
+                resolve(**common, replans=4, first_policy_noise_seed=first_seed),
+                9_000_003,
+            )
+
     def test_branch_start_loads_only_state_step_and_previous_action(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trajectory.npz"

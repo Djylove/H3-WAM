@@ -600,9 +600,9 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 结果：Goal `4/4`、Object `3/4`、Spatial `0/4`、LIBERO-10 `4/4`，合计`11/16`；Object是唯一
   mixed-outcome组。各组最小首动作块RMS为`0.22723/0.14624/0.27201/0.09239`，全部通过
   `>1e-6`动作多样性门；墙钟`280s`。
-- 判定为`PASS_COUNTERFACTUAL_OUTCOME_CANARY / GO_DATASET_EXPANSION / NOT_EVIDENCE_READY`。
-  这只证明可构造action-conditioned outcome监督，不证明critic、best-of-N或总体策略已变强。下一步须
-  扩展state覆盖，按源episode切分train/validation，并在冻结父策略上通过held-out ranking和闭环门。
+- 原始判定为`PASS_COUNTERFACTUAL_OUTCOME_CANARY / GO_DATASET_EXPANSION / NOT_EVIDENCE_READY`。
+  后续代码审计发现base seed同时改变所有后续replan，故`GO_DATASET_EXPANSION`被收窄为
+  `GO_ENTROPY_CALIBRATION_ONLY`；本轮不能构成首动作的因果outcome监督。
 - artifact：`/mnt/h3-wam/eval/c21-counterfactual-outcome-canary-v1/COMPLETED`；SHA256
   `c258cb829c45e504e03e5a183008d2820a1a32152bb8ff70723ba1acf8895f8c`。
 
@@ -617,3 +617,15 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 预算：4节点×8 A800，计划每节点24条/3 waves；最多38400环境步，预计新增约270MB。
   后续数据划分必须以源episode为单位，严禁同一源轨迹的相邻state跨train/validation。
 - 效果状态预注册为`NOT_EVIDENCE_READY`；无论本轮是否通过，都不能直接宣称critic或best-of-N有效。
+
+### 2026-08-15 — C21/C22 causal-label boundary audit 与 C23机制
+
+- 审计`rollout_libero.py`确认旧调度为`episode_seed + replans`。C21/C22对base seed加offset会让首动作和
+  所有后续replan同时变化，适合测state-level stochastic continuation entropy，但最终成败不能因果
+  归给`first_environment_action_chunk`。
+- C22继续完成其已预注册的高熵时间带校准；不修改运行中代码、不更改阈值。其artifact即便输出
+  `GO_TARGETED_COUNTERFACTUAL_DATASET`，解释也被本审计收窄为`GO_CAUSAL_FIRST_ACTION_CANARY`。
+- C23新增两段seed合同：`first_policy_noise_seed`只用于replan0；从replan1起使用固定的
+  `continuation_policy_noise_seed_base + replans - 1`。同组候选仅首动作seed不同，后续seed逐值一致。
+- 本地机制门：项目`.venv`运行`tests.test_h3_dreamwam_kv_rollout_adapter`共10项通过，包括两个不同
+  first seed在replan1/4解析到完全相同continuation seed。真实闭环仍等待C22完成后选择高熵state。

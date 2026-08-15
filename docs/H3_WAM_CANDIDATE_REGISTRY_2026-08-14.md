@@ -69,8 +69,9 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C18 | temporal/value | time-blind expert progress diagnostic | C17冻结特征与split | C17 | 删除absolute-step，仅task+H3预测time-to-go | feature MAE下降53.8%，但shadow AUROC0.5469<0.65 | NO_GO_POLICY_INTEGRATION；需failure/action outcome |
 | C19 | deployment/data | old-trajectory exact restore | LIBERO `regenerate_obs_from_state` | D0保存的qpos/qvel/time | 要求恢复观测等于原轨迹观测 | state exact但图像/proprio不等；旧state缺observable动态 | NO_GO_ORIGINAL_OBSERVATION_CLAIM |
 | C20 | deployment/data | paired canonical branch restore | C19 + fixed per-reset seed | C19 | 两个独立env从同state执行同8步动作 | 四suite×3状态图像逐像素一致，数值差≤1e-10 | GO_COUNTERFACTUAL_COLLECTION_CANARY |
-| C21 | consequence/data | same-state diffusion-noise outcome canary | D0-H32-s14000/replan8/no-ensemble + C20 | C20 | 固定规范state/环境/模型，仅改变policy noise；4 suite×4分支 | 16条中11成功；Object同状态3/4成功；四组动作均不同 | GO_DATASET_EXPANSION；NOT_EVIDENCE_READY |
-| C22 | consequence/data | multisuite counterfactual entropy sweep | C21 | C21 | 8源episode×距成功1/3/5 replans×4 noise | 预注册96分支；寻找高熵时间带 | RUNNING；NOT_EVIDENCE_READY |
+| C21 | consequence/data | same-state stochastic-continuation canary | D0-H32-s14000/replan8/no-ensemble + C20 | C20 | 固定规范state/环境/模型，改变整条policy noise schedule；4 suite×4分支 | 16条中11成功；Object同状态3/4成功；四组动作均不同 | GO_ENTROPY_CALIBRATION_ONLY；NOT_EVIDENCE_READY |
+| C22 | consequence/data | multisuite stochastic-continuation entropy sweep | C21 | C21 | 8源episode×距成功1/3/5 replans×4 noise schedule | 预注册96分支；寻找高熵时间带 | RUNNING；NOT_EVIDENCE_READY |
+| C23 | consequence/action | first-action-only causal branch | C22高熵state + D0父策略 | C22 | 只改变首replan noise；同组后续noise逐值固定 | seed resolver单测通过；等待C22选state | READY_AFTER_C22；NOT_EVIDENCE_READY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -357,8 +358,10 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   Spatial `0/4`、LIBERO-10 `4/4`；Object形成一组同状态混合成败标签。四组最小首动作块pairwise
   RMS分别为`0.22723/0.14624/0.27201/0.09239`，均高于`1e-6`，通过预注册的
   `PASS_COUNTERFACTUAL_OUTCOME_CANARY`。预算为2 waves×8 A800、最多16×400环境步，实测墙钟
-  `280s`。该结果只放行episode-disjoint反事实数据扩量；尚未训练或验证critic/best-of-N，效果状态
-  仍为`NOT_EVIDENCE_READY`。artifact：
+  `280s`。事后代码审计确认`policy-noise-seed-base`也改变所有后续replan seed，因此该结果只放行
+  高结果熵state校准，不能把成败归因于首动作，也不放行critic数据集；原artifact中的
+  `GO_DATASET_EXPANSION`许可被此审计收窄为`GO_ENTROPY_CALIBRATION_ONLY`。尚未训练或验证
+  critic/best-of-N，效果状态仍为`NOT_EVIDENCE_READY`。artifact：
   `/mnt/h3-wam/eval/c21-counterfactual-outcome-canary-v1/COMPLETED`，SHA256
   `c258cb829c45e504e03e5a183008d2820a1a32152bb8ff70723ba1acf8895f8c`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
