@@ -137,6 +137,24 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--sample-ensemble-size", type=int, default=1)
     parser.add_argument(
+        "--consequence-ranker-checkpoint",
+        type=Path,
+        help="Frozen PASS C44 ranker used only for best-of-N selection.",
+    )
+    parser.add_argument(
+        "--consequence-model-checkpoint",
+        type=Path,
+        action="append",
+        default=[],
+        help="One frozen C38 temporal consequence member; pass exactly four.",
+    )
+    parser.add_argument(
+        "--consequence-best-of-n",
+        type=int,
+        default=1,
+        help="Generate N independent action chunks and select by the C44 ranker.",
+    )
+    parser.add_argument(
         "--h3-feature-ablation",
         choices=("none", "zero"),
         default="none",
@@ -1658,6 +1676,25 @@ class H3DreamWAMKVInt8Policy:
         self.normalized_action_pre_clamp = bool(args.normalized_action_pre_clamp)
         self.sample_ensemble_size = int(args.sample_ensemble_size)
         self.feature_ablation = str(args.h3_feature_ablation)
+        self.consequence_best_of_n = int(args.consequence_best_of_n)
+        if self.consequence_best_of_n <= 0:
+            raise ValueError("consequence-best-of-n must be positive")
+        ranker_requested = args.consequence_ranker_checkpoint is not None
+        if ranker_requested != bool(args.consequence_model_checkpoint):
+            raise ValueError(
+                "C44 ranker and its consequence checkpoints must be passed together"
+            )
+        if ranker_requested:
+            if self.consequence_best_of_n < 2:
+                raise ValueError("C44 online selection requires consequence-best-of-n >= 2")
+            if self.sample_ensemble_size != 1:
+                raise ValueError("C44 best-of-N cannot be combined with action averaging")
+            if self.horizon != 32:
+                raise ValueError("C44 ranker was trained only for a 32-action horizon")
+            if self.feature_ablation != "none":
+                raise ValueError("C44 ranker does not support H3 feature ablation")
+        elif self.consequence_best_of_n != 1:
+            raise ValueError("consequence-best-of-n > 1 requires a C44 ranker")
         if self.action_scale <= 0:
             raise ValueError("action-scale must be positive")
 
@@ -1712,9 +1749,12 @@ class H3DreamWAMKVInt8Policy:
             )
 
         from fastwam.models.h3wam import (
+            FrozenConsequenceActionRanker,
             FrozenH3ProgressProbe,
             H3DreamWAMKVCarrierPolicy,
             H3Int8FeatureBackbone,
+            H3Int8OnlineFeatureContract,
+            H3Int8OnlineFeatureProvider,
             H3Int8OnlineKVContract,
             H3Int8OnlineKVProvider,
             encode_h3_vae_condition_standalone,
@@ -1776,6 +1816,26 @@ class H3DreamWAMKVInt8Policy:
                 pool_strategy=kv_pool_strategy,
             ),
         )
+        if ranker_requested:
+            self.int8_hidden_provider = H3Int8OnlineFeatureProvider(
+                self.h3_model,
+                H3Int8OnlineFeatureContract(
+                    layers=(49,),
+                    action_horizon=32,
+                    target_latent_frames=12,
+                    video_timestep=1.0,
+                    condition_video_timestep=1.0,
+                    capture_compatibility="none",
+                ),
+            )
+            self.consequence_ranker = FrozenConsequenceActionRanker(
+                args.consequence_ranker_checkpoint,
+                args.consequence_model_checkpoint,
+                device=self.device,
+            )
+        else:
+            self.int8_hidden_provider = None
+            self.consequence_ranker = None
         if args.progress_probe is not None:
             if kv_pool_strategy != "adaptive_avg_pool1d_sequence_v1":
                 raise ValueError(
@@ -1898,6 +1958,23 @@ class H3DreamWAMKVInt8Policy:
             task_context["context"],
             task_context["token_tags"],
         )
+        consequence_hidden = None
+        if self.int8_hidden_provider is not None:
+            consequence_hidden = self.int8_hidden_provider(
+                first_frame,
+                task_context["context"],
+                task_context["token_tags"],
+            )[0]
+            if consequence_hidden.shape[1] > 32:
+                consequence_hidden = torch.nn.functional.adaptive_avg_pool1d(
+                    consequence_hidden.transpose(1, 2), 32
+                ).transpose(1, 2)
+            if tuple(consequence_hidden.shape) != (1, 32, 5376):
+                raise RuntimeError(
+                    "C44 online H3 feature shape mismatch: "
+                    f"{tuple(consequence_hidden.shape)}"
+                )
+            consequence_hidden = consequence_hidden.to(torch.bfloat16)
         progress_value = None
         if self.progress_probe is not None:
             progress_value = self.progress_probe.predict(
@@ -1975,7 +2052,12 @@ class H3DreamWAMKVInt8Policy:
             ).reshape(1, self.history_action_steps)
         action_started = time.perf_counter()
         action_samples = []
-        for sample_index in range(self.sample_ensemble_size):
+        generated_samples = (
+            self.consequence_best_of_n
+            if self.consequence_ranker is not None
+            else self.sample_ensemble_size
+        )
+        for sample_index in range(generated_samples):
             generator = torch.Generator(device=self.device).manual_seed(
                 int(request["seed"]) + sample_index
             )
@@ -2002,22 +2084,50 @@ class H3DreamWAMKVInt8Policy:
                     )
                 actions = self.flow_scheduler.step(velocity, delta, actions)
             action_samples.append(actions)
-        normalized_actions = torch.stack(action_samples).mean(dim=0)
+        normalized_actions = (
+            action_samples[0]
+            if self.consequence_ranker is not None
+            else torch.stack(action_samples).mean(dim=0)
+        )
         torch.cuda.synchronize(self.device)
         action_seconds = time.perf_counter() - action_started
 
-        environment_actions, decode_report = libero_environment_actions(
-            normalized_actions[0],
-            self.stats["action_min"],
-            self.stats["action_max"],
-            binarize_gripper=self.binarize_gripper,
-            temporal_median_window=self.action_median_window,
-            normalized_action_pre_clamp=self.normalized_action_pre_clamp,
-            return_decode_report=True,
+        candidate_environment_actions = []
+        candidate_decode_reports = []
+        candidates_to_decode = (
+            action_samples if self.consequence_ranker is not None else [normalized_actions]
         )
-        environment_actions[:, :6] = np.clip(
-            environment_actions[:, :6] * self.action_scale, -1.0, 1.0
-        )
+        for candidate in candidates_to_decode:
+            decoded, report = libero_environment_actions(
+                candidate[0],
+                self.stats["action_min"],
+                self.stats["action_max"],
+                binarize_gripper=self.binarize_gripper,
+                temporal_median_window=self.action_median_window,
+                normalized_action_pre_clamp=self.normalized_action_pre_clamp,
+                return_decode_report=True,
+            )
+            decoded[:, :6] = np.clip(decoded[:, :6] * self.action_scale, -1.0, 1.0)
+            candidate_environment_actions.append(decoded)
+            candidate_decode_reports.append(report)
+        selected_index = 0
+        candidate_scores = None
+        if self.consequence_ranker is not None:
+            raw_state = torch.as_tensor(
+                libero_observation_state(request), device=self.device, dtype=torch.float32
+            )
+            action_tensor = torch.as_tensor(
+                np.stack(candidate_environment_actions),
+                device=self.device,
+                dtype=torch.float32,
+            )
+            scores = self.consequence_ranker.score(
+                raw_state, consequence_hidden, action_tensor
+            )
+            selected_index = int(scores.argmax().item())
+            candidate_scores = scores.float().cpu().tolist()
+        environment_actions = candidate_environment_actions[selected_index]
+        decode_report = candidate_decode_reports[selected_index]
         return environment_actions, {
             "context_id": task_context["id"],
             "first_environment_action": environment_actions[0].tolist(),
@@ -2049,6 +2159,46 @@ class H3DreamWAMKVInt8Policy:
                 0 if history_valid is None else int(history_valid.sum().item())
             ),
             "sample_ensemble_size": self.sample_ensemble_size,
+            "consequence_best_of_n": self.consequence_best_of_n,
+            "consequence_candidate_seeds": (
+                None
+                if self.consequence_ranker is None
+                else [int(request["seed"]) + index for index in range(generated_samples)]
+            ),
+            "consequence_candidate_scores": candidate_scores,
+            "consequence_candidate0_first_environment_action": (
+                None
+                if self.consequence_ranker is None
+                else candidate_environment_actions[0][0].tolist()
+            ),
+            "consequence_candidate0_environment_action_chunk": (
+                None
+                if self.consequence_ranker is None
+                else candidate_environment_actions[0].tolist()
+            ),
+            "consequence_selected_index": (
+                None if self.consequence_ranker is None else selected_index
+            ),
+            "consequence_selected_seed": (
+                None
+                if self.consequence_ranker is None
+                else int(request["seed"]) + selected_index
+            ),
+            "consequence_score_range": (
+                None
+                if candidate_scores is None
+                else max(candidate_scores) - min(candidate_scores)
+            ),
+            "consequence_ranker_sha256": (
+                None
+                if self.consequence_ranker is None
+                else self.consequence_ranker.ranker_checkpoint_sha256
+            ),
+            "consequence_checkpoint_sha256": (
+                None
+                if self.consequence_ranker is None
+                else self.consequence_ranker.consequence_checkpoint_sha256
+            ),
             "action_scale": self.action_scale,
             "normalized_action_pre_clamp": self.normalized_action_pre_clamp,
             "normalized_action_decode": decode_report,

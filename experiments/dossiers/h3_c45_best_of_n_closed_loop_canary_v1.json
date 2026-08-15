@@ -1,0 +1,20 @@
+{
+  "experiment_id": "h3_c45_best_of_n_closed_loop_canary_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "A frozen C44 consequence ranker selecting among four independent samples from the unchanged D0-H32-s14000 parent improves paired LIBERO success by at least 2/20 without a suite losing more than 1/5.",
+  "single_variable": "Candidate uses frozen C44 best-of-4 selection. Parent checkpoint, INT8 H3, task context, environment init, replan8, horizon32, Euler10, normalization and candidate-0 diffusion seed are identical.",
+  "parent_baseline": "D0-H32-s14000/replan8/sample1; C44 authorized only a bounded online canary after 67/98 fresh-final pairwise and 23/30 top1 offline ranking.",
+  "references": [
+    {"kind": "upstream_code", "title": "FACT rollout/value selection", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "local_implementation", "title": "Frozen online consequence action ranker", "locator": "src/fastwam/models/h3wam/consequence_action_ranker.py", "revision": "C45 preregistration commit"}
+  ],
+  "data_contract": {"suites": ["libero_goal", "libero_object", "libero_spatial", "libero_10"], "tasks": [0, 1, 2, 3, 4], "trial": 22, "episodes_per_arm": 20, "source_status": "wholly new closed-loop trial"},
+  "action_contract": {"horizon": 32, "replan_steps": 8, "best_of_n": 4, "candidate_seeds": "base_replan_seed + [0,1,2,3]", "candidate0": "must exactly equal parent action chunk on first observation", "online_scoring": "full decoded proposed 32-action chunk; no terminal-tail masking is possible before execution"},
+  "gates": {
+    "identity": "all20 candidate-0 first chunks exactly equal paired parent; all candidate seed schedules valid",
+    "mechanism": "every replan score range >1e-8 and nonzero candidates selected in >=20% decisions",
+    "effect": "candidate successes >= parent+2; paired wins>=3; wins-losses>=2; no suite regresses by >1/5"
+  },
+  "budget": {"gpu_count": 32, "paired_episodes": 20, "total_rollouts": 40, "estimated_hours": 2.0},
+  "decision": {"status": "GO_CANARY", "rationale": "C44 passed all preregistered independent offline ranking gates and the new online scorer exactly replayed 67/98 and 23/30.", "on_pass": "Launch a broader C46 paired best-of-N evaluation on new trials.", "on_fail": "Stop the online ranker path; retain C44 only as offline evidence and diagnose proposal/execution distribution gap."}
+}

@@ -99,6 +99,10 @@ from .progress_probe import (
     TIMEBLIND_PROGRESS_PROBE_FORMAT,
     compact_h3_kv_progress_feature,
 )
+from .consequence_action_ranker import (
+    C44_RANKER_FORMAT,
+    FrozenConsequenceActionRanker,
+)
 __all__ = [
     "ActionEnsembler",
     "action_denormalization_bounds",
@@ -167,6 +171,8 @@ __all__ = [
     "TIMEBLIND_PROGRESS_DESIGN_CONTRACT",
     "TIMEBLIND_PROGRESS_PROBE_FORMAT",
     "compact_h3_kv_progress_feature",
+    "C44_RANKER_FORMAT",
+    "FrozenConsequenceActionRanker",
     "DEFAULT_OFFICIAL_H3_LORA_TARGETS",
     "inject_official_h3_lora",
     "load_cached_task_context",

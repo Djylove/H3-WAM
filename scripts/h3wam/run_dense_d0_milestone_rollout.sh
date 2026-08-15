@@ -62,6 +62,29 @@ if [[ -n "${H3_PROGRESS_PROBE:-}" ]]; then
   progress_args+=(--progress-probe "$(realpath "${H3_PROGRESS_PROBE}")")
   progress_suffix="_progress-shadow"
 fi
+consequence_args=()
+consequence_suffix=""
+if [[ -n "${CONSEQUENCE_RANKER_CHECKPOINT:-}" ]]; then
+  test -f "${CONSEQUENCE_RANKER_CHECKPOINT}"
+  [[ "${CONSEQUENCE_BEST_OF_N:-4}" =~ ^[2-9][0-9]*$ ]]
+  IFS=':' read -r -a consequence_models <<<"${CONSEQUENCE_MODEL_CHECKPOINTS:?set colon-separated C38 consequence checkpoints}"
+  (( ${#consequence_models[@]} == 4 )) || {
+    echo "CONSEQUENCE_MODEL_CHECKPOINTS must contain exactly four paths" >&2
+    exit 2
+  }
+  consequence_args+=(
+    --consequence-ranker-checkpoint "$(realpath "${CONSEQUENCE_RANKER_CHECKPOINT}")"
+    --consequence-best-of-n "${CONSEQUENCE_BEST_OF_N:-4}"
+  )
+  for consequence_model in "${consequence_models[@]}"; do
+    test -f "${consequence_model}"
+    consequence_args+=(--consequence-model-checkpoint "$(realpath "${consequence_model}")")
+  done
+  consequence_suffix="_c44-bestof${CONSEQUENCE_BEST_OF_N:-4}"
+elif [[ -n "${CONSEQUENCE_MODEL_CHECKPOINTS:-}" || -n "${CONSEQUENCE_BEST_OF_N:-}" ]]; then
+  echo "consequence model paths/N require CONSEQUENCE_RANKER_CHECKPOINT" >&2
+  exit 2
+fi
 branch_args=()
 wait_steps=30
 if [[ -n "${BRANCH_TRAJECTORY:-}" || -n "${BRANCH_INDEX:-}" || -n "${POLICY_NOISE_SEED_BASE:-}" || -n "${FIRST_POLICY_NOISE_SEED:-}" || -n "${CONTINUATION_POLICY_NOISE_SEED_BASE:-}" ]]; then
@@ -93,7 +116,7 @@ if [[ -n "${BRANCH_TRAJECTORY:-}" || -n "${BRANCH_INDEX:-}" || -n "${POLICY_NOIS
 fi
 checkpoint="$(realpath "${checkpoint}")"
 checkpoint_name="$(basename "${checkpoint}" .pt)"
-output_root="${OUTPUT_ROOT:-${workspace}/outputs/eval-dense-d0-long/${checkpoint_name}_${suite_slug}_task${task_id}_trial${trial_index}_replan${replan_steps}${ensemble_suffix}${progress_suffix}}"
+output_root="${OUTPUT_ROOT:-${workspace}/outputs/eval-dense-d0-long/${checkpoint_name}_${suite_slug}_task${task_id}_trial${trial_index}_replan${replan_steps}${ensemble_suffix}${progress_suffix}${consequence_suffix}}"
 
 test -f "${checkpoint}"
 test -f "${project}/scripts/h3wam/rollout_libero.py"
@@ -131,6 +154,7 @@ exec bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
   --normalized-action-pre-clamp \
   "${branch_args[@]}" \
   "${progress_args[@]}" \
+  "${consequence_args[@]}" \
   "${ensemble_args[@]}" \
   --output-dir "${output_root}" \
   --save-video \

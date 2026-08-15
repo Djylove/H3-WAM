@@ -183,6 +183,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--sample-ensemble-size", type=int, default=1)
+    parser.add_argument("--consequence-ranker-checkpoint", type=Path)
+    parser.add_argument(
+        "--consequence-model-checkpoint", type=Path, action="append", default=[]
+    )
+    parser.add_argument("--consequence-best-of-n", type=int, default=1)
     parser.add_argument(
         "--h3-feature-ablation", choices=("none", "zero"), default="none"
     )
@@ -248,6 +253,8 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
         else "--no-normalized-action-pre-clamp",
         "--sample-ensemble-size",
         str(args.sample_ensemble_size),
+        "--consequence-best-of-n",
+        str(args.consequence_best_of_n),
         "--h3-feature-ablation",
         args.h3_feature_ablation,
         "--h3-feature-switch-consecutive",
@@ -327,6 +334,15 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                 command.extend(
                     ("--progress-probe", str(args.progress_probe.resolve()))
                 )
+            if args.consequence_ranker_checkpoint is not None:
+                command.extend((
+                    "--consequence-ranker-checkpoint",
+                    str(args.consequence_ranker_checkpoint.resolve()),
+                ))
+                for checkpoint in args.consequence_model_checkpoint:
+                    command.extend((
+                        "--consequence-model-checkpoint", str(checkpoint.resolve())
+                    ))
         elif args.progress_probe is not None:
             raise ValueError("--progress-probe requires h3_dreamwam_kv_int8")
         if args.h3_feature_audio_horizon is not None:
@@ -624,6 +640,11 @@ def run_episode(
     action_head_motion_disagreements = []
     action_head_gripper_disagreements = []
     action_head_switch_gate_probabilities = []
+    consequence_selected_indices = []
+    consequence_score_ranges = []
+    consequence_candidate_scores = []
+    consequence_candidate_seeds = []
+    first_consequence_candidate0_chunk = None
     progress_values = []
     replan_noise_seeds = []
     if use_action_ensembler:
@@ -713,6 +734,23 @@ def run_episode(
         action_head_switch_gate_probabilities.append(
             metadata.get("action_head_switch_gate_probability")
         )
+        if metadata.get("consequence_selected_index") is not None:
+            consequence_selected_indices.append(
+                int(metadata["consequence_selected_index"])
+            )
+            consequence_score_ranges.append(
+                float(metadata["consequence_score_range"])
+            )
+            consequence_candidate_scores.append(
+                [float(value) for value in metadata["consequence_candidate_scores"]]
+            )
+            consequence_candidate_seeds.append(
+                [int(value) for value in metadata["consequence_candidate_seeds"]]
+            )
+            if first_consequence_candidate0_chunk is None:
+                first_consequence_candidate0_chunk = metadata[
+                    "consequence_candidate0_environment_action_chunk"
+                ]
         if metadata.get("progress_value") is not None:
             progress_values.append(float(metadata["progress_value"]))
         policy_seconds.append(roundtrip)
@@ -813,6 +851,11 @@ def run_episode(
             "action_head_switch_gate_probabilities": (
                 action_head_switch_gate_probabilities
             ),
+            "consequence_selected_indices": consequence_selected_indices,
+            "consequence_score_ranges": consequence_score_ranges,
+            "consequence_candidate_scores": consequence_candidate_scores,
+            "consequence_candidate_seeds": consequence_candidate_seeds,
+            "first_consequence_candidate0_chunk": first_consequence_candidate0_chunk,
             "progress_values": progress_values,
             "progress_first": progress_values[0] if progress_values else None,
             "progress_last": progress_values[-1] if progress_values else None,
@@ -987,6 +1030,15 @@ def main() -> None:
         "action_scale": args.action_scale,
         "normalized_action_pre_clamp": args.normalized_action_pre_clamp,
         "sample_ensemble_size": args.sample_ensemble_size,
+        "consequence_best_of_n": args.consequence_best_of_n,
+        "consequence_ranker_checkpoint": (
+            None
+            if args.consequence_ranker_checkpoint is None
+            else str(args.consequence_ranker_checkpoint.resolve())
+        ),
+        "consequence_model_checkpoints": [
+            str(path.resolve()) for path in args.consequence_model_checkpoint
+        ],
         "h3_feature_ablation": args.h3_feature_ablation,
         "h3_video_lora_checkpoint": (
             None
