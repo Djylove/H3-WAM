@@ -74,6 +74,8 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C23 | consequence/action | first-action-only causal branch | C22高熵state + D0父策略 | C22 | 只改变首replan noise；同组后续noise逐值固定 | 32条18成功；Spatial d5同状态2/4；全部seed/动作审计通过 | GO_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY；NOT_EVIDENCE_READY |
 | C24 | consequence/action | first-action execution horizon sweep | C23同8 states/32 seeds | C23 horizon8 | 仅首chunk执行16或32步；后续仍replan8 | h16:2 mixed/2 suites；h32:3 mixed/2 suites | GO_CAUSAL_DATASET_H32；NOT_EVIDENCE_READY |
 | C25 | consequence/data | episode-disjoint h32 causal dataset canary | C24 h32 | C24 | 14源episode/32 state组/128分支；源episode隔离split | 9 mixed：train6/val3，覆盖10/Object/Spatial | GO_FROZEN_H3_ACTION_CRITIC_CANARY；NOT_EVIDENCE_READY |
+| C26 | consequence/ranking | frozen-parent causal action critic | FACT consequence + D0 live H3 + C25 | C25 | action-only、H3×action、FACT consequence三臂；21 train pairs/9 untouched val pairs | train均21/21；val为0/9、4/9、0/9，全部失败；H3 top1 2/3、p=0.6875 | NO_GO_BEST_OF_N；小样本跨episode反转 |
+| C27 | consequence/data | fresh expanded causal action outcomes | C25 execution contract | C26失败诊断 | 排除全部C22/C25源episode；39新源episode/78 state组/312分支；先冻结split | 四节点各一seed shard并行运行；结果未开封 | RUNNING；NOT_EVIDENCE_READY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。

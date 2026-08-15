@@ -703,3 +703,38 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `2b8adcb97ebe01be70c1fee47a5f19e54d549d6019b1ebe31b801e832185a3ae`、
   `73ae9d08675756c145cdc13d749d14fbca84b01e12c1ec3094950b5921d14b5a`；完成报告SHA256为
   `641ce0fb53853c555da2ad69cbe1b2d6451faec470c362c6db1ad7aef3fa4165`。
+
+### 2026-08-15 — C26 frozen-parent causal action critic
+
+- 训练前重新拉取FACT官方main：远端从固定`618a6c1`前进到`9427ea4`，唯一diff为README增加
+  Hugging Face live-demo链接，没有训练、value、failure或best-of-N代码变化。因此实验继续固定
+  `618a6c16868699b6d4138941de6a863589ac00dd`，不把README更新冒充方法更新。
+- C25原始结果再次做输入合同冻结：128/128的`results.json`首动作块与轨迹第0行逐字节一致；32/32
+  组的起始双相机、sim state与proprio组内逐字节一致。后续replan行明确排除，防止结果后状态泄漏。
+  冻结dataset SHA256为`4cde59a044b6fb2a27b7f1e6c2f3a01dd394c147d730e31b987c90268b61e785`。
+- 对32个规范起点用真实在线INT8 H3链路重算两类冻结输入：D0 layer49 K/V 512D compact和FACT训练
+  合同的layer49 hidden `1×32×5376`；峰值显存`29.679GiB`、耗时`15.78s`，feature SHA256为
+  `ead7842d58317a3193b8863fd8b65b0f17bd8d46d3e486a01e1e974b4f0d1af3`。
+- 三臂均只训练线性pairwise head，H3、D0 action parent和FACT consequence expert全部冻结。每臂21个
+  正pair/42个平衡样本，1000 full-pair steps=`1000` effective pair epochs、`42000` examples seen；
+  三臂训练都到21/21，排除“没收敛”。
+- untouched C25 validation结果：action-only `0/9, top1 0/3`；H3×action `4/9, top1 2/3,
+  exact p=0.6875`；FACT consequence `0/9, top1 0/3`。判定
+  `FAIL_C26_HELDOUT_WITHIN_STATE_RANKING / NO_GO_BEST_OF_N`，完成报告SHA256为
+  `4b5319bc679928125b45b33637336f3d6c25f2689af62d426152da9d3213ce27`。
+- 失败后的调参只在6个train mixed groups做leave-one-group-out，固定grid为steps
+  `{10,30,100,300}`、weight decay`{0.03,0.3,3.0}`；H3×action选中`10/3.0`，LOO为`18/21`、
+  top1 `6/6`，但已看过的C25 val仍仅`4/9`，只允许作为C27预选配置，不能回写C26结论。
+
+### 2026-08-15 — C27 fresh expanded causal dataset（运行中）
+
+- 从固定父策略`D0-H32-s14000/replan8`的57个成功源episode中，在查看新分支结果前排除C22/C25
+  用过的18个源episode，剩余39个全新源episode：Goal5、Object22、Spatial12。LIBERO-10父策略仅有
+  两个成功源且均已被旧轮使用，因此本轮不伪造“fresh LIBERO-10”声明。
+- 每源episode固定距离成功终点3/5 replans两个state、每state四个first-noise候选；首chunk执行32，
+  后续replan8且continuation seed逐值固定，共78组/312分支、最多124800环境步。
+- split按suite内source key哈希在结果生成前冻结：29 train source、10 untouched val source；同源所有
+  state/branch不跨split。放行门为train mixed>=10、val mixed>=4且覆盖Goal/Object/Spatial三suite。
+- 四台8×A800分别运行一个noise-offset shard，避免一台机器同时跑同状态四候选；preregistration与
+  selection SHA256分别为`6711ee8b30f9c85410e598255e9aea2e741269ce9d4594a563a898e794719a39`、
+  `c4712c6d0dbbd4477c1fac2861643387ca279a2ed7bb158eb98c5a3632d1107c`。结果未完成前不调门槛。

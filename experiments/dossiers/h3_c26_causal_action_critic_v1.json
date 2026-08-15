@@ -1,0 +1,69 @@
+{
+  "experiment_id": "h3_c26_causal_action_critic_v1",
+  "classification": "novel_composition",
+  "hypothesis": "A frozen H3-conditioned or FACT-consequence critic ranks successful first-action chunks above failed alternatives in unseen source episodes beyond an action-only shortcut.",
+  "single_variable": "The critic representation is action-only, frozen-H3 state-action interaction, or frozen FACT future-H3 consequence; C25 data, parent policy, pairwise objective and budget remain fixed.",
+  "parent_baseline": "C25 D0-H32-s14000 causal first-action dataset: 128 branches, 32 fixed states, 6 train mixed groups/21 pairs and 3 untouched validation mixed groups/9 pairs.",
+  "references": [
+    {"kind": "paper", "title": "FACT: A Failure-Aware Causal Transformer for World Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "FACT causal action-consequence and best-of-N", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "C26 frozen-parent critics", "locator": "scripts/h3wam/train_c26_causal_action_critic.py", "revision": "this dossier commit", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [
+      {"field": "causal consequence/value", "paper": "Unified causal action/future/value transformer.", "upstream_code": "Generated action conditions predicted future and value used for best-of-N.", "local": "Frozen D0/H3 plus an isolated pairwise linear head; one arm reuses the frozen passed future-H3 expert.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_c26_causal_action_critic.py"], "rationale": "Only 21 training pairs prohibit a full FACT reproduction."}
+    ],
+    "data": [
+      {"field": "counterfactual outcomes", "paper": "Success/failure rollouts supervise value.", "upstream_code": "Failure records retain future/value supervision.", "local": "Four alternative first actions per bit-exact restored state; continuations use identical seed schedules; source episodes are split-disjoint.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/prepare_c26_causal_critic_dataset.py"], "rationale": "The local target is directly observed closed-loop success."}
+    ],
+    "action": [
+      {"field": "candidate action", "paper": "Generated action tokens.", "upstream_code": "Candidate action is scored before selection.", "local": "The exact 32-step environment-domain chunk that was executed; converted back to dataset normalization for the frozen FACT expert.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_c26_causal_action_critic.py"], "rationale": "Scoring the decoded executed action avoids pre-clamp deployment mismatch."}
+    ],
+    "objective": [
+      {"field": "value ordering", "paper": "Value/cost prediction.", "upstream_code": "Lowest predicted value selects best-of-N.", "local": "Within-state pairwise logistic success ordering only.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_c26_causal_action_critic.py"], "rationale": "Pairwise ordering is identifiable while global calibration is not."}
+    ],
+    "optimization": [
+      {"field": "per-arm budget", "paper": "Large end-to-end training.", "upstream_code": "Joint WAM training.", "local": "1000 full-pair steps; 42 balanced pair examples per epoch; 42000 examples seen; all parents frozen.", "status": "INTENTIONAL_DEVIATION", "evidence": ["/mnt/h3-wam/eval/c26-causal-critic-v1/COMPLETED"], "rationale": "This is a bounded falsifiable critic canary."}
+    ],
+    "evaluation": [
+      {"field": "held-out ranking", "paper": "Task rollout/value quality.", "upstream_code": "Best-of-N closed loop.", "local": "Three untouched source episodes, nine within-state success/failure pairs, action-only and shuffled-label controls, exact label permutation p-value.", "status": "INTENTIONAL_DEVIATION", "evidence": ["/mnt/h3-wam/eval/c26-causal-critic-v1/COMPLETED"], "rationale": "Closed loop remains gated on ranking."}
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT 618a6c1 pinned; remote 9427ea4 audited as README-only"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["three representations fixed before C25 validation"]},
+    "data_contract": {"status": "PASS", "evidence": ["32/32 groups bit-exact starts; 128/128 result/trajectory actions exact"]},
+    "action_contract": {"status": "PASS", "evidence": ["executed environment action converted by audited LIBERO codec"]},
+    "objective_contract": {"status": "PASS", "evidence": ["within-state pairwise loss sees no future observation"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["1000 full-pair steps and identical arm budgets recorded"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["source-episode-disjoint validation and exact permutation gate fixed"]},
+    "gradient_path": {"status": "PASS", "evidence": ["H3, D0 action parent and FACT expert parameter updates are zero by construction"]},
+    "smoke_finite": {"status": "PASS", "evidence": ["32x512 and 32x1x32x5376 live H3 features finite"]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["critic.pt stores weights, fixed projections, train-only normalization and source hashes"]},
+    "parent_baseline": {"status": "PASS", "evidence": ["action-only shortcut arm shares data and budget"]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["held-out H3 interaction only 4/9, p=0.6875"]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["ranking gate failed; best-of-N correctly not launched"]}
+  },
+  "budget": {
+    "global_batch": 42,
+    "optimizer_steps": 1000,
+    "training_samples": 42000,
+    "unique_windows": 42,
+    "effective_epochs": 1000.0,
+    "gpu_count": 1,
+    "estimated_hours": 0.0002
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "C25 passed the causal-data gate; only frozen small heads are authorized and best-of-N remains separately gated.",
+    "launch_command": "CUDA_VISIBLE_DEVICES=1 /mnt/h3-wam/runtime/h3-int8-native/bin/python scripts/h3wam/train_c26_causal_action_critic.py --dataset /mnt/h3-wam/eval/c26-causal-critic-v1/dataset.pt --h3-features /mnt/h3-wam/eval/c26-causal-critic-v1/h3_features.pt --stats /mnt/h3-wam/data/v7_dense_h3_cache/stats.pt --fact-checkpoint /mnt/h3-wam/outputs/fact-lite-future-h3-v1/f1h_s500.pt --steps 1000 --learning-rate 0.03 --weight-decay 0.03 --projection-dim 32 --projection-seed 20260815 --device cuda:0 --output /mnt/h3-wam/eval/c26-causal-critic-v1/COMPLETED --checkpoint /mnt/h3-wam/eval/c26-causal-critic-v1/critic.pt"
+  },
+  "result": {
+    "status": "FAIL_C26_HELDOUT_WITHIN_STATE_RANKING",
+    "decision": "NO_GO_BEST_OF_N",
+    "metrics": {"action_only_pairs": "0/9", "h3_interaction_pairs": "4/9", "h3_interaction_top1": "2/3", "h3_interaction_exact_p": 0.6875, "fact_consequence_pairs": "0/9"},
+    "artifact": "/mnt/h3-wam/eval/c26-causal-critic-v1/COMPLETED",
+    "artifact_sha256": "4b5319bc679928125b45b33637336f3d6c25f2689af62d426152da9d3213ce27",
+    "next": "Use training-group-only LOO-selected H3 interaction regularization on expanded C27 train data, and evaluate once on untouched C27 validation episodes."
+  }
+}
