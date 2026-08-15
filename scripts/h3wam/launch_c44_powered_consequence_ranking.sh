@@ -8,6 +8,7 @@ c43_root="${workspace}/eval/c43-powered-causal-ranking-v1"
 root="${C44_ROOT:-${workspace}/eval/c44-powered-consequence-ranking-v1}"
 output_root="${workspace}/outputs/c44-powered-consequence-ranking-v1"
 python="${workspace}/runtime/conda-py311/bin/python"
+feature_python="${workspace}/runtime/h3-int8-native/bin/python"
 
 test -s "${c43_root}/COMPLETED"
 "${python}" - "${c43_root}/COMPLETED" <<'PY'
@@ -15,45 +16,52 @@ import json,sys
 p=json.load(open(sys.argv[1]))
 assert p["training_permission"] == "GO_C44_POWERED_CONSEQUENCE_VALUE_RANKING", p["training_permission"]
 PY
-for path in "${root}" "${output_root}"; do
-  test ! -e "${path}"
-done
 mkdir -p "${root}" "${output_root}"
+test ! -e "${output_root}/COMPLETED"
 
 cd "${project}"
-PYTHONPATH=src:scripts/h3wam:. "${python}" \
-  scripts/h3wam/prepare_c44_powered_consequence_ranking_dataset.py \
-  --c34-dataset "${c34_root}/dataset.pt" \
-  --c43-root "${c43_root}" \
-  --output "${root}/dataset.pt"
+if [[ ! -s "${root}/dataset.pt" ]]; then
+  PYTHONPATH=src:scripts/h3wam:. "${python}" \
+    scripts/h3wam/prepare_c44_powered_consequence_ranking_dataset.py \
+    --c34-dataset "${c34_root}/dataset.pt" \
+    --c43-root "${c43_root}" \
+    --output "${root}/dataset.pt"
+fi
 
-env CUDA_VISIBLE_DEVICES=0 \
-  PYTHONPATH=src:scripts/h3wam:. \
-  LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
-  "${python}" scripts/h3wam/precompute_c26_causal_h3_features.py \
-  --dataset "${root}/dataset.pt" \
-  --cache-root "${workspace}/data/v7_dense_h3_cache" \
-  --source-manifest "${workspace}/data/v7_multisuite_dense_candidate/manifest_all.jsonl" \
-  --h3-checkpoint "${workspace}/int8-action/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors" \
-  --h3-model "${workspace}/models/MiniMax-H3" \
-  --output "${root}/h3_features.pt" \
-  --device cuda:0 \
-  --progress-every 32
+if [[ ! -s "${root}/h3_features.pt" ]]; then
+  env CUDA_VISIBLE_DEVICES=0 \
+    PYTHONPATH=src:scripts/h3wam:. \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    "${feature_python}" scripts/h3wam/precompute_c26_causal_h3_features.py \
+    --dataset "${root}/dataset.pt" \
+    --cache-root "${workspace}/data/v7_dense_h3_cache" \
+    --source-manifest "${workspace}/data/v7_multisuite_dense_candidate/manifest_all.jsonl" \
+    --h3-checkpoint "${workspace}/int8-action/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors" \
+    --h3-model "${workspace}/models/MiniMax-H3" \
+    --output "${root}/h3_features.pt" \
+    --device cuda:0 \
+    --progress-every 32
+fi
 
-env CUDA_VISIBLE_DEVICES=0 \
-  PYTHONPATH=src:scripts/h3wam:. \
-  LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
-  "${python}" scripts/h3wam/train_c44_powered_consequence_value_ranker.py \
-  --dataset "${root}/dataset.pt" \
-  --features "${root}/h3_features.pt" \
-  --consequence-checkpoints \
-    "${workspace}/outputs/c38-temporal-paired-null-replication-v1/temporal_seed161803/checkpoints/temporal_seed161803_step10000.pt" \
-    "${workspace}/outputs/c38-temporal-paired-null-replication-v1/temporal_seed271828/checkpoints/temporal_seed271828_step10000.pt" \
-    "${workspace}/outputs/c38-temporal-paired-null-replication-v1/temporal_seed8675309/checkpoints/temporal_seed8675309_step10000.pt" \
-    "${workspace}/outputs/c38-temporal-paired-null-replication-v1/temporal_seed20260815/checkpoints/temporal_seed20260815_step10000.pt" \
-  --output "${output_root}/report.json" \
-  --checkpoint "${output_root}/ranker.pt" \
-  --device cuda:0
+if [[ -e "${output_root}/report.json" || -e "${output_root}/ranker.pt" ]]; then
+  test -s "${output_root}/report.json"
+  test -s "${output_root}/ranker.pt"
+else
+  env CUDA_VISIBLE_DEVICES=0 \
+    PYTHONPATH=src:scripts/h3wam:. \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    "${python}" scripts/h3wam/train_c44_powered_consequence_value_ranker.py \
+    --dataset "${root}/dataset.pt" \
+    --features "${root}/h3_features.pt" \
+    --consequence-checkpoints \
+      "${workspace}/outputs/c38-temporal-paired-null-replication-v1/temporal_seed161803/checkpoints/temporal_seed161803_step10000.pt" \
+      "${workspace}/outputs/c38-temporal-paired-null-replication-v1/temporal_seed271828/checkpoints/temporal_seed271828_step10000.pt" \
+      "${workspace}/outputs/c38-temporal-paired-null-replication-v1/temporal_seed8675309/checkpoints/temporal_seed8675309_step10000.pt" \
+      "${workspace}/outputs/c38-temporal-paired-null-replication-v1/temporal_seed20260815/checkpoints/temporal_seed20260815_step10000.pt" \
+    --output "${output_root}/report.json" \
+    --checkpoint "${output_root}/ranker.pt" \
+    --device cuda:0
+fi
 
 "${python}" - "${root}" "${output_root}" <<'PY'
 import hashlib,json,os,pathlib,sys
