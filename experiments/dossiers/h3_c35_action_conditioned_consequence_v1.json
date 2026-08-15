@@ -1,0 +1,64 @@
+{
+  "experiment_id": "h3_c35_action_conditioned_consequence_v1",
+  "classification": "novel_composition",
+  "hypothesis": "A clean executed 32-step action prefix plus frozen INT8 H3 current-state features predicts the held-out future H3 consequence better than both zero-action and within-state shuffled-action controls, reproducibly across two seeds; temporal action tokens may improve over flattening.",
+  "single_variable": "The action representation is flattened or eight ordered four-action tokens; dataset, frozen H3 features, three-arm objective, source split, optimizer and evaluation stay fixed, while seeds 42 and 314159 are matched replications rather than a searched hyperparameter.",
+  "parent_baseline": "C28 static state-action ranking failed on fresh episodes; C30 retained its preregistered FAIL at only 3 validation mixed groups; C33 then passed on 52 untouched sources with 24 mixed groups across all four LIBERO suites, enabling consequence learning without relaxing any gate.",
+  "references": [
+    {"kind": "paper", "title": "FACT: A Failure-Aware Causal Transformer for World Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT clean-action conditioned future and value path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "upstream_code", "title": "MiniWorld temporally aligned action tokens", "locator": "third_party/MiniWorld", "revision": "e484206bbd4360ae56ed8abad51c83f2457ac092", "official": true},
+    {"kind": "local_implementation", "title": "C35 repeated future-H3 consequence sweep", "locator": "scripts/h3wam/launch_c35_consequence_sweep.sh", "revision": "04f130b"}
+  ],
+  "alignment": {
+    "architecture": [
+      {"field": "action-conditioned future representation", "paper": "Clean action tokens causally condition future visual tokens before value prediction.", "upstream_code": "FACT exposes future tokens to clean action K/V; MiniWorld preserves temporal action alignment.", "local": "A frozen INT8 H3 current feature and detached clean action prefix predict a fixed projection of the observed future INT8 H3 feature; flattened and temporal variants are repeated.", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3wam/fact_lite_consequence.py", "tests/test_temporal_future_h3_consequence.py"], "rationale": "The small isolated expert tests the causal mechanism without modifying the H3 carrier or claiming a full FACT reproduction."}
+    ],
+    "data": [
+      {"field": "source-disjoint consequence and ranking data", "paper": "Observed success and failure futures supervise consequences and held-out outcomes evaluate value.", "upstream_code": "FACT retains failure rollouts and separates evaluation episodes.", "local": "C34 contains 37 consequence-train sources (74 states/296 branches), 8 source-disjoint consequence-validation sources (16/64), and 52 untouched C33 ranking sources (104/416) that training cannot consume.", "status": "EQUIVALENT", "evidence": ["C34 dataset SHA256 2a6c9252b8e77975f58920425bc18110fa8ea63bdc12c4c15571cfffeb9f7459", "C33 audit SHA256 0bee853840820ba8fdeb5635759a8dea6fe7b1c39bfcac4e2bac7a5766929514"], "rationale": "The formal mechanism split uses only original C30 train sources; C33 is reserved for the later ranking gate."}
+    ],
+    "action": [
+      {"field": "executed clean action and terminal tail", "paper": "Future prediction is conditioned on the clean action actually associated with the target future.", "upstream_code": "FACT clean actions occupy causal action slots; MiniWorld aligns actions to future video intervals.", "local": "Every proposed 32x7 action is checked against rollout results and trajectories; 221 partial branches zero-mask all unexecuted tail steps before training.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/prepare_c34_combined_consequence_ranking_dataset.py", "tests/test_c31_executed_action_contract.py"], "rationale": "Terminal branches expose only the prefix that could causally affect the saved post-action observation."}
+    ],
+    "objective": [
+      {"field": "future-H3 mechanism controls", "paper": "Action-conditioned future prediction supplies a dynamics signal before value ranking.", "upstream_code": "FACT jointly predicts future features and value from action-conditioned tokens.", "local": "Matched conditioned, within-state shuffled-action and zero-action models minimize MSE to the same fixed 256D projection of the future H3 feature; PASS requires at least 1% held-out improvement over both controls and at least 1% degradation when the conditioned model receives a shuffled action.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/train_c31_action_conditioned_consequence.py", "scripts/h3wam/evaluate_c31_consequence_sweep.py"], "rationale": "The isolated objective directly falsifies whether actions affect prediction before any value head or closed-loop selector is allowed."}
+    ],
+    "optimization": [
+      {"field": "matched repeated long sweep", "paper": "FACT trains a unified model at much larger scale.", "upstream_code": "All causal objectives use the same data and optimizer schedule.", "local": "Four independent jobs run flattened/temporal x seeds 42/314159; each trains three matched arms for 10,000 AdamW steps, batch64, LR3e-4, weight decay1e-2, clipping1, and saves every1,000 steps.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/launch_c35_consequence_sweep.sh"], "rationale": "The 0.39M/0.48M-parameter expert can afford repeated long curves; matched controls prevent capacity or step count from masquerading as action dependence."}
+    ],
+    "evaluation": [
+      {"field": "held-out mechanism then untouched ranking", "paper": "Future/value quality is evaluated on held-out trajectories before closed-loop use.", "upstream_code": "FACT selects best-of-N only after future/value training.", "local": "Each run evaluates only 8 unseen consequence sources; both seeds must pass for a variant. The 52 C33 sources remain untouched for the subsequent frozen-consequence value-ranking test.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c31_consequence_sweep.py", "C34 feature SHA256 4655d0783a443b4817f93f5368f7cace9996be7163dfa49b2080033b3b176f69"], "rationale": "C35 can establish only a source-held-out future-H3 mechanism, not action-ranking or LIBERO success."}
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT 618a6c16868699b6d4138941de6a863589ac00dd; MiniWorld e484206bbd4360ae56ed8abad51c83f2457ac092; local implementation 04f130b"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Flattened 389,888 and temporal 475,136 parameters; temporal join and shape tests pass."]},
+    "data_contract": {"status": "PASS", "evidence": ["C34 dataset 194 states/776 branches; train/validation/ranking sources 37/8/52 with zero overlap; SHA256 2a6c9252b8e77975f58920425bc18110fa8ea63bdc12c4c15571cfffeb9f7459."]},
+    "action_contract": {"status": "PASS", "evidence": ["All 776 actions match result and trajectory artifacts; 221 partial tails are zero masked; focused contract suite 7/7 PASS."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Three equally initialized/capacity-matched arms and the 1%/1% held-out thresholds are fixed before C35 outcomes."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Four fixed variant/seed jobs, 10,000 steps, batch64, save interval1,000 and identical AdamW settings encoded in the launcher."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Consequence validation has 8 unseen sources/64 branches; C33 keeps 52 sources/416 branches exclusively for later ranking."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Candidate actions detach at the expert boundary; tests prove consequence action parameters receive finite nonzero gradients while upstream actions receive none."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Focused C31/C34/action-contract suite: 7 passed; full live INT8 H3 tensor has 970 finite samples and peak extraction allocation 29.681 GiB."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Two-step temporal test writes audited checkpoints and fresh strict restore reproduces output exactly; production trainer repeats the same restore gate at 10,000 steps."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C28 fresh static ranker failure retained; C30 FAIL retained; C33 PASS has 24 fresh mixed groups across 4 suites."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["C35 repeated held-out results pending; this gate is not claimed before training."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No ranking selector or closed-loop policy is trained in C35."]}
+  },
+  "budget": {
+    "global_batch": 768,
+    "optimizer_steps": 10000,
+    "training_samples": 7680000,
+    "unique_windows": 296,
+    "effective_epochs": 25945.945945945947,
+    "gpu_count": 4,
+    "estimated_hours": 1.0,
+    "per_model_effective_epochs": 2162.162162162162,
+    "accounting": "aggregate four jobs x three arms x batch64; each individual model consumes 640,000 sampled train branches"
+  },
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "C33 supplies a genuinely fresh ranking reserve and C34 closes source leakage, terminal-tail and live-H3 identity checks. Repeated 10,000-step consequence curves now directly test the missing action-to-future mechanism while the H3 backbone stays frozen.",
+    "launch_command": "On ports 32611/30907/32409/30234 set C35_RUN_INDEX=0/1/2/3 and run bash scripts/h3wam/launch_c35_consequence_sweep.sh; aggregate only after all four report.json files exist."
+  }
+}
