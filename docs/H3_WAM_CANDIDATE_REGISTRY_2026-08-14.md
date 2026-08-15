@@ -126,6 +126,10 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
   聚合 H32 `4/8` 对 H8 `2/8`。因此 H32 的“训练H32+部署replan32”bundle 在该两任务配对screen
   达到 `EVIDENCE_READY` 并成为 horizon 赛道 rollout-gate 暂定胜者；完整LIBERO优越性仍为
   `NOT_EVIDENCE_READY`，且本实验没有拆开训练horizon与执行replan两个耦合因素。
+- 已启动 matched-s12000 跨任务 screen（object1、spatial0 两个trial、goal3，共8 episodes）。同时在32409
+  排队最终 s20000 H32/H8 各8 episodes：仍用 goal5/object0 trials0–3 与 s12000 同输入复测。s20000
+  只有在反事实条件响应不塌缩且成功数至少达到 s12000 H32 的 `4/8` 时才替换当前 rollout incumbent；
+  否则保留 s12000，不能因为“步数更大”自动晋级。
 
 ## 蛊王融合谱系
 

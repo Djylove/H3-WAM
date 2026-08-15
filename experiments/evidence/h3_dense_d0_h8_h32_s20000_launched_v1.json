@@ -31,7 +31,7 @@
     {"field": "data", "h32": "same ordered rows0:160000", "h8": "same ordered rows0:160000", "status": "EXACT"},
     {"field": "objective/optimizer", "h32": "shift5 flow, AdamW1e-4, warmup1000/cosine21700", "h8": "identical", "status": "EXACT"},
     {"field": "initialization", "h32": "strict resume from dense s963 with optimizer/scheduler/RNG", "h8": "fresh seed42 because output shape differs", "status": "INTENTIONAL_DEVIATION"},
-    {"field": "closed-loop replan", "h32": "pending matched 400-step replan32 and replan8 diagnostic", "h8": "pending 400-step replan8", "status": "UNKNOWN"}
+    {"field": "closed-loop replan", "h32": "replan32", "h8": "replan8", "status": "INTENTIONAL_DEVIATION_COUPLED_WITH_TRAIN_HORIZON"}
   ],
   "budget_per_arm": {
     "global_batch": 8,
@@ -170,6 +170,22 @@
       "paired_subset_status": "EVIDENCE_READY",
       "supported": "At exact s12000 on this preregistered two-task/eight-episode-per-arm screen, the H32 training-and-replan bundle beats H8 overall and uniquely solves the sustained push task; both solve the short object pick-place task at 2/4.",
       "not_supported": "This does not establish full LIBERO benchmark superiority, isolate training horizon from execution replan, or prove that H8 is globally inferior."
+    },
+    "active_cross_task_s12000_screen": {
+      "node_port": 32409,
+      "episodes": 8,
+      "contract": "H32/H8 paired on object task1 trial0, spatial task0 trials1/2, and goal task3 trial4; max400 with each arm's matched execution horizon.",
+      "purpose": "Test whether the two-task lead transfers beyond goal5/object0; no full-benchmark claim is permitted from this screen."
+    },
+    "queued_final_s20000_pair": {
+      "node_port": 32409,
+      "queue_pid": 575539,
+      "runner": "scripts/h3wam/queue_final_d0_s20000_rollout.sh",
+      "episodes_per_arm": 8,
+      "tasks": ["libero_goal task5 trials0-3", "libero_object task0 trials0-3"],
+      "max_steps_per_episode": 400,
+      "launch_condition": "The active rollout batch has exited and both d0_h32_s20000.pt and d0_h8_s20000.pt exist.",
+      "falsifiable_checkpoint_gate": "Promote an s20000 checkpoint over the s12000 rollout incumbent only if it preserves non-collapsed offline conditioning and reaches at least the incumbent's 4/8 success count on the identical paired subset; otherwise retain s12000."
     }
   },
   "retention_cleanup": {
@@ -193,7 +209,7 @@
   },
   "gates": {
     "training_permission": "GO_LONG",
-    "effect_status": "NOT_EVIDENCE_READY",
+    "effect_status": "S12000_TWO_TASK_PAIRED_SUBSET_EVIDENCE_READY; FULL_BENCHMARK_NOT_EVIDENCE_READY",
     "promotion": "A checkpoint must retain non-collapsed visual/language counterfactual response and gripper control, then produce target contact or success in the fixed 400-step rollout.",
     "stop": "Stop a branch on non-finite gradients, exact-restore failure, sample overlap, or confirmed conditioning collapse across consecutive checkpoints."
   },
