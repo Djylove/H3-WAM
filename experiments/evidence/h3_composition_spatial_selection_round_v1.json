@@ -527,6 +527,26 @@
       "boundary": "Horizon32 increases causal label yield on the canary; it is not yet a deployment or policy-effect winner.",
       "artifact": "/mnt/h3-wam/eval/c24-first-action-horizon-sweep-v1/COMPLETED",
       "artifact_sha256": "a85d7d0dd03c355906cfa5f8277b8abf3e1d2675b5291153a1fae03e8b53f54e"
+    },
+    "C25": {
+      "name": "episode-disjoint-h32-causal-dataset-canary",
+      "classification": "controlled_causal_action_dataset_gate",
+      "parent_lineage": "C24 selected horizon32",
+      "source_revision": "8cc0722",
+      "falsifiable_hypothesis": "At least eight mixed groups include four train and two held-out validation groups and span at least three suites under strict source-episode split isolation.",
+      "difference_matrix": [
+        {"field": "checkpoint/H3/action parent", "parent": "C24 fixed", "C25": "same", "status": "ALIGNED"},
+        {"field": "execution/noise contract", "parent": "first32, later8, fixed continuation", "C25": "same", "status": "ALIGNED"},
+        {"field": "source episode/state coverage", "parent": "8 states", "C25": "14 source episodes/32 states", "status": "INTENTIONAL_DATA_EXPANSION"}
+      ],
+      "budget": {"source_episodes": 14, "groups": 32, "branches": 128, "train_groups": 22, "val_groups": 10, "max_environment_steps": 51200, "nodes": 4, "gpus_per_node": 8, "shard_duration_seconds": [512, 506, 514, 515]},
+      "results": {"successful_branches": 70, "mixed_outcome_groups": 9, "train_mixed_groups": 6, "val_mixed_groups": 3, "mixed_outcome_suites": ["libero_10", "libero_object", "libero_spatial"], "source_episode_split_isolated": true, "all_seed_schedules_valid": true, "all_groups_action_diverse": true},
+      "status": "PASS_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY",
+      "go_status": "GO_FROZEN_H3_ACTION_CRITIC_CANARY",
+      "evidence_status": "NOT_EVIDENCE_READY",
+      "boundary": "C25 permits a frozen-parent critic canary and held-out within-state ranking only; best-of-N and policy-effect claims remain blocked.",
+      "artifact": "/mnt/h3-wam/eval/c25-episode-disjoint-causal-dataset-v1/COMPLETED",
+      "artifact_sha256": "641ce0fb53853c555da2ad69cbe1b2d6451faec470c362c6db1ad7aef3fa4165"
     }
   },
   "difference_matrix": [
@@ -578,10 +598,10 @@
     "validation_trials": [3],
     "split_overlap": 0,
     "failure_onset": "UNKNOWN",
-    "counterfactual_action_outcome": "MISSING",
+    "counterfactual_action_outcome": "C25_CANARY_PASS_9_MIXED_GROUPS_EPISODE_DISJOINT",
     "value_only_diagnostic": "GO_CANARY_AFTER_FEATURE_TARGET_DOSSIER",
     "failure_imitation": "NO_GO",
-    "best_of_n": "NO_GO_UNTIL_HELD_OUT_RANKING_PASSES",
+    "best_of_n": "NO_GO_UNTIL_C25_FROZEN_CRITIC_HELD_OUT_RANKING_PASSES",
     "artifact": "/mnt/h3-wam/eval/audits/d0-h32-s14000-replan8-fact-transition-audit-v1.json"
   },
   "lineage": {
@@ -598,9 +618,10 @@
       "C21 same-state stochastic-continuation canary (passed; entropy calibration only after causal-label audit)",
       "C22 multisuite stochastic-continuation entropy sweep (passed; four-suite state calibration)",
       "C23 first-action-only causal canary (passed; dataset canary only)",
-      "C24 first-action execution horizon sweep (h32 label-yield winner; effect unproven)"
+      "C24 first-action execution horizon sweep (h32 label-yield winner; effect unproven)",
+      "C25 episode-disjoint causal dataset canary (passed; critic training canary only)"
     ],
     "track_winner": "none: C02 and C15 failed final spatial/object gates; C14 did not confirm across trials",
-    "fusion": "blocked; C24 selects h32 for label collection, but episode-disjoint dataset scale, held-out ranking, and closed-loop effect gates remain"
+    "fusion": "blocked; C25 permits frozen critic training, but held-out within-state ranking and closed-loop effect gates remain"
   }
 }

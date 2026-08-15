@@ -73,7 +73,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C22 | consequence/data | multisuite stochastic-continuation entropy sweep | C21 | C21 | 8源episode×距成功1/3/5 replans×4 noise schedule | 96条71成功；7/24 mixed覆盖四suite | GO_CAUSAL_FIRST_ACTION_CANARY；NOT_EVIDENCE_READY |
 | C23 | consequence/action | first-action-only causal branch | C22高熵state + D0父策略 | C22 | 只改变首replan noise；同组后续noise逐值固定 | 32条18成功；Spatial d5同状态2/4；全部seed/动作审计通过 | GO_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY；NOT_EVIDENCE_READY |
 | C24 | consequence/action | first-action execution horizon sweep | C23同8 states/32 seeds | C23 horizon8 | 仅首chunk执行16或32步；后续仍replan8 | h16:2 mixed/2 suites；h32:3 mixed/2 suites | GO_CAUSAL_DATASET_H32；NOT_EVIDENCE_READY |
-| C25 | consequence/data | episode-disjoint h32 causal dataset canary | C24 h32 | C24 | 14源episode/32 state组/128分支；源episode隔离split | 预注册train22组/val10组 | RUNNING；NOT_EVIDENCE_READY |
+| C25 | consequence/data | episode-disjoint h32 causal dataset canary | C24 h32 | C24 | 14源episode/32 state组/128分支；源episode隔离split | 9 mixed：train6/val3，覆盖10/Object/Spatial | GO_FROZEN_H3_ACTION_CRITIC_CANARY；NOT_EVIDENCE_READY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。
@@ -387,6 +387,13 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   bit-exact于C23，seed/action机械门全过，选择h32放行episode-disjoint数据canary；这不代表部署
   replan32已优于replan8。artifact：`/mnt/h3-wam/eval/c24-first-action-horizon-sweep-v1/COMPLETED`，
   SHA256 `a85d7d0dd03c355906cfa5f8277b8abf3e1d2675b5291153a1fae03e8b53f54e`。
+- C25固定C24 h32合同，在14个源episode上采集32 state组/128分支；train22组、val10组均按源episode
+  隔离。最终`70/128`成功、9 mixed，其中train6、val3，覆盖LIBERO-10/Object/Spatial；Goal 8组均
+  同质。源split、128条seed schedule及32组动作多样性全部通过，判定
+  `PASS_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY`。该结果只放行冻结H3/动作父策略的小critic canary，
+  必须先过held-out within-state ranking，尚不放行best-of-N。artifact：
+  `/mnt/h3-wam/eval/c25-episode-disjoint-causal-dataset-v1/COMPLETED`，SHA256
+  `641ce0fb53853c555da2ad69cbe1b2d6451faec470c362c6db1ad7aef3fa4165`。
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。

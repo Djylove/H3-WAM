@@ -686,3 +686,20 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 放行门：机械合同全过，mixed group总数`>=8`、train `>=4`、val `>=2`，且覆盖`>=3` suites。
   通过才允许冻结H3/action父策略训练小critic canary；失败不训练通用critic。
 - 效果仍固定`NOT_EVIDENCE_READY`；该门只判断数据是否足够支持可审计训练。
+
+### 2026-08-15 — C25 结果
+
+- 128/128完成，`70`成功；32组中9组mixed，train6、held-out val3，覆盖LIBERO-10、Object、
+  Spatial三suite，达到预注册`8/4/2/3-suite`门。Goal 8组为5个4/4、3个0/4，无mixed。
+- mixed明细：train为Object task2/d3 `3/4`、task4/d3 `2/4`，Spatial task3/d5 `2/4`，
+  LIBERO-10 task5 d1/d3/d5 `2/4,1/4,1/4`；val为Object task3/d5 `3/4`与LIBERO-10
+  task3 d1/d5 `3/4,1/4`。
+- 14个源episode的split完全隔离；所有seed schedule合法，32/32组首动作不同。四shard各32条，
+  墙钟`512/506/514/515s`；新增artifact约324MB。
+- 判定`PASS_EPISODE_DISJOINT_CAUSAL_DATASET_CANARY / GO_FROZEN_H3_ACTION_CRITIC_CANARY`。
+  下一步只允许冻结父策略训练小critic并做held-out within-state ranking；critic、best-of-N与闭环效果
+  继续`NOT_EVIDENCE_READY`。
+- preregistration/selection SHA256为
+  `2b8adcb97ebe01be70c1fee47a5f19e54d549d6019b1ebe31b801e832185a3ae`、
+  `73ae9d08675756c145cdc13d749d14fbca84b01e12c1ec3094950b5921d14b5a`；完成报告SHA256为
+  `641ce0fb53853c555da2ad69cbe1b2d6451faec470c362c6db1ad7aef3fa4165`。
