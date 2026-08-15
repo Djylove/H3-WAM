@@ -19,6 +19,16 @@ from typing import Any
 import torch
 
 
+# One process owns one independent manifest shard.  Letting every process
+# create a large intra-op pool oversubscribes the host and makes small tensor
+# validation slower than single-threaded execution.
+torch.set_num_threads(1)
+try:
+    torch.set_num_interop_threads(1)
+except RuntimeError:
+    pass
+
+
 SCRIPT_ROOT = Path(__file__).resolve().parent
 
 

@@ -23,6 +23,9 @@ REPORT_ROOT="${AUDIT_ROOT}/parallel_shards"
 LOG_ROOT="${AUDIT_ROOT}/parallel_logs"
 mkdir -p "${REPORT_ROOT}" "${LOG_ROOT}"
 cd "${PROJECT_ROOT}"
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
 
 pids=()
 for mode in kv star; do
