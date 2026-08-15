@@ -32,6 +32,27 @@ ROLLOUT = load_script(
 
 
 class H3DreamWAMKVRolloutAdapterTest(unittest.TestCase):
+    def test_terminal_observation_is_separate_from_replan_rows(self):
+        class FakeEnv:
+            @staticmethod
+            def get_sim_state():
+                return np.asarray([1.0, 2.0, 3.0], dtype=np.float64)
+
+        obs = {
+            "agentview_image": np.full((2, 3, 3), 7, dtype=np.uint8),
+            "robot0_eye_in_hand_image": np.full((2, 3, 3), 9, dtype=np.uint8),
+            "robot0_eef_pos": np.asarray([0.1, 0.2, 0.3]),
+            "robot0_eef_quat": np.asarray([0.0, 0.0, 0.0, 1.0]),
+            "robot0_gripper_qpos": np.asarray([0.4, 0.5]),
+        }
+        terminal = ROLLOUT.terminal_trajectory_fields(
+            FakeEnv(), obs, 17, np.arange(7, dtype=np.float64)
+        )
+        self.assertEqual(int(terminal["terminal_step"]), 17)
+        self.assertEqual(terminal["terminal_agentview_image"].shape, (2, 3, 3))
+        self.assertEqual(terminal["terminal_previous_action"].dtype, np.float32)
+        self.assertEqual(terminal["terminal_sim_state"].dtype, np.float64)
+
     def test_first_replan_horizon_changes_only_first_execution(self):
         resolve = ROLLOUT.resolve_execution_horizon
         self.assertEqual(

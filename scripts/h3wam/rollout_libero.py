@@ -522,6 +522,28 @@ def resolve_execution_horizon(
     )
 
 
+def terminal_trajectory_fields(
+    env, obs: dict, step: int, previous_action: np.ndarray
+) -> dict[str, np.ndarray]:
+    """Pack the post-execution observation without extending replan row axes."""
+    return {
+        "terminal_step": np.asarray(step, dtype=np.int64),
+        "terminal_agentview_image": np.ascontiguousarray(
+            obs["agentview_image"], dtype=np.uint8
+        ),
+        "terminal_wristview_image": np.ascontiguousarray(
+            obs["robot0_eye_in_hand_image"], dtype=np.uint8
+        ),
+        "terminal_eef_pos": np.asarray(obs["robot0_eef_pos"], dtype=np.float32),
+        "terminal_eef_quat": np.asarray(obs["robot0_eef_quat"], dtype=np.float32),
+        "terminal_gripper_qpos": np.asarray(
+            obs["robot0_gripper_qpos"], dtype=np.float32
+        ),
+        "terminal_previous_action": np.asarray(previous_action, dtype=np.float32).copy(),
+        "terminal_sim_state": np.asarray(env.get_sim_state(), dtype=np.float64),
+    }
+
+
 def run_episode(
     env,
     initial_state,
@@ -764,6 +786,15 @@ def run_episode(
             key: np.asarray(values)
             for key, values in trajectory.items()
         }
+        # Replan rows describe observations *before* each proposed action chunk.
+        # Preserve the post-execution terminal observation separately so an
+        # action-conditioned world/consequence learner does not drop episodes
+        # that succeed inside the first chunk (and therefore never replan).
+        # Keeping terminal fields outside the row axis preserves the historical
+        # trajectory contract consumed by branch restore and C25/C27 audits.
+        packed_trajectory.update(
+            terminal_trajectory_fields(env, obs, step, previous_action)
+        )
     return (
         {
             "success": bool(done),
