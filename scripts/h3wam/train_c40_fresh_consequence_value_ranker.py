@@ -171,8 +171,8 @@ def main() -> None:
     labels = torch.tensor([float(row["success"]) for row in branches])
     train_groups = mixed_groups(states, "train")
     val_groups = mixed_groups(states, "reserved_ranking_val")
-    if len(train_groups) != 25 or len(val_groups) != 24:
-        raise ValueError(f"C40 expected 25/24 mixed groups, got {len(train_groups)}/{len(val_groups)}")
+    if len(train_groups) != 22 or len(val_groups) != 24:
+        raise ValueError(f"C40 expected 22/24 mixed groups, got {len(train_groups)}/{len(val_groups)}")
     train_rows = torch.tensor([
         states[int(row["group_id"])]["consequence_split"] == "train"
         for row in branches
