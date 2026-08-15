@@ -103,6 +103,19 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 - 缓存与相同输入的在线 H3 K/V 已有 bitwise parity（K/V `max_abs=0`）；缓存的真实边界是冻结
   H3、32-token 压缩以及 demo→rollout 分布偏移。H8 复用 H32 packed-layout cache，闭环前必须固定
   `feature_audio_horizon=32` 或补做 H8/H32 K/V parity。
+- 中段曲线修正了早期判断：到 matched s9000，H32 normalized/physical MSE 为
+  `0.083179/0.037419`，H8 为 `0.088563/0.039321`；H32 的 language/visual counterfactual
+  响应也更强。两臂均未坍塌，继续跑满预注册 s20000，不按早期 s2000 提前选胜者。
+- 共享 H3 adapter s2000 的 task3/trial0 完整400步闭环为 `0/1`：目标碗和顶层抽屉均无位移，反而
+  误触 stove button `0.221442`，分类为 `FAIL_WRONG_OBJECT_NO_TARGET_CONTACT`。32409 已转为并发消费
+  D0-H32 s11000（replan32）与 D0-H8 s9000（replan8）的同任务闭环。
+- 首批闭环已取得真实正例：统一 D0-H32 s11000 在 `libero_object task0/trial0` 第137步成功，在
+  `libero_goal task5/trial0` 第206步成功；同一轮另3项失败，总计 `2/5`。因此“冻结INT8 H3加统一
+  dense动作专家能完成至少两个跨suite任务”的存在性结论为 `EVIDENCE_READY`；完整benchmark和
+  H32优于H8仍是 `NOT_EVIDENCE_READY`，因为首轮闭环使用 s11000 对 s9000，尚非同step归因。
+- task3各4 trials 均 `0/4`：H8四次都移动目标碗、平均最大位移 `0.5148`，但0次拉开顶层抽屉；
+  H32四次都接触碗，2次明显拉动顶层抽屉，平均抽屉/碗位移 `0.0689/0.1811`。当前解释是H8偏短期
+  目标接触，H32更可能学习先后顺序；必须由 matched-step/final paired rollout 确认。
 
 ## 蛊王融合谱系
 

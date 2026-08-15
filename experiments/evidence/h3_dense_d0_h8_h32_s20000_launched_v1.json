@@ -104,6 +104,44 @@
     "real_representation_gap": "Static cache freezes H3 and blocks action-loss gradients into it; 32-token pooling and D0 layer49 repetition are explicit model approximations; demo-to-rollout observation shift remains.",
     "h8_unresolved": "H8 currently slices action targets from an H32-layout source cache. Deployment must either retain feature_audio_horizon=32 or prove H8-layout versus H32-layout K/V parity before promotion."
   },
+  "midrun_observation": {
+    "status": "DIAGNOSTIC_ONLY_NOT_CLOSED_LOOP_EVIDENCE",
+    "matched_s9000": {
+      "h32": {"normalized_action_mse": 0.083179, "physical_action_mse": 0.037419, "gripper_accuracy": 0.9164, "language_relative_l2_prediction_delta": 0.728, "visual_shuffle_normalized_mse_penalty": 0.082218},
+      "h8": {"normalized_action_mse": 0.088563, "physical_action_mse": 0.039321, "gripper_accuracy": 0.9141, "language_relative_l2_prediction_delta": 0.3302, "visual_shuffle_normalized_mse_penalty": 0.057678}
+    },
+    "h32_s11000": {"normalized_action_mse": 0.070347, "physical_action_mse": 0.029983, "gripper_accuracy": 0.9273, "gripper_macro_f1": 0.9263, "language_relative_l2_prediction_delta": 0.8353, "visual_shuffle_normalized_mse_penalty": 0.0854},
+    "interpretation": "The early H8 lead reversed after s3000. At matched s9000 H32 is modestly better on action/gripper and materially stronger on language/visual dependence; both arms remain healthy, so both continue to the preregistered s20000 budget."
+  },
+  "closed_loop_consumption": {
+    "concurrent_shared_adapter_control": {
+      "checkpoint": "shared_sync_v2_adapter_only_s5000_fresh_step002000.pt",
+      "contract": "libero_goal task3 trial0, max400, wait30, H32/replan32",
+      "result": "0/1 after 400 steps",
+      "target_bowl_max_joint_delta": 8.005816604268745e-17,
+      "top_drawer_max_joint_delta": 0.0,
+      "distractor_stove_button_delta": 0.22144173772323258,
+      "classification": "FAIL_WRONG_OBJECT_NO_TARGET_CONTACT"
+    },
+    "first_paired_rollouts": [
+      {"node_port": 32409, "pid": 554623, "checkpoint": "d0_h32_s11000.pt", "contract": "goal task3 trial0, max400, wait30, H32/replan32, feature_audio_horizon32"},
+      {"node_port": 32409, "pid": 554624, "checkpoint": "d0_h8_s9000.pt", "contract": "goal task3 trial0, max400, wait30, H8/replan8, feature_audio_horizon32"}
+    ],
+    "task3_four_trial_diagnostic": {
+      "h32_s11000": {"successes": 0, "episodes": 4, "top_drawer_contact_episodes": 2, "bowl_contact_episodes": 4, "mean_top_drawer_max_delta": 0.0689, "mean_bowl_max_delta": 0.1811},
+      "h8_s9000": {"successes": 0, "episodes": 4, "top_drawer_contact_episodes": 0, "bowl_contact_episodes": 4, "mean_top_drawer_max_delta": 0.0004, "mean_bowl_max_delta": 0.5148},
+      "interpretation": "H8 consistently reaches/moves the target bowl but does not execute the prerequisite drawer subtask; H32 sometimes moves the top drawer but does not complete the sequence."
+    },
+    "first_cross_task_screen": {
+      "comparison_boundary": "Deployment screen only: H32 s11000 and H8 s9000 are not a completed-steps-matched horizon attribution.",
+      "h32_s11000": {"checkpoint_sha256": "ad1b529a323f5021005311350d2692296395639d736b958990dfcf2f4e401112", "successes": 2, "episodes": 5, "successes_by_task": ["libero_object task0 trial0 at step137", "libero_goal task5 trial0 at step206"], "successful_result_sha256": ["0661e0fa633662ad1cbcb5116c1fcba4622b493bf4c61749342fabbfaacd3942", "39a39aa945aeabf2284b2b65aec356031d6710158ed4a24485771c152e621110"], "failures": ["libero_goal task0", "libero_goal task7", "libero_spatial task0"]},
+      "h8_s9000": {"successes": 0, "episodes": 5, "target_contact_without_success": ["libero_goal task3", "libero_goal task5", "libero_spatial task0"]},
+      "existence_claim_status": "EVIDENCE_READY",
+      "existence_claim": "One frozen-INT8-H3 plus unified dense DreamWAM action expert checkpoint can satisfy real LIBERO predicates in more than one suite/task without task-specific finetuning.",
+      "benchmark_or_horizon_superiority_status": "NOT_EVIDENCE_READY"
+    },
+    "active_replication": "H32 s11000 is running additional trials for the successful goal5 and object0 tasks plus object1; matched-step/final H8-H32 evaluation remains required."
+  },
   "retention_cleanup": {
     "deleted_files": 143,
     "deleted_bytes": 1000255423688,

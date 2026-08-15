@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if (( $# != 5 )); then
+  echo "usage: $0 H8|H32 CHECKPOINT GPU TASK_ID TRIAL_INDEX" >&2
+  exit 2
+fi
+
+mode="$1"
+checkpoint="$2"
+gpu="$3"
+task_id="$4"
+trial_index="$5"
+
+case "${mode}" in
+  H8)
+    action_horizon=8
+    replan_steps=8
+    ;;
+  H32)
+    action_horizon=32
+    replan_steps=32
+    ;;
+  *)
+    echo "mode must be H8 or H32" >&2
+    exit 2
+    ;;
+esac
+for value in "${gpu}" "${task_id}" "${trial_index}"; do
+  [[ "${value}" =~ ^[0-9]+$ ]] || { echo "GPU/task/trial must be non-negative integers" >&2; exit 2; }
+done
+
+workspace="${H3_WORKSPACE:-/mnt/h3-wam}"
+project="${PROJECT_ROOT:-${workspace}/candidate-d0-rollout-96976ce/project}"
+suite="${SUITE:-libero_goal}"
+case "${suite}" in
+  libero_goal|libero_spatial|libero_object|libero_10) ;;
+  *) echo "unsupported SUITE=${suite}" >&2; exit 2 ;;
+esac
+suite_slug="${suite#libero_}"
+checkpoint="$(realpath "${checkpoint}")"
+checkpoint_name="$(basename "${checkpoint}" .pt)"
+output_root="${OUTPUT_ROOT:-${workspace}/outputs/eval-dense-d0-long/${checkpoint_name}_${suite_slug}_task${task_id}_trial${trial_index}_replan${replan_steps}}"
+
+test -f "${checkpoint}"
+test -f "${project}/scripts/h3wam/rollout_libero.py"
+test ! -e "${output_root}"
+mkdir -p "$(dirname "${output_root}")" "${workspace}/logs/dense-d0-long-rollout"
+
+export CUDA_VISIBLE_DEVICES="${gpu}"
+export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+export PYTHONPATH="${project}/third_party/diffusers_h3/src:${project}/src:${project}"
+export PYTHON_BIN="${workspace}/runtime/conda-py311/bin/python"
+export SIM_SITE_PACKAGES="/tmp/h3-wam-libero-site"
+
+exec bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
+  "${workspace}/runtime/conda-py311/bin/python" \
+  "${project}/scripts/h3wam/rollout_libero.py" \
+  --policy h3_dreamwam_kv_int8 \
+  --policy-python "${workspace}/runtime/h3-int8-native/bin/python" \
+  --checkpoint "${checkpoint}" \
+  --cache-root "${workspace}/data/v7_dense_h3_cache" \
+  --h3-checkpoint "${workspace}/int8-action/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors" \
+  --h3-model "${workspace}/models/MiniMax-H3" \
+  --dreamwam-source-manifest "${workspace}/data/v7_multisuite_dense_candidate/manifest_all.jsonl" \
+  --device cuda:0 \
+  --suite "${suite}" \
+  --task-ids "${task_id}" \
+  --trial-indices "${trial_index}" \
+  --max-steps 400 \
+  --wait-steps 30 \
+  --replan-steps "${replan_steps}" \
+  --action-horizon "${action_horizon}" \
+  --h3-feature-audio-horizon 32 \
+  --target-latent-frames 12 \
+  --model-evaluations 10 \
+  --seed 42 \
+  --normalized-action-pre-clamp \
+  --output-dir "${output_root}" \
+  --save-video \
+  --save-trajectories
