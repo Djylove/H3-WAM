@@ -1,0 +1,44 @@
+{
+  "experiment_id": "h3_c29_fresh_parent_source_expansion_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "The fixed D0-H32-s14000 parent yields enough successful, previously unused LIBERO trial4..7 episodes to support a new source-episode-disjoint action-conditioned consequence dataset.",
+  "single_variable": "Only benchmark initial-state trial index changes from the already consumed trials0..3 to trials4..7; checkpoint, H3, action decoder, seed, task set, replan8 and no-ensemble deployment stay fixed.",
+  "parent_baseline": "D0-H32-s14000/replan8/no-ensemble evaluated on trials0..3 produced 57/160 successes and supplied all C22/C25/C27 source episodes.",
+  "references": [
+    {"kind": "paper", "title": "FACT: A Failure-Aware Causal Transformer for World Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT failure rollout and action-conditioned consequence data path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "local_implementation", "title": "C29 fixed-parent source expansion", "locator": "scripts/h3wam/launch_c29_parent_source_trial.sh", "revision": "this dossier commit"}
+  ],
+  "alignment": {
+    "architecture": [{"field": "parent policy", "paper": "Failure data are collected from a fixed policy before consequence learning.", "upstream_code": "Failure rollouts augment the fixed training corpus.", "local": "The frozen D0-H32-s14000 parent generates all source episodes.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/run_dense_d0_milestone_rollout.sh"], "rationale": "This stage only expands source states and does not train a model."}],
+    "data": [{"field": "fresh source episodes", "paper": "Outcome-diverse rollouts supervise consequences.", "upstream_code": "Success and failure episodes remain available.", "local": "All 160 suite/task/trial4..7 combinations are collected before selecting successful branch sources.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c29_parent_source_expansion.py"], "rationale": "Selection covers the complete frozen index range rather than outcome-picked tasks."}],
+    "action": [{"field": "executed action contract", "paper": "Actions are executed closed loop.", "upstream_code": "Observed rollouts use decoded robot actions.", "local": "The incumbent environment-domain action decoder, normalized pre-clamp path, H32 prediction and replan8 execution are unchanged.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/run_dense_d0_milestone_rollout.sh"], "rationale": "No candidate action mechanism is introduced in C29."}],
+    "objective": [{"field": "collection-only gate", "paper": "Consequence targets require sufficiently diverse rollouts.", "upstream_code": "Training consumes all valid rollout records.", "local": "C29 gates only source count and per-suite successful coverage; it makes no effect claim.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/evaluate_c29_parent_source_expansion.py"], "rationale": "Counterfactual branches and consequence learning are separate later stages."}],
+    "optimization": [{"field": "parameter updates", "paper": "The model is optimized after data preparation.", "upstream_code": "Rollout collection itself performs no optimizer step.", "local": "Zero parameters update; 32 GPUs run 160 independent simulator episodes.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c29_parent_source_trial.sh"]}],
+    "evaluation": [{"field": "source inventory", "paper": "Held-out rollout success is the downstream metric.", "upstream_code": "Evaluation enumerates fixed tasks and episodes.", "local": "Audit requires all 160 exact paths and reports suite success counts; it is explicitly not a candidate comparison.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/evaluate_c29_parent_source_expansion.py"], "rationale": "The output determines whether enough fresh sources exist for the next data stage."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["fixed d0_h32_s14000 checkpoint and FACT 618a6c1"]},
+    "architecture_contract": {"status": "PASS", "evidence": ["no model or adapter changes"]},
+    "data_contract": {"status": "PASS", "evidence": ["all suites/tasks and trials4..7 enumerated before launch"]},
+    "action_contract": {"status": "PASS", "evidence": ["existing audited D0 environment action path"]},
+    "objective_contract": {"status": "PASS", "evidence": ["collection-only success-source gate fixed"]},
+    "optimization_contract": {"status": "PASS", "evidence": ["zero optimizer steps by construction"]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["minimum total and per-suite source thresholds fixed before results"]},
+    "gradient_path": {"status": "PASS", "evidence": ["inference-only processes"]}
+  },
+  "budget": {
+    "global_batch": 32,
+    "optimizer_steps": 5,
+    "training_samples": 160,
+    "unique_windows": 160,
+    "effective_epochs": 1.0,
+    "gpu_count": 32,
+    "estimated_hours": 0.25
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "C28 consumed all prior fresh sources and showed static ranking does not generalize; complete trial4..7 collection is the bounded prerequisite for a new action-conditioned consequence split.",
+    "launch_command": "On ports 32611/30907/32409/30234 respectively: C29_TRIAL=4/5/6/7 bash scripts/h3wam/launch_c29_parent_source_trial.sh"
+  }
+}
