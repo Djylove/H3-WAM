@@ -70,6 +70,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C19 | deployment/data | old-trajectory exact restore | LIBERO `regenerate_obs_from_state` | D0保存的qpos/qvel/time | 要求恢复观测等于原轨迹观测 | state exact但图像/proprio不等；旧state缺observable动态 | NO_GO_ORIGINAL_OBSERVATION_CLAIM |
 | C20 | deployment/data | paired canonical branch restore | C19 + fixed per-reset seed | C19 | 两个独立env从同state执行同8步动作 | 四suite×3状态图像逐像素一致，数值差≤1e-10 | GO_COUNTERFACTUAL_COLLECTION_CANARY |
 | C21 | consequence/data | same-state diffusion-noise outcome canary | D0-H32-s14000/replan8/no-ensemble + C20 | C20 | 固定规范state/环境/模型，仅改变policy noise；4 suite×4分支 | 16条中11成功；Object同状态3/4成功；四组动作均不同 | GO_DATASET_EXPANSION；NOT_EVIDENCE_READY |
+| C22 | consequence/data | multisuite counterfactual entropy sweep | C21 | C21 | 8源episode×距成功1/3/5 replans×4 noise | 预注册96分支；寻找高熵时间带 | RUNNING；NOT_EVIDENCE_READY |
 
 `PROBE_ONLY` 只允许代码审计、adapter 单测、真实 forward/backward 和不保留权重的一步探针；不能生成
 候选 checkpoint 或宣称效果。

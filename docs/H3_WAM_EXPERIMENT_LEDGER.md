@@ -605,3 +605,15 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   扩展state覆盖，按源episode切分train/validation，并在冻结父策略上通过held-out ranking和闭环门。
 - artifact：`/mnt/h3-wam/eval/c21-counterfactual-outcome-canary-v1/COMPLETED`；SHA256
   `c258cb829c45e504e03e5a183008d2820a1a32152bb8ff70723ba1acf8895f8c`。
+
+### 2026-08-15 — C22 multisuite counterfactual entropy sweep（预注册）
+
+- 父模型固定为`D0-H32-s14000/replan8/no-ensemble`。选择四suite各2个成功源episode，在距离原成功
+  终点`1/3/5`个replan处建立24个规范state组；每组4个预注册noise offset，共96条分支。
+- 组内唯一变量为policy diffusion-noise seed；环境seed42、checkpoint、INT8 H3、cache、task/trial、
+  state、replan和horizon固定。跨组改变suite/source/distance只是用于定位高熵采样层，不作模型对比。
+- 可证伪门：24组首动作块必须全部pairwise RMS>`1e-6`，且至少4个mixed-outcome组、覆盖至少2个
+  suite。通过仅放行`GO_TARGETED_COUNTERFACTUAL_DATASET`；失败则`NO_GO_UNIFORM_DATASET_EXPANSION`。
+- 预算：4节点×8 A800，计划每节点24条/3 waves；最多38400环境步，预计新增约270MB。
+  后续数据划分必须以源episode为单位，严禁同一源轨迹的相邻state跨train/validation。
+- 效果状态预注册为`NOT_EVIDENCE_READY`；无论本轮是否通过，都不能直接宣称critic或best-of-N有效。
