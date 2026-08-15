@@ -61,7 +61,7 @@ def test_two_step_temporal_training_writes_audited_checkpoints(tmp_path, monkeyp
         "branches": branches,
         "audit": {
             "partial_action_branches": 3,
-            "reserved_ranking_validation_sources": 1,
+            "fresh_ranking_validation_sources": 1,
         },
     }, dataset)
     features = tmp_path / "features.pt"
@@ -93,6 +93,7 @@ def test_two_step_temporal_training_writes_audited_checkpoints(tmp_path, monkeyp
     result = json.loads(report.read_text())
     assert result["data"]["source_overlap"] == 0
     assert result["data"]["partial_action_branches"] == 3
+    assert result["data"]["reserved_ranking_validation_sources"] == 1
     assert result["optimization"]["effective_train_examples"] == 8
     checkpoint = torch.load(
         checkpoint_dir / "temporal_seed42_step00002.pt", weights_only=False

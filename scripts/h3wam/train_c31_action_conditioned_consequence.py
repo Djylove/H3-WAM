@@ -476,7 +476,10 @@ def main() -> None:
             "train_sources": len(train_sources), "validation_sources": len(val_sources),
             "source_overlap": len(train_sources & val_sources),
             "reserved_ranking_validation_sources": int(
-                data["audit"]["reserved_ranking_validation_sources"]
+                data["audit"].get(
+                    "reserved_ranking_validation_sources",
+                    data["audit"].get("fresh_ranking_validation_sources", 0),
+                )
             ),
             "train_states": len(train_state_ids), "validation_states": len(val_state_ids),
             "train_branches": len(train_indices), "validation_branches": len(val_indices),

@@ -178,6 +178,9 @@ def main() -> None:
             "consequence_train_sources": len({s["source_episode"] for s in states if s["consequence_split"] == "train"}),
             "consequence_validation_sources": len({s["source_episode"] for s in states if s["consequence_split"] == "validation"}),
             "fresh_ranking_validation_sources": len({s["source_episode"] for s in states if s["split"] == "val"}),
+            # Keep the C31 trainer/report contract while naming the C34 role
+            # explicitly.  Both fields describe the same untouched C33 set.
+            "reserved_ranking_validation_sources": len({s["source_episode"] for s in states if s["split"] == "val"}),
             "train_mixed_groups": len(train_mixed), "val_mixed_groups": len(val_mixed),
             "train_pairs": sum(positive_pairs(s["successes"]) for s in train_mixed),
             "val_pairs": sum(positive_pairs(s["successes"]) for s in val_mixed),
