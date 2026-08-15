@@ -407,3 +407,15 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
 - 评测基础设施发现：30234上 `h3-int8-native` 的PyTorch2.10/CUDA13在A800执行最小BF16 Linear会报
   `CUBLAS_STATUS_INVALID_VALUE`；同节点共享的PyTorch2.8/CUDA12.8可执行。history离线评测改用后者，
   该失败归类为infra，不计作policy trial；闭环仍用已验证的INT8 H3运行时节点。
+
+### C38/C40/C41 当前主线（2026-08-16）
+
+- `C38 temporal consequence`：四个全新seed的same-model paired-null与shuffle机制门通过；只证明
+  H3 future representation对执行动作有可重复响应，不等于动作排序或LIBERO成功率提升。
+- `C40 consequence-value ranker`：fresh pairwise `54.321%`、top1 `58.333%`、`p=0.303297`，严格
+  `FAIL / NO_GO_BEST_OF_N`；但比action-only高`13.58`个百分点，保留为有方向信号的失败候选。
+- `C41 source expansion`：160/160、63个成功source，四suite门全部PASS。incumbent仍是
+  `D0-H32-s14000 / replan8 / no ensemble`，C41没有训练或替换它。
+- 当前唯一授权路线为C42→C43：把新source固定分成五个train trials和五个从未拟合/选型的final trials，
+  再扩大controlled first-action causal branches。只有两个split均达到预注册mixed-group门，才训练C44；
+  在C44 fresh ranking和后续固定闭环成功前，不登记新擂主。

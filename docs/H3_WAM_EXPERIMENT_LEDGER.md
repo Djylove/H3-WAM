@@ -836,3 +836,35 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `/mnt/h3-wam/incidents/c33-port-collision-20260815-ordinal300/`；launcher补充严格result-based resume：
   已有`results.json+trajectory`的branch保留并跳过，残缺目录必须先显式归档，禁止静默覆盖。shard0随后
   用完全相同selection/seed/state恢复，其他三shard未重启，数据合同不变。
+
+### 2026-08-16 — C33–C41 consequence机制、fresh ranking与扩数据决策
+
+- C33最终完成`52 sources / 104 groups / 416 branches`，其中279条成功、24个fresh mixed group，覆盖
+  四个LIBERO suite；动作多样性、逐值相同continuation seed、terminal consequence与结果/轨迹动作一致性
+  全部通过。完成artifact SHA256为
+  `0bee853840820ba8fdeb5635759a8dea6fe7b1c39bfcac4e2bac7a5766929514`。
+- C34冻结组合数据为194 states/776 branches；37个source作consequence train、8个source作已消费的
+  consequence validation、C33的52个source保持ranking-only。dataset与真实在线INT8 H3 feature SHA256
+  分别为`2a6c9252b8e77975f58920425bc18110fa8ea63bdc12c4c15571cfffeb9f7459`和
+  `4655d0783a443b4817f93f5368f7cace9996be7163dfa49b2080033b3b176f69`。
+- C35/C36/C37严格门均FAIL：独立null模型不稳定、delta按训练std缩放没有解决、10% condition dropout使
+  shared-null支路过强且跨seed不稳定。因此不继续围绕归一化或dropout做局部调参。
+- C38用四个全新seed复现无dropout temporal consequence：最小same-model true-vs-null增益`12.629%`、
+  最小shuffle退化`1.765%`、最小shuffled-train增益`7.481%`。restore初审的假失败来自原模型`.eval()`而
+  restored模型留在`.train()`；修复后四个state dict逐tensor相同、eval-vs-eval输出max-abs0。机械修正
+  artifact SHA256为`c5709b8d2009deebff42a801592618305d30887ae17ed6fccf2d8a7d862818f5`。
+- C40只用22个train mixed groups/74 pairs拟合，首次且仅一次消费C33 final：consequence ensemble fresh
+  pairwise为`54.321%`、top1为`58.333%`、permutation `p=0.303297`，未过60%/60%/0.05门；但相对
+  action-only的`40.741%`高`13.58`个百分点。结论是动作进入H3 consequence的方向有信号，但价值排序
+  泛化和统计功效不足；禁止在已消费C33上继续选配置。report SHA256为
+  `9a3148b04d412ee0d3307bf352249c2a762e8def56693926daa23fac48b1235c`。
+- C41随后完整采集未消费trials12..15共160个固定父策略episode并PASS：63个成功来源，Goal/Object/
+  Spatial/LIBERO-10为`7/28/22/6`，所有预注册suite门通过。trial12..14保持train-source角色，trial15
+  保持future-final角色；artifact SHA256为
+  `c0adf899674e9b52fe3c90c164b57a1b994c78784a64f2894a491946cf501c8a`。
+- 为避免只有一个final trial，C42在查看新增outcome前把角色扩成各五个trial：train为
+  `12,13,14,16,17`，final为`15,18,19,20,21`。新增trials16..21已由四节点自动接力；只有每个角色
+  `>=36`成功source且覆盖`>=3` suites才允许C43。
+- C43也已在C42 outcome前预注册：所有成功source取d3/d5状态、每状态4个first-action分支；组内仅首动作
+  diffusion seed变化，后续seed逐值相同。train与fresh-final各需`>=24` mixed group且覆盖`>=3` suites，
+  才允许C44重新训练和一次性验证powered consequence-value ranker。整个接力逐级FAIL即停止，不绕门。
