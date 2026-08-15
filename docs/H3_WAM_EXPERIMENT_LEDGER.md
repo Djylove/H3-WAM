@@ -831,3 +831,8 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   每job内部为correct、同状态错配、zero-action三臂，steps10000、batch64、LR3e-4、WD1e-2，每1000步
   保存并做fresh restore。四job分散到四节点GPU0，避免共享CPU projection争用；C34真实hash和long
   dossier未通过前launcher硬拒绝启动。
+- C33运行到ordinal300时，32611的policy server随机IPC端口发生`Address already in use`，该branch在环境
+  rollout前退出，归类为infra而非失败outcome。原残缺目录完整移到
+  `/mnt/h3-wam/incidents/c33-port-collision-20260815-ordinal300/`；launcher补充严格result-based resume：
+  已有`results.json+trajectory`的branch保留并跳过，残缺目录必须先显式归档，禁止静默覆盖。shard0随后
+  用完全相同selection/seed/state恢复，其他三shard未重启，数据合同不变。

@@ -33,6 +33,16 @@ run_wave() {
     IFS=$'\t' read -r ordinal group suite task trial index distance first_seed offset continuation trajectory <<<"${row}"
     slug="${suite#libero_}"
     run_root="${root}/runs/${ordinal}_g${group}_${slug}_task${task}_trial${trial}_d${distance}_offset${offset}"
+    # Resume is intentionally result-based: an already complete branch keeps
+    # its exact artifact, while an incomplete directory is handled explicitly
+    # by the incident recovery before relaunch.
+    if [[ -s "${run_root}/results.json" ]] && compgen -G "${run_root}/*trajectory.npz" >/dev/null; then
+      continue
+    fi
+    if [[ -e "${run_root}" ]]; then
+      echo "incomplete run directory requires incident recovery: ${run_root}" >&2
+      return 2
+    fi
     env H3_WORKSPACE="${workspace}" PROJECT_ROOT="${project}" SUITE="${suite}" \
       REPLAN_STEPS_OVERRIDE=8 BRANCH_TRAJECTORY="${trajectory}" BRANCH_INDEX="${index}" \
       ENVIRONMENT_SEED=42 FIRST_POLICY_NOISE_SEED="${first_seed}" \
@@ -43,6 +53,7 @@ run_wave() {
       >"${root}/logs/${ordinal}_g${group}_${slug}_task${task}_trial${trial}_d${distance}_offset${offset}.log" 2>&1 &
     pids+=("$!")
   done
+  (( ${#pids[@]} > 0 )) || return 0
   local failed=0
   for pid in "${pids[@]}"; do wait "${pid}" || failed=1; done
   (( failed == 0 ))
