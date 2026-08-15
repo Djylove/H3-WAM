@@ -29,6 +29,7 @@ from fastwam.models.h3wam import (
 FORMAT_BY_DATASET = {
     "h3wam-c26-causal-critic-dataset-v1": "h3wam-c26-live-h3-features-v1",
     "h3wam-c27-causal-critic-dataset-v1": "h3wam-c27-live-h3-features-v1",
+    "h3wam-c31-action-conditioned-consequence-dataset-v1": "h3wam-c31-live-h3-consequence-features-v1",
 }
 EXPECTED_H3_SHA256 = "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
 EXPECTED_SOURCE_SHA256 = "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9"
@@ -78,6 +79,39 @@ def pool_feature_tokens(features: torch.Tensor, token_count: int = 32) -> torch.
     return F.adaptive_avg_pool1d(features.transpose(1, 2), token_count).transpose(1, 2)
 
 
+def feature_samples(dataset: dict) -> list[dict]:
+    """Return current-state samples, plus future branch targets for C31."""
+    states = dataset.get("states")
+    if not isinstance(states, list) or not states:
+        raise ValueError("causal H3 feature extraction requires non-empty states")
+    if [int(state["group_id"]) for state in states] != list(range(len(states))):
+        raise ValueError("causal state group ids must be contiguous and ordered")
+    samples = [
+        {
+            "kind": "current", "index": int(state["group_id"]),
+            "task_language": state["task_language"],
+            "agentview_image": state["agentview_image"],
+            "wristview_image": state["wristview_image"],
+        }
+        for state in states
+    ]
+    if dataset.get("format") == "h3wam-c31-action-conditioned-consequence-dataset-v1":
+        branches = dataset.get("branches")
+        if not isinstance(branches, list) or not branches:
+            raise ValueError("C31 consequence dataset requires branches")
+        if [int(branch["ordinal"]) for branch in branches] != list(range(len(branches))):
+            raise ValueError("C31 branch ordinals must be contiguous and ordered")
+        for branch in branches:
+            state = states[int(branch["group_id"])]
+            samples.append({
+                "kind": "future", "index": int(branch["ordinal"]),
+                "task_language": state["task_language"],
+                "agentview_image": branch["future_agentview_image"],
+                "wristview_image": branch["future_wristview_image"],
+            })
+    return samples
+
+
 def main() -> None:
     args = parse_args()
     if args.progress_every <= 0:
@@ -91,11 +125,7 @@ def main() -> None:
     dataset = torch.load(dataset_path, map_location="cpu", weights_only=False)
     if dataset.get("format") not in FORMAT_BY_DATASET:
         raise ValueError("unsupported C26 dataset format")
-    states = dataset.get("states")
-    if not isinstance(states, list) or not states:
-        raise ValueError("causal H3 feature extraction requires non-empty states")
-    if [int(state["group_id"]) for state in states] != list(range(len(states))):
-        raise ValueError("causal state group ids must be contiguous and ordered")
+    samples = feature_samples(dataset)
     h3_sha256 = sha256_file(h3_checkpoint)
     source_sha256 = sha256_file(source_manifest)
     if h3_sha256 != EXPECTED_H3_SHA256:
@@ -108,7 +138,7 @@ def main() -> None:
         raise ValueError("live INT8 H3 feature extraction requires CUDA")
     torch.cuda.set_device(device)
     task_to_context = task_context_ids(
-        source_manifest, {str(state["task_language"]) for state in states}
+        source_manifest, {str(sample["task_language"]) for sample in samples}
     )
     contexts = {}
     cache_root = args.cache_root.resolve()
@@ -160,11 +190,11 @@ def main() -> None:
     hidden_features = []
     context_ids = []
     started = time.perf_counter()
-    for index, state in enumerate(states):
-        task = str(state["task_language"])
+    for index, sample in enumerate(samples):
+        task = str(sample["task_language"])
         context = contexts[task]
         pixels = preprocess_libero_cameras(
-            state["agentview_image"].numpy(), state["wristview_image"].numpy()
+            sample["agentview_image"].numpy(), sample["wristview_image"].numpy()
         )
         video = (
             pixels.mul(255.0).round().to(torch.uint8).permute(0, 3, 1, 2)
@@ -190,9 +220,9 @@ def main() -> None:
         compact_features.append(compact)
         hidden_features.append(hidden)
         context_ids.append(context["id"])
-        if (index + 1) % args.progress_every == 0 or index + 1 == len(states):
+        if (index + 1) % args.progress_every == 0 or index + 1 == len(samples):
             print(json.dumps({
-                "completed": index + 1, "total": len(states),
+                "completed": index + 1, "total": len(samples),
                 "elapsed_seconds": round(time.perf_counter() - started, 2),
                 "peak_allocated_gib": round(torch.cuda.max_memory_allocated(device) / 2**30, 3),
             }), flush=True)
@@ -201,7 +231,6 @@ def main() -> None:
         "format": FORMAT_BY_DATASET[dataset["format"]],
         "dataset_path": str(dataset_path),
         "dataset_sha256": sha256_file(dataset_path),
-        "group_ids": torch.tensor([int(state["group_id"]) for state in states]),
         "context_ids": context_ids,
         "d0_layer49_kv_compact": torch.stack(compact_features),
         "fact_layer49_hidden": torch.stack(hidden_features),
@@ -220,13 +249,29 @@ def main() -> None:
         "duration_seconds": time.perf_counter() - started,
         "peak_allocated_gib": torch.cuda.max_memory_allocated(device) / 2**30,
     }
+    if dataset["format"] == "h3wam-c31-action-conditioned-consequence-dataset-v1":
+        result["sample_kinds"] = [sample["kind"] for sample in samples]
+        result["sample_indices"] = torch.tensor(
+            [int(sample["index"]) for sample in samples]
+        )
+    else:
+        # Preserve the established C26/C27 output contract byte-for-byte at the
+        # schema level; downstream critic loaders expect this field.
+        result["group_ids"] = torch.tensor(
+            [int(state["group_id"]) for state in dataset["states"]]
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(f".{output.name}.{os.getpid()}.partial")
     torch.save(result, temporary)
     os.replace(temporary, output)
+    count_name = (
+        "samples"
+        if dataset["format"] == "h3wam-c31-action-conditioned-consequence-dataset-v1"
+        else "groups"
+    )
     print(json.dumps({
         "output": str(output), "dataset_sha256": result["dataset_sha256"],
-        "groups": len(states), "duration_seconds": round(result["duration_seconds"], 2),
+        count_name: len(samples), "duration_seconds": round(result["duration_seconds"], 2),
     }, indent=2))
 
 
