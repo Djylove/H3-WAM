@@ -31,10 +31,12 @@ FORMAT_BY_DATASET = {
     "h3wam-c27-causal-critic-dataset-v1": "h3wam-c27-live-h3-features-v1",
     "h3wam-c31-action-conditioned-consequence-dataset-v1": "h3wam-c31-live-h3-consequence-features-v1",
     "h3wam-c34-combined-consequence-ranking-dataset-v1": "h3wam-c34-live-h3-consequence-features-v1",
+    "h3wam-c44-powered-consequence-ranking-dataset-v1": "h3wam-c44-live-h3-consequence-features-v1",
 }
 CONSEQUENCE_DATASETS = {
     "h3wam-c31-action-conditioned-consequence-dataset-v1",
     "h3wam-c34-combined-consequence-ranking-dataset-v1",
+    "h3wam-c44-powered-consequence-ranking-dataset-v1",
 }
 EXPECTED_H3_SHA256 = "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
 EXPECTED_SOURCE_SHA256 = "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9"

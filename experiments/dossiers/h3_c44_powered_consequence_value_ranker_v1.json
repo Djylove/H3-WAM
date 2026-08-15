@@ -1,0 +1,32 @@
+{
+  "experiment_id": "h3_c44_powered_consequence_value_ranker_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Keeping the C38 consequence ensemble and C40 ranker family frozen while adding C43's source-disjoint causal train groups raises untouched-final pairwise ranking above60%, beats action-only and C40 by at least5 points, and achieves permutation p<=0.05.",
+  "single_variable": "Relative to C40, only ranker-training and final source coverage expands: the four C38 consequence checkpoints, temporal architecture, action masking, projections, train-only CV grid, optimizer, shuffled-label controls and absolute promotion thresholds remain fixed.",
+  "parent_baseline": "C40 consequence fresh pairwise was44/81=54.321%, top1=58.333%, p=0.303297, versus action-only40.741%; C40 failed because absolute accuracy, significance and shuffle-margin gates did not pass.",
+  "references": [
+    {"kind": "paper", "title": "FACT failure-aware future and value ranking", "locator": "https://arxiv.org/abs/2608.10232", "revision": "v1"},
+    {"kind": "upstream_code", "title": "FACT rollout/value data path", "locator": "third_party/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true},
+    {"kind": "local_implementation", "title": "C44 powered frozen-consequence ranker", "locator": "scripts/h3wam/train_c44_powered_consequence_value_ranker.py", "revision": "C44 preregistration commit"}
+  ],
+  "alignment": {
+    "architecture": [{"field": "frozen action-conditioned future ensemble plus value head", "paper": "Predict futures conditioned on candidate actions, then estimate value.", "upstream_code": "FACT separates future dynamics and best-of-N value.", "local": "Four frozen C38 temporal future-H3 models feed a linear pairwise ranker.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_c44_powered_consequence_value_ranker.py"], "rationale": "H3 hidden deltas replace FACT RGB/video decoder features."}],
+    "data": [{"field": "train/final source isolation", "paper": "Final ranking uses unseen episodes.", "upstream_code": "Held-out rollout outcomes are excluded from fitting.", "local": "C34 consequence-train plus C43 train sources fit/select; C43 fresh-final sources are evaluated once.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/prepare_c44_powered_consequence_ranking_dataset.py"], "rationale": "Consumed C34 validation and C33 final are excluded."}],
+    "action": [{"field": "clean executed action prefix", "paper": "Consequences condition on executed clean actions.", "upstream_code": "FACT consumes action tokens aligned to future prediction.", "local": "Executed prefix is retained and unexecuted terminal tail is zero-masked.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/prepare_c44_powered_consequence_ranking_dataset.py"], "rationale": "Proposal identity remains separately auditable."}],
+    "objective": [{"field": "pairwise success value", "paper": "Value ranks successful candidate futures.", "upstream_code": "Best-of-N selects by future/value score.", "local": "Pairwise logistic linear head; action-only and shuffled-label controls use identical data/optimization.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_c44_powered_consequence_value_ranker.py"], "rationale": "Binary LIBERO outcome replaces time-to-go value."}],
+    "optimization": [{"field": "train-only finite CV", "paper": "Model selection precedes final evaluation.", "upstream_code": "Value fitting is separate from rollout evaluation.", "local": "Five source folds over steps10/30/100 and WD0.3/3/10; LR0.03, projections and tie rule fixed from C40.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_c44_powered_consequence_value_ranker.py"], "rationale": "No fresh-final label selects a setting."}],
+    "evaluation": [{"field": "powered untouched-final gate", "paper": "Held-out ranking must exceed controls before best-of-N rollout.", "upstream_code": "Value quality gates candidate selection.", "local": "Require pairwise/top1>=60%, +5 points over action-only and C40, p<=0.05, +5 points over 10-label-shuffle mean, train>=75%, all score ranges nonzero.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/train_c44_powered_consequence_value_ranker.py"], "rationale": "Only all gates passing authorizes a closed-loop canary."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["C38 corrected checkpoint hashes and C34 dataset hash are hard-coded and rechecked."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Frozen four-member temporal consequence ensemble; linear ranker only."]},
+    "data_contract": {"status": "PASS", "evidence": ["At least46 train and24 fresh-final mixed groups; source-disjoint roles."]},
+    "action_contract": {"status": "PASS", "evidence": ["Executed-prefix masking preserved."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Pairwise outcome objective and all thresholds fixed before C43 outcomes."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Same finite CV, LR, projections and shuffle seeds as C40."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["C43 fresh-final evaluated once; no rerun on alternate configs."]},
+    "gradient_path": {"status": "PASS", "evidence": ["H3, C38 ensemble and actions frozen/detached; only linear weights update."]}
+  },
+  "budget": {"global_batch": 0, "optimizer_steps": 100, "training_samples": 0, "unique_windows": 0, "effective_epochs": 100.0, "gpu_count": 1, "estimated_hours": 0.5, "note": "Exact train pairs are outcome-dependent and frozen by C44 dataset; each full-pair step is one effective pair epoch, with train-only CV capped at100 steps."},
+  "decision": {"status": "GO_CANARY", "rationale": "C40 showed a positive consequence-over-action-only direction but lacked power; C42/C43 expand independent causal sources without changing the model family.", "launch_command": "After C43 PASS, run bash scripts/h3wam/launch_c44_powered_consequence_ranking.sh once on port32611; do not rerun fresh-final with alternate settings."}
+}
