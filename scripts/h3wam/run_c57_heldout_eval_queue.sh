@@ -20,6 +20,7 @@ C57_C56_PARENT_READY=${C57_C56_PARENT_READY:-/mnt/h3-wam/outputs/c58b-fastwam-la
 C57_C56_FINAL_CHECKPOINT=${C57_C56_FINAL_CHECKPOINT:-/mnt/h3-wam/outputs/c56b-fact-online-v1/online-long10000-v1/checkpoints/c56b_online_s10000.pt}
 C57_C56_FINAL_RESTORE=${C57_C56_FINAL_RESTORE:-/mnt/h3-wam/outputs/c56b-fact-online-v1/online-long10000-v1/restore/restore_s10000.json}
 C57_EVAL_PREEMPT_POLL_SECONDS=${C57_EVAL_PREEMPT_POLL_SECONDS:-5}
+C57_EVAL_MAX_ATTEMPTS=${C57_EVAL_MAX_ATTEMPTS:-3}
 
 if ! [[ "${C57_EVAL_PHYSICAL_GPU}" =~ ^[0-9]+$ ]]; then
   echo "C57_EVAL_PHYSICAL_GPU must be a non-negative integer" >&2
@@ -33,6 +34,10 @@ fi
 if ! [[ "${C57_EVAL_PREEMPT_POLL_SECONDS}" =~ ^[0-9]+$ ]] || \
    [[ "${C57_EVAL_PREEMPT_POLL_SECONDS}" -le 0 ]]; then
   echo "C57_EVAL_PREEMPT_POLL_SECONDS must be positive" >&2
+  exit 2
+fi
+if ! [[ "${C57_EVAL_MAX_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "C57_EVAL_MAX_ATTEMPTS must be positive" >&2
   exit 2
 fi
 
@@ -100,6 +105,7 @@ for C57_EVAL_STEP in $(seq 200 200 5000); do
   if [[ -s "${C57_EVAL_REPORT}" ]]; then
     continue
   fi
+  C57_EVAL_ATTEMPT=0
   while [[ ! -s "${C57_EVAL_REPORT}" ]]; do
     # The queue may sleep for many minutes between C57 checkpoints. Re-check
     # both the physical GPU and the C56 high-priority reservation immediately
@@ -129,8 +135,12 @@ for C57_EVAL_STEP in $(seq 200 200 5000); do
       continue
     fi
     if ! wait "${C57_EVAL_CHILD_PID}"; then
-      echo "C57 evaluator failed at step ${C57_EVAL_STEP}" >&2
-      exit 4
+      C57_EVAL_ATTEMPT=$((C57_EVAL_ATTEMPT + 1))
+      echo "C57 evaluator failed at step ${C57_EVAL_STEP}, attempt ${C57_EVAL_ATTEMPT}/${C57_EVAL_MAX_ATTEMPTS}" >&2
+      if [[ "${C57_EVAL_ATTEMPT}" -ge "${C57_EVAL_MAX_ATTEMPTS}" ]]; then
+        exit 4
+      fi
+      sleep 60
     fi
   done
 done
