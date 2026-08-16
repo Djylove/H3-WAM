@@ -243,6 +243,59 @@ def evaluate_arm(
     }
 
 
+def strict_in_memory_restore_probe(
+    model: H3FACTLayerwiseTowerPolicy,
+    *,
+    common: dict[str, torch.Tensor | dict],
+    device: torch.device,
+) -> tuple[H3FACTLayerwiseTowerPolicy, float]:
+    """Strictly restore the complete candidate without retaining a checkpoint."""
+
+    with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        before = model.forward_action(
+            common["noisy_actions"],
+            common["timestep"],
+            text_context=common["context"],
+            proprio=common["proprio"],
+            video_kv_cache=common["current_kv"],
+            text_mask=common["text_mask"],
+        ).detach().float().cpu()
+    state = {
+        name: tensor.detach().cpu().clone()
+        for name, tensor in model.state_dict().items()
+    }
+    del model
+    torch.cuda.empty_cache()
+    spec = C58.ModelSpec(
+        carrier_layers=LAYERWISE_H3_50_TO_ACTION_30,
+        carrier_source_mode=C58.LAYERWISE_H3_50_TO_ACTION_30_MODE,
+        action_layers=30,
+    )
+    restored_tower = C58.build_model(
+        spec, device=device, dtype=torch.bfloat16, gradient_checkpointing=False
+    )
+    restored = H3FACTLayerwiseTowerPolicy(
+        restored_tower,
+        future_state_dim=8,
+        future_representation_dim=FUTURE_REPRESENTATION_DIM,
+    ).to(device=device, dtype=torch.bfloat16)
+    incompatible = restored.load_state_dict(state, strict=True)
+    if incompatible.missing_keys or incompatible.unexpected_keys:
+        raise RuntimeError(f"strict restore mismatch: {incompatible}")
+    restored.train()
+    del state
+    with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        after = restored.forward_action(
+            common["noisy_actions"],
+            common["timestep"],
+            text_context=common["context"],
+            proprio=common["proprio"],
+            video_kv_cache=common["current_kv"],
+            text_mask=common["text_mask"],
+        ).detach().float().cpu()
+    return restored, float((before - after).abs().max())
+
+
 def main() -> None:
     args = parse_args()
     rank = int(os.environ.get("RANK", "0"))
@@ -409,6 +462,14 @@ def main() -> None:
     if any(parameter.grad is not None for parameter in backbone.parameters()):
         raise RuntimeError("frozen H3 received gradients in balance probe")
 
+    restore_max_abs = None
+    if rank == 0:
+        model, restore_max_abs = strict_in_memory_restore_probe(
+            model, common=common, device=device
+        )
+        if restore_max_abs != 0.0:
+            raise RuntimeError(f"C56b strict restore mismatch: {restore_max_abs}")
+
     rank_root.mkdir(parents=True)
     report = {
         "format": FORMAT,
@@ -431,6 +492,7 @@ def main() -> None:
         ),
         "raw_normalized_action_prediction_max_abs": action_max_abs,
         "peak_reserved_bytes": int(torch.cuda.max_memory_reserved(device)),
+        "strict_restore_max_abs": restore_max_abs,
         "initialization": expansion.to_dict(),
         "claim_boundary": "Mixed-stream raw/normalized gradient diagnostic only; no optimizer step or checkpoint.",
     }
@@ -483,6 +545,7 @@ def main() -> None:
             ),
             "max_peak_reserved_bytes": max(item["peak_reserved_bytes"] for item in reports),
             "target_norm_sha256": reports[0]["target_norm_sha256"],
+            "strict_restore_max_abs": reports[0]["strict_restore_max_abs"],
             "permission": "PROBE_COMPLETE_REVIEW_BEFORE_MIXED_ONE_STEP",
             "claim_boundary": "No effectiveness or GO_LONG claim.",
         }
