@@ -136,6 +136,15 @@ def parse_args() -> argparse.Namespace:
             "one-to-one onto the 30 official ActionDiT blocks."
         ),
     )
+    parser.add_argument(
+        "--matched-d0-control",
+        action="store_true",
+        help=(
+            "Use the exact five-layer D0 action expert with parent weights but "
+            "a fresh optimizer/scheduler. All data and flow contracts remain "
+            "identical to C58; this is the required depth-only control."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -166,6 +175,25 @@ def build_model(
     dtype: torch.dtype,
     gradient_checkpointing: bool = False,
 ) -> H3FastWAMFullTowerPolicy:
+    if spec.action_layers == 5:
+        if spec.carrier_source_mode != REPEAT_LAYER49_MODE:
+            raise ValueError("matched D0 control requires repeat_layer49")
+        parent_spec = PARENT.ModelSpec(
+            action_dim=spec.action_dim,
+            proprio_dim=spec.proprio_dim,
+            context_dim=spec.context_dim,
+            hidden_dim=spec.hidden_dim,
+            ffn_dim=spec.ffn_dim,
+            num_heads=spec.num_heads,
+            attn_head_dim=spec.attn_head_dim,
+            freq_dim=spec.freq_dim,
+            carrier_layers=spec.carrier_layers,
+            carrier_source_mode=spec.carrier_source_mode,
+            history_action_steps=0,
+        )
+        return PARENT.build_model(parent_spec, device=device, dtype=dtype)
+    if spec.action_layers != 30:
+        raise ValueError("C58 pair permits only 5-layer control or 30-layer candidate")
     if spec.carrier_source_mode == REPEAT_LAYER49_MODE:
         block_mapping = None
     elif spec.carrier_source_mode == LAYERWISE_H3_50_TO_ACTION_30_MODE:
@@ -276,16 +304,25 @@ def checkpoint_contract(
     initialization_report: dict[str, Any],
 ) -> dict[str, Any]:
     layerwise = spec.carrier_source_mode == LAYERWISE_H3_50_TO_ACTION_30_MODE
+    matched_control = spec.action_layers == 5
     contract = {
         "candidate": (
             "C58B_FASTWAM_FULL30_H3_LAYERWISE"
             if layerwise
-            else "C58_FASTWAM_FULL30_H3_LAYER49"
+            else (
+                "C58_MATCHED_D0_FRESH_OPTIMIZER"
+                if matched_control
+                else "C58_FASTWAM_FULL30_H3_LAYER49"
+            )
         ),
         "classification": (
             "action-only-on-frozen-layerwise-h3-kv_backbone_port"
             if layerwise
-            else "action-only-on-frozen-features_backbone_port"
+            else (
+                "matched-five-layer-depth-control_fresh-optimizer"
+                if matched_control
+                else "action-only-on-frozen-features_backbone_port"
+            )
         ),
         "fastwam_commit": FASTWAM_COMMIT,
         "fastwam_action_dit_sha256": FASTWAM_ACTION_DIT_SHA256,
@@ -392,6 +429,8 @@ def main() -> None:
     args = parse_args()
     if args.restore_check_only and args.load_checkpoint is None:
         raise ValueError("--restore-check-only requires --load-checkpoint")
+    if args.matched_d0_control and args.carrier_mode != REPEAT_LAYER49_MODE:
+        raise ValueError("matched D0 control cannot use the layer-wise carrier")
     positive = (
         args.steps,
         args.per_device_batch_size,
@@ -458,6 +497,7 @@ def main() -> None:
     spec = ModelSpec(
         carrier_layers=carrier_layers,
         carrier_source_mode=args.carrier_mode,
+        action_layers=5 if args.matched_d0_control else 30,
     )
     model = build_model(
         spec,
@@ -465,9 +505,24 @@ def main() -> None:
         dtype=dtype,
         gradient_checkpointing=args.use_gradient_checkpointing,
     )
-    initialization = initialize_full_tower_from_d0(
-        model, d0_payload["model"]
-    ).to_dict()
+    if args.matched_d0_control:
+        model.load_state_dict(d0_payload["model"], strict=True)
+        initialization = {
+            "source_layers": 5,
+            "target_layers": 5,
+            "anchor_target_indices": [0, 1, 2, 3, 4],
+            "nearest_source_indices": [0, 1, 2, 3, 4],
+            "identity_target_indices": [],
+            "source_prefix": "action_expert.blocks",
+            "target_prefix": "action_expert.blocks",
+            "alpha_scaling_applied": False,
+            "width_interpolation_applied": False,
+            "initialization_contract": "exact_d0_weights_fresh_optimizer_v1",
+        }
+    else:
+        initialization = initialize_full_tower_from_d0(
+            model, d0_payload["model"]
+        ).to_dict()
     contract = checkpoint_contract(
         args,
         spec,
@@ -767,8 +822,12 @@ def main() -> None:
             parameter.numel() for parameter in unwrapped.parameters() if parameter.requires_grad
         )
         report = {
-            "event": "h3_c58_fastwam_full30_probe",
-            "classification": "action-only-on-frozen-features_backbone_port",
+            "event": (
+                "h3_c58_matched_d0_fresh_optimizer_probe"
+                if args.matched_d0_control
+                else "h3_c58_fastwam_full30_probe"
+            ),
+            "classification": contract["classification"],
             "status": "mechanical_probe_not_effectiveness_evidence",
             "resolved_argv": sys.argv,
             "world_size": world_size,

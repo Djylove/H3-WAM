@@ -1,0 +1,130 @@
+{
+  "experiment_id": "h3_c58_matched_depth_pair_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "The function-preserving official FastWAM 30-layer action tower improves held-out action quality and fresh LIBERO success over the exact D0 five-layer tower when both start from the same weights and receive identical fresh-optimizer 10k training.",
+  "single_variable": "ActionDiT depth is 30 for C58 and 5 for the matched control; parent weights, frozen H3 layer49 carrier, 80k sample IDs/order, flow noise, optimizer, schedule, action contract and evaluation are identical.",
+  "parent_baseline": "D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3; model weights only, optimizer/scheduler discarded for both arms.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FastWAM",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "arXiv:2603.16666",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "YuanTianYuan01/FastWAM official repository",
+      "locator": "https://github.com/YuanTianYuan01/FastWAM",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3-WAM C58 matched-depth pair",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "working diff after 90324d6ea1bc8a1e822b494d5774b5f9339a7edb",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "paired action depth",
+        "paper": "FastWAM uses 30 ActionDiT blocks.",
+        "upstream_code": "Official ActionDiT num_layers=30.",
+        "local": "Candidate uses byte-pinned official full30; control strict-loads the exact D0 five-block model.",
+        "status": "EQUIVALENT",
+        "evidence": ["scripts/h3wam/train_h3_fastwam_full_tower.py", "tests/test_c58_matched_d0_control.py"],
+        "rationale": "The controlled ablation deliberately retains a five-layer control to identify the effect of official full depth."
+      }
+    ],
+    "data": [
+      {
+        "field": "paired rows and order",
+        "paper": "LIBERO demonstration training.",
+        "upstream_code": "Dense multi-suite training windows.",
+        "local": "The same 80000 unique rows are assigned to the same rank and optimizer step; all order hashes are preregistered.",
+        "status": "EQUIVALENT",
+        "evidence": ["scripts/h3wam/prepare_c58_matched_pair_contract.py", "tests/test_prepare_c58_matched_pair_contract.py"],
+        "rationale": "Explicit stage slices replace a monolithic epoch while preserving exact arm pairing."
+      }
+    ],
+    "action": [
+      {
+        "field": "action representation",
+        "paper": "LIBERO 7D action chunks with proprioception.",
+        "upstream_code": "Horizon32, 7D action, 8D state and minmax.",
+        "local": "Both arms share H32, 7D/8D, minmax, gripper and pad-mask contracts.",
+        "status": "EXACT",
+        "evidence": ["scripts/h3wam/launch_c58_matched_d0_control_long.sh"]
+      }
+    ],
+    "objective": [
+      {
+        "field": "action flow loss",
+        "paper": "FastWAM action flow matching.",
+        "upstream_code": "Shift5 action velocity loss.",
+        "local": "Both arms call the same deterministic shift5 padded velocity MSE implementation.",
+        "status": "EXACT",
+        "evidence": ["scripts/h3wam/train_h3_fastwam_full_tower.py"]
+      }
+    ],
+    "optimization": [
+      {
+        "field": "fresh optimizer and schedule",
+        "paper": "AdamW warmup-cosine training.",
+        "upstream_code": "AdamW .9/.95, LR1e-4 and WD1e-2.",
+        "local": "Both arms discard parent optimizer and use identical AdamW, warmup1000, cosine horizon10000 and stateless flow seeds.",
+        "status": "EXACT",
+        "evidence": ["tests/test_c58_matched_d0_control.py", "scripts/h3wam/prepare_c58_matched_pair_contract.py"]
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "paired offline and fresh closed loop",
+        "paper": "LIBERO success rate.",
+        "upstream_code": "Closed-loop task evaluation.",
+        "local": "Every 1000-step pair runs the same frozen balanced-80, followed only after gate PASS by trials33..49 replan8 paired rollouts.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["scripts/h3wam/watch_c58_matched_balanced80.sh", "scripts/h3wam/finalize_c58_matched_balanced80.py"],
+        "rationale": "The project deployment protocol is replan8; offline metrics only select a checkpoint and cannot establish success."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FastWAM source bytes and D0 parent SHA256 are fixed."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Strict parent load gives bit-exact five-layer output; full30 step0 is already bit-exact to the same parent."]},
+    "data_contract": {"status": "PASS", "evidence": ["Deterministic 80k pair-plan test freezes unique stage/rank/step order."]},
+    "action_contract": {"status": "PASS", "evidence": ["One trainer implements both arms with the same action loader and objective."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Flow seed formula and loss call are shared, not duplicated."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Unit test proves identical LR and flow seed schedules and an empty fresh optimizer state for control."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Evaluator accepts only strict 5/30 identities, selected80 SHA and fresh restore max_abs0; promotion thresholds are code-fixed."]},
+    "gradient_path": {"status": "PASS", "evidence": ["D0 five-layer action path was previously proven trainable; canary rechecks all five blocks before long."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["New fresh-optimizer control ten-step canary awaits a free 8xA800 node."]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["New control checkpoint does not exist before canary."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["D0-H32-s14000 fixed SHA256 and zero-overlap row gate."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["No paired balanced-80 result exists."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No fresh paired C58/control rollout exists."]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 10,
+    "training_samples": 80,
+    "unique_windows": 80,
+    "effective_epochs": 0.00039844804486524984,
+    "gpu_count": 8,
+    "estimated_hours": 0.25,
+    "post_canary_long_steps": 10000,
+    "post_canary_long_samples": 80000
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Identity, architecture, order, noise, optimizer, action and evaluation gates are fixed. A ten-step strict-restore canary is required before the prepared 10k launcher may run.",
+    "launch_command": "bash scripts/h3wam/launch_c58_matched_d0_control_probe.sh",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}

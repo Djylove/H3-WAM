@@ -22,30 +22,52 @@ def load_module():
     return module
 
 
-def valid_payload(module):
+def valid_payload(module, *, matched_control=False):
     spec = asdict(module.C58.ModelSpec())
+    if matched_control:
+        spec["action_layers"] = 5
     parent = "a" * 64
     initialization = {
         "source_layers": 5,
-        "target_layers": 30,
-        "anchor_target_indices": [0, 7, 14, 22, 29],
+        "target_layers": 5 if matched_control else 30,
+        "anchor_target_indices": (
+            [0, 1, 2, 3, 4]
+            if matched_control
+            else [0, 7, 14, 22, 29]
+        ),
         "nearest_source_indices": [
             0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2,
             2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4,
         ],
-        "identity_target_indices": [
-            1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19,
-            20, 21, 23, 24, 25, 26, 27, 28,
-        ],
+        "identity_target_indices": (
+            []
+            if matched_control
+            else [
+                1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19,
+                20, 21, 23, 24, 25, 26, 27, 28,
+            ]
+        ),
         "source_prefix": "blocks",
         "target_prefix": "action_expert.blocks",
         "alpha_scaling_applied": False,
         "width_interpolation_applied": False,
-        "initialization_contract": "exact_d0_function_preserving_depth_expansion_v1",
+        "initialization_contract": (
+            "exact_d0_weights_fresh_optimizer_v1"
+            if matched_control
+            else "exact_d0_function_preserving_depth_expansion_v1"
+        ),
     }
     contract = {
-        "candidate": "C58_FASTWAM_FULL30_H3_LAYER49",
-        "classification": "action-only-on-frozen-features_backbone_port",
+        "candidate": (
+            "C58_MATCHED_D0_FRESH_OPTIMIZER"
+            if matched_control
+            else "C58_FASTWAM_FULL30_H3_LAYER49"
+        ),
+        "classification": (
+            "matched-five-layer-depth-control_fresh-optimizer"
+            if matched_control
+            else "action-only-on-frozen-features_backbone_port"
+        ),
         "fastwam_commit": module.C58.FASTWAM_COMMIT,
         "fastwam_action_dit_sha256": module.C58.FASTWAM_ACTION_DIT_SHA256,
         "fastwam_video_dit_sha256": module.C58.FASTWAM_VIDEO_DIT_SHA256,
@@ -102,6 +124,17 @@ def test_contract_accepts_only_full30_function_preserving_port():
     contract, model_spec, kv_subdir = require(module, valid_payload(module))
     assert contract["candidate"] == "C58_FASTWAM_FULL30_H3_LAYER49"
     assert model_spec["action_layers"] == 30
+    assert kv_subdir == "kv"
+
+
+def test_contract_accepts_only_strict_matched_five_layer_control():
+    module = load_module()
+    contract, model_spec, kv_subdir = require(
+        module, valid_payload(module, matched_control=True)
+    )
+    assert contract["candidate"] == "C58_MATCHED_D0_FRESH_OPTIMIZER"
+    assert model_spec["action_layers"] == 5
+    assert contract["d0_parent_optimizer_restored"] is False
     assert kv_subdir == "kv"
 
 

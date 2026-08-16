@@ -97,9 +97,24 @@ def require_c58_contract(
     contract = payload.get("contract")
     if not isinstance(contract, dict):
         raise ValueError("C58 checkpoint contract is missing")
+    raw_model_spec = contract.get("model_spec")
+    if not isinstance(raw_model_spec, dict):
+        raise ValueError("C58 model_spec is missing")
+    action_layers = int(raw_model_spec.get("action_layers", -1))
+    matched_control = action_layers == 5
+    if action_layers not in {5, 30}:
+        raise ValueError("C58 evaluator permits only the 5/30 depth pair")
     required = {
-        "candidate": "C58_FASTWAM_FULL30_H3_LAYER49",
-        "classification": "action-only-on-frozen-features_backbone_port",
+        "candidate": (
+            "C58_MATCHED_D0_FRESH_OPTIMIZER"
+            if matched_control
+            else "C58_FASTWAM_FULL30_H3_LAYER49"
+        ),
+        "classification": (
+            "matched-five-layer-depth-control_fresh-optimizer"
+            if matched_control
+            else "action-only-on-frozen-features_backbone_port"
+        ),
         "fastwam_commit": C58.FASTWAM_COMMIT,
         "fastwam_action_dit_sha256": C58.FASTWAM_ACTION_DIT_SHA256,
         "fastwam_video_dit_sha256": C58.FASTWAM_VIDEO_DIT_SHA256,
@@ -138,18 +153,30 @@ def require_c58_contract(
     if int(contract.get("d0_parent_completed_steps", -1)) != 14_000:
         raise ValueError("C58 must descend from the audited D0 step14000 parent")
     initialization = contract.get("initialization")
-    initialization_required = {
-        "source_layers": 5,
-        "target_layers": 30,
-        "anchor_target_indices": [0, 7, 14, 22, 29],
-        "identity_target_indices": [
-            1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19,
-            20, 21, 23, 24, 25, 26, 27, 28,
-        ],
-        "alpha_scaling_applied": False,
-        "width_interpolation_applied": False,
-        "initialization_contract": "exact_d0_function_preserving_depth_expansion_v1",
-    }
+    initialization_required = (
+        {
+            "source_layers": 5,
+            "target_layers": 5,
+            "anchor_target_indices": [0, 1, 2, 3, 4],
+            "identity_target_indices": [],
+            "alpha_scaling_applied": False,
+            "width_interpolation_applied": False,
+            "initialization_contract": "exact_d0_weights_fresh_optimizer_v1",
+        }
+        if matched_control
+        else {
+            "source_layers": 5,
+            "target_layers": 30,
+            "anchor_target_indices": [0, 7, 14, 22, 29],
+            "identity_target_indices": [
+                1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19,
+                20, 21, 23, 24, 25, 26, 27, 28,
+            ],
+            "alpha_scaling_applied": False,
+            "width_interpolation_applied": False,
+            "initialization_contract": "exact_d0_function_preserving_depth_expansion_v1",
+        }
+    )
     if not isinstance(initialization, dict):
         raise ValueError("C58 initialization contract is missing")
     initialization_mismatches = {
@@ -165,6 +192,7 @@ def require_c58_contract(
     if not isinstance(model_spec, dict) or set(model_spec) != C58_MODEL_SPEC_KEYS:
         raise ValueError("C58 model_spec schema mismatch")
     expected_spec = asdict(C58.ModelSpec())
+    expected_spec["action_layers"] = action_layers
     expected_spec["carrier_layers"] = list(expected_spec["carrier_layers"])
     normalized_spec = dict(model_spec)
     if isinstance(normalized_spec.get("carrier_layers"), tuple):
@@ -188,18 +216,34 @@ def run_evaluation(config: Any) -> dict[str, Any]:
     """Run the unchanged balanced-80 protocol and relabel only its report."""
 
     report = BASE.run_evaluation(replace(config, output=None))
+    checkpoint_contract = report["checkpoint"]["contract"]
+    matched_control = (
+        checkpoint_contract["candidate"] == "C58_MATCHED_D0_FRESH_OPTIMIZER"
+    )
     report.update(
         {
-            "event": "h3_c58_fastwam_full30_balanced80_offline_evaluation",
-            "candidate": "C58_FASTWAM_FULL30_H3_LAYER49",
-            "classification": "fastwam-full30-action-on-frozen-h3-layer49-kv",
+            "event": (
+                "h3_c58_matched_d0_balanced80_offline_evaluation"
+                if matched_control
+                else "h3_c58_fastwam_full30_balanced80_offline_evaluation"
+            ),
+            "candidate": checkpoint_contract["candidate"],
+            "classification": (
+                "matched-d0-five-layer-action-on-frozen-h3-layer49-kv"
+                if matched_control
+                else "fastwam-full30-action-on-frozen-h3-layer49-kv"
+            ),
             "status": "completed_not_closed_loop_evidence",
         }
     )
     report["protocol_identity"].update(
         {
             "adapter": str(Path(__file__).resolve()),
-            "architecture_source": "official FastWAM ActionDiT full30",
+            "architecture_source": (
+                "matched DreamWAM D0 five-layer control"
+                if matched_control
+                else "official FastWAM ActionDiT full30"
+            ),
             "fastwam_commit": C58.FASTWAM_COMMIT,
             "fastwam_action_dit_sha256": C58.FASTWAM_ACTION_DIT_SHA256,
             "evidence_boundary": (
