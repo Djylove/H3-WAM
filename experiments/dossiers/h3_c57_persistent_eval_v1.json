@@ -1,0 +1,41 @@
+{
+  "candidate": "C57",
+  "classification": "action-only-on-frozen-h3-kv",
+  "method": "lingbot_persistent_observation_action_kv",
+  "evaluation_schema": "c57_heldout_eval_plan_v1",
+  "checkpoint_schedule": {
+    "start": 200,
+    "stop": 5000,
+    "interval": 200,
+    "promotion_checkpoint": 5000
+  },
+  "control": "D0_frozen_source_checkpoint",
+  "paired_contract": [
+    "current_id",
+    "heldout_episode",
+    "flow_seed",
+    "noisy_actions",
+    "timestep",
+    "target"
+  ],
+  "offline_gate": {
+    "relative_mean_loss_improvement_min": 0.03,
+    "sample_win_fraction_min": 0.55,
+    "authorizes": "GO_CLOSED_LOOP_CANARY_ONLY"
+  },
+  "rollout_lifecycle": [
+    "reset",
+    "predict_stage_predicted_kv",
+    "post_action_observation_at_4",
+    "post_action_observation_at_8",
+    "commit_8_executed_actions"
+  ],
+  "forbidden_shortcuts": [
+    "flattened_history_feature",
+    "commit_planned_actions",
+    "commit_partial_terminal_tail",
+    "intermediate_checkpoint_promotion",
+    "unpaired_D0_seed_or_sample"
+  ],
+  "gpu_policy": "do_not_interrupt_n1_long_train; evaluate_on_idle_node"
+}
