@@ -99,9 +99,12 @@ normalization stats、checkpoint、评测轨迹和事故证据不属于可删缓
   有限非零，独立实例严格恢复 `max_abs=0`，正式 `READY.json` 已发布。online-H3/no-disk-KV
   balanced80 也已 6/6 门 PASS：normalized action MSE `0.05933`、physical MSE `0.02545`、
   gripper macro-F1 `0.93644`、prediction std `0.47879`、language delta `0.23174`、
-  visual-shuffle delta MSE `0.03163`。这只证明机制没有塌缩；trial33、environment seed42、
-  policy seed330042 的 C58b-vs-D0 80-episode fresh LIBERO paired eval 正在 n0 运行，闭环完成前
-  不宣布收益。
+  visual-shuffle delta MSE `0.03163`。这只证明机制没有塌缩。首版 C58b-vs-D0 trial33 rollout
+  错把已验证 benchmark 的 `wait_steps=30`/默认 episode seed `33042` 改成了
+  `wait_steps=0`/显式 seed `330042`；固定 D0 因而从既有 trial33 的 `16/40` 退化为前 31 条
+  `0/31`，证实评测合同失效。该轮已 fail-closed 并归档为
+  `fresh-libero-trial33.invalid-wait0-20260816T093403Z`，不计 policy trial。修正版严格复用既有
+  `wait30`、`seed42 -> episode_seed33042` 合同重新配对 80 episodes；闭环完成前不宣布收益。
 - C56b 完整 FACT 端口的 mixed8 loss/scale gate 与 10-step optimizer canary 已通过：四类 rank
   配比固定为 `4 expert / 2 success / 1 observational failure / 1 causal failure`，30 层均有
   非零梯度，失败样本动作损失严格为零，future-to-action leak 为零，restore max-abs 为零。

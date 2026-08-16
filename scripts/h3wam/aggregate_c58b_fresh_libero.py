@@ -74,8 +74,9 @@ def _load_arm(
         or payload.get("replan_steps") != 8
         or payload.get("action_horizon") != 32
         or payload.get("model_evaluations") != 10
-        or payload.get("environment_seed") != 42
-        or payload.get("policy_noise_seed_base") != 330_042
+        or payload.get("wait_steps") != 30
+        or payload.get("environment_seed") is not None
+        or payload.get("policy_noise_seed_base") is not None
         or payload.get("normalized_action_pre_clamp") is not True
         or payload.get("sample_ensemble_size") != 1
         or payload.get("use_action_ensembler") is not False
@@ -91,6 +92,12 @@ def _load_arm(
             key = (suite, task_id, int(episode["trial"]))
             if key in pairs:
                 raise ValueError(f"duplicate paired episode: {arm}/{key}")
+            if (
+                episode.get("episode_seed") != 33_042
+                or episode.get("environment_seed") is not None
+                or episode.get("replan_noise_seeds") != list(range(33_042, 33_092))
+            ):
+                raise ValueError(f"paired episode seed mismatch: {arm}/{key}")
             pairs[key] = bool(episode.get("success"))
     expected = {(suite, task_id, 33) for task_id in range(10)}
     if set(pairs) != expected:

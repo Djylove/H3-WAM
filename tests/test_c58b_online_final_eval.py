@@ -139,7 +139,8 @@ def test_fresh_aggregate_requires_all_four_exact_suites(tmp_path, monkeypatch):
                 "task_ids": list(range(10)), "trial_indices": [33],
                 "trials_per_task": 1, "replan_steps": 8,
                 "action_horizon": 32, "model_evaluations": 10,
-                "environment_seed": 42, "policy_noise_seed_base": 330_042,
+                "wait_steps": 30,
+                "environment_seed": None, "policy_noise_seed_base": None,
                 "normalized_action_pre_clamp": True,
                 "sample_ensemble_size": 1, "use_action_ensembler": False,
                 "save_trajectories": False,
@@ -149,6 +150,9 @@ def test_fresh_aggregate_requires_all_four_exact_suites(tmp_path, monkeypatch):
                         "task_id": task,
                         "episodes": [{
                             "trial": 33,
+                            "episode_seed": 33_042,
+                            "environment_seed": None,
+                            "replan_noise_seeds": list(range(33_042, 33_092)),
                             "success": (
                                 task % 2 == 0
                                 if arm == "candidate_c58b" else task % 3 == 0
@@ -183,3 +187,6 @@ def test_final_watcher_pins_official_fastwam_source_for_eval_and_rollout():
     ).read_text(encoding="utf-8")
     assert "upstream-readonly/FastWAM-45d8e145/wan22" in source
     assert 'export H3WAM_FASTWAM_SOURCE_ROOT="${source_root}"' in source
+    assert "--wait-steps 30" in source
+    assert "--environment-seed" not in source
+    assert "--policy-noise-seed-base" not in source
