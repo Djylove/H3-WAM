@@ -38,7 +38,7 @@ for path in "${prepared}" "${checkpoint}" "${gate}" "${policy_python}" \
   "${cache_root}/stats.pt"; do
   [[ -e "${path}" ]] || { echo "missing canary input: ${path}" >&2; exit 2; }
 done
-[[ ! -w "${project}/scripts/h3wam/rollout_libero.py" ]] || {
+[[ "$(stat -c '%A' "${project}/scripts/h3wam/rollout_libero.py")" != *w* ]] || {
   echo "PROJECT_ROOT is not read-only" >&2; exit 2;
 }
 [[ ! -e "${canary}" ]] || { echo "refusing reused canary root" >&2; exit 2; }

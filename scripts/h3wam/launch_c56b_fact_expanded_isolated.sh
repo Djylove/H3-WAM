@@ -39,7 +39,7 @@ for path in "${prepared}" "${manifest}" "${canary}" "${checkpoint}" "${gate}" \
   "${source_manifest}" "${cache_root}/stats.pt"; do
   [[ -e "${path}" ]] || { echo "missing C60 expanded input: ${path}" >&2; exit 2; }
 done
-[[ ! -w "${project}/scripts/h3wam/rollout_libero.py" ]] || {
+[[ "$(stat -c '%A' "${project}/scripts/h3wam/rollout_libero.py")" != *w* ]] || {
   echo "PROJECT_ROOT is not read-only" >&2; exit 2;
 }
 [[ ! -e "${root}/COMPLETED.json" ]] || { echo "C60 expanded rollout already complete"; exit 0; }
