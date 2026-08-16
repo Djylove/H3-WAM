@@ -126,20 +126,51 @@ def test_fresh_aggregate_requires_all_four_exact_suites(tmp_path):
         "checkpoint_sha256": "a" * 64,
         "closed_loop_protocol": {"trial_indices": [33]},
     }), encoding="utf-8")
-    for suite in AGG.SUITES:
-        directory = tmp_path / suite
-        directory.mkdir()
-        payload = {
-            "policy": "h3_fastwam_online_int8", "suite": suite,
-            "task_ids": list(range(10)), "trial_indices": [33],
-            "replan_steps": 8, "action_horizon": 32, "model_evaluations": 10,
-            "use_action_ensembler": False, "checkpoint": str(checkpoint.resolve()),
-            "tasks": [
-                {"episodes": [{"trial": 33, "success": task % 2 == 0}]}
-                for task in range(10)
-            ],
-        }
-        (directory / "results.json").write_text(json.dumps(payload), encoding="utf-8")
-    result = AGG.aggregate(tmp_path, gate)
-    assert result["episodes"] == 40
-    assert result["successes"] == 20
+    d0_checkpoint = tmp_path / "d0.pt"
+    d0_checkpoint.write_bytes(b"d0")
+    for arm, policy in AGG.ARMS.items():
+        for suite in AGG.SUITES:
+            directory = tmp_path / arm / suite
+            directory.mkdir(parents=True)
+            arm_checkpoint = checkpoint if arm == "candidate_c58b" else d0_checkpoint
+            payload = {
+                "policy": policy, "suite": suite,
+                "task_ids": list(range(10)), "trial_indices": [33],
+                "trials_per_task": 1, "replan_steps": 8,
+                "action_horizon": 32, "model_evaluations": 10,
+                "environment_seed": 42, "policy_noise_seed_base": 330_042,
+                "normalized_action_pre_clamp": True,
+                "sample_ensemble_size": 1, "use_action_ensembler": False,
+                "save_trajectories": False,
+                "checkpoint": str(arm_checkpoint.resolve()),
+                "tasks": [
+                    {
+                        "task_id": task,
+                        "episodes": [{
+                            "trial": 33,
+                            "success": (
+                                task % 2 == 0
+                                if arm == "candidate_c58b" else task % 3 == 0
+                            ),
+                        }],
+                    }
+                    for task in range(10)
+                ],
+            }
+            (directory / "results.json").write_text(
+                json.dumps(payload), encoding="utf-8"
+            )
+    result = AGG.aggregate(tmp_path, gate, d0_checkpoint)
+    assert result["paired_episodes_per_arm"] == 40
+    assert result["candidate_successes"] == 20
+    assert result["control_successes"] == 16
+    assert result["paired_effect"]["candidate_wins"] == 12
+    assert result["paired_effect"]["control_wins"] == 8
+    assert 0.0 <= result["paired_effect"]["one_sided_p_candidate_better"] <= 1.0
+
+
+def test_exact_mcnemar_direction_and_no_discordance():
+    assert AGG._exact_mcnemar(0, 0)["one_sided_p_candidate_better"] == 1.0
+    strong = AGG._exact_mcnemar(10, 0)
+    assert strong["one_sided_p_candidate_better"] == pytest.approx(1 / 1024)
+    assert strong["two_sided_p"] == pytest.approx(2 / 1024)

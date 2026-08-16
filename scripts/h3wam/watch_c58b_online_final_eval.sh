@@ -8,6 +8,7 @@ sim_python="${SIM_PYTHON:-${workspace}/runtime/conda-py311/bin/python}"
 long_root="${C58B_LONG_ROOT:-${workspace}/outputs/c58b-fastwam-layerwise-v1/online-long10000}"
 eval_root="${C58B_FINAL_EVAL_ROOT:-${workspace}/outputs/c58b-fastwam-layerwise-v1/online-final-eval-v1}"
 checkpoint="${long_root}/checkpoints/c58b_online_s10000.pt"
+d0_checkpoint="${D0_CHECKPOINT:-${workspace}/outputs/dense-carrier-d0-h32-s20000-v1/checkpoints/d0_h32_s14000.pt}"
 long_ready="${long_root}/READY.json"
 balanced_report="${eval_root}/balanced80/report.json"
 balanced_ready="${eval_root}/balanced80/BALANCED80_READY.json"
@@ -26,7 +27,7 @@ trap 'rmdir "${lock}" 2>/dev/null || true' EXIT
 
 for path in "${project}" "${policy_python}" "${sim_python}" "${h3_checkpoint}" \
   "${h3_model}" "${source_manifest}" "${train_manifest}" "${val_manifest}" \
-  "${cache_root}/stats.pt"; do
+  "${cache_root}/stats.pt" "${d0_checkpoint}"; do
   [[ -e "${path}" ]] || { echo "missing C58b final input: ${path}" >&2; exit 2; }
 done
 
@@ -51,15 +52,29 @@ fi
   --report "${balanced_report}" --output "${balanced_ready}"
 
 run_suite() {
-  local suite="$1" gpu="$2" output="${rollout_root}/${suite}"
+  local arm="$1" suite="$2" gpu="$3"
+  local output="${rollout_root}/${arm}/${suite}"
+  local policy arm_checkpoint
+  local -a gate_args=()
+  if [[ "${arm}" == "candidate_c58b" ]]; then
+    policy="h3_fastwam_online_int8"
+    arm_checkpoint="${checkpoint}"
+    gate_args=(--c58b-balanced80-ready "${balanced_ready}")
+  elif [[ "${arm}" == "control_d0" ]]; then
+    policy="h3_dreamwam_kv_int8"
+    arm_checkpoint="${d0_checkpoint}"
+  else
+    echo "unknown C58b paired arm: ${arm}" >&2
+    return 2
+  fi
   [[ -s "${output}/results.json" ]] && return 0
   mkdir -p "${output}"
   CUDA_VISIBLE_DEVICES="${gpu}" \
   PYTHON_BIN="${sim_python}" SIM_SITE_PACKAGES="/tmp/h3-wam-libero-site" \
   bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
     "${sim_python}" "${project}/scripts/h3wam/rollout_libero.py" \
-    --policy h3_fastwam_online_int8 --policy-python "${policy_python}" \
-    --checkpoint "${checkpoint}" --c58b-balanced80-ready "${balanced_ready}" \
+    --policy "${policy}" --policy-python "${policy_python}" \
+    --checkpoint "${arm_checkpoint}" "${gate_args[@]}" \
     --cache-root "${cache_root}" --h3-checkpoint "${h3_checkpoint}" \
     --h3-model "${h3_model}" --dreamwam-source-manifest "${source_manifest}" \
     --device cuda:0 --suite "${suite}" --task-ids 0 1 2 3 4 5 6 7 8 9 \
@@ -73,7 +88,12 @@ run_suite() {
 pids=()
 index=0
 for suite in libero_spatial libero_object libero_goal libero_10; do
-  run_suite "${suite}" "${index}" &
+  run_suite candidate_c58b "${suite}" "${index}" &
+  pids+=("$!")
+  index=$((index + 1))
+done
+for suite in libero_spatial libero_object libero_goal libero_10; do
+  run_suite control_d0 "${suite}" "${index}" &
   pids+=("$!")
   index=$((index + 1))
 done
@@ -83,4 +103,5 @@ done
 
 "${sim_python}" scripts/h3wam/aggregate_c58b_fresh_libero.py \
   --root "${rollout_root}" --gate "${balanced_ready}" \
+  --d0-checkpoint "${d0_checkpoint}" \
   --output "${rollout_root}/RESULTS.json"
