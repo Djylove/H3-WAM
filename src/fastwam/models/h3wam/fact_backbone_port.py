@@ -855,6 +855,7 @@ def fact_backbone_port_losses(
     action_is_pad: torch.Tensor | None = None,
     action_loss_mask: torch.Tensor | None = None,
     future_loss_mask: torch.Tensor | None = None,
+    future_state_loss_mask: torch.Tensor | None = None,
     value_loss_mask: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Official-relative 10:1:0.4:0.4 flow losses with failure masking.
@@ -896,7 +897,9 @@ def fact_backbone_port_losses(
             width=predictions["future_state"].shape[-1],
             name="future_state_target",
         ),
-        future_loss_mask,
+        future_loss_mask
+        if future_state_loss_mask is None
+        else future_state_loss_mask,
     )
     value_loss = masked_track_loss(
         predictions["value"],

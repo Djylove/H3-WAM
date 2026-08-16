@@ -224,6 +224,26 @@ class H3FACTBackbonePortTest(unittest.TestCase):
         self.assertEqual(float(losses["future_representation_loss"]), 1.0)
         self.assertAlmostEqual(float(losses["loss"]), 1.8, places=6)
 
+    def test_future_state_mask_is_independent_from_visual_future_mask(self) -> None:
+        predictions = {
+            "action": torch.zeros(1, 2, 2),
+            "future_state": torch.ones(1, 1, 3),
+            "value": torch.zeros(1, 1, 1),
+            "future_representation": torch.ones(1, 1, 5),
+        }
+        losses = fact_backbone_port_losses(
+            predictions,
+            action_target=torch.zeros(1, 2, 2),
+            future_state_target=torch.zeros(1, 1, 3),
+            value_target=torch.zeros(1, 1, 1),
+            future_representation_target=torch.zeros(1, 1, 5),
+            future_loss_mask=torch.ones(1),
+            future_state_loss_mask=torch.zeros(1),
+        )
+        self.assertEqual(float(losses["future_state_loss"]), 0.0)
+        self.assertEqual(float(losses["future_representation_loss"]), 1.0)
+        self.assertEqual(float(losses["loss"]), 1.0)
+
     def test_c59_loader_keeps_base_value_but_rejects_fabricated_penalty(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
