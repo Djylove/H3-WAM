@@ -107,8 +107,12 @@ normalization stats、checkpoint、评测轨迹和事故证据不属于可删缓
   `wait30`、`episode_seed=42+task_id*100000+trial*1000` 合同重新配对 80 episodes（task0/trial33
   为 `33042`）；D0 的
   spatial/task0/trial33 已复现历史成功轨迹，初始物体状态、首个 32×7 action chunk 和 11 次
-  replan 首动作逐值 `max_abs=0`。聚合器同时修正为按实际 replans 校验早停成功 episode 的 seed
-  前缀，而非误要求固定 50 个 seed。闭环完成前不宣布收益。
+  replan 首动作逐值 `max_abs=0`。聚合器同时修正为按实际 replans 和 task-specific seed 校验早停成功
+  episode 的 seed 前缀，而非误要求固定 50 个 seed 或把所有 task 都写成 `33042`。corrected 40 对结果为
+  C58b `18/40=45%`、D0 `16/40=40%`，净增 `+5pp`；5 个 candidate wins、3 个 control wins，exact
+  one-sided McNemar `p=0.3633`。分 suite 为 spatial `6:7`、object `8:6`、goal `3:1`、LIBERO-10
+  `1:2`。这证明完整逐层 H3→FastWAM 训练首次把世界特征改善转成了正向闭环点估计，放行扩大配对评测；
+  单 trial 未达统计显著，不能据此升级擂主或宣称泛化。
 - C56b 完整 FACT 端口的 mixed8 loss/scale gate 与 10-step optimizer canary 已通过：四类 rank
   配比固定为 `4 expert / 2 success / 1 observational failure / 1 causal failure`，30 层均有
   非零梯度，失败样本动作损失严格为零，future-to-action leak 为零，restore max-abs 为零。

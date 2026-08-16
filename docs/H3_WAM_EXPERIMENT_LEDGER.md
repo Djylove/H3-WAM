@@ -1122,3 +1122,26 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - C61的1128分支采集保持在n3；已部署严格后台finalizer。只有node completion marker、1128个精确result与
   trajectory、冻结job/FROZEN SHA及每条branch身份全部通过，才生成C60兼容的failure dataset；未完成期间
   不写正式dataset/COMPLETED。C61完成后另开matched C56+C61 arm，禁止把新数据热插入在途C56 run。
+
+### 2026-08-16 — C58b完整逐层H3→FastWAM首次正向闭环点估计
+
+- C58b online 10000步最终checkpoint为
+  `/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt`，
+  SHA256 `2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541`；30/30层末段梯度非零、
+  fresh restore max-abs为0。online-H3/no-disk-KV balanced80通过6项门：normalized/physical MSE
+  `0.0593315/0.0254498`、gripper macro-F1 `0.936444`、prediction std `0.478793`、language delta
+  `0.231742`、visual-shuffle delta MSE `0.0316270`。
+- 首版trial33误用了`wait_steps=0`和显式seed `330042`，D0前31条归零。该轮已fail-closed并完整归档为
+  `fresh-libero-trial33.invalid-wait0-20260816T093403Z`，不计模型效果。corrected合同严格恢复历史
+  `wait_steps=30`、`episode_seed=42+task_id*100000+trial*1000`。固定D0的40条结果不仅复现
+  `16/40`，而且success、steps、replans、seed schedule、初始物体关节、首动作、首32×7 chunk及所有
+  replan首动作与C55历史逐值完全相同，40×10字段零mismatch。
+- corrected同初态、同seed、同replan8的40对结果：C58b `18/40=45%`，D0 `16/40=40%`，差`+5pp`；
+  discordant pair为C58b赢5、D0赢3，exact one-sided McNemar `p=0.36328125`、two-sided
+  `p=0.7265625`。suite分解为spatial `6/10 vs 7/10`、object `8/10 vs 6/10`、goal
+  `3/10 vs 1/10`、LIBERO-10 `1/10 vs 2/10`。最终报告：
+  `/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-final-eval-v1/fresh-libero-trial33/RESULTS.json`，
+  SHA256 `f7e9c8f65c177d33a3b168d0e0a47e79034d0054c99866a66ba09f82ee916ab3`。
+- 这是四条完整机制支线中首个“离线世界机制不塌缩且闭环点估计正向”的候选，结论为
+  `GO_EXPANDED_PAIRED_EVAL / NOT_PROMOTED`。40对中仅8个discordant，尚无统计显著性；必须扩大到多trial
+  配对闭环并检查spatial/LIBERO-10退化是否持续，不能把`+5pp`单trial结果写成泛化或新擂主结论。
