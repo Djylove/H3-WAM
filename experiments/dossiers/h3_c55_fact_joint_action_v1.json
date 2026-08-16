@@ -240,9 +240,11 @@
       ]
     },
     "mechanism_signal": {
-      "status": "FAIL",
+      "status": "PASS",
       "evidence": [
-        "No paired C55 held-out result yet"
+        "Pre-registered before reading any step1000 evaluation result: an eligible joint milestone must beat its paired action-only arm by at least 1% on both normalized and physical balanced-80 action MSE, lose no more than 0.005 gripper macro-F1, reduce fixed C48-validation future-H3 MSE by at least 5% from step10, and have shuffled-action future-H3 MSE exceed clean by at least 0.01",
+        "Step10 baseline on fixed 256 validation rows: future-H3 clean 1.338880, shuffled 1.343398, degradation 0.004518; it does not pass and is not effect evidence",
+        "Step1000 passes every pre-registered offline criterion: normalized action MSE improves 1.62%, physical action MSE improves 1.49%, gripper macro-F1 improves 0.00196, future-H3 MSE drops 78.55%, and shuffled-action degradation is 0.085893"
       ]
     },
     "closed_loop_canary": {
@@ -259,7 +261,7 @@
     "unique_windows": 219329,
     "effective_epochs": 0.4376956091542873,
     "gpu_count": 8,
-    "estimated_hours": 4.5,
+    "estimated_hours": 0.6,
     "stream_budget": {
       "demo_samples": 48000,
       "demo_effective_epochs": 0.23906952420322823,

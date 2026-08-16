@@ -995,5 +995,19 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   max-abs均为0。joint future-H3 loss降到`1.13..1.56`，共享block梯度从v1最高约28降到最高4.20；两条
   deployment-only导出又被既有balanced-80 evaluator以两个独立实例strict restore，固定噪声max-abs0。
   10-step物理action MSE为`0.024191/0.024195`，只说明动作路径未破坏，不作效果结论。
-- C55由`NO_GO`提升为`GO_LONG`：两臂各6000步、每1000保存并严格续训；估算每臂4.5小时（含I/O余量）。
+- C55由`NO_GO`提升为`GO_LONG`：两臂各6000步、每1000保存并严格续训；canary曾保守估算每臂4.5小时，
+  真实step1000摊销后action-only/joint仅耗时`204.68s/256.53s`，故总预算修正为约0.6小时（含分段I/O）。
   mechanism signal和fresh LIBERO closed-loop仍为FAIL/未测，长训结果不能自动升级为`EVIDENCE_READY`。
+- 在读取任何step1000评估结果前固定里程碑门（此时只看过训练机械报告）：joint相对同step action-only的balanced-80 normalized与physical
+  action MSE均至少改善1%，gripper macro-F1下降不超过0.005；同一固定256条C48 validation上future-H3
+  clean MSE相对step10至少下降5%，且shuffled-action MSE至少比clean高0.01。只有全部满足的里程碑才有资格
+  进入fresh闭环，多个合格点按physical MSE最低选择。step10基线future-H3 clean/shuffle为
+  `1.338880/1.343398`（差`0.004518`），明确不通过。
+- step1000固定机制评估随后完成：future-H3 clean MSE=`0.287156`，比step10下降78.55%；相同当前观测但
+  circular无自映射动作shuffle后为`0.373049`，退化`0.085893`。future-state/value shuffle退化也为
+  `+0.131194/+0.087338`。这通过机制半门，证明共享块学到了动作相关后果；仍须paired action MSE和fresh
+  closed-loop，不能单独升级为效果成功。
+- step1000 paired balanced-80也通过预注册半门：joint相对action-only的normalized action MSE从
+  `0.062424`降到`0.061413`（改善1.62%），physical MSE从`0.025925`降到`0.025540`（改善1.49%），
+  gripper macro-F1从`0.931255`升到`0.933214`；双臂fresh restore max-abs均为0。因此step1000是首个完整
+  eligible milestone，但仍按预注册跑完2k..6k，从所有eligible点中只选physical MSE最低者。

@@ -452,6 +452,13 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
 - **计划预算**：每arm 8卡、global batch16（8 demo+8 rollout）、6000 steps/96000 rows；分别是demo
   0.239 epoch、rollout 3.113 balanced effective epochs，每1000保存。正式墙钟由真实canary实测。
 - **当前许可**：全量18550条缓存审计、两臂8-rank BF16十步、native checkpoint恢复、D0兼容导出及既有
-  balanced-80 evaluator双实例恢复均PASS，已更新为`GO_LONG`。每arm 6000步、每1000保存，估算4.5小时。
+  balanced-80 evaluator双实例恢复均PASS，已更新为`GO_LONG`。每arm 6000步、每1000保存；step1000实测
+  action-only/joint为204.68/256.53秒，总墙钟预算据此修正为约0.6小时。
   当前仍为`NOT_EVIDENCE_READY`；离线paired mechanism gate通过后才允许用全新trials33+闭环，C53/C54
   状态不得复用作最终效果声明。
+- **预注册长训门**：joint同step相对action-only的normalized/physical action MSE均需至少改善1%，gripper
+  macro-F1最多下降0.005；固定C48 validation future-H3 MSE需比step10低至少5%，且无自映射动作shuffle
+  至少使MSE增加0.01。多个合格里程碑只按physical MSE最低选一个进入fresh闭环。
+- **首个信号**：step1000已完整过离线门：normalized/physical action MSE相对同step action-only改善
+  `1.62%/1.49%`，gripper macro-F1改善0.00196；future-H3 MSE相对step10下降78.55%，动作shuffle退化
+  0.085893。训练继续到6000以执行冻结的全里程碑选择，尚未得到fresh LIBERO成功率结论。
