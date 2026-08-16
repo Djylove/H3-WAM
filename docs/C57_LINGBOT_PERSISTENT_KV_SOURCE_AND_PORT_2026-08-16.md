@@ -140,7 +140,9 @@ model+runtime restore max_abs `0`、没有 candidate checkpoint。
 - AdamW LR `1e-5`、betas `(0.9,0.95)`、weight decay `0.1`、warmup10 后 constant；
 - 5000 optimizer steps，`400000 samples`；对 200779 个 unique dense windows 是 `1.9922 epochs`；
 - 每200步保存，500/1000/2000/3000/4000/5000 做异步 paired offline；
-- 墙钟必须由真实 10-step probe 测量：`hours=5000*seconds_per_step/3600`，当前为 `UNKNOWN`；
+- 8卡10-step canary 实测平均 `7.961 s/step`、范围 `7.257..9.799 s/step`、峰值显存
+  `4.382 GiB/rank`；long 起跑后稳定约 `6.4..7.4 s/step`。纯训练估算 `8.9..10.3 h`，计入
+  每200步完整 checkpoint 与共享盘波动按约 `10.5..13.6 h` 规划；
 - control 唯一不启用 persistent cache，其他全部一致。
 
 ## 2026-08-16 sequence/canary 更新
@@ -152,7 +154,12 @@ model+runtime restore max_abs `0`、没有 candidate checkpoint。
   commit；本地与云端9项测试通过。真实 LIBERO process trace 仍是 evaluation gate。
 - 真实 A800 机械 probe PASS：disabled/restore max_abs=0，history K grad norm `0.56703049`，峰值显存
   `3.3634 GiB`。
-- canary 许可已升为 `GO_CANARY`；8卡10-step通过后才可启动5000-step长训。
+- 8卡 canary 已 `10/10 PASS`：loss 全 finite、每步 action head 非零更新、strict checkpoint restore
+  `max_abs=0`；aggregate train report SHA256 为
+  `177720b1d70c587ef7fe493492731192f587b652ef5f51bc498c7bd8b699bc62`。
+- 5000-step 长训已于 `2026-08-16 05:32:34 UTC` 在 n1 启动，路径
+  `/mnt/h3-wam/outputs/c57-lingbot-persistent-kv/long5000`，8×A800、global batch80、save200；
+  首个 step200 checkpoint ETA 为 `05:57 UTC / 13:57 CST`。
 
 尚未完成的效果门：
 
@@ -161,5 +168,5 @@ model+runtime restore max_abs `0`、没有 candidate checkpoint。
    video denoise，必须把 H3 I2V future K/V 作为独立 carrier 输入并单独做延迟/效果消融，不能静默宣称
    与官方 Wan future cache 完全相同。
 
-通过真实机械 probe、sequence manifest/data audit 和 rollout wire canary 后，dossier 才能改为
-`GO_CANARY`；在此之前禁止启动5000步正式训练。
+训练与恢复门已经允许 `LONG_RUNNING`，但这仍不是效果证据。只有真实 LIBERO process trace、固定
+milestone paired closed-loop 与完整 benchmark 通过后，才能声称 persistent lifecycle 提高动作成功率。

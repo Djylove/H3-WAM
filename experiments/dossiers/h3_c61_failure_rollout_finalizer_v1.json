@@ -1,0 +1,70 @@
+{
+  "experiment_id": "h3_c61_failure_rollout_finalizer_v1",
+  "classification": "causal_failure_training_data",
+  "hypothesis": "Four exact-state action-resampling branches per d3/d5 parent state increase failure diversity while preserving FACT's no-failure-imitation and observed-future/value contracts.",
+  "parent_source": "C48 train-split successful parent episodes only",
+  "source_identity": {
+    "status": "PASS",
+    "c61_frozen_sha256": "17f39b26cd033171bc9cc0afad819ea6b2794f24d1e03d4218c988969a76f6b4",
+    "c61_jobs_sha256": "6e2d76e60cdf2a514cb5378c9b0cccf56a97df7b7698b74d1729a28dfa487666",
+    "c48_dataset_sha256": "d416d86c09ba334fae449a131510b84fa1d111e665a77eabfb248f1c79a5bc61",
+    "c48_observations_sha256": "399d93f31a8f26297145942387a233b9667049efc60ac1f46514a3f7ce77a638",
+    "inventory": {
+      "sources": 141,
+      "groups": 282,
+      "jobs": 1128,
+      "distances_replans": [3, 5],
+      "candidates_per_group": 4
+    }
+  },
+  "alignment": {
+    "split": {
+      "contract": "Hash and split by source_id plus successful C48 parent episode; both d3/d5 and all four candidates remain together.",
+      "status": "PASS_IN_CODE"
+    },
+    "selection": {
+      "contract": "Audit every frozen job but retain only terminal failed branches in the training dataset.",
+      "status": "PASS_IN_CODE"
+    },
+    "onset": {
+      "contract": "The frozen exact sim-state branch start is the explicit causal action-intervention onset; no visual irreversible-failure onset is inferred.",
+      "status": "PASS_IN_CODE"
+    },
+    "action": {
+      "contract": "Observed failed-branch actions remain clean causal inputs, but action_loss_mask is exactly 0 for every retained row.",
+      "status": "PASS_IN_CODE"
+    },
+    "future_and_value": {
+      "contract": "Future observation/state comes from an exact later row or terminal observation of the actual failed branch; terminal time/outcome supplies FACT code remaining+1 and paper progress-1 separately.",
+      "status": "PASS_IN_CODE"
+    },
+    "branch_identity": {
+      "contract": "Result launch fields, parent path/index/step, seeds, first JSON action chunk and saved NPZ first action chunk must all match the frozen job exactly.",
+      "status": "PASS_IN_CODE"
+    }
+  },
+  "compatibility": {
+    "training_format": "h3wam-c60-counterfactual-failure-dataset-v1",
+    "generation": "h3wam-c61-finalized-fact-failure-dataset-v1",
+    "rationale": "C61 reuses the already-audited C60 FACT loader semantics without changing model code; provenance and identities remain explicit C61 fields."
+  },
+  "gates": {
+    "synthetic_unit_tests": "PASS_4_OF_4_INCLUDING_INCOMPLETE_COLLECTION_FAIL_CLOSED",
+    "real_frozen_inventory": "PASS_141_SOURCES_282_GROUPS_1128_JOBS",
+    "partial_real_branch_audit": "PASS_READ_ONLY_172_RESULTS_51_FAILURES_1798_FAILURE_SAMPLES_956_MISSING_AT_2026-08-16T05:42Z",
+    "collection_complete": "PENDING",
+    "real_finalization": "PENDING",
+    "training_permission": "NO_GO_UNTIL_COMPLETED_MARKER_AND_FINALIZER_PASS"
+  },
+  "artifacts": {
+    "source_root": "/mnt/h3-wam/eval/c61-failure-rollout-expansion-v1",
+    "final_root": "/mnt/h3-wam/eval/c61-finalized-fact-failure-dataset-v1",
+    "finalizer": "scripts/h3wam/finalize_c61_failure_rollout_dataset.py",
+    "launcher": "scripts/h3wam/finalize_c61_failure_rollout_dataset.sh",
+    "tests": "tests/test_finalize_c61_failure_rollout_dataset.py"
+  },
+  "decision": {
+    "status": "READY_WAITING_COLLECTION",
+    "rationale": "Formal finalization requires 1128/1128 exact result coverage plus every node COMPLETED marker. Before that, only explicit --audit-inventory is allowed and it is read-only: it never creates dataset.pt or COMPLETED.json."
+  }
+}

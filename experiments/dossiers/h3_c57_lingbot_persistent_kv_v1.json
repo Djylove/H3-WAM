@@ -119,8 +119,8 @@
         "field": "paired post-training budget",
         "paper": "Post-train the causal world-action model for downstream control.",
         "upstream_code": "LIBERO: eight GPUs, microbatch1, accumulation10, AdamW lr1e-5 betas0.9/0.95 wd0.1, warmup10, 5000 steps, save200.",
-        "local": "Planned matched C57/control arms use the exact optimizer and 400000 samples from the same D0 initialization; real seconds/step is not measured yet.",
-        "status": "UNKNOWN",
+        "local": "C57 long5000 uses eight A800 ranks, microbatch1, accumulation10, AdamW lr1e-5 betas0.9/0.95 wd0.1, warmup10 then constant, save200 and 400000 samples from D0-s14000. Canary mean was 7.961 s/step and the long run started at 2026-08-16 05:32:34 UTC.",
+        "status": "EQUIVALENT",
         "evidence": [
           "third_party/code_audit/lingbot-va/wan_va/configs/va_libero_train_cfg.py:13",
           "scripts/h3wam/probe_c57_lingbot_persistent_kv.py"
@@ -175,9 +175,9 @@
       ]
     },
     "optimization_contract": {
-      "status": "FAIL",
+      "status": "PASS",
       "evidence": [
-        "Official 5000-step resolved optimizer is recorded, but real D0 persistent seconds/step and peak VRAM are pending."
+        "8-GPU canary 10/10 PASS: finite loss 0.337998..0.728052, nonzero head updates, mean 7.961 s/step, peak allocated 4.382 GiB; strict checkpoint restore max_abs=0. Long5000 is running with save200."
       ]
     },
     "evaluation_contract": {
@@ -230,14 +230,14 @@
     "unique_windows": 200779,
     "effective_epochs": 1.9922398248825817,
     "gpu_count": 8,
-    "estimated_hours": null,
-    "estimated_hours_status": "UNKNOWN_PENDING_REAL_PROBE",
-    "estimate_formula": "5000*measured_seconds_per_step/3600; measurement pending"
+    "estimated_hours": "10.5-13.6 including checkpoint and shared-storage allowance",
+    "estimated_hours_status": "MEASURED_CANARY_AND_LONG_START",
+    "estimate_formula": "compute-only 5000*(6.4..7.4)/3600=8.9..10.3h; operational allowance includes save200 and shared-storage variance"
   },
   "decision": {
-    "status": "GO_CANARY",
+    "status": "LONG_RUNNING",
     "effect_status": "NOT_EVIDENCE_READY",
-    "rationale": "Source, sequence, synthetic architecture and real BF16 mechanical gates pass. The authorized 8-GPU 10-step canary is running; long training is allowed only if its finite/update/checkpoint gates pass. C57 is explicitly a five-block D0 persistent-lifecycle port, not the official 30-layer shared world/action architecture.",
-    "launch_command": "Run the 8-GPU 10-step C57 canary with microbatch1/accum10/AdamW1e-5; on PASS start the source-backed 5000-step budget."
+    "rationale": "Source, sequence, architecture, real BF16 mechanical, 8-GPU canary and strict restore gates pass; long5000 started on n1. Effect remains NOT_EVIDENCE_READY until real LIBERO lifecycle traces and paired closed-loop milestones pass. C57 is explicitly a five-block D0 persistent-lifecycle port, not the official 30-layer shared world/action architecture.",
+    "launch_command": "/mnt/h3-wam/candidate-d0-rollout-96976ce/project/scripts/h3wam/launch_c57_n1_long.sh"
   }
 }
