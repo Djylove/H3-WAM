@@ -102,6 +102,31 @@ the same loop releases automatically and consumes step2000 onward in order.
 An incomplete or crashed C56 remains fail-closed instead of silently stealing
 its reservation.
 
+## Long-run budget and final relay audit
+
+The frozen C57 train sequence manifest contains 200,779 windows (SHA256
+`8f95005ac66fd89ca3a22a80d75480e9792b09f976e928f2eb70d4f08680049f`).
+The actual global batch is eight ranks times ten accumulation samples = 80.
+At step3237 the run had therefore consumed 258,960 samples, or 1.2898
+effective epochs.  The pre-registered step5000 budget is 400,000 samples, or
+1.9922 effective epochs.  The last-50-step mean at this audit was 6.6361
+seconds, giving 11,699 seconds (3.25 hours) of training wall time remaining;
+heldout catch-up and any authorized rollout are separate.
+
+The step3000 and step3200 checkpoints both have the expected 2,099,867,657
+bytes and no `.partial` sibling.  The final relay remains fail-closed and
+ordered:
+
+1. the queue must strictly restore and forward the fixed 80 samples for
+   `c57_step05000.pt`, preserving plan SHA256
+   `7d69a2aded4753985ac31c44f25ba0e88fab1fa47906621390df0fc5de07f73a`;
+2. the watcher also waits for the complete 5000-step train report;
+3. the finalizer rechecks checkpoint schema, all finite/nonzero updates,
+   exact sample/RNG order and explicit strict-restore evidence;
+4. only `PASS_C57_FINAL_OFFLINE_GATE / GO_FRESH_LIBERO_CANARY` can enter the
+   fixed four-suite paired canary.  `NO_GO`, missing artifacts, mismatched
+   hashes or restore failure launch nothing.
+
 ## Frozen heldout learning curve (same 80 samples and RNG)
 
 | step | C57 mean | D0 mean | relative improvement | sample wins | decision |
