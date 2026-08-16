@@ -108,3 +108,13 @@ def test_control_freeze_is_exact_trials34_through49():
     assert AUDIT.TRIALS == tuple(range(34, 50))
     assert AUDIT.D0_SHA256 == AGG.D0_SHA256
     assert len(AUDIT.SUITES) * len(AUDIT.TRIALS) * 10 == 640
+
+
+def test_finalizer_waits_for_full_completion_before_aggregate():
+    source = (
+        ROOT / "scripts/h3wam/watch_c58b_expanded_paired_finalizer.sh"
+    ).read_text(encoding="utf-8")
+    wait = source.index('while [[ ! -s "${completed}" ]]')
+    aggregate = source.index('"${python_bin}" "${script_root}/aggregate_c58b_expanded_paired_eval.py"')
+    assert wait < aggregate
+    assert "--workers 8 --output" in source
