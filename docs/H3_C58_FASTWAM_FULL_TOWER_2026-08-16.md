@@ -143,5 +143,32 @@ bytes；训练所需 80,000-window slice 的纯 tensor 约 `2.202 TB`，全 200,
 - 8-GPU cache-canary80 与 10-step BF16 probe launcher；
 - C58 + C58b + evaluator 共 16 项本地测试通过。
 
+## 在线冻结 H3 训练决策（2026-08-16）
+
+30 层 K/V 全量落盘路径已退役。80 条 cache canary 实测约 2.20 GB，线性外推
+80000 条约 2.20 TB，而且每条预计算约 13–16 秒；这不是长训的合理数据边界。
+现在每个 DDP rank 独立运行冻结 INT8 H3，将 30 层 K/V 保留在显存并直接交给
+完整 ActionDiT。磁盘只保存原有 VAE 首帧 latent、文本 context、动作和状态，不保存
+H3 K/V。
+
+真实门禁结果：
+
+- 单 A800 在线 H3 与已退役 cache oracle 的 30×K/V 和动作输出逐位一致；完整
+  backward/AdamW 后 30 个 ActionDiT block 全有非零梯度。报告 SHA256 为
+  `84a1a541dcfbfb1a083af0cfd5de79b6c1c0b2d5f0ba0279d9a82890a968a1fc`，
+  峰值 allocated 41.46 GB，热态总步约 1.02 秒。
+- 8×A800、global batch 8、10 步 DDP 门禁消费 80 个互异窗口和 80 个互异 flow
+  seed；每步 30 层梯度均非零。每 rank 峰值 allocated 42.401 GB、reserved
+  43.742 GB。
+- 12.18 GB s10 checkpoint 在 8 rank 上严格恢复，probe prediction
+  `max_abs=0`。READY SHA256 为
+  `457588c7d1c8edfbfaf9f7406c54b95ab8e50a905767175cd62ff9989a1bb5b4`。
+- 已放行隔离的 online 10000-step 长训，每 1000 步保存一次；这仍是训练机制放行，
+  不是 LIBERO 成功率证据。完成后必须按固定 closed-loop protocol 测试。
+
+旧 C58 缓存对照臂 checkpoint 的 probe identity 与合同保持字节兼容：fresh run 的
+probe 默认跟随当前 slice；resume 则从 checkpoint 保存的 sample ID 反查唯一 manifest
+行。不得通过改 checkpoint 或跳过 strict restore 解决历史恢复问题。
+
 尚未执行真实 cache/probe，因为现有四台服务器分别被 C58、C57、C60 cache
 和 rollout 占用；需要等待一台 8×A800 释放，或增加一台同规格资源。
