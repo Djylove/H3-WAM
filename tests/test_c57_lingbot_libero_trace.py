@@ -169,3 +169,9 @@ def test_sequence_capacity_failure_does_not_publish_manifest(tmp_path: Path) -> 
     assert "persistent token capacity exceeded" in result.stderr
     assert not output.exists()
     assert not audit.exists()
+
+
+def test_paired_evaluator_keeps_training_autocast_boundary() -> None:
+    source = Path("scripts/h3wam/evaluate_c57_heldout_paired.py").read_text()
+    assert 'torch.autocast(device_type="cuda", dtype=torch.bfloat16)' in source
+    assert "with torch.inference_mode(), autocast:" in source

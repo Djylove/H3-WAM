@@ -9,6 +9,7 @@ import importlib.util
 import json
 import math
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -109,7 +110,12 @@ def main() -> None:
         noisy, target, timesteps = TRAINER.PARENT.PARENT.deterministic_flow_batch(
             batch["actions"], scheduler, seed=seed
         )
-        with torch.inference_mode():
+        autocast = (
+            torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+            if device.type == "cuda"
+            else nullcontext()
+        )
+        with torch.inference_mode(), autocast:
             c57_prediction = c57(batch, noisy, timesteps)
             d0_prediction = TRAINER.PARENT.forward_policy(
                 d0, batch, noisy, timesteps
