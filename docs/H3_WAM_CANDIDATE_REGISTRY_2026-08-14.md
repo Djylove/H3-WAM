@@ -419,3 +419,39 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
 - 当前唯一授权路线为C42→C43：把新source固定分成五个train trials和五个从未拟合/选型的final trials，
   再扩大controlled first-action causal branches。只有两个split均达到预注册mixed-group门，才训练C44；
   在C44 fresh ranking和后续固定闭环成功前，不登记新擂主。
+
+### C55：FACT joint-action auxiliary backbone port（2026-08-16）
+
+- **赛道与谱系**：action objective + consequence；直接父擂主固定为
+  `D0-H32-s14000/replan8/no-ensemble`，checkpoint SHA256
+  `36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3`。D0仍是当前擂主，C55只是候选，
+  尚不是赛道冠军；fusion lineage为`D0 carrier -> C55 joint auxiliary candidate`。
+- **一句话假设**：在相同D0权重、H3 K/V、动作样本、flow noise与优化预算下，让干净执行动作经同一
+  ActionDiT block预测未来H3/状态/value，会比action-only续训产生更强的episode-disjoint动作条件能力和
+  fresh LIBERO成功率。
+- **来源**：FACT论文`arXiv:2608.10232v1`；官方代码固定`618a6c168686`。2026-08-16复核官方main为
+  `9427ea451e80`，相对本地固定版本只增加README live-demo三行，训练/模型/transform/config执行代码无变化。
+- **不是官方复现**：FACT使用Wan2.2的完整causal token mask与RGB/state/value flow matching；C55是
+  `backbone_port`，使用冻结INT8 H3和D0五层DreamWAM ActionDiT。部署动作forward逐值不变；训练时另以
+  `t=0`干净执行动作跑相同block，future target只进入loss，不可能反向泄漏给动作输入。
+- **数据/动作合同**：每步每个8卡arm消费8个v7 dense expert demo、4个成功rollout row、4个失败rollout
+  row。C48 train为15417 rows/400 episodes，validation为3133/80，overlap0；每episode train覆盖
+  min/median/mean/max=`9/50/38.5425/50`个replan8状态。失败动作不模仿。由于没有FACT要求的
+  `failure_active` onset，失败value也mask；真实future H3/state仍用于两类episode。rollout环境gripper按
+  `dataset=(1-env)/2`精确取逆，再用D0原min-max且不clamp；单测与真实`rollout_000000` round-trip通过。
+- **损失**：两臂action完全相同；候选只新增future-H3/state/success-only-value。FACT官方
+  `10:1:0.4:0.4`整体除以10，得到保持D0 action LR尺度的`1:0.1:0.04:0.04`。第一轮机械canary发现
+  未缩放H3随机投影RMS为66.85、MSE约4600，因此按train样本分布逐维z-score，validation/final不进入
+  统计；修正后目标RMS为1、MSE为1.13..1.56。8项C55测试及原carrier suite通过，包括父动作逐值相同、
+  target不可影响action forward、aux-only gradient进入共享ActionDiT block。
+- **缓存与infra**：真实五层K/V smoke为每层`[32,56,128] BF16`、10份storage全独立且finite，单样本
+  4,592,421 bytes。train+validation需18550个current observation，预计约85.2GB。32卡正式生成首次在
+  三节点暴露系统CUDA库优先导致`CUBLAS_STATUS_NOT_INITIALIZED`；无样本写入即退出并保留日志。将PyTorch
+  wheel的`nvidia/cu13/lib`置于`LD_LIBRARY_PATH`首位后，三节点各自真实单样本探针通过，再只重启其未写
+  shard；32611原8个正常shard不停。
+- **计划预算**：每arm 8卡、global batch16（8 demo+8 rollout）、6000 steps/96000 rows；分别是demo
+  0.239 epoch、rollout 3.113 balanced effective epochs，每1000保存。正式墙钟由真实canary实测。
+- **当前许可**：全量18550条缓存审计、两臂8-rank BF16十步、native checkpoint恢复、D0兼容导出及既有
+  balanced-80 evaluator双实例恢复均PASS，已更新为`GO_LONG`。每arm 6000步、每1000保存，估算4.5小时。
+  当前仍为`NOT_EVIDENCE_READY`；离线paired mechanism gate通过后才允许用全新trials33+闭环，C53/C54
+  状态不得复用作最终效果声明。

@@ -274,7 +274,7 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
             for _ in self.carrier_layers
         ]
 
-    def forward(
+    def forward_hidden(
         self,
         noisy_actions: torch.Tensor,
         timestep: torch.Tensor,
@@ -285,7 +285,14 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
         text_mask: torch.Tensor | None = None,
         executed_action_history: torch.Tensor | None = None,
         executed_action_history_valid: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the normal action prediction and its final shared token state.
+
+        The public ``forward`` contract remains action-only.  This explicitly
+        named training hook lets causal auxiliary objectives reuse the exact
+        same ActionDiT blocks without changing deployment or exposing future
+        targets to the action path.
+        """
         if (
             not self.enabled
             or self.action_expert is None
@@ -402,4 +409,28 @@ class H3DreamWAMKVCarrierPolicy(nn.Module):
                 action_state["context"],
                 action_state["context_mask"],
             )
-        return self.action_expert.post_dit(action_tokens)
+        return self.action_expert.post_dit(action_tokens), action_tokens
+
+    def forward(
+        self,
+        noisy_actions: torch.Tensor,
+        timestep: torch.Tensor,
+        *,
+        text_context: torch.Tensor,
+        proprio: torch.Tensor,
+        video_kv_cache: Mapping[int, Mapping[str, torch.Tensor]],
+        text_mask: torch.Tensor | None = None,
+        executed_action_history: torch.Tensor | None = None,
+        executed_action_history_valid: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        prediction, _ = self.forward_hidden(
+            noisy_actions,
+            timestep,
+            text_context=text_context,
+            proprio=proprio,
+            video_kv_cache=video_kv_cache,
+            text_mask=text_mask,
+            executed_action_history=executed_action_history,
+            executed_action_history_valid=executed_action_history_valid,
+        )
+        return prediction

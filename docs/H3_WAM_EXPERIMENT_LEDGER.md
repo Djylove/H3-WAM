@@ -959,3 +959,41 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   FACT把action、future-state、value置于同一非线性Transformer联合训练的核心。下一条主线应回到动作生成：
   H3冻结，联合训练小型action expert与future/value auxiliary，并对action-only D0做严格配对；不得再对
   C53/C54调ranker阈值或补trial。
+
+### 2026-08-16 — C55共享动作块的FACT式联合辅助路线启动
+
+- 官方FACT身份重新核验：本地训练代码固定`618a6c16868699b6d4138941de6a863589ac00dd`且clean；远端
+  main为`9427ea451e806220742148049ef0576e43ef7382`，两者唯一差异是README增加live demo，模型、trainer、
+  transform和config无变化。论文为`arXiv:2608.10232v1`。
+- C55不再使用C50外置value scorer。`H3DreamWAMKVCarrierPolicy`新增显式`forward_hidden`训练hook，原
+  public action forward保持不变；`H3FactJointAuxPolicy`以干净执行动作的隔离第二次forward复用完全相同
+  ActionDiT blocks，再预测future-H3、future-state和value。15项云端单测PASS：包括父动作bit-exact、
+  future target不可进入action forward、aux-only loss对共享block和aux head均产生finite非零梯度。
+- C48数据重审：train/validation/final为15417/3133/3009 rows，分别400/80/80 episodes，三者overlap0；
+  train成功/失败rows为2467/12950。训练时按每8卡4成功+4失败平衡；失败动作mask。由于轨迹没有FACT的
+  failure-active onset，失败value也mask，不伪造penalty；两类row仍用实际future H3/state作后果监督。
+- 环境动作到D0训练动作的gap已显式修复：motion保持不变，gripper执行映射严格取逆
+  `dataset=(1-env)/2`，再走D0原min-max且不clamp。单测与真实`rollout_000000` loader smoke都通过；该样本
+  得到actions范围`[-0.64453125,1.0]`、future-H3 256维、future-state 8维。
+- C55 K/V smoke真实运行INT8 H3：层9/19/29/39/49各有独立K/V，shape均`[32,56,128]` BF16且finite；
+  单文件4,592,421 bytes。正式目标为train+validation 18550个current observation，约85.2GB。
+- 32卡正式缓存首轮只有32611正常；30907/32409/30234在首个H3 Linear前报
+  `CUBLAS_STATUS_NOT_INITIALIZED`，没有写入正式item，归类infra。三节点将PyTorch wheel cu13 runtime置于
+  系统CUDA前后，各自真实单样本在1.45–1.53秒通过，随后仅重启shards8..31；shards0..7保持运行且不覆盖。
+- 预注册两臂预算为各8卡、6000 steps、每step 8 demo+4 success rollout+4 failure rollout，global
+  batch16、96000 rows；相当于demo 0.239 epoch和balanced rollout 3.113 effective epochs。正式训练在
+  全缓存审计及两臂真实BF16 step/restore前仍为`NO_GO`；当前只有cache prep许可，效果
+  `NOT_EVIDENCE_READY`。
+- C55缓存最终审计PASS：train+validation精确覆盖`18550/18550`个观测、32/32 shard、85,189,409,550
+  bytes，missing/extra/partial均为0。第一轮joint机械canary暴露未经标准化的随机投影H3 target RMS
+  `66.8458`，future-H3 MSE约`4480..4709`，使总loss约225；该v1只保留为scale-audit失败，未进入长训。
+- 对照官方FACT可见其visual target是在缩放VAE latent上做flow velocity，并非未缩放隐藏投影。C55 v2
+  因此只用C48 train样本分布逐维z-score未来H3，validation/final不参与统计；15417个train target归一化
+  后RMS=`1.0`、最大绝对均值`1.14e-6`、逐维std=`0.99999994..1.0`，统计SHA256为
+  `e9d404b4edfb8cff0b9ebcc3570d330141b4c8cc67adc1befd0013c034eb2618`。
+- v2 action-only/joint-aux各自完成8卡10-step及严格恢复，耗时`20.25s/23.02s`，两者restore probe
+  max-abs均为0。joint future-H3 loss降到`1.13..1.56`，共享block梯度从v1最高约28降到最高4.20；两条
+  deployment-only导出又被既有balanced-80 evaluator以两个独立实例strict restore，固定噪声max-abs0。
+  10-step物理action MSE为`0.024191/0.024195`，只说明动作路径未破坏，不作效果结论。
+- C55由`NO_GO`提升为`GO_LONG`：两臂各6000步、每1000保存并严格续训；估算每臂4.5小时（含I/O余量）。
+  mechanism signal和fresh LIBERO closed-loop仍为FAIL/未测，长训结果不能自动升级为`EVIDENCE_READY`。

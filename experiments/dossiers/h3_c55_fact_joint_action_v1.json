@@ -1,0 +1,278 @@
+{
+  "experiment_id": "h3_c55_fact_joint_action_v2",
+  "classification": "backbone_port",
+  "hypothesis": "Starting from the frozen-H3 D0-H32-s14000 action expert, adding clean-executed-action-conditioned future-H3 and future-state losses through the same ActionDiT blocks improves episode-disjoint action conditioning and fresh LIBERO success over an otherwise identical action-only continuation arm.",
+  "single_variable": "The candidate adds a training-only clean-action consequence pass and future-H3/future-state/success-only-value heads over the same five D0 ActionDiT blocks; parent weights, H3 K/V, demo and rollout rows, flow noise, optimizer, sample order and deployed action forward are unchanged.",
+  "parent_baseline": "D0-H32-s14000/replan8/no-ensemble checkpoint SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FACT: Failure-Aware Causal Training for World-Action Models",
+      "locator": "https://arxiv.org/abs/2608.10232",
+      "revision": "v1 (2026-08-10)",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Bariona/FACT official repository",
+      "locator": "https://github.com/Bariona/FACT",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3-WAM C55 FACT backbone port",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "parent afa025e6ea29c9e977b2f684718fb30852aaf102 + C55 working diff",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "world backbone and action carrier",
+        "paper": "Wan2.2 causal joint diffusion Transformer",
+        "upstream_code": "WanTransformer3DModel with robot and future token tracks",
+        "local": "Frozen INT8 MiniMax-H3 five-layer K/V plus pinned five-block DreamWAM ActionDiT D0 carrier",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/FACT/world_action_model/models/transformer_wa_casual.py:1150",
+          "src/fastwam/models/h3wam/dreamwam_kv_carrier.py:102"
+        ],
+        "rationale": "This is an H3 backbone port that preserves the proven deployable D0 action carrier; it is not an official FACT reproduction."
+      },
+      {
+        "field": "future-to-action leakage boundary",
+        "paper": "Predicted action sees prefix and itself; clean action conditions future tracks; future tracks cannot enter predicted action",
+        "upstream_code": "Teacher-forcing causal mask isolates A and lets SV/I see clean G",
+        "local": "Deployed action is one unchanged forward; consequence targets use an isolated second pass of clean executed actions through the same blocks and are never model inputs",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "third_party/FACT/world_action_model/models/transformer_wa_casual.py:48",
+          "src/fastwam/models/h3wam/fact_joint_aux.py:50",
+          "tests/test_h3_fact_joint_aux.py"
+        ],
+        "rationale": "The local two-pass boundary is stricter than the mask for leakage: the action call has no future tensors, while auxiliary gradients still reach shared blocks."
+      },
+      {
+        "field": "future prediction heads",
+        "paper": "Flow-match future RGB, future state and value",
+        "upstream_code": "Separate future_state/value decoders plus video decoder over shared Transformer tokens",
+        "local": "Direct MSE heads predict train-split sample-weighted per-dimension z-scored 256D future H3 representation, normalized 8D proprioception and success-only progress value from pooled clean-action tokens",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py:803",
+          "src/fastwam/models/h3wam/fact_joint_aux.py:110"
+        ],
+        "rationale": "Frozen H3 representation replaces RGB decoding to keep 32-card work focused on action learning; direct heads are a smaller diagnostic port."
+      }
+    ],
+    "data": [
+      {
+        "field": "expert demonstration stream",
+        "paper": "RoboTwin demonstrations and failure rollouts",
+        "upstream_code": "Selected RoboTwin LeRobot datasets with dense frame windows",
+        "local": "200779 episode-disjoint dense LIBERO train windows across all four suites",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl",
+          "manifest SHA256 b0d611c21059fa7da6fb08162b03efadd59aff68354bb101be41d3ae20d98eb1"
+        ],
+        "rationale": "The project benchmark is LIBERO and keeps the existing D0 training contract."
+      },
+      {
+        "field": "rollout consequence stream and split",
+        "paper": "Executed action, observed future and failure-active metadata",
+        "upstream_code": "Failure episodes skip action imitation but observed future/value train",
+        "local": "C48 train has 15417 rows/400 episodes; validation has 3133 rows/80 disjoint episodes; actual replan8 actions concatenate to horizon32",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "/mnt/h3-wam/eval/c48-fact-dense-value-dataset-v1/dataset.pt",
+          "dataset SHA256 d416d86c09ba334fae449a131510b84fa1d111e665a77eabfb248f1c79a5bc61"
+        ],
+        "rationale": "Episode outcomes exist but causal failure onset does not; failure action and value are therefore masked, while observed future H3/state remain valid targets."
+      },
+      {
+        "field": "state coverage",
+        "paper": "Dense per-frame clips",
+        "upstream_code": "Frame-indexed LeRobot windows",
+        "local": "C48 train per episode min/median/mean/max rows are 9/50/38.5425/50; validation 12/50/39.1625/50",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "C55 split audit 2026-08-16",
+          "docs/H3_WAM_EXPERIMENT_LEDGER.md"
+        ],
+        "rationale": "Rollout states are dense at every replan8 decision, not five snapshots, but are not every simulator frame."
+      }
+    ],
+    "action": [
+      {
+        "field": "action horizon, representation and gripper",
+        "paper": "48-step RobotWin delta action normalized with official stats",
+        "upstream_code": "Delta state dimensions and action_loss_mask",
+        "local": "32-step LIBERO absolute environment actions invert deployment gripper by dataset=(1-env)/2, then use exact D0 min-max normalization without clamp",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/train_c55_fact_joint_action.py:75",
+          "tests/test_h3_fact_joint_aux.py",
+          "actual rollout_000000 loader smoke"
+        ],
+        "rationale": "This is the existing D0/LIBERO execution contract; actual valid actions pass exact environment-to-dataset round-trip at atol 1e-7."
+      }
+    ],
+    "objective": [
+      {
+        "field": "action and auxiliary losses",
+        "paper": "Action:visual:future-state:value weights 10:1:0.4:0.4; failure actions masked",
+        "upstream_code": "Action loss masked on failed episodes; future state/value on applicable rows",
+        "local": "Action-only and joint use identical shifted-flow action loss; joint adds train-only z-scored future-H3/state on all rows and value only on successful rows at normalized 1:0.1:0.04:0.04 weights",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/FACT/world_action_model/configs/robotwin.py:112",
+          "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py:835",
+          "scripts/h3wam/train_c55_fact_joint_action.py"
+        ],
+        "rationale": "Dividing all official relative weights by action weight 10 preserves D0 action LR scale; missing failure onset prohibits failure value supervision. The first mechanical v1 canary exposed raw projected-H3 RMS 66.85 and future loss about 4600, so it was retained as a scale-audit failure and replaced before long training by train-only z-scoring (identity e9d404b4edfb8cff0b9ebcc3570d330141b4c8cc67adc1befd0013c034eb2618)."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "paired sample and optimizer budget",
+        "paper": "150000 steps, batch32/GPU, action LR2e-4 and base LR2e-5",
+        "upstream_code": "8-GPU configurable launcher with warmup cosine",
+        "local": "Planned per arm: 8 GPUs, each step 8 demo + 4 success rollout + 4 failure rollout, AdamW 5e-5, warmup500, 6000 steps, checkpoints every1000",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/FACT/world_action_model/configs/robotwin.py:63",
+          "scripts/h3wam/train_c55_fact_joint_action.py"
+        ],
+        "rationale": "The smaller already-trained D0 action expert uses a bounded paired continuation budget; a measured canary must determine wall clock before GO_LONG."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "offline and closed-loop promotion",
+        "paper": "RoboTwin closed-loop success and optional best-of-N",
+        "upstream_code": "Official RoboTwin simulator evaluator",
+        "local": "Episode-disjoint LIBERO validation first; only a paired winner runs wholly new trials33+ with identical initial states, noise, replan8 and success predicate",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/run_dense_d0_milestone_rollout.sh",
+          "C54 final report SHA256 e96f2d58a4f40ede0ca70061282f55843f8ab98bd82d4db7951a6e512ec0c595"
+        ],
+        "rationale": "LIBERO is the target benchmark and C54 states are not reused for the final effect claim."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": [
+        "Local FACT 618a6c1 is clean; upstream 9427ea4 changes README only",
+        "official GitHub and arXiv v1 checked 2026-08-16"
+      ]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Eight focused C55 tests plus the existing carrier suite pass in cloud PyTorch"
+      ]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": [
+        "READY.json proves 18550/18550 observations, 32/32 shards, 85189409550 bytes, missing=extra=partials=0",
+        "Train-only H3 z-score smoke over 15417 rows has RMS 1.0, mean_abs_max 1.14e-6 and per-dimension std 0.99999994..1.0"
+      ]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Exact gripper round-trip unit test and actual rollout_000000 loader smoke pass"
+      ]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Auxiliary target changes cannot affect action forward; auxiliary-only loss gives nonzero shared-block gradients",
+        "The rejected raw-target v1 canary had future-H3 loss about 4600; calibrated v2 is 1.13..1.56 and no long steps were spent on the invalid scale"
+      ]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Both eight-rank v2 arms completed ten real BF16 optimizer steps with the same stateless sample/noise sequence",
+        "Measured ten-step elapsed time is 20.25s action-only and 23.02s joint-aux"
+      ]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Both v2 step10 exports strict-loaded in two independent existing balanced-80 evaluator model instances with fixed-noise max_abs=0",
+        "The ten-step sanity results remain paired and near-identical: physical action MSE 0.024191 action-only versus 0.024195 joint-aux"
+      ]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": [
+        "tests/test_h3_fact_joint_aux.py auxiliary-only backward reaches shared ActionDiT q projection and auxiliary heads"
+      ]
+    },
+    "smoke_finite": {
+      "status": "PASS",
+      "evidence": [
+        "All v2 losses and five shared-block gradient norms stayed finite for both ten-step eight-rank arms"
+      ]
+    },
+    "checkpoint_restore": {
+      "status": "PASS",
+      "evidence": [
+        "Both native C55 v2 checkpoints restore with probe max_abs=0; both deployment exports independently restore in the existing evaluator with max_abs=0"
+      ]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": [
+        "D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3"
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": [
+        "No paired C55 held-out result yet"
+      ]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": [
+        "No fresh C55 LIBERO rollout yet"
+      ]
+    }
+  },
+  "budget": {
+    "global_batch": 16,
+    "optimizer_steps": 6000,
+    "training_samples": 96000,
+    "unique_windows": 219329,
+    "effective_epochs": 0.4376956091542873,
+    "gpu_count": 8,
+    "estimated_hours": 4.5,
+    "stream_budget": {
+      "demo_samples": 48000,
+      "demo_effective_epochs": 0.23906952420322823,
+      "rollout_samples": 48000,
+      "rollout_effective_epochs": 3.1134455462800804,
+      "rollout_unique_train_rows": 15417,
+      "balanced_rollout_success_failure": "24000/24000 with replacement"
+    }
+  },
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "Exact cache coverage, train-only target scaling, paired eight-rank finite canaries, native restore and existing-evaluator restore all pass. Mechanism and closed-loop gates remain unclaimed and will be evaluated only after paired long milestones.",
+    "launch_command": "node0: bash scripts/h3wam/launch_c55_fact_joint_long.sh action_only; node1: bash scripts/h3wam/launch_c55_fact_joint_long.sh joint_aux",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}
