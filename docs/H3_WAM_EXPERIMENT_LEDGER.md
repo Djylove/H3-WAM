@@ -1145,3 +1145,27 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 这是四条完整机制支线中首个“离线世界机制不塌缩且闭环点估计正向”的候选，结论为
   `GO_EXPANDED_PAIRED_EVAL / NOT_PROMOTED`。40对中仅8个discordant，尚无统计显著性；必须扩大到多trial
   配对闭环并检查spatial/LIBERO-10退化是否持续，不能把`+5pp`单trial结果写成泛化或新擂主结论。
+
+### 2026-08-16 — C58b trials33..49 扩展配对评测启动
+
+- 扩展评测预注册为四suite×10 task×trials34..49的640条新C58b candidate episode，和corrected
+  trial33合并为680对；模型、wait30、replan8、horizon32、eval10、default task-specific seed和
+  pre-clamp均不变。最终门为overall至少`+3pp`、净胜至少20、exact one-sided McNemar `p<=0.05`且
+  任一suite不低于D0超过3pp；不按中间success早停或选trial。
+- C55历史D0控制复用前完成fail-closed冻结审计：trials34..49共640/640条result及trajectory通过
+  checkpoint/合同/seed/动作finite/完整初态/C55 FINAL outcome/content hash，成功`254/640`，manifest
+  SHA256 `e20a6f6c479d7b57dda106cf0e2d73f2ce41305d8926223aea685114ee0a7a0a`。加上本轮trial33已逐动作exact
+  复现的`16/40`，完整控制精确恢复D0历史`270/680`；任一控制审计失败原计划为双臂重跑。
+- 第一次expanded v1启动时，目的snapshot仍被`cp -a --reflink=auto`写入，违反immutable source gate。
+  该launcher、8 rollout和8 policy已立即TERM且无survivor；当时尚无正式result episode，整个root保留为
+  `expanded-paired-trials34-49-v1.invalid-snapshot-copy-race-20260816T1056Z`，永不计入效果。
+- 复制完成、overlay后重新逐文件hash并将snapshot冻结为mode555，正式v2从
+  `/mnt/h3-wam/runtime-snapshots/project-3e39368-c58expanded`启动，root为
+  `expanded-paired-trials34-49-v2`，launcher PID `963748`。8 GPU各运行一个固定80-episode segment；首个
+  candidate object/task0/trial34 trajectory与冻结D0的8项完整初始状态digest逐字节一致，证明多trial
+  单server分段没有引入初态gap。
+- 独立只读finalizer snapshot为
+  `/mnt/h3-wam/runtime-snapshots/c58-expanded-finalizer-229d990`，PID `966603`。它只等待candidate
+  `COMPLETED.json`，随后一次性重验640条candidate与640条control的result/trajectory hash、完整初态及
+  trial33桥接，输出680对overall/per-suite/per-trial、Wilson95、paired-delta95和exact McNemar；全量完成前
+  不生成效果结论。
