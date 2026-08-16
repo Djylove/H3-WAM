@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Finalize exact coverage and identity for the C55 rollout K/V cache."""
+"""Finalize exact coverage and identity for a C48/C60 FACT rollout K/V cache."""
 
 from __future__ import annotations
 
@@ -18,6 +18,10 @@ EXPECTED_H3_SHA256 = (
     "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
 )
 LAYERS = (9, 19, 29, 39, 49)
+SUPPORTED_DATASET_FORMATS = {
+    "h3wam-c48-fact-dense-value-dataset-v1",
+    "h3wam-c60-counterfactual-failure-dataset-v1",
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -31,6 +35,9 @@ def sha256_file(path: Path) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=Path, required=True)
+    parser.add_argument("--observations", type=Path, required=True)
+    parser.add_argument("--expected-dataset-sha256", required=True)
+    parser.add_argument("--expected-observations-sha256", required=True)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -38,10 +45,17 @@ def main() -> None:
     if output.exists():
         raise FileExistsError(f"refusing to overwrite C55 READY: {output}")
     dataset_path = args.dataset.resolve()
+    observations_path = args.observations.resolve()
     root = args.root.resolve()
     dataset = torch.load(dataset_path, map_location="cpu", weights_only=False)
-    if dataset.get("format") != "h3wam-c48-fact-dense-value-dataset-v1":
-        raise ValueError("C55 K/V finalizer requires C48")
+    if dataset.get("format") not in SUPPORTED_DATASET_FORMATS:
+        raise ValueError(f"unsupported FACT rollout dataset: {dataset.get('format')!r}")
+    dataset_sha256 = sha256_file(dataset_path)
+    observations_sha256 = sha256_file(observations_path)
+    if dataset_sha256 != args.expected_dataset_sha256:
+        raise ValueError("FACT rollout dataset identity mismatch")
+    if observations_sha256 != args.expected_observations_sha256:
+        raise ValueError("FACT rollout observations identity mismatch")
     required = {
         int(row["current_observation_id"])
         for row in dataset["samples"]
@@ -67,6 +81,8 @@ def main() -> None:
             or marker.get("shard") != shard
             or marker.get("num_shards") != 32
             or marker.get("h3_checkpoint_sha256") != EXPECTED_H3_SHA256
+            or marker.get("dataset_sha256") != dataset_sha256
+            or marker.get("observations_sha256") != observations_sha256
         ):
             raise ValueError(f"C55 shard marker mismatch: {shard}")
         markers.append(marker)
@@ -85,6 +101,8 @@ def main() -> None:
             item.get("format") != ITEM_FORMAT
             or tuple(item.get("layers", ())) != LAYERS
             or item.get("h3_checkpoint_sha256") != EXPECTED_H3_SHA256
+            or item.get("dataset_sha256") != dataset_sha256
+            or item.get("observations_sha256") != observations_sha256
         ):
             raise ValueError(f"C55 sampled item identity mismatch: {path}")
         signatures = set()
@@ -109,7 +127,9 @@ def main() -> None:
     result = {
         "format": FORMAT,
         "ready": True,
-        "dataset_sha256": sha256_file(dataset_path),
+        "dataset_format": dataset["format"],
+        "dataset_sha256": dataset_sha256,
+        "observations_sha256": observations_sha256,
         "h3_checkpoint_sha256": EXPECTED_H3_SHA256,
         "items": len(item_paths),
         "bytes": sum(path.stat().st_size for path in item_paths),

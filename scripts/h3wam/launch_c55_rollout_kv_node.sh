@@ -42,6 +42,8 @@ for local_gpu in $(seq 0 7); do
     scripts/h3wam/precompute_c55_rollout_kv_shard.py \
     --dataset "${workspace}/eval/c48-fact-dense-value-dataset-v1/dataset.pt" \
     --observations "${workspace}/eval/c48-fact-dense-value-dataset-v1/observations.jsonl" \
+    --expected-dataset-sha256 d416d86c09ba334fae449a131510b84fa1d111e665a77eabfb248f1c79a5bc61 \
+    --expected-observations-sha256 399d93f31a8f26297145942387a233b9667049efc60ac1f46514a3f7ce77a638 \
     --cache-root "${workspace}/data/v7_dense_h3_cache" \
     --source-manifest "${workspace}/data/v7_multisuite_dense_candidate/manifest_all.jsonl" \
     --h3-checkpoint "${workspace}/int8-action/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors" \

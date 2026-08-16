@@ -1,0 +1,290 @@
+{
+  "experiment_id": "h3_c56_fact_backbone_port_v1",
+  "classification": "backbone_port",
+  "hypothesis": "Replacing C55's pooled auxiliary heads with a structured FACT causal-token port will test token/mask/loss/data contracts before the full layer-wise H3-to-action backbone port C56b.",
+  "single_variable": "Relative to D0-H32-s14000, C56a appends one zero-initialized causal token module with clean-action-conditioned future-state, value and future-H3 flow tracks; it is a mechanical precursor and not the full FACT backbone replacement.",
+  "parent_baseline": "D0-H32-s14000/replan8/no-ensemble, checkpoint SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3, fresh LIBERO 270/680=39.71%.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FACT: Failure-Aware Causal Training for World-Action Models",
+      "locator": "https://arxiv.org/abs/2608.10232",
+      "revision": "v1 (2026-08-10)",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Bariona/FACT official repository",
+      "locator": "https://github.com/Bariona/FACT",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd (current 9427ea451e806220742148049ef0576e43ef7382 changes README only)",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3-WAM C56a structured FACT causal-token port",
+      "locator": "/home/ubuntu/fastwam_deploy/src/fastwam/models/h3wam/fact_backbone_port.py",
+      "revision": "parent 6543c45eaef3ece4b528e001a389975ca83ec37a + C56 working diff",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "causal token order and mask",
+        "paper": "act then imagine: predicted action cannot see future; clean action conditions future",
+        "upstream_code": "[state|ref|pred_action|gt_action|future_state|value|future_image] with an additive teacher-forcing mask",
+        "local": "[state/text|H3-ref|pred_action|clean_action|future_state|value|future-H3-representation] with the same segment visibility matrix",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "third_party/FACT/world_action_model/models/transformer_wa_casual.py:46",
+          "src/fastwam/models/h3wam/fact_backbone_port.py:180",
+          "tests/test_h3_fact_backbone_port.py:test_mask_is_byte_semantic_parity_with_pinned_official_function"
+        ],
+        "rationale": "The test extracts the pinned official function by AST and proves the local additive mask is tensor-identical; future H3 representation occupies FACT's future-image visibility segment."
+      },
+      {
+        "field": "world/action backbone",
+        "paper": "one trainable Wan causal diffusion transformer",
+        "upstream_code": "Wan patch tokens and robot tokens share every transformer block",
+        "local": "Frozen INT8 H3 K/V ref tokens and the trainable five-block D0 ActionDiT stem feed a separate five-layer nn.TransformerEncoder with a zero-initialized action residual",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/FACT/world_action_model/models/transformer_wa_casual.py:923",
+          "src/fastwam/models/h3wam/fact_backbone_port.py:H3FACTBackbonePort"
+        ],
+        "rationale": "C56a validates FACT token order, masking, objectives and gradient plumbing, but it appends a causal trunk instead of inserting P/A/G/V/I adapters into every layer of the H3-to-action tower. It is forbidden to claim full FACT equivalence or enter long training; C56b must reuse the C58b 30-layer infrastructure and remove this separate trunk."
+      },
+      {
+        "field": "two-stage inference",
+        "paper": "first denoise action, then condition future/value on that clean action",
+        "upstream_code": "Stage 1 [state|ref|pred_action], Stage 2 preserves dummy pred-action then adds clean action/future tracks",
+        "local": "forward_action and forward_consequence expose the same two stages and preserve a dummy predicted-action track in Stage 2",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/FACT/world_action_model/pipeline/wa_pipeline.py:551",
+          "third_party/FACT/world_action_model/pipeline/wa_pipeline.py:661",
+          "src/fastwam/models/h3wam/fact_backbone_port.py:forward_action",
+          "src/fastwam/models/h3wam/fact_backbone_port.py:forward_consequence"
+        ],
+        "rationale": "The public two-stage interface and causal inputs match FACT, but computation runs through C56a's appended trunk rather than the official shared per-layer video/action blocks."
+      }
+    ],
+    "data": [
+      {
+        "field": "dense rollout windows and failure metadata",
+        "paper": "demonstrations plus failed rollouts with causal failure onset",
+        "upstream_code": "LeRobot frame-indexed windows plus meta/failure_rollouts.jsonl",
+        "local": "C48 provides 21559 replan-dense rows over 560 episodes; C59 provides episode failure mask and explicit onset contract without copying tensors",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "/mnt/h3-wam/eval/c59-fact-failure-active-overlay-v1/COMPLETED.json SHA256 4e67bb95b69ada2a854d3b2bf4ba434c6b3072c2bba11a91df2c30c6de5eeb99",
+          "C59: 560 episodes, 362 failures, 0 annotated onsets, 21559 samples"
+        ],
+        "rationale": "LIBERO replan8 state coverage replaces RoboTwin per-frame data. No causal onset is fabricated: all failure actions are masked, observed futures and base temporal values remain supervised, and the +1 penalty stays inactive until an explicit onset exists."
+      },
+      {
+        "field": "value target orientation",
+        "paper": "Eq.6 increasing progress minus failure penalty",
+        "upstream_code": "remaining-time plus positive failure penalty, normalized from [0,2] to [-1,1]",
+        "local": "loader requires an explicit enum and the first executable arm uses pinned-code remaining-time plus penalty; paper Eq.6 is retained as a separate non-default target",
+        "status": "EXACT",
+        "evidence": [
+          "third_party/FACT/world_action_model/transformers/wa_transforms_lerobot.py:496",
+          "scripts/h3wam/prepare_c59_failure_active_contract.py:113",
+          "src/fastwam/models/h3wam/fact_backbone_port.py:C59FailureOverlay"
+        ],
+        "rationale": "Executable-code reproduction takes precedence. The loader rejects an inactive failure value above 1.0, preventing the old C48 all-failure +1 convention from re-entering training."
+      },
+      {
+        "field": "causal penalty-active failure stream",
+        "paper": "failure penalty begins at the causal failure onset",
+        "upstream_code": "failure_active_from_frame activates the code-value +1 penalty while the whole failed episode masks action imitation",
+        "local": "C60 has 83 exact-state counterfactual branches whose changed first action is the explicit onset: train 51 episodes/1929 rows/17 parent sources and validation 32/1186/11, parent-source disjoint",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "/mnt/h3-wam/eval/c60-counterfactual-failure-dataset-v1/dataset.pt SHA256 1abeee1ef4e5e71f66b656c9920124086046c3e7d3b3a22b769449b72b1fc1d4",
+          "src/fastwam/models/h3wam/fact_backbone_port.py:C60CausalFailureLabels"
+        ],
+        "rationale": "The intervention onset is causally known even though it is not claimed to be a visually irreversible event; C60 is the penalty-active stream, while C59 unannotated failures retain penalty=0."
+      }
+    ],
+    "action": [
+      {
+        "field": "action semantics, horizon and failure imitation mask",
+        "paper": "RobotTwin delta actions; failed rollout actions are not imitated",
+        "upstream_code": "48 actions, failure_episode sets action_loss_mask=0 for every episode row",
+        "local": "32-step LIBERO D0 normalized action chunks with exact gripper round trip; C59 sets action_loss_mask=0 over the entire failed episode",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/FACT/world_action_model/transformers/wa_transforms_lerobot.py:513",
+          "scripts/h3wam/prepare_c59_failure_active_contract.py:120",
+          "scripts/h3wam/train_c55_fact_joint_action.py:110"
+        ],
+        "rationale": "The D0 action and deployment contract must remain fixed for attribution; only FACT's failure imitation mask is added."
+      }
+    ],
+    "objective": [
+      {
+        "field": "joint flow tracks and relative weights",
+        "paper": "joint denoising of action, future, state and value",
+        "upstream_code": "flow targets noise-clean with action:visual:future-state:value weights 10:1:0.4:0.4",
+        "local": "flow targets for action, future-H3 representation, future state and value with exact relative weights 10:1:0.4:0.4",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py:686",
+          "third_party/FACT/world_action_model/configs/robotwin.py:112",
+          "src/fastwam/models/h3wam/fact_backbone_port.py:fact_backbone_port_losses"
+        ],
+        "rationale": "Future H3 flow replaces pixel-latent flow while preserving noisy token inputs, velocity targets, causal placement and loss scale."
+      },
+      {
+        "field": "gradient and leakage boundary",
+        "paper": "future objectives shape the shared action backbone but future targets cannot be observed by predicted action",
+        "upstream_code": "one masked shared transformer",
+        "local": "future-only backward reaches clean-action D0 blocks and the shared causal trunk; predicted-action input gradient is zero and action output is invariant to all future/clean tracks",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "tests/test_h3_fact_backbone_port.py:test_future_loss_reaches_clean_action_and_shared_carrier_not_pred_action",
+          "tests/test_h3_fact_backbone_port.py:test_joint_action_is_causally_invariant_to_clean_and_future_tracks"
+        ],
+        "rationale": "This directly proves the C56a no-leakage and D0 clean-action gradient paths, but it does not prove the full FACT property that every predicted-action and future token traverses the same video-backbone blocks."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "mechanical probe budget",
+        "paper": "not a paper effectiveness budget",
+        "upstream_code": "8 GPUs, batch32/GPU, 150000 steps, base LR2e-5/action LR2e-4, warmup cosine",
+        "local": "eight A800 ranks, eight immutable success rows, one independent AdamW step/rank at 2e-5, five appended causal layers; checkpoints retained only for restore audit",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/FACT/world_action_model/configs/robotwin.py:55",
+          "third_party/FACT/world_action_model/configs/robotwin.py:63",
+          "scripts/h3wam/probe_c56_fact_backbone_port.py"
+        ],
+        "rationale": "This allocation validates a real 8-GPU batch and measures total initialization-plus-one-step memory/time only; the 77.9-second wall time is not a steady-state training throughput estimate and cannot produce a promoted checkpoint."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "paired offline and closed-loop evaluator",
+        "paper": "RoboTwin success and optional best-of-N value ranking",
+        "upstream_code": "two-stage pipeline produces action/future/value; RoboTwin interface evaluates policy",
+        "local": "after a real mechanical probe, freeze a matched action-only D0 continuation and compare fixed balanced-80 conditioning first; fresh LIBERO tri-arm rollout is required for any promotion",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "third_party/FACT/evaluation/robotwin/model2robotwin_interface.py",
+          "scripts/h3wam/evaluate_h3_dreamwam_kv_carrier.py",
+          "scripts/h3wam/prepare_c55_closed_loop_jobs.py"
+        ],
+        "rationale": "LIBERO is the project benchmark. No mechanical or offline consequence metric can substitute for fresh success rate."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": [
+        "Local official FACT 618a6c1 is clean; fetched upstream 9427ea4 differs only by three README lines (live demo)."
+      ]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Nine focused C56a unit tests pass, including official-mask AST parity, two-stage causal invariance and exact D0 step0 preservation; this gate covers the structured port only, not full backbone equivalence."
+      ]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": [
+        "C59 completed overlay SHA256 4e67bb95b69ada2a854d3b2bf4ba434c6b3072c2bba11a91df2c30c6de5eeb99 binds C48 SHA256 d416d86c09ba334fae449a131510b84fa1d111e665a77eabfb248f1c79a5bc61.",
+        "C59 has no annotated onset; penalty remains inactive rather than fabricating labels.",
+        "C60 SHA256 1abeee1ef4e5e71f66b656c9920124086046c3e7d3b3a22b769449b72b1fc1d4 supplies 3115 penalty-active causal-intervention rows with parent-source-disjoint train/validation."
+      ]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": [
+        "C59 loader verifies action mask equals inverse failure_episode for all 21559 rows; C55 exact gripper round-trip remains unchanged."
+      ]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Synthetic full Stage1+Stage2 flow forward/backward is finite with all four losses; inactive failed value above 1 is rejected as fabricated penalty."
+      ]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Probe script hard-limits this gate to one explicit optimizer step and records resolved layers/heads/LR/sample identity."
+      ]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Step0 output is exactly D0 and strict restore is tested; no effect or promotion claim is attached to this mechanical allocation."
+      ]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": [
+        "Future-only backward: nonzero clean-action input, D0 block and causal-backbone gradients; zero predicted-action input gradient."
+      ]
+    },
+    "full_fact_backbone": {
+      "status": "FAIL",
+      "evidence": [
+        "C56a appends nn.TransformerEncoder after the five-block D0 carrier; FACT shares video/action/future tokens inside every backbone block. C56b is required before any long run."
+      ]
+    },
+    "smoke_finite": {
+      "status": "PASS",
+      "evidence": [
+        "Local CPU synthetic one-step report: PASS_C56_MECHANICAL_PROBE, all losses/gradients finite."
+      ]
+    },
+    "checkpoint_restore": {
+      "status": "PASS",
+      "evidence": [
+        "Eight-rank real strict state restore reproduces action/future-state/value/future-representation with max_abs=0: /mnt/h3-wam/outputs/c56-fact-backbone-port-v1/mechanical-probe-8gpu-v1/AGGREGATE.json."
+      ]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": [
+        "D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3; 270/680 fresh LIBERO success."
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": [
+        "C56a real H3/D0 mechanical probe passed 8/8 ranks, but no episode-disjoint paired training ran and the appended-trunk architecture is explicitly not eligible for long training."
+      ]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": [
+        "No C56 checkpoint has been evaluated in fresh LIBERO rollout."
+      ]
+    }
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 1,
+    "training_samples": 8,
+    "unique_windows": 21559,
+    "effective_epochs": 0.0003710747,
+    "gpu_count": 8,
+    "estimated_hours": 0.021633
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "The completed C56a canary validates source, token mask, data labels, gradients, 8-GPU finite execution and strict restore only. The separate causal trunk is a documented architecture deviation, so C56a is NO_GO for long training; C56b must implement the layer-wise shared H3-to-action backbone first.",
+    "launch_command": "PYTHONPATH=/mnt/h3-wam/runtime/python-packages:src:. /mnt/h3-wam/runtime/h3-int8-native/bin/python -m torch.distributed.run --standalone --nproc-per-node 8 scripts/h3wam/probe_c56_fact_backbone_port.py --parent-checkpoint /mnt/h3-wam/outputs/dense-carrier-d0-h32-s20000-v1/checkpoints/d0_h32_s14000.pt --expected-parent-sha256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3 --demo-cache-root /mnt/h3-wam/data/v7_dense_h3_cache --rollout-dataset /mnt/h3-wam/eval/c48-fact-dense-value-dataset-v1/dataset.pt --rollout-projected-features /mnt/h3-wam/eval/c49-dense-value-h3-features-v1/projected_features.pt --rollout-kv-root /mnt/h3-wam/eval/c55-fact-joint-action-v1/kv-full-v1 --c59-overlay-root /mnt/h3-wam/eval/c59-fact-failure-active-overlay-v1 --c60-failure-dataset /mnt/h3-wam/eval/c60-counterfactual-failure-dataset-v1/dataset.pt --output-root /mnt/h3-wam/outputs/c56-fact-backbone-port-v1/mechanical-probe-8gpu-v1",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}

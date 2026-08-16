@@ -105,6 +105,14 @@ from .consequence_action_ranker import (
 )
 from .dense_future_value import DenseTemporalFutureValueModel
 from .dense_value_action_ranker import FrozenDenseValueActionRanker
+from .fact_backbone_port import (
+    C59FailureOverlay,
+    C60CausalFailureLabels,
+    FACTTokenLayout,
+    H3FACTBackbonePort,
+    build_fact_teacher_forcing_mask,
+    fact_backbone_port_losses,
+)
 __all__ = [
     "ActionEnsembler",
     "action_denormalization_bounds",
@@ -177,6 +185,12 @@ __all__ = [
     "FrozenConsequenceActionRanker",
     "DenseTemporalFutureValueModel",
     "FrozenDenseValueActionRanker",
+    "FACTTokenLayout",
+    "C59FailureOverlay",
+    "C60CausalFailureLabels",
+    "H3FACTBackbonePort",
+    "build_fact_teacher_forcing_mask",
+    "fact_backbone_port_losses",
     "DEFAULT_OFFICIAL_H3_LORA_TARGETS",
     "inject_official_h3_lora",
     "load_cached_task_context",

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Precompute exact five-layer H3 K/V for C55 rollout observations."""
+"""Precompute exact five-layer H3 K/V for FACT rollout observations.
+
+The extractor is intentionally schema-generic: C48 observational rollouts and
+C60 state-aligned counterfactual branches share one audited image/KV path.
+"""
 
 from __future__ import annotations
 
@@ -41,6 +45,10 @@ EXPECTED_H3_SHA256 = (
 EXPECTED_SOURCE_SHA256 = (
     "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9"
 )
+SUPPORTED_DATASET_FORMATS = {
+    "h3wam-c48-fact-dense-value-dataset-v1",
+    "h3wam-c60-counterfactual-failure-dataset-v1",
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -55,6 +63,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--observations", type=Path, required=True)
+    parser.add_argument("--expected-dataset-sha256", required=True)
+    parser.add_argument("--expected-observations-sha256", required=True)
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--source-manifest", type=Path, required=True)
     parser.add_argument("--h3-checkpoint", type=Path, required=True)
@@ -110,10 +120,16 @@ def main() -> None:
         raise ValueError("H3 checkpoint identity mismatch")
     if sha256_file(source_manifest) != EXPECTED_SOURCE_SHA256:
         raise ValueError("source manifest identity mismatch")
+    dataset_sha256 = sha256_file(dataset_path)
+    observations_sha256 = sha256_file(observations_path)
+    if dataset_sha256 != args.expected_dataset_sha256:
+        raise ValueError("FACT rollout dataset identity mismatch")
+    if observations_sha256 != args.expected_observations_sha256:
+        raise ValueError("FACT rollout observations identity mismatch")
 
     dataset = torch.load(dataset_path, map_location="cpu", weights_only=False)
-    if dataset.get("format") != "h3wam-c48-fact-dense-value-dataset-v1":
-        raise ValueError("C55 requires the immutable C48 rollout dataset")
+    if dataset.get("format") not in SUPPORTED_DATASET_FORMATS:
+        raise ValueError(f"unsupported FACT rollout dataset: {dataset.get('format')!r}")
     required_ids = {
         int(row["current_observation_id"])
         for row in dataset["samples"]
@@ -247,8 +263,9 @@ def main() -> None:
                 "capture_token_strategy": KV_STRATEGY,
                 "dreamwam_commit": DREAMWAM_COMMIT,
                 "h3_checkpoint_sha256": EXPECTED_H3_SHA256,
-                "dataset_sha256": sha256_file(dataset_path),
-                "observations_sha256": sha256_file(observations_path),
+                "dataset_format": dataset["format"],
+                "dataset_sha256": dataset_sha256,
+                "observations_sha256": observations_sha256,
                 "video_kv_cache": video_kv_cache,
             }
             temporary = output.with_name(f".{output.name}.{os.getpid()}.partial")
@@ -280,8 +297,9 @@ def main() -> None:
         "items": len(written),
         "first_observation_id": min(written),
         "last_observation_id": max(written),
-        "dataset_sha256": sha256_file(dataset_path),
-        "observations_sha256": sha256_file(observations_path),
+        "dataset_format": dataset["format"],
+        "dataset_sha256": dataset_sha256,
+        "observations_sha256": observations_sha256,
         "h3_checkpoint_sha256": EXPECTED_H3_SHA256,
         "elapsed_seconds": time.perf_counter() - started,
     }
