@@ -1169,3 +1169,20 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `COMPLETED.json`，随后一次性重验640条candidate与640条control的result/trajectory hash、完整初态及
   trial33桥接，输出680对overall/per-suite/per-trial、Wilson95、paired-delta95和exact McNemar；全量完成前
   不生成效果结论。
+
+### 2026-08-16 — C58b expanded v2 初态门禁否决与独立进程 v3 修复
+
+- v2完成640条candidate后，`229d990` finalizer在读取任何聚合效果前fail-closed：首个错误为
+  `libero_10/task0/trial35`初态不一致，因此没有生成`FINAL.json`。全量只读诊断确认严格initial-state
+  mismatch为`532/640`：spatial/object/goal各`140/160`，LIBERO-10为`112/160`。每个80条进程的
+  首trial（34或42）均exact，其后7个trial系统性偏离；这不是可选择剔除的随机坏样本，v2整批标记无效。
+- 根因为评测进程边界未对齐：历史C55/D0每个suite/task/trial由独立`rollout_libero.py`进程和新MuJoCo
+  env执行，v2却让每个task的8个trial复用一个env。以LIBERO-10 task0为例，trial34的8项轨迹初态及
+  object joints均exact；紧随其后的trial35虽然图像、EEF、gripper和previous_action仍exact，但sim_state
+  出现`1.35e-14`差异且object joints不再bit-exact。episode seed、replan seed及policy的独立episode key
+  均正确，故不能用放宽浮点容差掩盖process-contract污染。
+- corrected trial35 canary改为一个episode一个全新simulator+policy进程；其8项完整初态digest恢复为
+  `02c1e0c596848f4d9e3aa778ec970aa8646db694c8edf48a3a6e0bd62563b8bc`，与冻结D0逐字节一致，object
+  joints、episode seed `35042`、environment seed和replan seed schedule也全部exact。v3固定640个
+  one-episode jobs，由8个GPU队列各顺序消费80个；checkpoint、wait30/replan8/horizon32/eval10及统计门
+  全部不变，不读取中间success、不复用v2子集，也无需重跑已通过hash冻结的D0。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-register the eight C58b candidate-only expanded LIBERO jobs."""
+"""Pre-register C58b candidate-only expanded LIBERO jobs."""
 
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ def prepare(
     d0_ready: Path,
     trial33_results: Path,
     output_root: Path,
+    one_episode_per_process: bool = False,
 ) -> dict:
     checkpoint = checkpoint.resolve()
     balanced_gate = balanced_gate.resolve()
@@ -69,22 +70,40 @@ def prepare(
     ):
         raise ValueError("trial33 exact-reproduction bridge mismatch")
     jobs = []
-    gpu = 0
-    for suite in SUITES:
-        for trials in TRIAL_GROUPS:
-            jobs.append({
-                "job_id": len(jobs),
-                "gpu": gpu,
-                "suite": suite,
-                "trials": list(trials),
-                "tasks": list(range(10)),
-                "episodes": 80,
-                "output": str(
-                    output_root / "candidate_c58b" / suite
-                    / f"trials{trials[0]:02d}-{trials[-1]:02d}"
-                ),
-            })
-            gpu += 1
+    if one_episode_per_process:
+        for trial in range(34, 50):
+            for suite in SUITES:
+                for task in range(10):
+                    job_id = len(jobs)
+                    jobs.append({
+                        "job_id": job_id,
+                        "gpu": job_id % 8,
+                        "suite": suite,
+                        "trials": [trial],
+                        "tasks": [task],
+                        "episodes": 1,
+                        "output": str(
+                            output_root / "candidate_c58b" / suite
+                            / f"task{task:02d}_trial{trial:02d}"
+                        ),
+                    })
+    else:
+        gpu = 0
+        for suite in SUITES:
+            for trials in TRIAL_GROUPS:
+                jobs.append({
+                    "job_id": len(jobs),
+                    "gpu": gpu,
+                    "suite": suite,
+                    "trials": list(trials),
+                    "tasks": list(range(10)),
+                    "episodes": 80,
+                    "output": str(
+                        output_root / "candidate_c58b" / suite
+                        / f"trials{trials[0]:02d}-{trials[-1]:02d}"
+                    ),
+                })
+                gpu += 1
     output_root.mkdir(parents=True)
     manifest = output_root / "jobs.jsonl"
     manifest.write_text(
@@ -94,7 +113,11 @@ def prepare(
     report = {
         "format": "h3wam-c58b-expanded-paired-prepared-v1",
         "status": "PREPARED_NOT_EXECUTED",
-        "permission": "GO_8GPU_CANDIDATE_ONLY_NO_INTERMEDIATE_STOP",
+        "permission": (
+            "GO_8GPU_640_FRESH_PROCESSES_NO_INTERMEDIATE_STOP"
+            if one_episode_per_process
+            else "GO_8GPU_CANDIDATE_ONLY_NO_INTERMEDIATE_STOP"
+        ),
         "hypothesis": (
             "C58b full layer-wise H3 carriers improve paired LIBERO success over "
             "the exact D0 parent across trials33..49."
@@ -109,6 +132,7 @@ def prepare(
         "trial33_results_sha256": TRIAL33_SHA256,
         "jobs": len(jobs),
         "candidate_episodes": 640,
+        "one_episode_per_process": one_episode_per_process,
         "trials": list(range(34, 50)),
         "suites": list(SUITES),
         "tasks_per_suite": 10,
@@ -133,6 +157,11 @@ def prepare(
             "no_suite_regression_below": -0.03,
         },
         "stopping": "Run all 640 candidate episodes; intermediate success is never read for stopping.",
+        "process_contract": (
+            "Fresh simulator and policy process for every episode, exactly matching historical C55 D0."
+            if one_episode_per_process
+            else "One simulator and policy process per 80-episode segment."
+        ),
         "fallback": "If D0 reuse audit fails, discard this preparation and rerun both arms.",
     }
     temporary = output_root / f".PREPARED.json.{os.getpid()}.partial"
@@ -148,10 +177,11 @@ def main() -> None:
     parser.add_argument("--d0-ready", type=Path, required=True)
     parser.add_argument("--trial33-results", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--one-episode-per-process", action="store_true")
     args = parser.parse_args()
     report = prepare(
         args.checkpoint, args.balanced_gate, args.d0_ready,
-        args.trial33_results, args.output_root,
+        args.trial33_results, args.output_root, args.one_episode_per_process,
     )
     print(json.dumps({
         "status": report["status"], "permission": report["permission"],

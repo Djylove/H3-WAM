@@ -285,7 +285,7 @@ def candidate_evidence(spec: tuple[dict, dict, Path]) -> list[dict[str, Any]]:
     suite = job["suite"]
     validate_result_contract(
         payload, policy="h3_fastwam_online_int8", checkpoint=checkpoint,
-        suite=suite, tasks=list(range(10)), trials=job["trials"],
+        suite=suite, tasks=job["tasks"], trials=job["trials"],
         save_trajectories=True,
     )
     result_path = Path(job["output"]) / "results.json"
@@ -305,7 +305,7 @@ def candidate_evidence(spec: tuple[dict, dict, Path]) -> list[dict[str, Any]]:
             "trajectory": str(trajectory),
             "trajectory_sha256": sha256_file(trajectory),
         })
-    if len(rows) != 80:
+    if len(rows) != int(job["episodes"]):
         raise ValueError(f"candidate job is incomplete: {result_path}")
     return rows
 
@@ -314,7 +314,9 @@ def load_candidates(root: Path, checkpoint: Path, workers: int) -> tuple[dict, d
     prepared = json.loads((root / "PREPARED.json").read_text(encoding="utf-8"))
     manifest = root / "jobs.jsonl"
     if (
-        prepared.get("permission") != "GO_8GPU_CANDIDATE_ONLY_NO_INTERMEDIATE_STOP"
+        prepared.get("permission")
+        != "GO_8GPU_640_FRESH_PROCESSES_NO_INTERMEDIATE_STOP"
+        or prepared.get("one_episode_per_process") is not True
         or prepared.get("candidate_checkpoint_sha256") != C58_SHA256
         or prepared.get("candidate_episodes") != 640
         or sha256_file(manifest) != prepared.get("manifest_sha256")
@@ -322,8 +324,13 @@ def load_candidates(root: Path, checkpoint: Path, workers: int) -> tuple[dict, d
     ):
         raise ValueError("expanded candidate preparation/completion mismatch")
     jobs = [json.loads(line) for line in manifest.read_text().splitlines() if line]
-    if len(jobs) != 8:
-        raise ValueError("expanded candidate job count mismatch")
+    if (
+        len(jobs) != 640
+        or any(job.get("episodes") != 1 for job in jobs)
+        or any(len(job.get("tasks", [])) != 1 for job in jobs)
+        or any(len(job.get("trials", [])) != 1 for job in jobs)
+    ):
+        raise ValueError("expanded isolated candidate job count mismatch")
     specs = []
     for job in jobs:
         result_path = Path(job["output"]) / "results.json"
@@ -413,6 +420,10 @@ def aggregate(
             row["mechanical_identity"] == "full_trajectory_initial_state_exact"
             for row in expanded
         ),
+        "candidate_one_episode_per_process": (
+            prepared.get("one_episode_per_process") is True
+            and prepared.get("jobs") == 640
+        ),
         "absolute_gain_at_least_0_03": (
             overall["success_rate_delta"] >= threshold["absolute_gain_at_least_0_03"]
         ),
@@ -431,7 +442,7 @@ def aggregate(
     }
     passed = all(gates.values())
     report = {
-        "format": "h3wam-c58b-vs-d0-expanded-paired-libero-trials33-49-v1",
+        "format": "h3wam-c58b-vs-d0-expanded-paired-libero-trials33-49-v2",
         "status": "PASS_C58B_EXPANDED_PAIRED" if passed else "FAIL_C58B_EXPANDED_PAIRED",
         "permission": "GO_PROMOTE_C58B" if passed else "KEEP_D0_INCUMBENT",
         "effect_status": "EVIDENCE_READY" if passed else "NOT_EVIDENCE_READY",

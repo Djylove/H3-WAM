@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -88,6 +89,65 @@ def test_prepared_jobs_cover_exact_640_without_overlap():
     assert trials == list(range(34, 50))
     assert len(PREPARE.SUITES) * len(PREPARE.TRIAL_GROUPS) == 8
     assert 8 * 10 * len(PREPARE.TRIAL_GROUPS[0]) == 640
+
+
+def test_isolated_preparation_emits_one_fresh_process_job_per_episode(
+    tmp_path, monkeypatch
+):
+    checkpoint = tmp_path / "candidate.pt"
+    checkpoint.write_bytes(b"candidate")
+    trial33 = tmp_path / "trial33.json"
+    trial33.write_text(json.dumps({
+        "status": "COMPLETE", "paired_episodes_per_arm": 40,
+        "candidate_successes": 18, "control_successes": 16,
+    }))
+    gate = tmp_path / "gate.json"
+    gate.write_text(json.dumps({
+        "permission": "GO_FRESH_LIBERO", "checkpoint": str(checkpoint),
+        "checkpoint_sha256": PREPARE.C58_SHA256,
+        "closed_loop_protocol": {"wait_steps": 30},
+    }))
+    ready = tmp_path / "ready.json"
+    ready.write_text(json.dumps({
+        "format": PREPARE.D0_READY_FORMAT,
+        "status": "PASS_D0_CONTROL_REUSE",
+        "permission": "GO_C58B_CANDIDATE_ONLY_TRIALS34_49",
+        "controls": 640, "trials": list(range(34, 50)),
+    }))
+    real_sha = PREPARE.sha256_file
+    monkeypatch.setattr(
+        PREPARE, "sha256_file",
+        lambda path: (
+            PREPARE.C58_SHA256 if Path(path) == checkpoint
+            else PREPARE.TRIAL33_SHA256 if Path(path) == trial33
+            else real_sha(Path(path))
+        ),
+    )
+    output = tmp_path / "isolated"
+    report = PREPARE.prepare(
+        checkpoint, gate, ready, trial33, output,
+        one_episode_per_process=True,
+    )
+    jobs = [json.loads(line) for line in (output / "jobs.jsonl").read_text().splitlines()]
+    identities = {
+        (job["suite"], job["tasks"][0], job["trials"][0]) for job in jobs
+    }
+    assert report["permission"] == "GO_8GPU_640_FRESH_PROCESSES_NO_INTERMEDIATE_STOP"
+    assert report["one_episode_per_process"] is True
+    assert len(jobs) == len(identities) == 640
+    assert all(job["episodes"] == 1 for job in jobs)
+    assert {job["gpu"] for job in jobs} == set(range(8))
+
+
+def test_isolated_launcher_never_batches_tasks_or_trials():
+    source = (
+        ROOT / "scripts/h3wam/launch_c58b_expanded_isolated_candidate.sh"
+    ).read_text(encoding="utf-8")
+    assert '--task-ids "${task}"' in source
+    assert '--trial-indices "${trial}"' in source
+    assert "GO_8GPU_640_FRESH_PROCESSES_NO_INTERMEDIATE_STOP" in source
+    assert 'p["jobs"] == 640' in source
+    assert "for gpu in 0 1 2 3 4 5 6 7" in source
 
 
 def test_launcher_pins_verified_execution_contract():

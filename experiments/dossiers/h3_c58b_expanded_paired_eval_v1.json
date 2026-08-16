@@ -25,7 +25,7 @@
       "kind": "local_implementation",
       "title": "C58b expanded paired LIBERO evaluator",
       "locator": "/home/ubuntu/fastwam_deploy",
-      "revision": "launcher 3e39368; aggregate/test working revision after 3e39368",
+      "revision": "corrected isolated-process v3 working revision after invalid v2",
       "official": false,
       "clean": false
     }
@@ -93,11 +93,11 @@
         "field": "bounded evaluation budget",
         "paper": "Multi-GPU evaluation parallelizes independent episodes.",
         "upstream_code": "No optimizer is active in rollout.",
-        "local": "Eight A800 GPUs each run one immutable 80-episode segment, for exactly 640 new candidate episodes; no intermediate success-based stopping or checkpoint selection is permitted.",
+        "local": "Eight A800 GPUs each consume 80 manifest jobs, but every job launches a fresh simulator and policy process for exactly one episode. This matches the historical C55 D0 process boundary while retaining exactly 640 new candidate episodes; no intermediate success-based stopping or checkpoint selection is permitted.",
         "status": "INTENTIONAL_DEVIATION",
         "evidence": [
-          "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/expanded-paired-trials34-49-v2/PREPARED.json",
-          "scripts/h3wam/launch_c58b_expanded_candidate_only.sh"
+          "/mnt/h3-wam/eval/c58b-isolated-process-canary-v1/libero_10_task00_trial35",
+          "scripts/h3wam/launch_c58b_expanded_isolated_candidate.sh"
         ],
         "rationale": "The dossier validator expresses the 80 evaluation waves as optimizer_steps solely for budget arithmetic; no training occurs."
       }
@@ -140,7 +140,7 @@
     },
     "optimization_contract": {
       "status": "PASS",
-      "evidence": ["PREPARED fixes eight disjoint 80-episode candidate jobs and prohibits intermediate stopping."]
+      "evidence": ["Corrected PREPARED fixes 640 disjoint one-episode candidate jobs over eight GPU queues and prohibits intermediate stopping; invalid v2 mismatched 532/640 strict initial states because it reused each MuJoCo env across eight trials."]
     },
     "evaluation_contract": {
       "status": "PASS",
@@ -187,8 +187,8 @@
   },
   "decision": {
     "status": "GO_LONG",
-    "rationale": "All source, control-reuse, action and closed-loop harness gates pass. The first v1 launch was fail-closed before any formal episode because its destination snapshot was still being copied; only the subsequently verified read-only v2 snapshot/output is admissible.",
-    "launch_command": "C58B_EXPANDED_ROOT=/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/expanded-paired-trials34-49-v2 bash /mnt/h3-wam/runtime-snapshots/project-3e39368-c58expanded/scripts/h3wam/launch_c58b_expanded_candidate_only.sh",
+    "rationale": "The v2 80-episode process batching is invalid for paired inference: 532/640 candidate initial states were not byte-exact with historical one-episode-process D0. A fresh-process trial35 canary restored exact equality across all eight trajectory fields, object joints and seed schedules. Only corrected v3 is admissible.",
+    "launch_command": "C58B_EXPANDED_ROOT=/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/expanded-paired-trials34-49-v3-isolated bash <immutable-snapshot>/scripts/h3wam/launch_c58b_expanded_isolated_candidate.sh",
     "effect_status": "NOT_EVIDENCE_READY"
   }
 }
