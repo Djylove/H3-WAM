@@ -1,0 +1,213 @@
+{
+  "experiment_id": "h3_c56b_fact_layerwise_tower_v1",
+  "classification": "backbone_port",
+  "hypothesis": "Placing FACT clean-action and consequence tracks inside all thirty H3-conditioned action-generation blocks will convert H3 future prediction supervision into action-policy gradients without future-to-action leakage.",
+  "single_variable": "Relative to the C58b layer-wise H3-to-FastWAM tower, add FACT A/G/future-state/value/future-H3 token tracks, per-token clean/noisy timestep modulation, the official teacher-forcing visibility mask, and the official 10:1:0.4:0.4 losses inside the same thirty blocks.",
+  "parent_baseline": "C58b initialized exactly from D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3; C56b Stage1 delegates byte-exactly to C58b.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FACT: Failure-Aware Causal Training for World-Action Models",
+      "locator": "https://arxiv.org/abs/2608.10232",
+      "revision": "v1 (2026-08-10)",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Bariona/FACT official repository",
+      "locator": "third_party/FACT/world_action_model/models/transformer_wa_casual.py",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "FastWAM official ActionDiT",
+      "locator": "third_party/FastWAM/src/fastwam/models/wan22/action_dit.py",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "C56b shared FACT layer-wise H3 tower",
+      "locator": "src/fastwam/models/h3wam/fact_layerwise_tower.py",
+      "revision": "C58b dependency commit 90324d6 plus C56b working diff",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "shared world/action blocks",
+        "paper": "P/A/G/V/I traverse one causal video transformer at every layer",
+        "upstream_code": "WanTransformerBlock applies one masked self-attention to the complete teacher-forcing sequence",
+        "local": "Each of the thirty C58b ActionDiT blocks receives its mapped H3 K/V prefix P and jointly updates A/G/future-state/value/I with one FACT mask; no independent TransformerEncoder exists",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "src/fastwam/models/h3wam/fact_layerwise_tower.py:H3FACTLayerwiseTowerPolicy._shared_block_forward",
+          "tests/test_h3_fact_layerwise_tower.py:test_joint_forward_uses_all_thirty_shared_blocks_and_action_is_causal"
+        ],
+        "rationale": "The shared-block property is preserved, but H3 P is a frozen layer-wise K/V prefix rather than trainable Wan RGB tokens. This is the declared H3 backbone substitution, not an appended auxiliary trunk."
+      },
+      {
+        "field": "teacher-forcing token order and visibility",
+        "paper": "[P|A|G|future-state|value|I], A cannot read G/V/I and G cannot read A",
+        "upstream_code": "_build_teacher_forcing_mask supplies the same segment relation matrix",
+        "local": "C56b slices the byte-audited C56a full FACT mask to P-prefix K/V plus A/G/V/I query tracks",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "tests/test_h3_fact_backbone_port.py:test_mask_is_byte_semantic_parity_with_pinned_official_function",
+          "tests/test_h3_fact_layerwise_tower.py:test_joint_forward_uses_all_thirty_shared_blocks_and_action_is_causal"
+        ],
+        "rationale": "The visibility relation is tensor-identical; only P storage is external layer-wise H3 K/V."
+      }
+    ],
+    "data": [
+      {
+        "field": "expert, observational failure and causal failure streams",
+        "paper": "demonstrations plus failure rollouts with explicit failure onset",
+        "upstream_code": "success/failure episodes share one loader; failed actions are masked while future/value train",
+        "local": "Expert dense LIBERO demos, C59 observational failures, and C60 83 exact-state counterfactual branches are separate immutable streams; C60 dataset SHA256 1abeee1ef4e5e71f66b656c9920124086046c3e7d3b3a22b769449b72b1fc1d4",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "/mnt/h3-wam/eval/c59-fact-failure-active-overlay-v1/COMPLETED.json",
+          "/mnt/h3-wam/eval/c60-counterfactual-failure-dataset-v1/dataset.pt",
+          "/mnt/h3-wam/data/c60-h3-fact-cache-v1/STRUCTURED5_IDENTITY.json SHA256 4d8519eb9ed8bf06f919abc2618c47fdbd20433b7734295b5e2353bcfd7ef760 (eligible_for_c56b_layerwise_training=false)",
+          "scripts/h3wam/launch_c60_fact_layerwise30_kv_8gpu.sh"
+        ],
+        "rationale": "LIBERO replaces RoboTwin. Five-layer C60 assets are explicitly ineligible; formal C56b training requires READY_LAYERWISE30.json with exact 30-layer K/V and audited future-H3 coverage."
+      }
+    ],
+    "action": [
+      {
+        "field": "action horizon, encoder sharing and failure mask",
+        "paper": "A and G share one action encoder; failed episode actions are not imitated",
+        "upstream_code": "action_encoder is shared by pred_action/gt_action and action_loss_mask zeros failure imitation",
+        "local": "C56b A/G share the C58b ActionDiT action_encoder, retains horizon32 D0 normalization/padding, and reuses C59/C60 whole-failure action masks",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "src/fastwam/models/h3wam/fact_layerwise_tower.py:_joint_tokens",
+          "tests/test_h3_fact_layerwise_tower.py:test_failed_episode_masks_action_but_keeps_future_and_value_objectives"
+        ],
+        "rationale": "LIBERO absolute 7D horizon32 replaces RoboTwin delta 14D horizon48; the deployed action contract stays fixed for attribution."
+      }
+    ],
+    "objective": [
+      {
+        "field": "joint flow objectives and shared gradient path",
+        "paper": "action/future-image/future-state/value flow losses weighted 10:1:0.4:0.4 update one backbone",
+        "upstream_code": "clean G conditions consequences while A is causally isolated",
+        "local": "Future-H3 tokens replace future RGB latents with exact relative weights; future-only backward reaches all thirty action-generation blocks and the shared A/G encoder",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "src/fastwam/models/h3wam/fact_backbone_port.py:fact_backbone_port_losses",
+          "tests/test_h3_fact_layerwise_tower.py:test_future_only_loss_updates_every_action_generation_block_and_shared_encoder"
+        ],
+        "rationale": "The predicted modality changes from RGB latent to H3 world representation, while the causal condition and shared-block optimization mechanism remain the same."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "mechanical probe",
+        "paper": "8 GPUs, large batches and long training",
+        "upstream_code": "150000 steps with separate base/action learning rates",
+        "local": "Eight A800 ranks each consume one real layer-wise H3 demo cache item and run one AdamW step at 2e-5; initialization and optimizer-step timings are reported separately",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/probe_c56b_fact_layerwise_tower.py",
+          "scripts/h3wam/launch_c56b_fact_layerwise_probe.sh"
+        ],
+        "rationale": "This is a bounded architecture/restore/memory canary only, not an effectiveness budget."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "promotion metric",
+        "paper": "closed-loop RoboTwin success",
+        "upstream_code": "two-stage action then consequence pipeline",
+        "local": "Fixed offline checks are diagnostic; promotion requires fresh episode-disjoint LIBERO closed-loop success against D0/C58b and a matched action-only continuation",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/prepare_c55_closed_loop_jobs.py",
+          "docs/H3_WAM_EXPERIMENT_LEDGER.md"
+        ],
+        "rationale": "LIBERO is the project benchmark and success rate remains the decisive metric."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": ["FACT commit 618a6c1 and C58b dependency commit 90324d6 are fixed; FastWAM source bytes are pinned."]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": ["C56b contains no nn.TransformerEncoder; five focused tests prove all thirty shared blocks execute and Stage1 remains exact C58b. The same five tests passed on n0 in 6.17 s using pinned FastWAM source /mnt/h3-wam/upstream-readonly/FastWAM-45d8e145/wan22 on 2026-08-16."]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": ["C60 dataset/observations SHA256 are fixed; the layerwise launcher refuses training use without exact 30-layer count/hash/missing/extra/partial READY audit. Existing STRUCTURED5_IDENTITY.json SHA256 4d8519eb9ed8bf06f919abc2618c47fdbd20433b7734295b5e2353bcfd7ef760 explicitly records kv_layers=[9,19,29,39,49] and eligible_for_c56b_layerwise_training=false."]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": ["A/G share the same C58b action encoder; failure action masking and future/value retention are directly tested."]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": ["The audited 10:1:0.4:0.4 loss helper is reused; future-only loss updates the same thirty action blocks."]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": ["Mechanical launcher fixes 8 ranks, explicit parent SHA, one step by default and a fresh output root."]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": ["Probe reports NOT_EVIDENCE_READY; no mechanical result can promote a model."
+      ]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": ["Local test observes nonzero future-only gradients in all thirty shared self-attention output projections and the shared A/G encoder."]
+    },
+    "smoke_finite": {
+      "status": "PASS",
+      "evidence": ["Local small-dimension full30 forward/backward is finite; 20 combined C56a/C56b/C58b tests pass. Remote n0 repeats all five focused C56b tests successfully in 6.17 s with the pinned FastWAM source mirror."]
+    },
+    "checkpoint_restore": {
+      "status": "PASS",
+      "evidence": ["Local strict state restore reproduces A/future-state/value/I bit exactly; real launcher repeats full-state in-memory restore."
+      ]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": ["C56b forward_action is byte-exact C58b in the local test; D0 parent SHA is launcher-verified."
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": ["No real C56b mechanical result or trained checkpoint exists yet."]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": ["No C56b checkpoint has run fresh LIBERO episodes."]
+    }
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 1,
+    "training_samples": 8,
+    "unique_windows": 80,
+    "effective_epochs": 0.1,
+    "gpu_count": 8,
+    "estimated_hours": 0.25
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Source, shared-block architecture, mask, gradient, failure-mask and restore contracts permit exactly one real 8-rank mechanical step after the C58b 80-item layer-wise cache is READY. Long training remains blocked on C60 READY_LAYERWISE30.json and a real finite canary.",
+    "launch_command": "STEPS=1 bash scripts/h3wam/launch_c56b_fact_layerwise_probe.sh",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}

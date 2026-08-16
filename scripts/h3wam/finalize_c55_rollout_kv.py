@@ -11,13 +11,15 @@ from pathlib import Path
 
 import torch
 
+from fastwam.models.h3wam.dreamwam_kv_carrier import DEFAULT_H3_CARRIER_LAYERS
+from fastwam.models.h3wam.fastwam_full_tower import LAYERWISE_H3_50_TO_ACTION_30
+
 
 FORMAT = "h3wam-c55-rollout-kv-ready-v1"
 ITEM_FORMAT = "h3wam-c55-rollout-kv-shard-v1"
 EXPECTED_H3_SHA256 = (
     "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
 )
-LAYERS = (9, 19, 29, 39, 49)
 SUPPORTED_DATASET_FORMATS = {
     "h3wam-c48-fact-dense-value-dataset-v1",
     "h3wam-c60-counterfactual-failure-dataset-v1",
@@ -40,6 +42,9 @@ def main() -> None:
     parser.add_argument("--expected-observations-sha256", required=True)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--layers", nargs="+", type=int, default=DEFAULT_H3_CARRIER_LAYERS
+    )
     args = parser.parse_args()
     output = args.output.resolve()
     if output.exists():
@@ -47,6 +52,12 @@ def main() -> None:
     dataset_path = args.dataset.resolve()
     observations_path = args.observations.resolve()
     root = args.root.resolve()
+    layers = tuple(int(value) for value in args.layers)
+    if layers not in {
+        tuple(DEFAULT_H3_CARRIER_LAYERS),
+        tuple(LAYERWISE_H3_50_TO_ACTION_30),
+    }:
+        raise ValueError("unsupported FACT H3 K/V layer schema")
     dataset = torch.load(dataset_path, map_location="cpu", weights_only=False)
     if dataset.get("format") not in SUPPORTED_DATASET_FORMATS:
         raise ValueError(f"unsupported FACT rollout dataset: {dataset.get('format')!r}")
@@ -83,6 +94,7 @@ def main() -> None:
             or marker.get("h3_checkpoint_sha256") != EXPECTED_H3_SHA256
             or marker.get("dataset_sha256") != dataset_sha256
             or marker.get("observations_sha256") != observations_sha256
+            or tuple(marker.get("layers", ())) != layers
         ):
             raise ValueError(f"C55 shard marker mismatch: {shard}")
         markers.append(marker)
@@ -99,14 +111,14 @@ def main() -> None:
         item = torch.load(path, map_location="cpu", weights_only=False)
         if (
             item.get("format") != ITEM_FORMAT
-            or tuple(item.get("layers", ())) != LAYERS
+            or tuple(item.get("layers", ())) != layers
             or item.get("h3_checkpoint_sha256") != EXPECTED_H3_SHA256
             or item.get("dataset_sha256") != dataset_sha256
             or item.get("observations_sha256") != observations_sha256
         ):
             raise ValueError(f"C55 sampled item identity mismatch: {path}")
         signatures = set()
-        for layer in LAYERS:
+        for layer in layers:
             for name in ("k", "v"):
                 tensor = item["video_kv_cache"][layer][name]
                 if tensor.shape != (32, 56, 128) or tensor.dtype != torch.bfloat16:
@@ -114,7 +126,7 @@ def main() -> None:
                 signatures.add(tensor.untyped_storage().data_ptr())
                 if not torch.isfinite(tensor.float()).all():
                     raise ValueError(f"C55 sampled tensor non-finite: {path}")
-        if len(signatures) != 10:
+        if len(signatures) != 2 * len(layers):
             raise ValueError(f"C55 sampled storage alias: {path}")
         sampled.append({"shard": shard, "file": path.name, "sha256": sha256_file(path)})
 
@@ -131,6 +143,7 @@ def main() -> None:
         "dataset_sha256": dataset_sha256,
         "observations_sha256": observations_sha256,
         "h3_checkpoint_sha256": EXPECTED_H3_SHA256,
+        "layers": list(layers),
         "items": len(item_paths),
         "bytes": sum(path.stat().st_size for path in item_paths),
         "missing": 0,

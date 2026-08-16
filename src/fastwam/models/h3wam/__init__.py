@@ -113,6 +113,7 @@ from .fact_backbone_port import (
     build_fact_teacher_forcing_mask,
     fact_backbone_port_losses,
 )
+from .fact_layerwise_tower import H3FACTLayerwiseTowerPolicy
 __all__ = [
     "ActionEnsembler",
     "action_denormalization_bounds",
@@ -191,6 +192,7 @@ __all__ = [
     "H3FACTBackbonePort",
     "build_fact_teacher_forcing_mask",
     "fact_backbone_port_losses",
+    "H3FACTLayerwiseTowerPolicy",
     "DEFAULT_OFFICIAL_H3_LORA_TARGETS",
     "inject_official_h3_lora",
     "load_cached_task_context",

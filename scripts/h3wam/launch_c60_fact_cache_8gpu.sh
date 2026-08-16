@@ -136,8 +136,10 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 result = {
-    "format": "h3wam-c60-fact-cache-ready-v1",
+    "format": "h3wam-c60-fact-structured5-cache-ready-v1",
     "ready": True,
+    "asset_scope": "C56a structured five-layer K/V plus layer49 future features; not valid for C56b layerwise training",
+    "kv_layers": [9, 19, 29, 39, 49],
     "dataset_sha256": dataset_sha,
     "observations_sha256": observations_sha,
     "kv_items": kv["items"],

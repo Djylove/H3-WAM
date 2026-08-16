@@ -34,6 +34,9 @@ from fastwam.models.h3wam.dreamwam_kv_carrier import (  # noqa: E402
     DEFAULT_H3_CARRIER_LAYERS,
     DREAMWAM_COMMIT,
 )
+from fastwam.models.h3wam.fastwam_full_tower import (  # noqa: E402
+    LAYERWISE_H3_50_TO_ACTION_30,
+)
 
 
 FORMAT = "h3wam-c55-rollout-kv-shard-v1"
@@ -76,6 +79,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--progress-every", type=int, default=25)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--layers",
+        nargs="+",
+        type=int,
+        default=DEFAULT_H3_CARRIER_LAYERS,
+        help="Explicit five-layer structured or 30-layer C58b carrier schema.",
+    )
     return parser.parse_args()
 
 
@@ -107,6 +117,12 @@ def main() -> None:
     splits = tuple(str(value) for value in args.splits)
     if not splits or not set(splits) <= {"train", "validation"}:
         raise ValueError("C55 K/V extraction permits train/validation only")
+    carrier_layers = tuple(int(value) for value in args.layers)
+    if carrier_layers not in {
+        tuple(DEFAULT_H3_CARRIER_LAYERS),
+        tuple(LAYERWISE_H3_50_TO_ACTION_30),
+    }:
+        raise ValueError("unsupported FACT H3 K/V layer schema")
 
     dataset_path = args.dataset.resolve()
     observations_path = args.observations.resolve()
@@ -184,7 +200,7 @@ def main() -> None:
     provider = H3Int8OnlineKVProvider(
         backbone,
         H3Int8OnlineKVContract(
-            layers=DEFAULT_H3_CARRIER_LAYERS,
+            layers=carrier_layers,
             action_horizon=32,
             target_latent_frames=12,
             video_timestep=1.0,
@@ -243,7 +259,7 @@ def main() -> None:
                     name: live[layer][name][0].to(torch.bfloat16).cpu().clone()
                     for name in ("k", "v")
                 }
-                for layer in DEFAULT_H3_CARRIER_LAYERS
+                for layer in carrier_layers
             }
             observation_id = int(row["observation_id"])
             output = item_root / f"obs_{observation_id:06d}.pt"
@@ -256,7 +272,7 @@ def main() -> None:
                 "episode_id": int(row["episode_id"]),
                 "split": str(row["split"]),
                 "context_id": context["id"],
-                "layers": DEFAULT_H3_CARRIER_LAYERS,
+                "layers": carrier_layers,
                 "capture_token_count": 32,
                 "num_heads": 56,
                 "attn_head_dim": 128,
@@ -301,6 +317,7 @@ def main() -> None:
         "dataset_sha256": dataset_sha256,
         "observations_sha256": observations_sha256,
         "h3_checkpoint_sha256": EXPECTED_H3_SHA256,
+        "layers": list(carrier_layers),
         "elapsed_seconds": time.perf_counter() - started,
     }
     temporary = marker.with_name(f".{marker.name}.{os.getpid()}.partial")
