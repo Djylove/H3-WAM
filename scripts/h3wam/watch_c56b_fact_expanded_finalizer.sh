@@ -22,7 +22,7 @@ lock="${c60_root}/.finalizer.lock"
 mkdir "${lock}" 2>/dev/null || { echo "another C60 finalizer owns ${lock}" >&2; exit 75; }
 trap 'rmdir "${lock}" 2>/dev/null || true' EXIT
 
-# File-existence only wait: no results.json or success payload is opened early.
+# File-existence-only wait: no per-episode effect payload is opened early.
 while [[ ! -s "${c60_root}/COMPLETED.json" || ! -s "${c58_root}/COMPLETED.json" ]]; do
   if [[ -e "${c60_root}/INVALID.json" || -e "${c58_root}/INVALID.json" ]]; then
     echo "an expanded arm is marked INVALID" >&2; exit 2
