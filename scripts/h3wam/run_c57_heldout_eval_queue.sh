@@ -17,6 +17,8 @@ C57_EVAL_IDLE_CONFIRM_SECONDS=${C57_EVAL_IDLE_CONFIRM_SECONDS:-30}
 C57_C56_GO_LONG=${C57_C56_GO_LONG:-/mnt/h3-wam/outputs/c56b-fact-online-v1/optimizer-canary10-v1/GO_LONG.json}
 C57_C56_PARENT_CHECKPOINT=${C57_C56_PARENT_CHECKPOINT:-/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt}
 C57_C56_PARENT_READY=${C57_C56_PARENT_READY:-/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/READY.json}
+C57_C56_FINAL_CHECKPOINT=${C57_C56_FINAL_CHECKPOINT:-/mnt/h3-wam/outputs/c56b-fact-online-v1/online-long10000-v1/checkpoints/c56b_online_s10000.pt}
+C57_C56_FINAL_RESTORE=${C57_C56_FINAL_RESTORE:-/mnt/h3-wam/outputs/c56b-fact-online-v1/online-long10000-v1/restore/restore_s10000.json}
 C57_EVAL_PREEMPT_POLL_SECONDS=${C57_EVAL_PREEMPT_POLL_SECONDS:-5}
 
 if ! [[ "${C57_EVAL_PHYSICAL_GPU}" =~ ^[0-9]+$ ]]; then
@@ -40,10 +42,31 @@ c56_parent_ready() {
      -s "${C57_C56_PARENT_READY}" ]]
 }
 
+c56_final_complete() {
+  [[ -s "${C57_C56_FINAL_CHECKPOINT}" && -s "${C57_C56_FINAL_RESTORE}" ]] || return 1
+  "${C57_EVAL_PYTHON}" - "${C57_C56_FINAL_CHECKPOINT}" "${C57_C56_FINAL_RESTORE}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+checkpoint = Path(sys.argv[1]).resolve()
+report = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+valid = (
+    report.get("status") == "PASS_C56B_STRICT_RESTORE"
+    and report.get("restore_max_abs") == 0.0
+    and Path(report.get("checkpoint", "")).resolve() == checkpoint
+)
+raise SystemExit(0 if valid else 1)
+PY
+}
+
 higher_priority_reserved() {
   # GO_LONG alone is not a reservation. C56 cannot start until its C58b
-  # s10000 parent and final strict-restore READY are both published.
-  c56_parent_ready || pgrep -f '([c]56|[C]56)' >/dev/null 2>&1
+  # s10000 parent and final strict-restore READY are both published.  Once
+  # C56 itself has completed its bit-exact s10000 restore, the reservation is
+  # released; otherwise a completed C56 would starve the C57 queue forever.
+  pgrep -f '([c]56|[C]56)' >/dev/null 2>&1 || \
+    { c56_parent_ready && ! c56_final_complete; }
 }
 
 gpu_compute_pids() {

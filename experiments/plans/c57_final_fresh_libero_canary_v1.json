@@ -1,0 +1,52 @@
+{
+  "schema": "c57_final_fresh_libero_canary_v1",
+  "candidate": "C57",
+  "control": "D0",
+  "decision_checkpoint_step": 5000,
+  "freshness": "C57 has never consumed these four suite/task/trial pairs in closed loop",
+  "claim_boundary": "Four paired episodes are a lifecycle/effect canary, not a full LIBERO benchmark claim",
+  "contract": {
+    "wait_steps": 0,
+    "replan_steps": 8,
+    "action_horizon": 32,
+    "observe_every": 4,
+    "h3_feature_audio_horizon": 32,
+    "target_latent_frames": 12,
+    "model_evaluations": 10,
+    "max_steps": 400,
+    "normalized_action_pre_clamp": true,
+    "use_action_ensembler": false,
+    "save_video": false,
+    "save_trajectories": false
+  },
+  "pairs": [
+    {
+      "suite": "libero_goal",
+      "task_id": 0,
+      "trial_index": 49,
+      "environment_seed": 42,
+      "policy_noise_seed_base": 570049
+    },
+    {
+      "suite": "libero_spatial",
+      "task_id": 0,
+      "trial_index": 49,
+      "environment_seed": 42,
+      "policy_noise_seed_base": 571049
+    },
+    {
+      "suite": "libero_object",
+      "task_id": 0,
+      "trial_index": 49,
+      "environment_seed": 42,
+      "policy_noise_seed_base": 572049
+    },
+    {
+      "suite": "libero_10",
+      "task_id": 0,
+      "trial_index": 49,
+      "environment_seed": 42,
+      "policy_noise_seed_base": 573049
+    }
+  ]
+}
