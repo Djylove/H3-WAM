@@ -1,0 +1,232 @@
+{
+  "experiment_id": "h3_c58_fastwam_full30_h3_layer49_v1",
+  "classification": "backbone_port",
+  "hypothesis": "With frozen H3 layer-49 K/V, the official FastWAM full 30-layer ActionDiT improves held-out action quality and fresh LIBERO success over an otherwise matched five-layer D0 action expert.",
+  "single_variable": "Function-preserving expansion of the D0 action tower from 5 to 30 official FastWAM ActionDiT blocks; frozen H3 carrier, data, action contract, flow objective and evaluation protocol remain fixed.",
+  "arm_role": "CONTROLLED_ARM_REPEATED_LAYER49",
+  "paired_followup": {
+    "experiment_id": "h3_c58b_fastwam_full30_h3_layerwise_v1",
+    "role": "LAYERWISE_CANDIDATE",
+    "mapping": [0, 2, 3, 5, 7, 8, 10, 12, 14, 15, 17, 19, 20, 22, 24, 25, 27, 29, 30, 32, 34, 35, 37, 39, 41, 42, 44, 46, 47, 49],
+    "evidence_boundary": "C58 repeats H3 layer49 and is not a complete world-action joint-training reproduction; C58b isolates layer-wise H3 carrier routing."
+  },
+  "parent_baseline": "D0-H32-s14000 checkpoint SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FastWAM",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "arXiv:2603.16666",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "YuanTianYuan01/FastWAM official repository",
+      "locator": "https://github.com/YuanTianYuan01/FastWAM",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3-WAM C58 full-depth FastWAM backbone port",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "4d8f5d98cd9e523671bae4ee8504d23192d7240e + af4814b8d2fba57ffb560225db3e6dbeef767745 + evaluator working diff",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "ActionDiT block execution and full depth",
+        "paper": "FastWAM uses a full action expert coupled to the video world model.",
+        "upstream_code": "ActionDiT hidden1024, FFN4096, head_dim128, 30 blocks.",
+        "local": "Byte-pinned official ActionDiT code with hidden1024, FFN4096, head_dim128 and 30 blocks.",
+        "status": "EXACT",
+        "evidence": [
+          "FastWAM 45d8e145 src/fastwam/models/wan22/action_dit.py SHA256 1301d9224149de43bb701f620a5d41858ecc63c6b19a573ec32edd45a3bdb0a2",
+          "src/fastwam/models/h3wam/fastwam_full_tower.py:188"
+        ]
+      },
+      {
+        "field": "world carrier dimensions and initialization",
+        "paper": "Wan2.2 video expert, 24 heads; ActionDiT initialized by video-weight interpolation.",
+        "upstream_code": "24 heads and alpha-scaled linear interpolation from Wan video DiT.",
+        "local": "Frozen H3 layer49 K/V requires 56 heads; D0 five blocks are anchored at 0/7/14/22/29 and other residual branches start as exact identities.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "src/fastwam/models/h3wam/fastwam_full_tower.py:140",
+          "tests/test_h3_fastwam_full_tower.py"
+        ],
+        "rationale": "The H3 port consumes 7168D K/V without a new projection and preserves the already-trained D0 function exactly at step zero."
+      }
+    ],
+    "data": [
+      {
+        "field": "LIBERO dense multi-suite coverage",
+        "paper": "FastWAM trains on LIBERO robot-video demonstrations.",
+        "upstream_code": "All spatial/object/goal/libero10 datasets, stride1, 32 actions and 9 video frames.",
+        "local": "All four LIBERO suites through the audited dense 200779-window manifest; C58 consumes a new 80000-window slice.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "/mnt/h3-wam/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl",
+          "FastWAM configs/data/libero_2cam.yaml at 45d8e145"
+        ],
+        "rationale": "The H3 cache replaces online RGB encoding but retains dense windows, suites and horizon."
+      }
+    ],
+    "action": [
+      {
+        "field": "action/state dimensions, horizon and normalization",
+        "paper": "LIBERO end-effector action chunks conditioned on proprioception.",
+        "upstream_code": "7D action, 8D state, horizon32 and min/max normalization.",
+        "local": "Exact D0 7D/8D/horizon32/minmax/gripper deployment contract.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "scripts/h3wam/train_h3_fastwam_full_tower.py:249",
+          "FastWAM configs/data/libero_2cam.yaml at 45d8e145"
+        ],
+        "rationale": "No action representation or execution conversion changes in the architecture ablation."
+      }
+    ],
+    "objective": [
+      {
+        "field": "flow matching objective",
+        "paper": "Joint video and action flow matching through a world-action model.",
+        "upstream_code": "Video and action MoT losses; action scheduler train shift5.",
+        "local": "Same action shift5 velocity MSE and pad mask over frozen precomputed H3 K/V; video loss omitted.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/train_h3_fastwam_full_tower.py:582",
+          "FastWAM configs/model/fastwam.yaml at 45d8e145"
+        ],
+        "rationale": "This experiment asks whether H3 world representations can drive the complete action expert; it is not a Wan video-model reproduction."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "optimizer, schedule and training budget",
+        "paper": "Multi-GPU FastWAM training.",
+        "upstream_code": "AdamW betas .9/.95, LR1e-4, WD1e-2, 5% warmup plus cosine, batch16 and 10 epochs for LIBERO.",
+        "local": "AdamW and LR/WD/betas equivalent; global batch8, 1000 warmup, cosine horizon10000, 10000 steps and 80000 samples.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/launch_c58_fastwam_full30_long.sh",
+          "FastWAM src/fastwam/trainer.py and configs/task/libero_uncond_2cam224_1e-4.yaml at 45d8e145"
+        ],
+        "rationale": "The diagnostic budget is bounded by the H3 project dataset and must be compared against a matched fresh-optimizer D0 arm, not official epoch numbers."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "offline and closed-loop promotion",
+        "paper": "LIBERO closed-loop success rate.",
+        "upstream_code": "Official LIBERO evaluator with action chunk replanning and task-specific max steps.",
+        "local": "Frozen v7 balanced-80 first, then new paired LIBERO trials with incumbent project replan8/no-ensemble contract.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/evaluate_h3_fastwam_full_tower.py",
+          "tests/test_evaluate_h3_fastwam_full_tower.py"
+        ],
+        "rationale": "Project promotion requires a single stable replan8 protocol; offline metrics are explicitly not closed-loop evidence."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": [
+        "FastWAM commit 45d8e145 fixed; four execution source files are byte-pinned by SHA256 and loaded from a read-only cloud mirror."
+      ]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Official full30 ActionDiT is disabled by default, only layer49 is consumed, and exact D0 step0 parity is covered by focused tests."
+      ]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Trainer requires source/split/stats/cache identities and rejects any overlap with D0 consumed sample IDs."
+      ]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": [
+        "C58 imports the audited D0 loader, action normalization, horizon32 padding mask and 7D deployment representation unchanged."
+      ]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Shift5 flow velocity MSE is imported from D0; deterministic continuous-fp32 timestep/noise contracts are checkpointed."
+      ]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": [
+        "AdamW betas .9/.95, LR1e-4, WD1e-2 and warmup-cosine are checkpointed; long launcher stages strictly restore optimizer and scheduler."
+      ]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": [
+        "C58 adapter freezes v7 balanced-80 selected ID SHA256 26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42 and delegates all sampling/metrics to the existing evaluator; five drift-rejection tests pass."
+      ]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": [
+        "Cloud 10-step BF16 probe observed finite nonzero gradients in all 30 blocks, range 0.0348871 to 2.00096."
+      ]
+    },
+    "smoke_finite": {
+      "status": "PASS",
+      "evidence": [
+        "8-GPU 10-step losses were finite (0.00842285 to 0.359375); peak allocated memory was 22.7113 GiB/GPU."
+      ]
+    },
+    "checkpoint_restore": {
+      "status": "PASS",
+      "evidence": [
+        "12,180,221,635-byte C58 step10 checkpoint strict-restored in a fresh invocation with fixed-probe max_abs=0.0; SHA256 4c47305c378567fcb6ce543e6924fdb7b316c39fee281c6aab80106de245c2b1."
+      ]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": [
+        "D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3 and step0 prediction max_abs=0.0."
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": [
+        "No real C58 balanced-80 milestone has completed; no effect claim is permitted."
+      ]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": [
+        "No fresh paired LIBERO closed-loop C58 result exists."
+      ]
+    }
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 10000,
+    "training_samples": 80000,
+    "unique_windows": 200779,
+    "effective_epochs": 0.39844804486524983,
+    "gpu_count": 8,
+    "estimated_hours": 4
+  },
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "Source, contract, all-30 gradient, finite smoke and strict restore gates pass. This authorizes a bounded diagnostic long run with 1000-step checkpoints, but not an effectiveness claim.",
+    "launch_command": "bash scripts/h3wam/launch_c58_fastwam_full30_long.sh",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}

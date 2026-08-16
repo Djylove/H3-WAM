@@ -48,6 +48,11 @@ FASTWAM_MOT_SHA256 = (
 DEFAULT_H3_CARRIER_LAYERS = (9, 19, 29, 39, 49)
 DEFAULT_SOURCE_LAYERS = 5
 DEFAULT_TARGET_LAYERS = 30
+H3_BACKBONE_LAYERS = 50
+LAYERWISE_H3_50_TO_ACTION_30 = tuple(
+    round(index * (H3_BACKBONE_LAYERS - 1) / (DEFAULT_TARGET_LAYERS - 1))
+    for index in range(DEFAULT_TARGET_LAYERS)
+)
 _UPSTREAM_TYPES: tuple[type[nn.Module], Any] | None = None
 
 
@@ -204,16 +209,29 @@ class H3FastWAMFullTowerPolicy(nn.Module):
         num_layers: int = DEFAULT_TARGET_LAYERS,
         eps: float = 1.0e-6,
         use_gradient_checkpointing: bool = False,
+        action_block_to_h3_layer: Sequence[int] | None = None,
     ) -> None:
         super().__init__()
         self.enabled = bool(enabled)
         self.carrier_layers = tuple(int(layer) for layer in carrier_layers)
-        if self.carrier_layers != DEFAULT_H3_CARRIER_LAYERS:
-            raise ValueError(
-                f"C58 requires audited H3 cache layers {DEFAULT_H3_CARRIER_LAYERS}"
-            )
         if num_layers != DEFAULT_TARGET_LAYERS:
             raise ValueError(f"C58 requires the official full {DEFAULT_TARGET_LAYERS} layers")
+        if action_block_to_h3_layer is None:
+            if self.carrier_layers != DEFAULT_H3_CARRIER_LAYERS:
+                raise ValueError(
+                    f"C58 requires audited H3 cache layers {DEFAULT_H3_CARRIER_LAYERS}"
+                )
+            block_mapping = (49,) * num_layers
+        else:
+            block_mapping = tuple(int(layer) for layer in action_block_to_h3_layer)
+            if block_mapping != LAYERWISE_H3_50_TO_ACTION_30:
+                raise ValueError(
+                    "C58b requires the exact uniform H3-50 to ActionDiT-30 mapping"
+                )
+            if self.carrier_layers != block_mapping:
+                raise ValueError(
+                    "C58b carrier_layers must exactly equal the 30-layer mapping"
+                )
         dimensions = (
             action_dim,
             proprio_dim,
@@ -236,7 +254,7 @@ class H3FastWAMFullTowerPolicy(nn.Module):
         self.attn_head_dim = int(attn_head_dim)
         self.attention_width = self.num_heads * self.attn_head_dim
         self.num_layers = int(num_layers)
-        self.action_block_to_h3_layer = tuple(49 for _ in range(self.num_layers))
+        self.action_block_to_h3_layer = block_mapping
         self.use_gradient_checkpointing = bool(use_gradient_checkpointing)
         self.action_expert: nn.Module | None = None
         self.proprio_encoder: nn.Module | None = None
@@ -275,19 +293,19 @@ class H3FastWAMFullTowerPolicy(nn.Module):
             )
         return tensor
 
-    def _resolve_layer49(
+    def _resolve_carrier_cache(
         self,
         video_kv_cache: Mapping[int, Mapping[str, torch.Tensor]],
         *,
         batch: int,
-    ) -> dict[str, torch.Tensor]:
+    ) -> dict[int, dict[str, torch.Tensor]]:
         if set(video_kv_cache) != set(self.carrier_layers):
             raise ValueError(
-                "video_kv_cache layers must exactly match the D0 carrier contract"
+                "video_kv_cache layers must exactly match the carrier contract"
             )
         signatures: set[int] = set()
         sequence_length: int | None = None
-        result: dict[str, torch.Tensor] | None = None
+        result: dict[int, dict[str, torch.Tensor]] = {}
         for layer in self.carrier_layers:
             item = video_kv_cache[layer]
             if set(item) != {"k", "v"}:
@@ -307,9 +325,7 @@ class H3FastWAMFullTowerPolicy(nn.Module):
                 elif int(value.shape[1]) != sequence_length:
                     raise ValueError("all carrier K/V tensors must share sequence length")
                 flattened[name] = value
-            if layer == 49:
-                result = flattened
-        assert result is not None
+            result[layer] = flattened
         return result
 
     def _forward_block(
@@ -385,7 +401,7 @@ class H3FastWAMFullTowerPolicy(nn.Module):
         elif tuple(text_mask.shape) != tuple(text_context.shape[:2]):
             raise ValueError("text_mask must match text_context tokens")
 
-        layer49 = self._resolve_layer49(video_kv_cache, batch=batch)
+        carrier = self._resolve_carrier_cache(video_kv_cache, batch=batch)
         parameter = self.proprio_encoder.weight
         proprio_token = self.proprio_encoder(
             proprio.to(device=parameter.device, dtype=parameter.dtype)
@@ -411,9 +427,14 @@ class H3FastWAMFullTowerPolicy(nn.Module):
             context_mask=context_mask,
         )
         tokens = state["tokens"]
-        video_key = layer49["k"].to(device=tokens.device, dtype=tokens.dtype)
-        video_value = layer49["v"].to(device=tokens.device, dtype=tokens.dtype)
-        for block in self.action_expert.blocks:
+        for block_index, block in enumerate(self.action_expert.blocks):
+            layer = self.action_block_to_h3_layer[block_index]
+            video_key = carrier[layer]["k"].to(
+                device=tokens.device, dtype=tokens.dtype
+            )
+            video_value = carrier[layer]["v"].to(
+                device=tokens.device, dtype=tokens.dtype
+            )
             if self.use_gradient_checkpointing and self.training:
                 tokens = torch.utils.checkpoint.checkpoint(
                     lambda x, k, v, tm, fr, ctx, mask, owner=block: self._forward_block(

@@ -43,6 +43,7 @@ from fastwam.models.h3wam.fastwam_full_tower import (  # noqa: E402
     FASTWAM_MOT_SHA256,
     FASTWAM_VIDEO_DIT_SHA256,
     H3FastWAMFullTowerPolicy,
+    LAYERWISE_H3_50_TO_ACTION_30,
     initialize_full_tower_from_d0,
 )
 
@@ -75,6 +76,8 @@ CHECKPOINT_KEYS = frozenset(
     }
 )
 DATA_STATE_KEYS = PARENT.DATA_STATE_KEYS
+REPEAT_LAYER49_MODE = PARENT.REPEAT_LAYER49_CARRIER_SOURCE
+LAYERWISE_H3_50_TO_ACTION_30_MODE = "uniform_h3_50_to_action30"
 
 
 @dataclass(frozen=True)
@@ -89,7 +92,7 @@ class ModelSpec:
     freq_dim: int = 256
     action_layers: int = 30
     carrier_layers: tuple[int, ...] = DEFAULT_H3_CARRIER_LAYERS
-    carrier_source_mode: str = PARENT.REPEAT_LAYER49_CARRIER_SOURCE
+    carrier_source_mode: str = REPEAT_LAYER49_MODE
 
 
 def parse_args() -> argparse.Namespace:
@@ -124,6 +127,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--action-shift", type=float, default=5.0)
     parser.add_argument("--capture-token-count", type=int, default=32)
     parser.add_argument("--use-gradient-checkpointing", action="store_true")
+    parser.add_argument(
+        "--carrier-mode",
+        choices=(REPEAT_LAYER49_MODE, LAYERWISE_H3_50_TO_ACTION_30_MODE),
+        default=REPEAT_LAYER49_MODE,
+        help=(
+            "C58 repeats layer49; C58b maps 30 uniformly-spaced H3 layers "
+            "one-to-one onto the 30 official ActionDiT blocks."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -154,6 +166,12 @@ def build_model(
     dtype: torch.dtype,
     gradient_checkpointing: bool = False,
 ) -> H3FastWAMFullTowerPolicy:
+    if spec.carrier_source_mode == REPEAT_LAYER49_MODE:
+        block_mapping = None
+    elif spec.carrier_source_mode == LAYERWISE_H3_50_TO_ACTION_30_MODE:
+        block_mapping = LAYERWISE_H3_50_TO_ACTION_30
+    else:
+        raise ValueError(f"unsupported C58 carrier mode {spec.carrier_source_mode!r}")
     return H3FastWAMFullTowerPolicy(
         enabled=True,
         carrier_layers=spec.carrier_layers,
@@ -167,6 +185,7 @@ def build_model(
         freq_dim=spec.freq_dim,
         num_layers=spec.action_layers,
         use_gradient_checkpointing=gradient_checkpointing,
+        action_block_to_h3_layer=block_mapping,
     ).to(device=device, dtype=dtype)
 
 
@@ -256,9 +275,18 @@ def checkpoint_contract(
     d0_parent_steps: int,
     initialization_report: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
-        "candidate": "C58_FASTWAM_FULL30_H3_LAYER49",
-        "classification": "action-only-on-frozen-features_backbone_port",
+    layerwise = spec.carrier_source_mode == LAYERWISE_H3_50_TO_ACTION_30_MODE
+    contract = {
+        "candidate": (
+            "C58B_FASTWAM_FULL30_H3_LAYERWISE"
+            if layerwise
+            else "C58_FASTWAM_FULL30_H3_LAYER49"
+        ),
+        "classification": (
+            "action-only-on-frozen-layerwise-h3-kv_backbone_port"
+            if layerwise
+            else "action-only-on-frozen-features_backbone_port"
+        ),
         "fastwam_commit": FASTWAM_COMMIT,
         "fastwam_action_dit_sha256": FASTWAM_ACTION_DIT_SHA256,
         "fastwam_video_dit_sha256": FASTWAM_VIDEO_DIT_SHA256,
@@ -268,14 +296,14 @@ def checkpoint_contract(
         "d0_parent_completed_steps": d0_parent_steps,
         "d0_parent_optimizer_restored": False,
         "initialization": initialization_report,
-        "carrier_source_mode": PARENT.REPEAT_LAYER49_CARRIER_SOURCE,
+        "carrier_source_mode": spec.carrier_source_mode,
         "h3_checkpoint_path": str(dataset.first_checkpoint_path),
         "h3_checkpoint_sha256": args.expected_h3_checkpoint_sha256,
         "verify_h3_checkpoint_sha256": args.verify_h3_checkpoint_sha256,
         "kv_subdir": args.kv_subdir,
         "kv_schema": PARENT.DREAMWAM_KV_SCHEMA,
         "kv_strategy": PARENT.DREAMWAM_KV_STRATEGY,
-        "kv_layers": list(DEFAULT_H3_CARRIER_LAYERS),
+        "kv_layers": list(spec.carrier_layers),
         "kv_tokens": args.capture_token_count,
         "source_manifest_sha256": dataset.source_manifest_sha256,
         "source_manifest_items": dataset.source_manifest_items,
@@ -311,6 +339,11 @@ def checkpoint_contract(
         "model_spec": asdict(spec),
         "gradient_checkpointing": args.use_gradient_checkpointing,
     }
+    if layerwise:
+        contract["action_block_to_h3_layer"] = list(
+            LAYERWISE_H3_50_TO_ACTION_30
+        )
+    return contract
 
 
 def validate_c58_checkpoint(
@@ -379,12 +412,17 @@ def main() -> None:
     dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
     started = time.perf_counter()
 
+    carrier_layers = (
+        LAYERWISE_H3_50_TO_ACTION_30
+        if args.carrier_mode == LAYERWISE_H3_50_TO_ACTION_30_MODE
+        else DEFAULT_H3_CARRIER_LAYERS
+    )
     dataset = PARENT.CachedDreamWAMKVDataset(
         args.manifest,
         args.cache_root,
         args.kv_subdir,
         source_manifest=args.source_manifest,
-        carrier_layers=DEFAULT_H3_CARRIER_LAYERS,
+        carrier_layers=carrier_layers,
         capture_token_count=args.capture_token_count,
         kv_pool_strategy=PARENT.DREAMWAM_KV_STRATEGY,
         num_heads=56,
@@ -417,7 +455,10 @@ def main() -> None:
         d0_sha256 = values[0]
     assert isinstance(d0_sha256, str)
 
-    spec = ModelSpec()
+    spec = ModelSpec(
+        carrier_layers=carrier_layers,
+        carrier_source_mode=args.carrier_mode,
+    )
     model = build_model(
         spec,
         device=device,
@@ -469,7 +510,7 @@ def main() -> None:
         args.cache_root,
         args.kv_subdir,
         source_manifest=args.source_manifest,
-        carrier_layers=DEFAULT_H3_CARRIER_LAYERS,
+        carrier_layers=carrier_layers,
         capture_token_count=args.capture_token_count,
         kv_pool_strategy=PARENT.DREAMWAM_KV_STRATEGY,
         num_heads=56,
@@ -484,7 +525,9 @@ def main() -> None:
         num_train_timesteps=1000, shift=args.action_shift
     )
 
-    # Prove the depth expansion is function preserving on a real cached row.
+    # Prove C58's depth expansion exactly preserves D0.  For C58b, prove the
+    # same property under a degenerate all-layer49 carrier, then separately
+    # record the effect of replacing it with the real layer-wise H3 carrier.
     d0_spec_values = dict(d0_payload["contract"]["model_spec"])
     d0_spec_values["carrier_layers"] = tuple(d0_spec_values["carrier_layers"])
     d0_model = PARENT.build_model(
@@ -497,15 +540,43 @@ def main() -> None:
         parity_noisy, _, parity_t = PARENT.PARENT.deterministic_flow_batch(
             probe["actions"], flow_scheduler, seed=args.seed + 8_000_001
         )
+        if args.carrier_mode == REPEAT_LAYER49_MODE:
+            parent_probe = probe
+            expanded_probe = probe
+        else:
+            layer49 = probe["video_kv_cache"][49]
+            parent_probe = dict(probe)
+            parent_probe["video_kv_cache"] = {
+                layer: {name: tensor.clone() for name, tensor in layer49.items()}
+                for layer in DEFAULT_H3_CARRIER_LAYERS
+            }
+            expanded_probe = dict(probe)
+            expanded_probe["video_kv_cache"] = {
+                layer: {name: tensor.clone() for name, tensor in layer49.items()}
+                for layer in LAYERWISE_H3_50_TO_ACTION_30
+            }
         parent_prediction = PARENT.forward_policy(
-            d0_model, probe, parity_noisy, parity_t
+            d0_model, parent_probe, parity_noisy, parity_t
         ).float()
         expanded_prediction = forward_policy(
+            model, expanded_probe, parity_noisy, parity_t
+        ).float()
+        actual_carrier_prediction = forward_policy(
             model, probe, parity_noisy, parity_t
         ).float()
     step0_max_abs = float((expanded_prediction - parent_prediction).abs().max())
+    layerwise_carrier_delta = float(
+        (actual_carrier_prediction - expanded_prediction).abs().max()
+    )
     if step0_max_abs != 0.0:
-        raise RuntimeError(f"C58 step0 D0 parity failed: max_abs={step0_max_abs}")
+        raise RuntimeError(
+            f"C58/C58b degenerate-carrier D0 parity failed: max_abs={step0_max_abs}"
+        )
+    if (
+        args.carrier_mode == LAYERWISE_H3_50_TO_ACTION_30_MODE
+        and layerwise_carrier_delta <= 0.0
+    ):
+        raise RuntimeError("C58b real layer-wise carrier has no effect at step zero")
     del d0_model
     del d0_payload
     if device.type == "cuda":
@@ -728,6 +799,7 @@ def main() -> None:
             ),
             "trainable_parameters": trainable_parameters,
             "step0_parent_parity_max_abs": step0_max_abs,
+            "step0_layerwise_vs_degenerate_layer49_max_abs": layerwise_carrier_delta,
             "contract": contract,
             "h3_checkpoint_sha256_verified": actual_h3_sha256,
             "loaded_checkpoint": (

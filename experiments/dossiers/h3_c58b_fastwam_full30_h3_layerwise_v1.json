@@ -1,0 +1,230 @@
+{
+  "experiment_id": "h3_c58b_fastwam_full30_h3_layerwise_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Routing uniformly-spaced H3 layer-wise K/V one-to-one into the 30 official FastWAM ActionDiT blocks yields stronger H3-conditioned action learning than the C58 repeated-layer49 controlled arm.",
+  "single_variable": "The action-block carrier mapping changes from C58's repeated layer49 to the fixed H3-50 to ActionDiT-30 mapping; ActionDiT weights, D0 depth initialization, data, optimizer, flow objective and evaluation remain fixed.",
+  "parent_baseline": "C58 repeated-layer49 controlled arm initialized from D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3.",
+  "arm_role": "LAYERWISE_CANDIDATE",
+  "control_arm": {
+    "experiment_id": "h3_c58_fastwam_full30_h3_layer49_v1",
+    "role": "CONTROLLED_ARM_REPEATED_LAYER49",
+    "intentional_deviation": "The control repeats one final-layer H3 K/V bundle across all 30 blocks and therefore is a complete action tower, not complete FastWAM world-action joint training."
+  },
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FastWAM",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "arXiv:2603.16666",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "YuanTianYuan01/FastWAM official repository",
+      "locator": "https://github.com/YuanTianYuan01/FastWAM",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3-WAM C58b layer-wise FastWAM carrier",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "C58b working diff after af4814b8d2fba57ffb560225db3e6dbeef767745",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "full ActionDiT execution and mixed video/action attention",
+        "paper": "FastWAM couples a video world expert and action expert block by block.",
+        "upstream_code": "30 ActionDiT blocks concatenate video K/V and action K/V under action queries.",
+        "local": "The exact official 30 ActionDiT blocks concatenate one depth-matched frozen H3 K/V bundle and current action K/V per block.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "src/fastwam/models/h3wam/fastwam_full_tower.py",
+          "tests/test_h3_fastwam_layerwise_tower.py"
+        ],
+        "rationale": "H3 replaces Wan video K/V but preserves the official per-block mixed-attention execution semantics."
+      },
+      {
+        "field": "world backbone and trainability",
+        "paper": "Wan2.2 video expert and ActionDiT are trained jointly.",
+        "upstream_code": "Joint video/action flow loss updates the MoT DiT.",
+        "local": "INT8 H3 is frozen and its per-layer K/V is precomputed; only ActionDiT/proprio parameters train.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/precompute_h3_int8_features.py",
+          "scripts/h3wam/train_h3_fastwam_full_tower.py"
+        ],
+        "rationale": "The experiment measures whether H3 world features can drive action success without destructive full H3 fine-tuning."
+      }
+    ],
+    "data": [
+      {
+        "field": "layer-wise carrier cache and training rows",
+        "paper": "Online video-world activations from the same training clip.",
+        "upstream_code": "Video and action streams execute together without a disk feature cache.",
+        "local": "Current-observation INT8 H3 K/V for 30 fixed layers, 32 pooled tokens each; cache canary uses the same 80 rows at offset112000 as C58.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/launch_c58b_layerwise_cache_canary.sh",
+          "30x2x32x56x128 BF16 = 27,525,120 tensor bytes/sample"
+        ],
+        "rationale": "Caching avoids recomputing a frozen H3 every optimizer step and does not alter the deterministic tensor consumed by ActionDiT."
+      }
+    ],
+    "action": [
+      {
+        "field": "action/state/horizon normalization contract",
+        "paper": "LIBERO action chunks conditioned on proprioception.",
+        "upstream_code": "7D action, 8D state, horizon32 and min/max normalization.",
+        "local": "Unchanged C58/D0 7D action, 8D state, horizon32, minmax and gripper execution contract.",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/train_h3_fastwam_full_tower.py"
+        ]
+      }
+    ],
+    "objective": [
+      {
+        "field": "action flow objective",
+        "paper": "Action flow matching within a joint video/action objective.",
+        "upstream_code": "Action scheduler shift5 velocity loss plus video loss.",
+        "local": "Exact C58 shift5 action velocity MSE and pad mask; no video loss.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/train_h3_fastwam_full_tower.py"
+        ],
+        "rationale": "The paired C58/C58b ablation keeps action learning identical and changes only carrier routing."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "paired canary optimization",
+        "paper": "Multi-GPU AdamW FastWAM training.",
+        "upstream_code": "AdamW .9/.95, LR1e-4, WD1e-2 and warmup-cosine.",
+        "local": "8 A800, global batch8, ten real steps, identical C58 optimizer/schedule and D0 initialization.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "scripts/h3wam/launch_c58b_layerwise_train_probe.sh"
+        ],
+        "rationale": "The ten-step run is a mechanical canary only; a matched longer budget requires canary promotion."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "promotion protocol",
+        "paper": "LIBERO closed-loop success.",
+        "upstream_code": "Official task rollouts.",
+        "local": "After the mechanical canary, fixed v7 balanced-80 and then fresh paired replan8 LIBERO versus C58 and D0.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "docs/H3_C58_FASTWAM_FULL_TOWER_2026-08-16.md"
+        ],
+        "rationale": "The target project protocol is replan8; offline metrics cannot establish closed-loop success."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": [
+        "Same byte-pinned FastWAM 45d8e145 source and verified INT8 H3 identity as C58."
+      ]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Exact fixed mapping is monotonic, unique and endpoint-covering; early and late carrier perturbations both change output."
+      ]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Synthetic existing precompute-path test writes 30 independent BF16 K/V layers with exact pooled shapes; real 80-row READY audit is part of the canary command."
+      ]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Trainer reuses the unchanged D0/C58 dense loader, minmax stats and horizon32 pad mask."
+      ]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": [
+        "C58 and C58b share one trainer and flow loss; carrier-mode is the only branch in model construction and contract."
+      ]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Canary launcher fixes 8 GPUs, global batch8, AdamW LR1e-4/WD1e-2 and ten steps."
+      ]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": [
+        "Canary promotion is mechanical only; later effect comparison is preregistered as C58/C58b/D0 with the same balanced-80 and fresh LIBERO protocol."
+      ]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": [
+        "Layer-wise synthetic backward reaches self-attention output projections in all 30 ActionDiT blocks."
+      ]
+    },
+    "smoke_finite": {
+      "status": "FAIL",
+      "evidence": [
+        "Real 80-row H3 cache and BF16 ten-step probe await one free 8xA800 node."
+      ]
+    },
+    "checkpoint_restore": {
+      "status": "FAIL",
+      "evidence": [
+        "C58b checkpoint does not exist before the authorized canary."
+      ]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": [
+        "C58 and D0 identities are frozen; degenerate all-layer49 C58b equals D0 exactly in tests."
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": [
+        "No real layer-wise H3 effect result exists."
+      ]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": [
+        "No C58b closed-loop rollout exists."
+      ]
+    }
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 10,
+    "training_samples": 80,
+    "unique_windows": 80,
+    "effective_epochs": 0.00039844804486524984,
+    "gpu_count": 8,
+    "estimated_hours": 1,
+    "cache_items": 80,
+    "cache_tensor_bytes": 2202009600,
+    "projected_80000_tensor_bytes": 2202009600000
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Source, architecture, cache schema, action, objective, optimizer, evaluation boundary and all-30 gradient paths are fixed. One free 8xA800 node may now produce 80 real caches and run ten BF16 steps; no long or effect claim is authorized.",
+    "launch_command": "bash scripts/h3wam/launch_c58b_layerwise_cache_canary.sh && bash scripts/h3wam/launch_c58b_layerwise_train_probe.sh",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}
