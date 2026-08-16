@@ -78,6 +78,30 @@ release C57 evaluation.
 The n1 5000-step long training process is intentionally not stopped or shared
 with online H3 inference.
 
+## Read-only execution snapshot
+
+The n2 evaluator queue and final watcher execute from the fixed Git archive
+snapshot below, rather than from the shared mutable project checkout:
+
+- source commit: `71f93b0e351fa6380423177c11cae91323278dc0`;
+- n2 path:
+  `/mnt/h3-wam/code-snapshots/h3-wam-71f93b0e351fa6380423177c11cae91323278dc0`;
+- n2 mount contract: bind-remounted `ro`, with `PYTHONDONTWRITEBYTECODE=1`;
+- queue entrypoint SHA256:
+  `20c56dbd8da47e0e45e851bc6fcef0e0e57154ccbe9905585e29160a7b901911`;
+- paired evaluator SHA256:
+  `e2d73aa008fc2f93e754ecf76066c7d46bae479d4b14b0e94dd454594cb90f95`;
+- final watcher SHA256:
+  `c084c10c1592aeb4019da45f0dfaa35f28a578bff26b60f49ec2091be37cdae3`.
+
+Both process `cwd` and `PROJECT_ROOT` are the snapshot path.  The queue skips
+already published step200--step1800 reports, then blocks at the first missing
+step2000 report while a real `train_c56b_fact_online.py` process owns n2.  Once
+C56's s10000 bit-exact restore is present and its training process has exited,
+the same loop releases automatically and consumes step2000 onward in order.
+An incomplete or crashed C56 remains fail-closed instead of silently stealing
+its reservation.
+
 ## Frozen heldout learning curve (same 80 samples and RNG)
 
 | step | C57 mean | D0 mean | relative improvement | sample wins | decision |
