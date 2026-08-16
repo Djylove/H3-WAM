@@ -103,3 +103,11 @@ def test_final_launcher_never_creates_a_new_h3_cache() -> None:
     assert "GO_FRESH_LIBERO_CANARY" in source
     assert "--save-video" not in source
     assert "--save-trajectories" not in source
+    assert "[t]rain_c56b_fact_online.py" in source
+    assert "([c]56|[C]56)" not in source
+
+
+def test_eval_queue_does_not_treat_c56_watcher_as_training() -> None:
+    source = Path("scripts/h3wam/run_c57_heldout_eval_queue.sh").read_text()
+    assert "[t]rain_c56b_fact_online.py" in source
+    assert "([c]56|[C]56)" not in source

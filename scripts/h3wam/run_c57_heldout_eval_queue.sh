@@ -65,7 +65,7 @@ higher_priority_reserved() {
   # s10000 parent and final strict-restore READY are both published.  Once
   # C56 itself has completed its bit-exact s10000 restore, the reservation is
   # released; otherwise a completed C56 would starve the C57 queue forever.
-  pgrep -f '([c]56|[C]56)' >/dev/null 2>&1 || \
+  pgrep -f '[t]rain_c56b_fact_online.py' >/dev/null 2>&1 || \
     { c56_parent_ready && ! c56_final_complete; }
 }
 

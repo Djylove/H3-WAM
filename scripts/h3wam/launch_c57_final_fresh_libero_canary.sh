@@ -79,7 +79,7 @@ PY
 }
 
 c56_reserved() {
-  pgrep -f '([c]56|[C]56)' >/dev/null 2>&1 || \
+  pgrep -f '[t]rain_c56b_fact_online.py' >/dev/null 2>&1 || \
     { [[ -s "${c56_go_long}" && -s "${c56_parent_checkpoint}" && -s "${c56_parent_ready}" ]] && ! c56_final_complete; }
 }
 
