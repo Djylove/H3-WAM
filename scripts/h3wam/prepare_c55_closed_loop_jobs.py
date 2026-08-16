@@ -29,6 +29,7 @@ def main() -> None:
     parser.add_argument("--joint-aux-checkpoint", type=Path, required=True)
     parser.add_argument("--trials", type=int, nargs="+", required=True)
     parser.add_argument("--stage", choices=("mechanical_canary", "fresh_final"), required=True)
+    parser.add_argument("--total-workers", type=int, default=32)
     parser.add_argument("--output-root", type=Path, required=True)
     args = parser.parse_args()
     final_path = args.offline_final.resolve()
@@ -40,6 +41,8 @@ def main() -> None:
     ):
         raise ValueError("C55 fresh rollout requires the frozen step1000 offline winner")
     trials = tuple(sorted(set(args.trials)))
+    if args.total_workers < 1:
+        raise ValueError("total workers must be positive")
     allowed = set(range(33, 37)) if args.stage == "mechanical_canary" else set(range(37, 50))
     if not trials or set(trials) != allowed:
         raise ValueError(f"{args.stage} requires exactly trials {sorted(allowed)}")
@@ -91,6 +94,7 @@ def main() -> None:
         "suites": list(SUITES),
         "tasks_per_suite": 10,
         "arms": list(checkpoints),
+        "total_workers": args.total_workers,
         "manifest": str(manifest),
         "manifest_sha256": identity,
         "offline_final_sha256": sha256_file(final_path),

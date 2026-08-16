@@ -97,7 +97,11 @@ def load_stage(root: Path, expected_stage: str, expected_trials: set[int]) -> tu
         or len(rows) != len(expected_trials) * len(SUITES) * 10 * len(ARMS)
     ):
         raise ValueError(f"invalid frozen C55 stage contract: {root}")
-    if not all((root / "workers" / f"worker{worker:02d}.COMPLETED").is_file() for worker in range(32)):
+    total_workers = int(prepared.get("total_workers", 32))
+    if not all(
+        (root / "workers" / f"worker{worker:02d}.COMPLETED").is_file()
+        for worker in range(total_workers)
+    ):
         raise RuntimeError(f"C55 stage workers are incomplete: {root}")
     return rows, prepared
 

@@ -17,6 +17,16 @@ project="${PROJECT_ROOT:-${workspace}/candidate-d0-rollout-96976ce/project}"
 python_bin="${workspace}/runtime/conda-py311/bin/python"
 manifest="${stage_root}/jobs.jsonl"
 [[ -f "${manifest}" && -f "${stage_root}/PREPARED.json" ]] || exit 2
+expected_workers="$(${python_bin} - "${stage_root}/PREPARED.json" <<'PY'
+import json, sys
+from pathlib import Path
+print(json.loads(Path(sys.argv[1]).read_text()).get("total_workers", 32))
+PY
+)"
+[[ "${total_workers}" == "${expected_workers}" ]] || {
+  echo "TOTAL_WORKERS=${total_workers} does not match frozen ${expected_workers}" >&2
+  exit 2
+}
 mkdir -p "${stage_root}/logs" "${stage_root}/workers"
 jobs="$(${python_bin} - "${manifest}" <<'PY'
 import sys
