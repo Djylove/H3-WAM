@@ -62,10 +62,6 @@ for row in pairs:
         raise SystemExit("C57 fresh task/trial/environment contract changed")
 PY
 
-if [[ -s "${output_root}/RESULTS.json" ]]; then
-  echo "C57 final fresh canary already complete: ${output_root}/RESULTS.json"
-  exit 0
-fi
 mkdir -p "${output_root}"
 lock="${output_root}/.launcher.lock"
 mkdir "${lock}" 2>/dev/null || { echo "another C57 canary launcher owns ${lock}" >&2; exit 75; }
@@ -97,6 +93,26 @@ wait_for_slot() {
   while c56_reserved || [[ -n "$(gpu_compute_pids)" ]]; do sleep 30; done
 }
 
+rollout_complete() {
+  local result="$1" expected_checkpoint="$2" suite="$3" task_id="$4" trial="$5"
+  [[ -s "${result}" ]] || return 1
+  "${sim_python}" - "${result}" "${expected_checkpoint}" "${suite}" "${task_id}" "${trial}" <<'PY'
+import json, sys
+from pathlib import Path
+result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected = Path(sys.argv[2]).resolve()
+valid = (
+    Path(result.get("checkpoint", "")).resolve() == expected
+    and result.get("suite") == sys.argv[3]
+    and result.get("task_ids") == [int(sys.argv[4])]
+    and result.get("trial_indices") == [int(sys.argv[5])]
+    and result.get("episodes") == 1
+    and result.get("successes") in (0, 1)
+)
+raise SystemExit(0 if valid else 1)
+PY
+}
+
 export CUDA_VISIBLE_DEVICES="${gpu}"
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 export PYTHONPATH="${project}/third_party/diffusers_h3/src:${project}/src:${project}"
@@ -124,7 +140,7 @@ run_one() {
     runner="${project}/scripts/h3wam/rollout_libero.py"
   fi
   output="${output_root}/${suite}_task${task_id}_trial${trial}/${arm}"
-  [[ -s "${output}/results.json" ]] && return
+  rollout_complete "${output}/results.json" "${checkpoint}" "${suite}" "${task_id}" "${trial}" && return
   wait_for_slot
   bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
     "${sim_python}" "${runner}" \

@@ -141,7 +141,8 @@ def aggregate(plan_path: Path, root: Path, c57_checkpoint: Path, d0_checkpoint: 
     return {
         "format": "h3wam-c57-final-fresh-libero-canary-results-v1",
         "status": "PASS_C57_FRESH_LIBERO_CANARY_COMPLETE",
-        "effect_status": "EVIDENCE_READY_FOR_LARGER_PAIRED_ROLLOUT" if c57_successes > d0_successes else "NOT_EVIDENCE_READY",
+        "effect_status": "NOT_EVIDENCE_READY",
+        "next_permission": "GO_LARGER_PAIRED_ROLLOUT" if c57_successes > d0_successes else "HOLD_C57",
         "plan": str(plan_path),
         "plan_sha256": sha256_file(plan_path),
         "c57_checkpoint": str(c57_checkpoint),
