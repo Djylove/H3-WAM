@@ -33,6 +33,7 @@ def parse_args() -> argparse.Namespace:
             "h3_feature_int8",
             "h3_starwam_int8",
             "h3_dreamwam_kv_int8",
+            "h3_fastwam_online_int8",
             "baseline",
         ),
         required=True,
@@ -84,6 +85,11 @@ def parse_args() -> argparse.Namespace:
         "--dreamwam-source-manifest",
         type=Path,
         help="Frozen full cache manifest used to resolve Candidate D0 text contexts.",
+    )
+    parser.add_argument(
+        "--c58b-balanced80-ready",
+        type=Path,
+        help="Required offline gate artifact for h3_fastwam_online_int8.",
     )
     parser.add_argument(
         "--progress-probe",
@@ -1674,24 +1680,37 @@ class H3DreamWAMKVInt8Policy:
         return candidate, carrier_source_mode
 
     def __init__(self, args: argparse.Namespace) -> None:
+        fastwam_online = args.policy == "h3_fastwam_online_int8"
+        policy_name = "h3_fastwam_online_int8" if fastwam_online else "h3_dreamwam_kv_int8"
         if args.h3_checkpoint is None or args.h3_model is None:
             raise ValueError(
-                "h3_dreamwam_kv_int8 requires --h3-checkpoint and --h3-model"
+                f"{policy_name} requires --h3-checkpoint and --h3-model"
             )
         if args.dreamwam_source_manifest is None:
             raise ValueError(
-                "h3_dreamwam_kv_int8 requires --dreamwam-source-manifest"
+                f"{policy_name} requires --dreamwam-source-manifest"
             )
         if args.context_mode != "cached":
-            raise ValueError("h3_dreamwam_kv_int8 requires cached text contexts")
+            raise ValueError(f"{policy_name} requires cached text contexts")
         if args.model_evaluations != 10:
-            raise ValueError("Candidate D/D0 rollout is fixed to 10 Euler steps")
+            raise ValueError(f"{policy_name} rollout is fixed to 10 Euler steps")
         if args.h3_video_lora_checkpoint is not None or args.h3_tail_delta is not None:
-            raise ValueError("Candidate D/D0 rollout does not accept H3 deltas")
+            raise ValueError(f"{policy_name} rollout does not accept H3 deltas")
+        if fastwam_online:
+            if args.c58b_balanced80_ready is None:
+                raise ValueError(
+                    "h3_fastwam_online_int8 requires --c58b-balanced80-ready"
+                )
+            if (
+                args.progress_probe is not None
+                or args.consequence_ranker_checkpoint is not None
+                or args.dense_value_checkpoint is not None
+            ):
+                raise ValueError("C58b fresh canary forbids auxiliary rankers/probes")
 
         self.device = torch.device(args.device)
         if self.device.type != "cuda":
-            raise ValueError("h3_dreamwam_kv_int8 requires a CUDA device")
+            raise ValueError(f"{policy_name} requires a CUDA device")
         torch.cuda.set_device(self.device)
         self.dtype = torch.bfloat16
         self.cache_root = args.cache_root.resolve()
@@ -1776,17 +1795,31 @@ class H3DreamWAMKVInt8Policy:
         payload = torch.load(
             args.checkpoint.resolve(), map_location="cpu", weights_only=False
         )
-        if payload.get("schema_version") != 2:
-            raise ValueError("Candidate D/D0 rollout requires a schema-2 checkpoint")
+        expected_schema = 1 if fastwam_online else 2
+        if payload.get("schema_version") != expected_schema:
+            raise ValueError(f"{policy_name} requires a schema-{expected_schema} checkpoint")
         contract = payload.get("contract")
         if not isinstance(contract, dict):
-            raise ValueError("Candidate D/D0 checkpoint contract is missing")
-        candidate, carrier_source_mode = self._resolve_candidate_source_mode(contract)
+            raise ValueError(f"{policy_name} checkpoint contract is missing")
+        if fastwam_online:
+            candidate = str(contract.get("candidate"))
+            carrier_source_mode = str(contract.get("carrier_source_mode"))
+            if candidate != "C58B_FASTWAM_FULL30_H3_LAYERWISE":
+                raise ValueError("C58b candidate identity mismatch")
+            if carrier_source_mode != "uniform_h3_50_to_action30":
+                raise ValueError("C58b carrier source mode mismatch")
+        else:
+            candidate, carrier_source_mode = self._resolve_candidate_source_mode(contract)
         if contract.get("kv_schema") != "h3_dreamwam_kv_v1":
-            raise ValueError("Candidate D0 K/V schema mismatch")
+            raise ValueError(f"{policy_name} K/V schema mismatch")
         carrier_layers = tuple(int(layer) for layer in contract.get("kv_layers", ()))
-        if carrier_layers != (9, 19, 29, 39, 49):
-            raise ValueError("Candidate D0 rollout requires audited carrier layers")
+        expected_carrier_layers = (
+            (0, 2, 3, 5, 7, 8, 10, 12, 14, 15, 17, 19, 20, 22, 24,
+             25, 27, 29, 30, 32, 34, 35, 37, 39, 41, 42, 44, 46, 47, 49)
+            if fastwam_online else (9, 19, 29, 39, 49)
+        )
+        if carrier_layers != expected_carrier_layers:
+            raise ValueError(f"{policy_name} requires audited carrier layers")
         if int(contract.get("kv_tokens", -1)) != 32:
             raise ValueError("Candidate D0 rollout requires 32 pooled K/V tokens")
         kv_pool_strategy = str(contract.get("kv_strategy", ""))
@@ -1795,9 +1828,9 @@ class H3DreamWAMKVInt8Policy:
             "dual_view_spatial_grid_4x4_each_v1",
         ):
             raise ValueError("Candidate D0 rollout K/V pool strategy is unsupported")
-        if int(contract.get("kv_num_heads", -1)) != 56:
+        if not fastwam_online and int(contract.get("kv_num_heads", -1)) != 56:
             raise ValueError("Candidate D0 rollout requires 56 H3 attention heads")
-        if int(contract.get("kv_attn_head_dim", -1)) != 128:
+        if not fastwam_online and int(contract.get("kv_attn_head_dim", -1)) != 128:
             raise ValueError("Candidate D0 rollout requires H3 head dimension 128")
         if float(contract.get("action_shift", -1.0)) != 5.0:
             raise ValueError("Candidate D0 action shift must be 5")
@@ -1822,6 +1855,27 @@ class H3DreamWAMKVInt8Policy:
             raise ValueError(
                 f"Candidate {candidate} model_spec source mode mismatch"
             )
+        if fastwam_online:
+            if (
+                int(payload.get("completed_steps", -1)) != 10_000
+                or int(model_spec.get("action_layers", -1)) != 30
+                or tuple(contract.get("action_block_to_h3_layer", ()))
+                != expected_carrier_layers
+                or contract.get("h3_execution") != "online_frozen_int8_per_rank_v1"
+                or contract.get("disk_kv_training_input") is not False
+                or contract.get("kv_subdir") is not None
+            ):
+                raise ValueError("C58b online full30 deployment contract mismatch")
+            ready_path = args.c58b_balanced80_ready.resolve()
+            ready = json.loads(ready_path.read_text(encoding="utf-8"))
+            checkpoint_sha256 = _sha256_file(args.checkpoint.resolve())
+            if (
+                ready.get("permission") != "GO_FRESH_LIBERO"
+                or Path(ready.get("checkpoint", "")).resolve()
+                != args.checkpoint.resolve()
+                or ready.get("checkpoint_sha256") != checkpoint_sha256
+            ):
+                raise ValueError("C58b balanced80 gate/checkpoint identity mismatch")
 
         from fastwam.models.h3wam import (
             FrozenConsequenceActionRanker,
@@ -1834,6 +1888,9 @@ class H3DreamWAMKVInt8Policy:
             H3Int8OnlineKVContract,
             H3Int8OnlineKVProvider,
             encode_h3_vae_condition_standalone,
+        )
+        from fastwam.models.h3wam.fastwam_full_tower import (
+            H3FastWAMFullTowerPolicy,
         )
         from diffusers import AutoencoderKLMiniMaxH3
         from fastwam.models.h3wam.starwam_feature_action import (
@@ -1850,22 +1907,41 @@ class H3DreamWAMKVInt8Policy:
         self.candidate = candidate
         self.carrier_source_mode = carrier_source_mode
         self.captured_h3_layers = (
-            carrier_layers if carrier_source_mode == "aligned_5layer" else (49,)
+            carrier_layers
+            if fastwam_online or carrier_source_mode == "aligned_5layer"
+            else (49,)
         )
-        self.action_model = H3DreamWAMKVCarrierPolicy(
-            enabled=True,
-            carrier_layers=carrier_layers,
-            carrier_source_mode=carrier_source_mode,
-            action_dim=int(model_spec["action_dim"]),
-            proprio_dim=int(model_spec["proprio_dim"]),
-            context_dim=int(model_spec["context_dim"]),
-            hidden_dim=int(model_spec["hidden_dim"]),
-            ffn_dim=int(model_spec["ffn_dim"]),
-            num_heads=int(model_spec["num_heads"]),
-            attn_head_dim=int(model_spec["attn_head_dim"]),
-            freq_dim=int(model_spec["freq_dim"]),
-            history_action_steps=int(model_spec.get("history_action_steps", 0)),
-        ).to(device=self.device, dtype=self.dtype)
+        if fastwam_online:
+            self.action_model = H3FastWAMFullTowerPolicy(
+                enabled=True,
+                carrier_layers=carrier_layers,
+                action_dim=int(model_spec["action_dim"]),
+                proprio_dim=int(model_spec["proprio_dim"]),
+                context_dim=int(model_spec["context_dim"]),
+                hidden_dim=int(model_spec["hidden_dim"]),
+                ffn_dim=int(model_spec["ffn_dim"]),
+                num_heads=int(model_spec["num_heads"]),
+                attn_head_dim=int(model_spec["attn_head_dim"]),
+                freq_dim=int(model_spec["freq_dim"]),
+                num_layers=30,
+                use_gradient_checkpointing=False,
+                action_block_to_h3_layer=expected_carrier_layers,
+            ).to(device=self.device, dtype=self.dtype)
+        else:
+            self.action_model = H3DreamWAMKVCarrierPolicy(
+                enabled=True,
+                carrier_layers=carrier_layers,
+                carrier_source_mode=carrier_source_mode,
+                action_dim=int(model_spec["action_dim"]),
+                proprio_dim=int(model_spec["proprio_dim"]),
+                context_dim=int(model_spec["context_dim"]),
+                hidden_dim=int(model_spec["hidden_dim"]),
+                ffn_dim=int(model_spec["ffn_dim"]),
+                num_heads=int(model_spec["num_heads"]),
+                attn_head_dim=int(model_spec["attn_head_dim"]),
+                freq_dim=int(model_spec["freq_dim"]),
+                history_action_steps=int(model_spec.get("history_action_steps", 0)),
+            ).to(device=self.device, dtype=self.dtype)
         self.action_model.load_state_dict(payload["model"], strict=True)
         self.action_model.eval()
         self.flow_scheduler = FlowMatchScheduler(
@@ -1951,9 +2027,12 @@ class H3DreamWAMKVInt8Policy:
         self._contexts: dict[str, dict] = {}
         self.completed_steps = int(payload["completed_steps"])
         self.history_action_steps = int(model_spec.get("history_action_steps", 0))
-        if self.history_action_steps != int(contract.get("history_action_steps", 0)):
+        if not fastwam_online and self.history_action_steps != int(contract.get("history_action_steps", 0)):
             raise ValueError("Candidate D0 history-action contract mismatch")
+        if fastwam_online and self.history_action_steps != 0:
+            raise ValueError("C58b fresh canary requires zero action history")
         self.h3_checkpoint_sha256 = actual_h3_sha256
+        self.fastwam_online = fastwam_online
 
     def _load_task_context_ids(self) -> dict[str, str]:
         task_context_ids: dict[str, set[str]] = {}
@@ -2170,15 +2249,19 @@ class H3DreamWAMKVInt8Policy:
             )
             for timestep, delta in zip(timesteps, deltas, strict=True):
                 with torch.autocast(device_type="cuda", dtype=self.dtype):
+                    action_kwargs = {
+                        "text_context": task_context["context"],
+                        "proprio": state,
+                        "video_kv_cache": video_kv_cache,
+                        "text_mask": text_mask,
+                    }
+                    if not self.fastwam_online:
+                        action_kwargs.update({
+                            "executed_action_history": normalized_history,
+                            "executed_action_history_valid": history_valid,
+                        })
                     velocity = self.action_model(
-                        actions,
-                        timestep.float().expand(1),
-                        text_context=task_context["context"],
-                        proprio=state,
-                        video_kv_cache=video_kv_cache,
-                        text_mask=text_mask,
-                        executed_action_history=normalized_history,
-                        executed_action_history_valid=history_valid,
+                        actions, timestep.float().expand(1), **action_kwargs
                     )
                 actions = self.flow_scheduler.step(velocity, delta, actions)
             action_samples.append(actions)
@@ -2249,7 +2332,10 @@ class H3DreamWAMKVInt8Policy:
             "carrier_layers": list(self.carrier_layers),
             "captured_h3_layers": list(self.captured_h3_layers),
             "kv_tokens": 32,
-            "action_objective": "dreamwam_kv_shift5_flow",
+            "action_objective": (
+                "fastwam_full30_layerwise_h3_shift5_flow"
+                if self.fastwam_online else "dreamwam_kv_shift5_flow"
+            ),
             "action_flow_steps": self.inference_steps,
             "checkpoint_completed_steps": self.completed_steps,
             "history_action_steps": self.history_action_steps,
@@ -2336,7 +2422,7 @@ def main() -> None:
         policy = H3FeaturePolicy(args)
     elif args.policy == "h3_starwam_int8":
         policy = H3StarWAMInt8Policy(args)
-    elif args.policy == "h3_dreamwam_kv_int8":
+    elif args.policy in ("h3_dreamwam_kv_int8", "h3_fastwam_online_int8"):
         policy = H3DreamWAMKVInt8Policy(args)
     else:
         policy = BaselinePolicy(args)

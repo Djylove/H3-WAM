@@ -33,6 +33,7 @@ def parse_args() -> argparse.Namespace:
             "h3_feature_int8",
             "h3_starwam_int8",
             "h3_dreamwam_kv_int8",
+            "h3_fastwam_online_int8",
             "baseline",
         ),
         required=True,
@@ -143,6 +144,11 @@ def parse_args() -> argparse.Namespace:
         "--progress-probe",
         type=Path,
         help="Validated frozen H3 progress ridge for shadow diagnostics only.",
+    )
+    parser.add_argument(
+        "--c58b-balanced80-ready",
+        type=Path,
+        help="Required offline gate artifact for C58b fresh closed-loop rollout.",
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--target-latent-frames", type=int, default=12)
@@ -312,6 +318,7 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
         "h3_feature_int8",
         "h3_starwam_int8",
         "h3_dreamwam_kv_int8",
+        "h3_fastwam_online_int8",
     ):
         for flag, value in (
             ("--h3-checkpoint", args.h3_checkpoint),
@@ -339,10 +346,10 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                     str(args.starwam_source_manifest.resolve()),
                 )
             )
-        if args.policy == "h3_dreamwam_kv_int8":
+        if args.policy in ("h3_dreamwam_kv_int8", "h3_fastwam_online_int8"):
             if args.dreamwam_source_manifest is None:
                 raise ValueError(
-                    "h3_dreamwam_kv_int8 rollout requires "
+                    f"{args.policy} rollout requires "
                     "--dreamwam-source-manifest"
                 )
             command.extend(
@@ -351,7 +358,18 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                     str(args.dreamwam_source_manifest.resolve()),
                 )
             )
+            if args.policy == "h3_fastwam_online_int8":
+                if args.c58b_balanced80_ready is None:
+                    raise ValueError(
+                        "h3_fastwam_online_int8 requires --c58b-balanced80-ready"
+                    )
+                command.extend((
+                    "--c58b-balanced80-ready",
+                    str(args.c58b_balanced80_ready.resolve()),
+                ))
             if args.progress_probe is not None:
+                if args.policy != "h3_dreamwam_kv_int8":
+                    raise ValueError("C58b fresh canary forbids --progress-probe")
                 command.extend(
                     ("--progress-probe", str(args.progress_probe.resolve()))
                 )
