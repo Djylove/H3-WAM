@@ -80,27 +80,38 @@ with online H3 inference.
 
 ## Read-only execution snapshot
 
-The n2 evaluator queue and final watcher execute from the fixed Git archive
+The n2 evaluator queue and final watcher execute from the fixed composite
 snapshot below, rather than from the shared mutable project checkout:
 
-- source commit: `71f93b0e351fa6380423177c11cae91323278dc0`;
+- main source commit: `71f93b0e351fa6380423177c11cae91323278dc0`;
+- pinned StarWAM source commit: `cd76d96f273f81e228a05f40f9697fe2514e2356`;
+- pinned DreamWAM source commit: `6e989facc0c452fd3488d75f60bc36411005558c`;
 - n2 path:
-  `/mnt/h3-wam/code-snapshots/h3-wam-71f93b0e351fa6380423177c11cae91323278dc0`;
+  `/mnt/h3-wam/code-snapshots/h3-wam-71f93b0e351fa6380423177c11cae91323278dc0-starwam-cd76-min4-dreamwam-6e98-min3`;
 - n2 mount contract: bind-remounted `ro`, with `PYTHONDONTWRITEBYTECODE=1`;
 - queue entrypoint SHA256:
   `20c56dbd8da47e0e45e851bc6fcef0e0e57154ccbe9905585e29160a7b901911`;
 - paired evaluator SHA256:
   `e2d73aa008fc2f93e754ecf76066c7d46bae479d4b14b0e94dd454594cb90f95`;
 - final watcher SHA256:
-  `c084c10c1592aeb4019da45f0dfaa35f28a578bff26b60f49ec2091be37cdae3`.
+  `c084c10c1592aeb4019da45f0dfaa35f28a578bff26b60f49ec2091be37cdae3`;
+- StarWAM `action_dit.py`, `wan_block.py`, `scheduler.py`, and `loss.py`
+  SHA256 values: `b6cd067c...`, `30334432...`, `5f9df0c8...`, and
+  `00955545...`;
+- DreamWAM `layers.py`, `experts.py`, and `mot.py` SHA256 values:
+  `3cd38ad2...`, `9ba51dbb...`, and `5467d135...`.
 
-Both process `cwd` and `PROJECT_ROOT` are the snapshot path.  The queue skips
-already published step200--step1800 reports, then blocks at the first missing
-step2000 report while a real `train_c56b_fact_online.py` process owns n2.  Once
-C56's s10000 bit-exact restore is present and its training process has exited,
-the same loop releases automatically and consumes step2000 onward in order.
-An incomplete or crashed C56 remains fail-closed instead of silently stealing
-its reservation.
+The first Git-only snapshot correctly failed closed after C56 released because
+the main repository archive excludes the pinned upstream repositories.  A
+StarWAM-only composite then exposed its still-missing DreamWAM dependency in
+the same way.  No evaluation report was published by either failed attempt.
+The final composite copied only the seven source files actually imported by
+this path from clean pinned repositories, passed a complete evaluator import
+smoke, and was then bind-remounted read-only.  Both process `cwd` and
+`PROJECT_ROOT` are this final snapshot path.  Step2000 subsequently completed
+all 80 forwards with explicit strict restore, proving that the released queue
+now consumes the backlog in order.  An incomplete or crashed C56 remains
+fail-closed instead of silently stealing its reservation.
 
 ## Long-run budget and final relay audit
 
