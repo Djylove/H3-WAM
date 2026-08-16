@@ -46,7 +46,10 @@ LIBERO canary.  Offline loss alone cannot promote C57.
 2. Freeze the selected manifest and plan with
    `freeze_c57_heldout_eval_plan.py`.
 3. Export the `C57_EVAL_*` variables and run
-   `run_c57_heldout_eval_queue.sh` on an idle node/GPU.
+   `run_c57_heldout_eval_queue.sh` on an idle node/GPU.  When sharing a node
+   schedule, `arm_c57_eval_after_c58.sh` may wait for an audited C58 s10000
+   checkpoint/report first.  The queue independently requires the selected
+   physical GPU to remain free for two probes before every checkpoint restore.
 4. If and only if step5000 returns `GO_CLOSED_LOOP_CANARY`, invoke
    `launch_c57_traced_libero.sh` with the same task/trial/environment seeds as
    the frozen D0 control.
