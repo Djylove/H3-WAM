@@ -41,6 +41,23 @@ if ! [[ "${C57_EVAL_MAX_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
+# The INT8 runtime is PyTorch cu130.  On the A800 images /usr/local/cuda may
+# expose an incompatible cublas first: even a 21->1024 BF16 Linear then fails
+# with CUBLAS_STATUS_INVALID_VALUE/NOT_INITIALIZED.  Resolve and prepend the
+# wheel's matching CUDA 13 libraries inside the queue instead of relying on a
+# launcher's inherited environment.
+C57_EVAL_CUDA13_LIB=${C57_EVAL_CUDA13_LIB:-$("${C57_EVAL_PYTHON}" - <<'PY'
+import sysconfig
+from pathlib import Path
+print(Path(sysconfig.get_paths()["purelib"]) / "nvidia" / "cu13" / "lib")
+PY
+)}
+[[ -d "${C57_EVAL_CUDA13_LIB}" ]] || {
+  echo "missing C57 evaluator CUDA13 runtime: ${C57_EVAL_CUDA13_LIB}" >&2
+  exit 2
+}
+export LD_LIBRARY_PATH="${C57_EVAL_CUDA13_LIB}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
 c56_parent_ready() {
   [[ -s "${C57_C56_GO_LONG}" && \
      -s "${C57_C56_PARENT_CHECKPOINT}" && \

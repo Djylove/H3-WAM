@@ -114,7 +114,14 @@ PY
 }
 
 export CUDA_VISIBLE_DEVICES="${gpu}"
-export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+cuda13_lib=$("${policy_python}" - <<'PY'
+import sysconfig
+from pathlib import Path
+print(Path(sysconfig.get_paths()["purelib"]) / "nvidia" / "cu13" / "lib")
+PY
+)
+[[ -d "${cuda13_lib}" ]] || { echo "missing C57 policy CUDA13 runtime: ${cuda13_lib}" >&2; exit 2; }
+export LD_LIBRARY_PATH="${cuda13_lib}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 export PYTHONPATH="${project}/third_party/diffusers_h3/src:${project}/src:${project}"
 export PYTHON_BIN="${sim_python}"
 export SIM_SITE_PACKAGES="/tmp/h3-wam-libero-site"
