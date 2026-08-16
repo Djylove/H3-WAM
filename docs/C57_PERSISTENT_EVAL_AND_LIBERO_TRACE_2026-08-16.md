@@ -56,6 +56,10 @@ LIBERO canary.  Offline loss alone cannot promote C57.
    `GO_LONG.json` by itself is not a reservation.  If the complete reservation
    appears during a C57 intermediate evaluation, the evaluator is terminated
    and retried later; its report is published only after a complete run.
+
+The n2 release watcher likewise waits for the old C58 s10000 train report,
+strict restore report, and `COMPLETED` marker; a saved checkpoint alone cannot
+release C57 evaluation.
 4. If and only if step5000 returns `GO_CLOSED_LOOP_CANARY`, invoke
    `launch_c57_traced_libero.sh` with the same task/trial/environment seeds as
    the frozen D0 control.

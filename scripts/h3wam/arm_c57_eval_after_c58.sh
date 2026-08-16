@@ -6,6 +6,8 @@ set -euo pipefail
 # GPU idle twice before every individual restore/evaluation.
 C57_C58_FINAL_CHECKPOINT=${C57_C58_FINAL_CHECKPOINT:?set C57_C58_FINAL_CHECKPOINT}
 C57_C58_FINAL_REPORT=${C57_C58_FINAL_REPORT:?set C57_C58_FINAL_REPORT}
+C57_C58_FINAL_RESTORE_REPORT=${C57_C58_FINAL_RESTORE_REPORT:?set C57_C58_FINAL_RESTORE_REPORT}
+C57_C58_COMPLETED_MARKER=${C57_C58_COMPLETED_MARKER:?set C57_C58_COMPLETED_MARKER}
 C57_EVAL_PYTHON=${C57_EVAL_PYTHON:?set C57_EVAL_PYTHON}
 C57_EVAL_ARM_POLL_SECONDS=${C57_EVAL_ARM_POLL_SECONDS:-30}
 
@@ -15,7 +17,10 @@ if ! [[ "${C57_EVAL_ARM_POLL_SECONDS}" =~ ^[0-9]+$ ]] || \
   exit 2
 fi
 
-while [[ ! -s "${C57_C58_FINAL_CHECKPOINT}" || ! -s "${C57_C58_FINAL_REPORT}" ]]; do
+while [[ ! -s "${C57_C58_FINAL_CHECKPOINT}" || \
+         ! -s "${C57_C58_FINAL_REPORT}" || \
+         ! -s "${C57_C58_FINAL_RESTORE_REPORT}" || \
+         ! -e "${C57_C58_COMPLETED_MARKER}" ]]; do
   sleep "${C57_EVAL_ARM_POLL_SECONDS}"
 done
 
@@ -39,5 +44,23 @@ failed = [name for name, passed in checks.items() if not passed]
 if failed:
     raise SystemExit("C58 s10000 release gate failed: " + ",".join(failed))
 ' "${C57_C58_FINAL_REPORT}" "${C57_C58_FINAL_CHECKPOINT}"
+
+"${C57_EVAL_PYTHON}" -c '
+import json, pathlib, sys
+report_path, checkpoint_path = map(pathlib.Path, sys.argv[1:])
+report = json.load(report_path.open())
+checks = {
+    "status": report.get("status")
+        == "mechanical_probe_not_effectiveness_evidence",
+    "completed_steps": int(report.get("completed_steps", -1)) == 10000,
+    "restore_probe": float(report.get("restore_probe_max_abs", -1.0)) == 0.0,
+    "checkpoint_identity": pathlib.Path(report.get("loaded_checkpoint", "")).resolve()
+        == checkpoint_path.resolve(),
+    "restore_only": report.get("saved_checkpoint") is None,
+}
+failed = [name for name, passed in checks.items() if not passed]
+if failed:
+    raise SystemExit("C58 final strict-restore gate failed: " + ",".join(failed))
+' "${C57_C58_FINAL_RESTORE_REPORT}" "${C57_C58_FINAL_CHECKPOINT}"
 
 exec scripts/h3wam/run_c57_heldout_eval_queue.sh
