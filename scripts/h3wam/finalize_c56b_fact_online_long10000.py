@@ -35,6 +35,16 @@ def load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def json_canonical(value: Any) -> Any:
+    """Match torch checkpoint containers to their lossless JSON form."""
+
+    if isinstance(value, dict):
+        return {str(key): json_canonical(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_canonical(item) for item in value]
+    return value
+
+
 def expected_causal(causal_ready: Path | None) -> tuple[str, str, str]:
     if causal_ready is None:
         return "C60_MAIN", C60_DATASET_SHA256, C60_OBSERVATIONS_SHA256
@@ -151,7 +161,7 @@ def finalize(root: Path, c58_ready_path: Path, causal_ready: Path | None) -> dic
         raise ValueError("C56b checkpoint schema mismatch")
     if payload.get("completed_steps") != 10000 or payload.get("probe_step") != 10000:
         raise ValueError("C56b checkpoint milestone mismatch")
-    if payload.get("contract") != contract or not payload.get("model"):
+    if json_canonical(payload.get("contract")) != contract or not payload.get("model"):
         raise ValueError("C56b checkpoint/report contract mismatch")
     if not isinstance(payload.get("probe_predictions"), list) or len(payload["probe_predictions"]) != 8:
         raise ValueError("C56b checkpoint lacks eight restore probes")

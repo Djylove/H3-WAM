@@ -143,3 +143,17 @@ def test_long_launcher_publishes_ready_after_last_restore():
     source = (ROOT / "scripts/h3wam/launch_c56b_fact_online_long10000_8gpu.sh").read_text()
     assert source.index("restore_s${milestone}.json") < source.index("finalize_c56b_fact_online_long10000.py")
     assert '"${output_root}/READY.json"' in source
+
+
+def test_checkpoint_contract_comparison_canonicalizes_tuples():
+    checkpoint_contract = {
+        "h3_carrier_layers": (0, 2, 49),
+        "nested": {"indices": ((1, 2), (3, 4))},
+    }
+    json_contract = {
+        "h3_carrier_layers": [0, 2, 49],
+        "nested": {"indices": [[1, 2], [3, 4]]},
+    }
+    assert MODULE.json_canonical(checkpoint_contract) == json_contract
+    json_contract["h3_carrier_layers"][-1] = 48
+    assert MODULE.json_canonical(checkpoint_contract) != json_contract
