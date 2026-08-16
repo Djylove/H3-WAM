@@ -136,6 +136,7 @@ PY
 )"
   IFS=$'\t' read -r causal_dataset causal_observations causal_dataset_sha causal_observations_sha <<< "${causal_identity}"
   launch_env+=(
+    CAUSAL_FAILURE_READY="${causal_ready}"
     CAUSAL_FAILURE_DATASET="${causal_dataset}"
     CAUSAL_FAILURE_OBSERVATIONS="${causal_observations}"
     EXPECTED_CAUSAL_DATASET_SHA256="${causal_dataset_sha}"

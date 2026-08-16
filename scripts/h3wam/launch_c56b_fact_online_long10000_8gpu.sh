@@ -91,3 +91,13 @@ for milestone in $(seq 1000 1000 10000); do
     --output "${output_root}/restore/restore_s${milestone}.json"
   previous="${checkpoint}"
 done
+
+finalize_args=(
+  --root "${output_root}"
+  --c58-ready "${c58_ready}"
+  --output "${output_root}/READY.json"
+)
+if [[ -n "${CAUSAL_FAILURE_READY:-}" ]]; then
+  finalize_args+=(--causal-ready "${CAUSAL_FAILURE_READY}")
+fi
+"${python_bin}" scripts/h3wam/finalize_c56b_fact_online_long10000.py "${finalize_args[@]}"
