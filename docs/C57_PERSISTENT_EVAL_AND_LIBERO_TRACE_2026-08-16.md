@@ -50,19 +50,44 @@ LIBERO canary.  Offline loss alone cannot promote C57.
    schedule, `arm_c57_eval_after_c58.sh` may wait for an audited C58 s10000
    checkpoint/report first.  The queue independently requires the selected
    physical GPU to remain free for two probes before every checkpoint restore.
-   C56 is higher priority once it is executable: any live C56 process prevents
-   C57 from starting, as does the conjunction of C56 `GO_LONG.json`, the C58b
+   C56 is higher priority once it is executable: a live
+   `train_c56b_fact_online.py` process prevents C57 from starting, as does the conjunction of C56 `GO_LONG.json`, the C58b
    online s10000 parent checkpoint, and its final strict-restore `READY.json`.
    `GO_LONG.json` by itself is not a reservation.  If the complete reservation
    appears during a C57 intermediate evaluation, the evaluator is terminated
    and retried later; its report is published only after a complete run.
+   A waiting `watch_and_launch_c56b_after_c58b_final.sh` is not a training
+   process and must not reserve the GPU.  Once C56 publishes its bit-exact
+   s10000 restore, its reservation is released.  The queue also prepends the
+   PyTorch cu130 runtime's own `nvidia/cu13/lib`; using the system cublas on n2
+   was independently reproduced to fail even a minimal BF16 linear layer.
 
 The n2 release watcher likewise waits for the old C58 s10000 train report,
 strict restore report, and `COMPLETED` marker; a saved checkpoint alone cannot
 release C57 evaluation.
-4. If and only if step5000 returns `GO_CLOSED_LOOP_CANARY`, invoke
-   `launch_c57_traced_libero.sh` with the same task/trial/environment seeds as
-   the frozen D0 control.
+4. `watch_finalize_launch_c57.sh` waits for the complete s5000 checkpoint,
+   training report and heldout report.  `finalize_c57_lingbot_long5000.py`
+   rechecks the fixed plan SHA, exact 80 sample/RNG pairs, checkpoint contract,
+   all 5000 finite updates, and explicit strict restore.  If and only if the
+   result is `GO_FRESH_LIBERO_CANARY`, the watcher launches the pre-registered
+   four-suite task0/trial49 C57/D0 canary.  It uses identical environment and
+   policy-noise seeds, no ensemble, no video/trajectory output and no new H3/KV
+   cache.  Candidate logs must prove reset/predict/obs4/commit8 before the
+   atomic `RESULTS.json` is published.
 
 The n1 5000-step long training process is intentionally not stopped or shared
 with online H3 inference.
+
+## Frozen heldout learning curve (same 80 samples and RNG)
+
+| step | C57 mean | D0 mean | relative improvement | sample wins | decision |
+|---:|---:|---:|---:|---:|---|
+| 200 | 0.133945 | 0.076288 | -75.58% | 6.25% | NO_GO |
+| 400 | 0.104021 | 0.076288 | -36.35% | 16.25% | NO_GO |
+| 600 | 0.095226 | 0.076288 | -24.82% | 25.00% | NO_GO |
+| 800 | 0.089742 | 0.076288 | -17.64% | 31.25% | NO_GO |
+| 1000 | 0.086795 | 0.076288 | -13.77% | 35.00% | NO_GO |
+
+The curve is improving monotonically through s1000, but C57 remains worse
+than D0.  These are diagnostics only; no intermediate checkpoint can be
+selected for rollout.  The only effect decision remains s5000.
