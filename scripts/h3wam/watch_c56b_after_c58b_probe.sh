@@ -41,6 +41,6 @@ done
 OUTPUT_ROOT="${c56_output}" STEPS=1 \
   bash scripts/h3wam/launch_c56b_fact_layerwise_probe.sh
 
-# Only after the bounded C56b probe releases all GPUs, build the formal C60
-# layerwise prefix needed by future three-stream training.
-bash scripts/h3wam/launch_c60_fact_layerwise30_kv_8gpu.sh
+# Formal C56b training no longer creates an H3 K/V cache.  Online frozen INT8
+# H3 integration is released separately after its C58 interface commit is
+# fixed.  This legacy watcher intentionally ends after the bounded probe.

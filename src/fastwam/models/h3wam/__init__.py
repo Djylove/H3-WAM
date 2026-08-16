@@ -114,6 +114,14 @@ from .fact_backbone_port import (
     fact_backbone_port_losses,
 )
 from .fact_layerwise_tower import H3FACTLayerwiseTowerPolicy
+from .fact_online_data import (
+    FACT_CODE_VALUE_CONTRACT,
+    ONLINE_FACT_SAMPLE_FORMAT,
+    OnlineFACTEpisodeMixtureSampler,
+    OnlineH3FACTDemoDataset,
+    OnlineH3FACTRolloutDataset,
+    collate_online_fact,
+)
 __all__ = [
     "ActionEnsembler",
     "action_denormalization_bounds",
@@ -193,6 +201,12 @@ __all__ = [
     "build_fact_teacher_forcing_mask",
     "fact_backbone_port_losses",
     "H3FACTLayerwiseTowerPolicy",
+    "FACT_CODE_VALUE_CONTRACT",
+    "ONLINE_FACT_SAMPLE_FORMAT",
+    "OnlineFACTEpisodeMixtureSampler",
+    "OnlineH3FACTDemoDataset",
+    "OnlineH3FACTRolloutDataset",
+    "collate_online_fact",
     "DEFAULT_OFFICIAL_H3_LORA_TARGETS",
     "inject_official_h3_lora",
     "load_cached_task_context",

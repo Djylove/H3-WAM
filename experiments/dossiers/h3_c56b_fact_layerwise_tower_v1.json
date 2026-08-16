@@ -75,10 +75,10 @@
         "evidence": [
           "/mnt/h3-wam/eval/c59-fact-failure-active-overlay-v1/COMPLETED.json",
           "/mnt/h3-wam/eval/c60-counterfactual-failure-dataset-v1/dataset.pt",
-          "/mnt/h3-wam/data/c60-h3-fact-cache-v1/STRUCTURED5_IDENTITY.json SHA256 4d8519eb9ed8bf06f919abc2618c47fdbd20433b7734295b5e2353bcfd7ef760 (eligible_for_c56b_layerwise_training=false)",
-          "scripts/h3wam/launch_c60_fact_layerwise30_kv_8gpu.sh"
+          "Historical STRUCTURED5_IDENTITY SHA256 4d8519eb9ed8bf06f919abc2618c47fdbd20433b7734295b5e2353bcfd7ef760 was ineligible and the artifact was retired/deleted on 2026-08-16",
+          "src/fastwam/models/h3wam/fact_online_data.py"
         ],
-        "rationale": "LIBERO replaces RoboTwin. Five-layer C60 assets are explicitly ineligible; formal C56b training requires READY_LAYERWISE30.json with exact 30-layer K/V and audited future-H3 coverage."
+        "rationale": "LIBERO replaces RoboTwin. All formal H3 K/V caches are retired; the successor C56b-online design reads immutable dataset/observations and captures frozen H3 online."
       }
     ],
     "action": [
@@ -148,8 +148,8 @@
       "evidence": ["C56b contains no nn.TransformerEncoder; five focused tests prove all thirty shared blocks execute and Stage1 remains exact C58b. The same five tests passed on n0 in 6.17 s using pinned FastWAM source /mnt/h3-wam/upstream-readonly/FastWAM-45d8e145/wan22 on 2026-08-16."]
     },
     "data_contract": {
-      "status": "PASS",
-      "evidence": ["C60 dataset/observations SHA256 are fixed; the layerwise launcher refuses training use without exact 30-layer count/hash/missing/extra/partial READY audit. Existing STRUCTURED5_IDENTITY.json SHA256 4d8519eb9ed8bf06f919abc2618c47fdbd20433b7734295b5e2353bcfd7ef760 explicitly records kv_layers=[9,19,29,39,49] and eligible_for_c56b_layerwise_training=false."]
+      "status": "FAIL",
+      "evidence": ["The cache-backed mechanical route was retired on 2026-08-16; formal work moved to h3_c56b_fact_online_v1 and no cache launcher is permitted."]
     },
     "action_contract": {
       "status": "PASS",
@@ -205,9 +205,9 @@
     "estimated_hours": 0.25
   },
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Source, shared-block architecture, mask, gradient, failure-mask and restore contracts permit exactly one real 8-rank mechanical step after the C58b 80-item layer-wise cache is READY. Long training remains blocked on C60 READY_LAYERWISE30.json and a real finite canary.",
-    "launch_command": "STEPS=1 bash scripts/h3wam/launch_c56b_fact_layerwise_probe.sh",
+    "status": "NO_GO",
+    "rationale": "The cache-backed C56b route is retired. Continue only through the no-cache online frozen-H3 dossier after its C58 interface, gradient, memory and restore gates pass.",
+    "launch_command": "C58_ONLINE_INTERFACE_COMMIT=<fixed_sha> bash scripts/h3wam/launch_c56b_fact_online_8gpu.sh",
     "effect_status": "NOT_EVIDENCE_READY"
   }
 }

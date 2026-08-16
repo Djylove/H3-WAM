@@ -1,0 +1,194 @@
+{
+  "experiment_id": "h3_c56b_fact_online_v1",
+  "classification": "backbone_port",
+  "hypothesis": "If frozen INT8 H3 produces all thirty layer-aligned current-observation K/V prefixes online while FACT future/state/value tracks update those same thirty ActionDiT blocks, then future-prediction supervision will improve episode-disjoint action conditioning without the train/deploy gap of stored H3 features.",
+  "single_variable": "Relative to C58 online frozen-H3 action training, add FACT clean-action, future-H3, future-state and value tracks plus official failure action masks inside the same thirty ActionDiT blocks; H3 checkpoint, online packing, action contract, dense windows and optimizer parent remain fixed.",
+  "parent_baseline": "Pending fixed C58 online interface commit initialized from D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FACT: Failure-Aware Causal Training for World-Action Models",
+      "locator": "https://arxiv.org/abs/2608.10232",
+      "revision": "v1 (2026-08-10)",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Bariona/FACT official repository",
+      "locator": "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py and fact_datasets/samplers/episode_mixture_sampler.py",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "FastWAM official ActionDiT",
+      "locator": "third_party/FastWAM/src/fastwam/models/wan22/action_dit.py",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "C56b no-cache online data boundary and shared FACT tower",
+      "locator": "src/fastwam/models/h3wam/fact_online_data.py and fact_layerwise_tower.py",
+      "revision": "working tree pending C58 online interface commit",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "online frozen world prefix and shared action/consequence blocks",
+        "paper": "P/A/G/V/I use one causal video transformer and future losses update the action-generating backbone.",
+        "upstream_code": "One Wan causal transformer runs teacher-forced tracks; VAE latents may be cached but transformer K/V is not a training dataset artifact.",
+        "local": "C56b shared30 tower exists; the online frozen INT8 H3 provider that must supply exact layer-aligned K/V is pending the fixed C58 interface.",
+        "status": "UNKNOWN",
+        "evidence": [
+          "src/fastwam/models/h3wam/fact_layerwise_tower.py",
+          "scripts/h3wam/launch_c56b_fact_online_8gpu.sh"
+        ],
+        "rationale": "No duplicate online provider will be invented before C58 fixes its API and commit identity."
+      }
+    ],
+    "data": [
+      {
+        "field": "expert, observational and causal-failure online inputs",
+        "paper": "Expert and failure episodes share one transformed dataset; failure actions are masked.",
+        "upstream_code": "EpisodeMixtureSampler chooses dataset, episode, then frame; WATransforms accepts online images or cached VAE latents.",
+        "local": "Expert rows return existing VAE current/future latents; C48/C59 and C60 return current/future RGB from immutable trajectories. No row contains H3 K/V or H3 features.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "src/fastwam/models/h3wam/fact_online_data.py",
+          "tests/test_h3_fact_online_data.py"
+        ],
+        "rationale": "Only the VAE boundary differs by stream; frozen H3 executes online for both and the collator forbids cached H3 fields."
+      }
+    ],
+    "action": [
+      {
+        "field": "LIBERO horizon32 absolute 7D and failure imitation mask",
+        "paper": "Failed episode actions are excluded from imitation while future/value remain supervised.",
+        "upstream_code": "action_loss_mask is zero for failure episodes.",
+        "local": "C48 consumes audited C59 labels and C60 consumes embedded causal labels; environment/dataset gripper conversion is round-trip tested.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "src/fastwam/models/h3wam/fact_online_data.py:environment_actions_to_dataset",
+          "tests/test_h3_fact_online_data.py"
+        ],
+        "rationale": "LIBERO absolute 7D horizon32 replaces RoboTwin delta14 horizon48 while retaining the deployed D0 action contract."
+      }
+    ],
+    "objective": [
+      {
+        "field": "10:1:0.4:0.4 shared FACT flow objectives",
+        "paper": "Action, future image, future state and value flow losses jointly update one backbone.",
+        "upstream_code": "wa_casual_trainer.py applies the four objectives and action failure mask.",
+        "local": "C56b loss/tower code exists, but the future-H3 online target adapter and distinct future-state mask integration await C58 online output contract.",
+        "status": "UNKNOWN",
+        "evidence": [
+          "src/fastwam/models/h3wam/fact_layerwise_tower.py",
+          "src/fastwam/models/h3wam/fact_online_data.py"
+        ],
+        "rationale": "Target width/normalization must be derived from the fixed online provider rather than guessed."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "eight-GPU online H3 training budget",
+        "paper": "Long multi-GPU training with separate parameter groups.",
+        "upstream_code": "Resolved FACT config uses distributed training and episode mixture sampling.",
+        "local": "Launcher is hard-gated on a fixed C58 online commit, provider symbol, GO_LONG dossier and absent output root.",
+        "status": "UNKNOWN",
+        "evidence": [
+          "scripts/h3wam/launch_c56b_fact_online_8gpu.sh"
+        ],
+        "rationale": "Microbatch, seconds/step, effective epochs and memory remain unknown until the online provider can run a bounded probe."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "paired offline mechanism and fresh LIBERO closed loop",
+        "paper": "Closed-loop task success is decisive.",
+        "upstream_code": "Action generation is evaluated before consequence/value selection.",
+        "local": "C58 online is the fixed action-only parent; C56b must first preserve action conditioning and then beat it on fresh episode-disjoint LIBERO trials.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "experiments/dossiers/h3_c56b_fact_online_v1.json"
+        ],
+        "rationale": "LIBERO replaces RoboTwin and no effectiveness claim is made before paired rollout."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": ["FACT 618a6c1 and FastWAM 45d8e145 are pinned."]
+    },
+    "architecture_contract": {
+      "status": "FAIL",
+      "evidence": ["C58 online provider commit/module/symbol are pending."]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": ["Synthetic demo and C60 tests prove no H3 cache crosses the dataset/collator boundary."]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": ["Action round-trip and failure masks are directly tested."]
+    },
+    "objective_contract": {
+      "status": "FAIL",
+      "evidence": ["Future-H3 target width and normalization await the fixed C58 online provider contract."]
+    },
+    "optimization_contract": {
+      "status": "FAIL",
+      "evidence": ["Real online H3 throughput/global batch/effective epoch budget are not measured."]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": ["C58 online is pre-registered as the paired parent and fresh LIBERO success is decisive."]
+    },
+    "gradient_path": {
+      "status": "FAIL",
+      "evidence": ["Online H3 no-grad plus shared30 Action/FACT gradient test cannot run before integration."]
+    },
+    "smoke_finite": {
+      "status": "FAIL",
+      "evidence": ["No real online C56b forward/backward exists."]
+    },
+    "checkpoint_restore": {
+      "status": "FAIL",
+      "evidence": ["No online C56b checkpoint exists."]
+    },
+    "parent_baseline": {
+      "status": "FAIL",
+      "evidence": ["C58 online parent commit/checkpoint are pending."]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": ["No online future/action paired result exists."]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": ["No online C56b checkpoint has run LIBERO."]
+    }
+  },
+  "budget": {
+    "global_batch": "UNKNOWN until real online memory probe",
+    "optimizer_steps": "UNKNOWN until windows/effective-epoch registration",
+    "training_samples": "UNKNOWN",
+    "unique_windows": "dataset audit pending on cloud",
+    "effective_epochs": "UNKNOWN",
+    "gpu_count": 8,
+    "estimated_hours": "UNKNOWN until seconds/step probe"
+  },
+  "decision": {
+    "status": "NO_GO",
+    "rationale": "CPU no-cache data work is permitted, but GPU canary/long training is blocked until the fixed C58 online provider is integrated and architecture, objective, gradient, memory and restore gates pass.",
+    "launch_command": "C58_ONLINE_INTERFACE_COMMIT=<fixed_sha> bash scripts/h3wam/launch_c56b_fact_online_8gpu.sh",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}
