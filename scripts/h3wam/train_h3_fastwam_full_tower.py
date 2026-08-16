@@ -46,6 +46,13 @@ from fastwam.models.h3wam.fastwam_full_tower import (  # noqa: E402
     LAYERWISE_H3_50_TO_ACTION_30,
     initialize_full_tower_from_d0,
 )
+from fastwam.models.h3wam.c58_online_training import (  # noqa: E402
+    C58OnlineFrozenH3Dataset,
+    C58OnlineFrozenH3Provider,
+    attach_online_h3_kv,
+    collate_c58_online,
+    move_c58_online_batch,
+)
 
 
 def _load_parent():
@@ -100,7 +107,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--source-manifest", type=Path, required=True)
     parser.add_argument("--cache-root", type=Path, required=True)
-    parser.add_argument("--kv-subdir", required=True)
+    parser.add_argument("--kv-subdir")
+    parser.add_argument(
+        "--online-h3-checkpoint",
+        type=Path,
+        help=(
+            "Run frozen INT8 H3 independently on every rank and keep K/V in "
+            "memory. This mode never reads a precomputed H3 K/V cache."
+        ),
+    )
     parser.add_argument("--d0-parent-checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--save-checkpoint", type=Path)
@@ -113,6 +128,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--sample-offset", type=int, default=0)
+    parser.add_argument(
+        "--probe-sample-offset",
+        type=int,
+        help="Fixed restore probe row; defaults to the invocation sample offset.",
+    )
     parser.add_argument("--per-device-batch-size", type=int, default=1)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
@@ -305,6 +325,7 @@ def checkpoint_contract(
 ) -> dict[str, Any]:
     layerwise = spec.carrier_source_mode == LAYERWISE_H3_50_TO_ACTION_30_MODE
     matched_control = spec.action_layers == 5
+    online_h3 = args.online_h3_checkpoint is not None
     contract = {
         "candidate": (
             "C58B_FASTWAM_FULL30_H3_LAYERWISE"
@@ -337,7 +358,11 @@ def checkpoint_contract(
         "h3_checkpoint_path": str(dataset.first_checkpoint_path),
         "h3_checkpoint_sha256": args.expected_h3_checkpoint_sha256,
         "verify_h3_checkpoint_sha256": args.verify_h3_checkpoint_sha256,
-        "kv_subdir": args.kv_subdir,
+        "h3_execution": (
+            "online_frozen_int8_per_rank_v1" if online_h3 else "precomputed_kv_v1"
+        ),
+        "disk_kv_training_input": not online_h3,
+        "kv_subdir": None if online_h3 else args.kv_subdir,
         "kv_schema": PARENT.DREAMWAM_KV_SCHEMA,
         "kv_strategy": PARENT.DREAMWAM_KV_STRATEGY,
         "kv_layers": list(spec.carrier_layers),
@@ -406,7 +431,12 @@ def infinite_batches(loader: Iterable[dict[str, Any]]):
         yield from loader
 
 
-def probe_dataset_selection(args: argparse.Namespace) -> dict[str, int]:
+def probe_dataset_selection(
+    args: argparse.Namespace,
+    *,
+    manifest_rows: list[dict[str, Any]] | None = None,
+    loaded_checkpoint: dict[str, Any] | None = None,
+) -> dict[str, int]:
     """Keep the initialization probe inside the exact training slice.
 
     C58b's first cached canary starts deep in the dense manifest.  Returning
@@ -414,7 +444,26 @@ def probe_dataset_selection(args: argparse.Namespace) -> dict[str, int]:
     declared slice and, more importantly, probes a different sample contract.
     """
 
-    return {"limit": 1, "sample_offset": int(args.sample_offset)}
+    probe_offset = getattr(args, "probe_sample_offset", None)
+    if probe_offset is None and loaded_checkpoint is not None:
+        probe_ids = loaded_checkpoint.get("probe_sample_ids")
+        if not isinstance(probe_ids, list) or len(probe_ids) != 1:
+            raise ValueError("loaded C58 checkpoint must freeze exactly one probe id")
+        if manifest_rows is None:
+            raise ValueError("manifest rows are required to restore a frozen probe")
+        matches = [
+            index
+            for index, row in enumerate(manifest_rows)
+            if str(row["id"]) == str(probe_ids[0])
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                "loaded C58 checkpoint probe id is not unique in the manifest"
+            )
+        probe_offset = matches[0]
+    if probe_offset is None:
+        probe_offset = args.sample_offset
+    return {"limit": 1, "sample_offset": int(probe_offset)}
 
 
 def _atomic_torch_save(payload: dict[str, Any], path: Path) -> int:
@@ -442,6 +491,16 @@ def main() -> None:
         raise ValueError("--restore-check-only requires --load-checkpoint")
     if args.matched_d0_control and args.carrier_mode != REPEAT_LAYER49_MODE:
         raise ValueError("matched D0 control cannot use the layer-wise carrier")
+    online_h3 = args.online_h3_checkpoint is not None
+    if online_h3 and (
+        args.carrier_mode != LAYERWISE_H3_50_TO_ACTION_30_MODE
+        or args.matched_d0_control
+    ):
+        raise ValueError("online H3 is restricted to the C58b layer-wise full30 path")
+    if not online_h3 and not args.kv_subdir:
+        raise ValueError("cached training requires --kv-subdir")
+    if online_h3 and args.per_device_batch_size != 1:
+        raise ValueError("online H3 requires per-device-batch-size=1")
     positive = (
         args.steps,
         args.per_device_batch_size,
@@ -461,26 +520,54 @@ def main() -> None:
     random.seed(args.seed + rank)
     dtype = torch.bfloat16 if device.type == "cuda" else torch.float32
     started = time.perf_counter()
+    manifest_rows = [
+        json.loads(line)
+        for line in args.manifest.resolve().read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    loaded_payload = (
+        None
+        if args.load_checkpoint is None
+        else torch.load(
+            args.load_checkpoint.resolve(), map_location="cpu", weights_only=False
+        )
+    )
+    probe_selection = probe_dataset_selection(
+        args,
+        manifest_rows=manifest_rows,
+        loaded_checkpoint=loaded_payload,
+    )
 
     carrier_layers = (
         LAYERWISE_H3_50_TO_ACTION_30
         if args.carrier_mode == LAYERWISE_H3_50_TO_ACTION_30_MODE
         else DEFAULT_H3_CARRIER_LAYERS
     )
-    dataset = PARENT.CachedDreamWAMKVDataset(
-        args.manifest,
-        args.cache_root,
-        args.kv_subdir,
-        source_manifest=args.source_manifest,
-        carrier_layers=carrier_layers,
-        capture_token_count=args.capture_token_count,
-        kv_pool_strategy=PARENT.DREAMWAM_KV_STRATEGY,
-        num_heads=56,
-        attn_head_dim=128,
-        action_horizon=args.action_horizon,
-        limit=args.limit,
-        sample_offset=args.sample_offset,
-    )
+    if online_h3:
+        dataset = C58OnlineFrozenH3Dataset(
+            args.manifest,
+            args.source_manifest,
+            args.cache_root,
+            args.online_h3_checkpoint,
+            action_horizon=args.action_horizon,
+            limit=args.limit,
+            sample_offset=args.sample_offset,
+        )
+    else:
+        dataset = PARENT.CachedDreamWAMKVDataset(
+            args.manifest,
+            args.cache_root,
+            args.kv_subdir,
+            source_manifest=args.source_manifest,
+            carrier_layers=carrier_layers,
+            capture_token_count=args.capture_token_count,
+            kv_pool_strategy=PARENT.DREAMWAM_KV_STRATEGY,
+            num_heads=56,
+            attn_head_dim=128,
+            action_horizon=args.action_horizon,
+            limit=args.limit,
+            sample_offset=args.sample_offset,
+        )
     actual_h3_sha256 = PARENT.verify_h3_checkpoint_sha256(
         dataset.first_checkpoint_path,
         expected_sha256=args.expected_h3_checkpoint_sha256,
@@ -569,25 +656,46 @@ def main() -> None:
         num_workers=args.num_workers,
         pin_memory=device.type == "cuda",
         drop_last=False,
-        collate_fn=PARENT.collate_cached_batch,
+        collate_fn=collate_c58_online if online_h3 else PARENT.collate_cached_batch,
     )
-    probe_dataset = PARENT.CachedDreamWAMKVDataset(
-        args.manifest,
-        args.cache_root,
-        args.kv_subdir,
-        source_manifest=args.source_manifest,
-        carrier_layers=carrier_layers,
-        capture_token_count=args.capture_token_count,
-        kv_pool_strategy=PARENT.DREAMWAM_KV_STRATEGY,
-        num_heads=56,
-        attn_head_dim=128,
-        action_horizon=args.action_horizon,
-        **probe_dataset_selection(args),
-    )
-    probe_cpu = PARENT.collate_cached_batch([probe_dataset[0]])
-    if probe_cpu["sample_ids"] != [str(dataset.rows[0]["id"])]:
+    if online_h3:
+        probe_dataset = C58OnlineFrozenH3Dataset(
+            args.manifest,
+            args.source_manifest,
+            args.cache_root,
+            args.online_h3_checkpoint,
+            action_horizon=args.action_horizon,
+            **probe_selection,
+        )
+        probe_cpu = collate_c58_online([probe_dataset[0]])
+        online_provider = C58OnlineFrozenH3Provider(
+            args.online_h3_checkpoint, layers=carrier_layers
+        ).to(device=device).eval()
+    else:
+        probe_dataset = PARENT.CachedDreamWAMKVDataset(
+            args.manifest,
+            args.cache_root,
+            args.kv_subdir,
+            source_manifest=args.source_manifest,
+            carrier_layers=carrier_layers,
+            capture_token_count=args.capture_token_count,
+            kv_pool_strategy=PARENT.DREAMWAM_KV_STRATEGY,
+            num_heads=56,
+            attn_head_dim=128,
+            action_horizon=args.action_horizon,
+            **probe_selection,
+        )
+        probe_cpu = PARENT.collate_cached_batch([probe_dataset[0]])
+        online_provider = None
+    expected_probe_offset = probe_selection["sample_offset"]
+    expected_probe_id = str(manifest_rows[expected_probe_offset]["id"])
+    if probe_cpu["sample_ids"] != [expected_probe_id]:
         raise RuntimeError("C58 initialization probe escaped the training slice")
-    probe = PARENT.move_batch(probe_cpu, device, dtype)
+    if online_h3:
+        probe = move_c58_online_batch(probe_cpu, device, dtype)
+        probe = attach_online_h3_kv(probe, online_provider)
+    else:
+        probe = PARENT.move_batch(probe_cpu, device, dtype)
     flow_scheduler = PARENT.FlowMatchScheduler(
         num_train_timesteps=1000, shift=args.action_shift
     )
@@ -650,12 +758,9 @@ def main() -> None:
         torch.cuda.empty_cache()
 
     completed_steps = 0
-    loaded_payload = None
     restore_max_abs = None
     if args.load_checkpoint is not None:
-        loaded_payload = torch.load(
-            args.load_checkpoint.resolve(), map_location="cpu", weights_only=False
-        )
+        assert loaded_payload is not None
         validate_c58_checkpoint(loaded_payload, contract)
         model.load_state_dict(loaded_payload["model"], strict=True)
         optimizer.load_state_dict(loaded_payload["optimizer"])
@@ -703,18 +808,27 @@ def main() -> None:
             losses: list[float] = []
             sample_ids: list[str] = []
             timestep_means: list[float] = []
+            flow_seeds: list[int] = []
             for accumulation_index in range(args.gradient_accumulation_steps):
-                batch = PARENT.move_batch(next(iterator), device, dtype)
+                batch_cpu = next(iterator)
+                if online_h3:
+                    assert online_provider is not None
+                    batch = move_c58_online_batch(batch_cpu, device, dtype)
+                    batch = attach_online_h3_kv(batch, online_provider)
+                else:
+                    batch = PARENT.move_batch(batch_cpu, device, dtype)
                 sample_ids.extend(batch["sample_ids"])
+                flow_seed = PARENT.PARENT.distributed_flow_seed(
+                    base_seed=args.seed,
+                    completed_step=completed_steps + local_step,
+                    accumulation_index=accumulation_index,
+                    rank=rank,
+                )
+                flow_seeds.append(flow_seed)
                 noisy, target, timesteps = PARENT.PARENT.deterministic_flow_batch(
                     batch["actions"],
                     flow_scheduler,
-                    seed=PARENT.PARENT.distributed_flow_seed(
-                        base_seed=args.seed,
-                        completed_step=completed_steps + local_step,
-                        accumulation_index=accumulation_index,
-                        rank=rank,
-                    ),
+                    seed=flow_seed,
                 )
                 prediction = forward_policy(model, batch, noisy, timesteps)
                 loss = PARENT.flow_matching_loss(
@@ -760,6 +874,7 @@ def main() -> None:
                 "head_update_max_abs": update,
                 "learning_rate": learning_rate,
                 "sample_ids": sample_ids,
+                "flow_seeds": flow_seeds,
             }
             history.append(record)
             if rank == 0:
@@ -829,15 +944,44 @@ def main() -> None:
         if dist.is_initialized():
             dist.barrier()
 
+    local_rank_audit = {
+        "rank": rank,
+        "sample_ids": [
+            sample_id for record in history for sample_id in record["sample_ids"]
+        ],
+        "flow_seeds": [seed for record in history for seed in record["flow_seeds"]],
+        "peak_allocated_gib": (
+            torch.cuda.max_memory_allocated(device) / 2**30
+            if device.type == "cuda"
+            else 0.0
+        ),
+        "peak_reserved_gib": (
+            torch.cuda.max_memory_reserved(device) / 2**30
+            if device.type == "cuda"
+            else 0.0
+        ),
+    }
+    if dist.is_initialized():
+        rank_audits: list[dict[str, Any] | None] = [None] * world_size
+        dist.all_gather_object(rank_audits, local_rank_audit)
+        if any(item is None for item in rank_audits):
+            raise RuntimeError("failed to gather C58 per-rank runtime audit")
+    else:
+        rank_audits = [local_rank_audit]
+
     if rank == 0:
         trainable_parameters = sum(
             parameter.numel() for parameter in unwrapped.parameters() if parameter.requires_grad
         )
         report = {
             "event": (
-                "h3_c58_matched_d0_fresh_optimizer_probe"
-                if args.matched_d0_control
-                else "h3_c58_fastwam_full30_probe"
+                "h3_c58b_online_frozen_h3_full30_train"
+                if online_h3
+                else (
+                    "h3_c58_matched_d0_fresh_optimizer_probe"
+                    if args.matched_d0_control
+                    else "h3_c58_fastwam_full30_probe"
+                )
             ),
             "classification": contract["classification"],
             "status": "mechanical_probe_not_effectiveness_evidence",
@@ -884,6 +1028,7 @@ def main() -> None:
             "probe_prediction_mean": float(probe_prediction.mean()),
             "probe_prediction_std": float(probe_prediction.std()),
             "history": history,
+            "per_rank_runtime": rank_audits,
             "elapsed_seconds": time.perf_counter() - started,
             "seconds_per_step": (
                 None

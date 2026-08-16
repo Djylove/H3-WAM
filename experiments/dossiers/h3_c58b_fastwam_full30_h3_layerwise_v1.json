@@ -31,7 +31,7 @@
       "kind": "local_implementation",
       "title": "H3-WAM C58b layer-wise FastWAM carrier",
       "locator": "/home/ubuntu/fastwam_deploy",
-      "revision": "C58b working diff after af4814b8d2fba57ffb560225db3e6dbeef767745",
+      "revision": "ea43479 + 2e1a0c8 plus the online-DDP working diff",
       "official": false,
       "clean": false
     }
@@ -54,10 +54,10 @@
         "field": "world backbone and trainability",
         "paper": "Wan2.2 video expert and ActionDiT are trained jointly.",
         "upstream_code": "Joint video/action flow loss updates the MoT DiT.",
-        "local": "INT8 H3 is frozen and its per-layer K/V is precomputed; only ActionDiT/proprio parameters train.",
+        "local": "Every DDP rank executes frozen INT8 H3 online and passes its 30 in-memory per-layer K/V bundles directly to trainable ActionDiT/proprio parameters.",
         "status": "INTENTIONAL_DEVIATION",
         "evidence": [
-          "scripts/h3wam/precompute_h3_int8_features.py",
+          "src/fastwam/models/h3wam/c58_online_training.py",
           "scripts/h3wam/train_h3_fastwam_full_tower.py"
         ],
         "rationale": "The experiment measures whether H3 world features can drive action success without destructive full H3 fine-tuning."
@@ -65,16 +65,16 @@
     ],
     "data": [
       {
-        "field": "layer-wise carrier cache and training rows",
+        "field": "online layer-wise carrier and training rows",
         "paper": "Online video-world activations from the same training clip.",
         "upstream_code": "Video and action streams execute together without a disk feature cache.",
-        "local": "Current-observation INT8 H3 K/V for 30 fixed layers, 32 pooled tokens each; cache canary uses the same 80 rows at offset112000 as C58.",
-        "status": "INTENTIONAL_DEVIATION",
+        "local": "Each rank computes current-observation INT8 H3 K/V online for 30 fixed layers and 32 pooled tokens; no disk K/V is a training input.",
+        "status": "EQUIVALENT",
         "evidence": [
-          "scripts/h3wam/launch_c58b_layerwise_cache_canary.sh",
-          "30x2x32x56x128 BF16 = 27,525,120 tensor bytes/sample"
+          "scripts/h3wam/probe_c58b_online_frozen_h3.py",
+          "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-one-step/report.json SHA256 84a1a541dcfbfb1a083af0cfd5de79b6c1c0b2d5f0ba0279d9a82890a968a1fc"
         ],
-        "rationale": "Caching avoids recomputing a frozen H3 every optimizer step and does not alter the deterministic tensor consumed by ActionDiT."
+        "rationale": "The real A800 gate proves every one of the 60 K/V tensors and the resulting action output are bit-exact to the retired cache oracle; online execution removes the projected 2.2 TB cache."
       }
     ],
     "action": [
@@ -110,7 +110,7 @@
         "local": "8 A800, global batch8, ten real steps, identical C58 optimizer/schedule and D0 initialization.",
         "status": "EQUIVALENT",
         "evidence": [
-          "scripts/h3wam/launch_c58b_layerwise_train_probe.sh"
+          "scripts/h3wam/launch_c58b_online_ddp_canary.sh"
         ],
         "rationale": "The ten-step run is a mechanical canary only; a matched longer budget requires canary promotion."
       }
@@ -145,7 +145,7 @@
     "data_contract": {
       "status": "PASS",
       "evidence": [
-        "Synthetic existing precompute-path test writes 30 independent BF16 K/V layers with exact pooled shapes; real 80-row READY audit is part of the canary command."
+        "Real A800 online H3 produces all 30 independent BF16 K/V layers bit-exactly to the retired cache oracle; the oracle cache was then removed."
       ]
     },
     "action_contract": {
@@ -181,7 +181,7 @@
     "smoke_finite": {
       "status": "FAIL",
       "evidence": [
-        "Real 80-row H3 cache and BF16 ten-step probe await one free 8xA800 node."
+        "Single-A800 real online H3 plus full30 backward/AdamW passed: all 30 gradients nonzero, peak allocated 41.46 GB, hot step 1.021 s; report SHA256 84a1a541dcfbfb1a083af0cfd5de79b6c1c0b2d5f0ba0279d9a82890a968a1fc."
       ]
     },
     "checkpoint_restore": {
@@ -197,9 +197,9 @@
       ]
     },
     "mechanism_signal": {
-      "status": "FAIL",
+      "status": "PASS",
       "evidence": [
-        "No real layer-wise H3 effect result exists."
+        "Online/cache K/V and action outputs are bit-exact, layer-wise carrier differs from degenerate layer49, and every official ActionDiT block has nonzero gradient in a real optimizer step. This is mechanism, not rollout-effect evidence."
       ]
     },
     "closed_loop_canary": {
@@ -217,14 +217,14 @@
     "effective_epochs": 0.00039844804486524984,
     "gpu_count": 8,
     "estimated_hours": 1,
-    "cache_items": 80,
-    "cache_tensor_bytes": 2202009600,
-    "projected_80000_tensor_bytes": 2202009600000
+    "cache_items": 0,
+    "cache_tensor_bytes": 0,
+    "projected_80000_tensor_bytes": 0
   },
   "decision": {
     "status": "GO_CANARY",
-    "rationale": "Source, architecture, cache schema, action, objective, optimizer, evaluation boundary and all-30 gradient paths are fixed. One free 8xA800 node may now produce 80 real caches and run ten BF16 steps; no long or effect claim is authorized.",
-    "launch_command": "bash scripts/h3wam/launch_c58b_layerwise_cache_canary.sh && bash scripts/h3wam/launch_c58b_layerwise_train_probe.sh",
+    "rationale": "Real online H3 parity, memory and all-30 backward passed on one A800. Run the frozen 8-rank DDP sample/seed/checkpoint-restore gate next; no cache generation or rollout-effect claim is authorized by this dossier state.",
+    "launch_command": "bash scripts/h3wam/launch_c58b_online_ddp_canary.sh",
     "effect_status": "NOT_EVIDENCE_READY"
   }
 }

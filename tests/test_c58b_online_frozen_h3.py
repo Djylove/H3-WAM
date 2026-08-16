@@ -31,6 +31,23 @@ def test_c58_probe_inherits_nonzero_training_slice():
     assert selection == {"limit": 1, "sample_offset": 112000}
 
 
+def test_c58_resume_reconstructs_frozen_checkpoint_probe_by_id():
+    rows = [{"id": "old-probe"}, {"id": "new-stage"}]
+    args = Namespace(sample_offset=1, probe_sample_offset=None)
+    selection = C58.probe_dataset_selection(
+        args,
+        manifest_rows=rows,
+        loaded_checkpoint={"probe_sample_ids": ["old-probe"]},
+    )
+    assert selection == {"limit": 1, "sample_offset": 0}
+    with pytest.raises(ValueError, match="not unique"):
+        C58.probe_dataset_selection(
+            args,
+            manifest_rows=[{"id": "old-probe"}, {"id": "old-probe"}],
+            loaded_checkpoint={"probe_sample_ids": ["old-probe"]},
+        )
+
+
 def test_online_probe_selects_declared_manifest_offset():
     with tempfile.TemporaryDirectory() as directory:
         manifest = Path(directory) / "manifest.jsonl"
