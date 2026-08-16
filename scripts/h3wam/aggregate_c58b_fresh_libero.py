@@ -92,10 +92,13 @@ def _load_arm(
             key = (suite, task_id, int(episode["trial"]))
             if key in pairs:
                 raise ValueError(f"duplicate paired episode: {arm}/{key}")
+            replans = int(episode.get("replans", -1))
             if (
                 episode.get("episode_seed") != 33_042
                 or episode.get("environment_seed") is not None
-                or episode.get("replan_noise_seeds") != list(range(33_042, 33_092))
+                or replans < 0
+                or episode.get("replan_noise_seeds")
+                != list(range(33_042, 33_042 + replans))
             ):
                 raise ValueError(f"paired episode seed mismatch: {arm}/{key}")
             pairs[key] = bool(episode.get("success"))

@@ -152,6 +152,7 @@ def test_fresh_aggregate_requires_all_four_exact_suites(tmp_path, monkeypatch):
                             "trial": 33,
                             "episode_seed": 33_042,
                             "environment_seed": None,
+                            "replans": 50,
                             "replan_noise_seeds": list(range(33_042, 33_092)),
                             "success": (
                                 task % 2 == 0
@@ -179,6 +180,59 @@ def test_exact_mcnemar_direction_and_no_discordance():
     strong = AGG._exact_mcnemar(10, 0)
     assert strong["one_sided_p_candidate_better"] == pytest.approx(1 / 1024)
     assert strong["two_sided_p"] == pytest.approx(2 / 1024)
+
+
+def test_fresh_aggregate_accepts_early_success_seed_prefix(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "s10000.pt"
+    checkpoint.touch()
+    gate = tmp_path / "gate.json"
+    gate.write_text(json.dumps({
+        "permission": "GO_FRESH_LIBERO",
+        "checkpoint": str(checkpoint.resolve()),
+        "checkpoint_sha256": "a" * 64,
+        "closed_loop_protocol": {"trial_indices": [33]},
+    }), encoding="utf-8")
+    d0_checkpoint = tmp_path / "d0.pt"
+    d0_checkpoint.write_bytes(b"d0")
+    monkeypatch.setattr(AGG, "EXPECTED_D0_SHA256", AGG.sha256_file(d0_checkpoint))
+    for arm, policy in AGG.ARMS.items():
+        for suite in AGG.SUITES:
+            directory = tmp_path / arm / suite
+            directory.mkdir(parents=True)
+            arm_checkpoint = checkpoint if arm == "candidate_c58b" else d0_checkpoint
+            tasks = []
+            for task in range(10):
+                replans = 7 if task == 0 else 50
+                tasks.append({
+                    "task_id": task,
+                    "episodes": [{
+                        "trial": 33,
+                        "episode_seed": 33_042,
+                        "environment_seed": None,
+                        "replans": replans,
+                        "replan_noise_seeds": list(range(33_042, 33_042 + replans)),
+                        "success": task == 0,
+                    }],
+                })
+            payload = {
+                "policy": policy, "suite": suite,
+                "task_ids": list(range(10)), "trial_indices": [33],
+                "trials_per_task": 1, "replan_steps": 8,
+                "action_horizon": 32, "model_evaluations": 10,
+                "wait_steps": 30, "environment_seed": None,
+                "policy_noise_seed_base": None,
+                "normalized_action_pre_clamp": True,
+                "sample_ensemble_size": 1, "use_action_ensembler": False,
+                "save_trajectories": False,
+                "checkpoint": str(arm_checkpoint.resolve()),
+                "tasks": tasks,
+            }
+            (directory / "results.json").write_text(
+                json.dumps(payload), encoding="utf-8"
+            )
+    result = AGG.aggregate(tmp_path, gate, d0_checkpoint)
+    assert result["candidate_successes"] == 4
+    assert result["control_successes"] == 4
 
 
 def test_final_watcher_pins_official_fastwam_source_for_eval_and_rollout():
