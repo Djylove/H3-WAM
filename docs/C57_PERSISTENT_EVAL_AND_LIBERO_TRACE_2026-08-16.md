@@ -50,6 +50,10 @@ LIBERO canary.  Offline loss alone cannot promote C57.
    schedule, `arm_c57_eval_after_c58.sh` may wait for an audited C58 s10000
    checkpoint/report first.  The queue independently requires the selected
    physical GPU to remain free for two probes before every checkpoint restore.
+   C56 is higher priority: the C56 `GO_LONG.json` reservation or any live C56
+   process prevents C57 from starting.  If that reservation appears during a
+   C57 intermediate evaluation, the evaluator is terminated and retried later;
+   its report is published only after a complete run.
 4. If and only if step5000 returns `GO_CLOSED_LOOP_CANARY`, invoke
    `launch_c57_traced_libero.sh` with the same task/trial/environment seeds as
    the frozen D0 control.

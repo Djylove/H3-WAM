@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import math
+import os
 import sys
 from contextlib import nullcontext
 from pathlib import Path
@@ -169,7 +170,9 @@ def main() -> None:
         "samples": records,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    temporary = args.output.with_name(f".{args.output.name}.{os.getpid()}.partial")
+    temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    os.replace(temporary, args.output)
     print(json.dumps({key: report[key] for key in report if key != "samples"}))
 
 

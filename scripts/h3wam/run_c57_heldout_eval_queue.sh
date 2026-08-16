@@ -14,6 +14,8 @@ C57_EVAL_DEVICE=${C57_EVAL_DEVICE:-cuda:0}
 C57_EVAL_PHYSICAL_GPU=${C57_EVAL_PHYSICAL_GPU:-0}
 C57_EVAL_KV_SUBDIR=${C57_EVAL_KV_SUBDIR:-h3_int8_dreamwam_kv_5x32_dense_v1}
 C57_EVAL_IDLE_CONFIRM_SECONDS=${C57_EVAL_IDLE_CONFIRM_SECONDS:-30}
+C57_HIGH_PRIORITY_MARKER=${C57_HIGH_PRIORITY_MARKER:-/mnt/h3-wam/outputs/c56b-fact-online-v1/GO_LONG.json}
+C57_EVAL_PREEMPT_POLL_SECONDS=${C57_EVAL_PREEMPT_POLL_SECONDS:-5}
 
 if ! [[ "${C57_EVAL_PHYSICAL_GPU}" =~ ^[0-9]+$ ]]; then
   echo "C57_EVAL_PHYSICAL_GPU must be a non-negative integer" >&2
@@ -24,6 +26,16 @@ if ! [[ "${C57_EVAL_IDLE_CONFIRM_SECONDS}" =~ ^[0-9]+$ ]] || \
   echo "C57_EVAL_IDLE_CONFIRM_SECONDS must be positive" >&2
   exit 2
 fi
+if ! [[ "${C57_EVAL_PREEMPT_POLL_SECONDS}" =~ ^[0-9]+$ ]] || \
+   [[ "${C57_EVAL_PREEMPT_POLL_SECONDS}" -le 0 ]]; then
+  echo "C57_EVAL_PREEMPT_POLL_SECONDS must be positive" >&2
+  exit 2
+fi
+
+higher_priority_reserved() {
+  [[ -e "${C57_HIGH_PRIORITY_MARKER}" ]] || \
+    pgrep -f '([c]56|[C]56)' >/dev/null 2>&1
+}
 
 gpu_compute_pids() {
   nvidia-smi -i "${C57_EVAL_PHYSICAL_GPU}" \
@@ -33,9 +45,11 @@ gpu_compute_pids() {
 
 wait_for_idle_gpu() {
   while true; do
-    if [[ -z "$(gpu_compute_pids)" ]]; then
+    if higher_priority_reserved; then
+      sleep 30
+    elif [[ -z "$(gpu_compute_pids)" ]]; then
       sleep "${C57_EVAL_IDLE_CONFIRM_SECONDS}"
-      if [[ -z "$(gpu_compute_pids)" ]]; then
+      if ! higher_priority_reserved && [[ -z "$(gpu_compute_pids)" ]]; then
         return
       fi
     else
@@ -54,16 +68,37 @@ for C57_EVAL_STEP in $(seq 200 200 5000); do
   if [[ -s "${C57_EVAL_REPORT}" ]]; then
     continue
   fi
-  # The queue may sleep for many minutes between C57 checkpoints.  Re-check
-  # the physical GPU immediately before every restore/eval so a newly launched
-  # C56/C58 job cannot be silently colocated.
-  wait_for_idle_gpu
-  "${C57_EVAL_PYTHON}" scripts/h3wam/evaluate_c57_heldout_paired.py \
-    --checkpoint "${C57_EVAL_CHECKPOINT}" \
-    --plan "${C57_EVAL_PLAN}" \
-    --cache-root "${C57_EVAL_CACHE_ROOT}" \
-    --cache-source-manifest "${C57_EVAL_CACHE_SOURCE}" \
-    --kv-subdir "${C57_EVAL_KV_SUBDIR}" \
-    --device "${C57_EVAL_DEVICE}" \
-    --output "${C57_EVAL_REPORT}"
+  while [[ ! -s "${C57_EVAL_REPORT}" ]]; do
+    # The queue may sleep for many minutes between C57 checkpoints. Re-check
+    # both the physical GPU and the C56 high-priority reservation immediately
+    # before every restore/eval.
+    wait_for_idle_gpu
+    "${C57_EVAL_PYTHON}" scripts/h3wam/evaluate_c57_heldout_paired.py \
+      --checkpoint "${C57_EVAL_CHECKPOINT}" \
+      --plan "${C57_EVAL_PLAN}" \
+      --cache-root "${C57_EVAL_CACHE_ROOT}" \
+      --cache-source-manifest "${C57_EVAL_CACHE_SOURCE}" \
+      --kv-subdir "${C57_EVAL_KV_SUBDIR}" \
+      --device "${C57_EVAL_DEVICE}" \
+      --output "${C57_EVAL_REPORT}" &
+    C57_EVAL_CHILD_PID=$!
+    C57_EVAL_PREEMPTED=0
+    while kill -0 "${C57_EVAL_CHILD_PID}" 2>/dev/null; do
+      if higher_priority_reserved; then
+        echo "C56 priority reservation appeared; preempting C57 step ${C57_EVAL_STEP}" >&2
+        kill -TERM "${C57_EVAL_CHILD_PID}" 2>/dev/null || true
+        C57_EVAL_PREEMPTED=1
+        break
+      fi
+      sleep "${C57_EVAL_PREEMPT_POLL_SECONDS}"
+    done
+    if [[ "${C57_EVAL_PREEMPTED}" -eq 1 ]]; then
+      wait "${C57_EVAL_CHILD_PID}" 2>/dev/null || true
+      continue
+    fi
+    if ! wait "${C57_EVAL_CHILD_PID}"; then
+      echo "C57 evaluator failed at step ${C57_EVAL_STEP}" >&2
+      exit 4
+    fi
+  done
 done
