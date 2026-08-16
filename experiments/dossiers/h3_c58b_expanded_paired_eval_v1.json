@@ -25,7 +25,7 @@
       "kind": "local_implementation",
       "title": "C58b expanded paired LIBERO evaluator",
       "locator": "/home/ubuntu/fastwam_deploy",
-      "revision": "corrected isolated-process v3 working revision after invalid v2",
+      "revision": "eecfde3 corrected isolated-process evaluator; full composite v4 runtime snapshot",
       "official": false,
       "clean": false
     }
@@ -96,7 +96,7 @@
         "local": "Eight A800 GPUs each consume 80 manifest jobs, but every job launches a fresh simulator and policy process for exactly one episode. This matches the historical C55 D0 process boundary while retaining exactly 640 new candidate episodes; no intermediate success-based stopping or checkpoint selection is permitted.",
         "status": "INTENTIONAL_DEVIATION",
         "evidence": [
-          "/mnt/h3-wam/eval/c58b-isolated-process-canary-v1/libero_10_task00_trial35",
+          "/mnt/h3-wam/eval/c58b-isolated-process-canary-v2-fullsnapshot/libero_10_task00_trial35",
           "scripts/h3wam/launch_c58b_expanded_isolated_candidate.sh"
         ],
         "rationale": "The dossier validator expresses the 80 evaluation waves as optimizer_steps solely for budget arithmetic; no training occurs."
@@ -187,8 +187,8 @@
   },
   "decision": {
     "status": "GO_LONG",
-    "rationale": "The v2 80-episode process batching is invalid for paired inference: 532/640 candidate initial states were not byte-exact with historical one-episode-process D0. A fresh-process trial35 canary restored exact equality across all eight trajectory fields, object joints and seed schedules. Only corrected v3 is admissible.",
-    "launch_command": "C58B_EXPANDED_ROOT=/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/expanded-paired-trials34-49-v3-isolated bash <immutable-snapshot>/scripts/h3wam/launch_c58b_expanded_isolated_candidate.sh",
+    "rationale": "The v2 80-episode process batching is invalid for paired inference: 532/640 candidate initial states were not byte-exact with historical one-episode-process D0. The first v3 infrastructure attempt contained zero formal episodes and was invalidated because a git-archive-only snapshot omitted StarWAM vendor files. The full composite read-only v4 snapshot passed a real restore, H3 inference and exact trial35 mechanical smoke before launch.",
+    "launch_command": "C58B_EXPANDED_ROOT=/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/expanded-paired-trials34-49-v4-isolated bash /mnt/h3-wam/runtime-snapshots/project-eecfde3-c58isolated-full/scripts/h3wam/launch_c58b_expanded_isolated_candidate.sh",
     "effect_status": "NOT_EVIDENCE_READY"
   }
 }

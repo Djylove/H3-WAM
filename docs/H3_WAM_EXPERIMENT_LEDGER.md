@@ -1186,3 +1186,12 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   joints、episode seed `35042`、environment seed和replan seed schedule也全部exact。v3固定640个
   one-episode jobs，由8个GPU队列各顺序消费80个；checkpoint、wait30/replan8/horizon32/eval10及统计门
   全部不变，不读取中间success、不复用v2子集，也无需重跑已通过hash冻结的D0。
+- 首个isolated v3运行时快照仅由`git archive`构造，遗漏未被主仓库跟踪的固定StarWAM vendor；8个policy
+  均在ready前因缺`wan_block.py`退出，产生`0`条formal result。finalizer随即停止，root写入
+  `INVALID_NEVER_USE`（SHA256 `06ea7cf9691868dbe264dc74645c63985766fe9930fa1614573e8015fd50cd2c`），
+  没有在partial root续跑。该失败属于infra packaging，不涉及模型效果。
+- v4从已跑通v2的完整553MB复合runtime复制，等待`COPY_DONE`后再覆盖commit `eecfde3`，并包含
+  StarWAM `cd76d96f`、DreamWAM `6e989fac`及FACT `618a6c16`。真实policy restore+H3 inference smoke产生
+  finite首动作，trial35完整初态仍byte-exact；之后快照冻结为0个writable file，`SNAPSHOT.json` SHA256为
+  `90dcd111b6e6ca8d30c141f77987b8d2f658d0b41468377517d5e304634e9cfb`。正式v4固定640个
+  one-episode jobs，manifest SHA256 `ff5b57a374dc8b96343fdb359b7d7a7ca9e9ab33a73a0563c52ae660f188b7a6`。
