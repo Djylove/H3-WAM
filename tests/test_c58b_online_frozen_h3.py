@@ -59,3 +59,15 @@ def test_online_cache_parity_is_exact_and_layer_order_is_strict():
         ONLINE.compare_kv_exact(online, mismatched)
     with pytest.raises(RuntimeError, match="layer order"):
         ONLINE.compare_kv_exact(online, {2: online[2], 0: online[0]})
+
+
+def test_frozen_h3_inference_tensors_cross_into_autograd_without_value_change():
+    with torch.inference_mode():
+        inference_kv = {0: {"k": torch.randn(1, 2), "v": torch.randn(1, 2)}}
+    assert all(torch.is_inference(value) for value in inference_kv[0].values())
+    materialized = ONLINE.materialize_kv_for_autograd_consumer(inference_kv)
+    assert all(not torch.is_inference(value) for value in materialized[0].values())
+    for name in ("k", "v"):
+        torch.testing.assert_close(
+            materialized[0][name], inference_kv[0][name], rtol=0, atol=0
+        )

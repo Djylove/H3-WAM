@@ -106,6 +106,30 @@ def compare_kv_exact(
     return results
 
 
+def materialize_kv_for_autograd_consumer(
+    inference_kv: dict[int, dict[str, torch.Tensor]],
+) -> dict[int, dict[str, torch.Tensor]]:
+    """Cross the frozen-H3 inference boundary without changing K/V values.
+
+    PyTorch checkpointing must save ActionDiT inputs for recomputation and
+    therefore rejects inference tensors, even when those tensors themselves
+    require no gradient.  Cloning after the provider has left inference mode
+    creates ordinary leaf tensors while preserving exact BF16 values.
+    """
+
+    result = {
+        layer: {name: tensor.clone() for name, tensor in item.items()}
+        for layer, item in inference_kv.items()
+    }
+    if any(
+        torch.is_inference(tensor)
+        for item in result.values()
+        for tensor in item.values()
+    ):
+        raise RuntimeError("H3 K/V did not cross the inference-mode boundary")
+    return result
+
+
 def cuda_memory() -> dict[str, int]:
     return {
         "allocated_bytes": int(torch.cuda.memory_allocated()),
@@ -255,7 +279,9 @@ def main() -> None:
     torch.cuda.reset_peak_memory_stats()
     step_started = time.perf_counter()
     extract_started = time.perf_counter()
-    live_kv = provider(first_frame, h3_context, token_tags)
+    live_kv = materialize_kv_for_autograd_consumer(
+        provider(first_frame, h3_context, token_tags)
+    )
     torch.cuda.synchronize()
     online_extract_train_seconds = time.perf_counter() - extract_started
     live_batch = dict(cached_device)
