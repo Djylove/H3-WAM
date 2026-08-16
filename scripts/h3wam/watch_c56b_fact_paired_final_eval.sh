@@ -12,6 +12,7 @@ main_ready="${main_root}/READY.json"
 c61_ready="${c61_root}/READY.json"
 paired_report="${eval_root}/balanced80/PAIRED_BALANCED80.json"
 rollout_root="${eval_root}/fresh-execution-libero-trial33"
+c58_results="${C58B_RESULTS:-${workspace}/outputs/c58b-fastwam-layerwise-v1/online-final-eval-v1/fresh-libero-trial33/RESULTS.json}"
 h3_checkpoint="${workspace}/int8-action/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
 h3_model="${workspace}/models/MiniMax-H3"
 source_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_all.jsonl"
@@ -29,7 +30,7 @@ lock="${eval_root}/.watcher.lock"
 mkdir "${lock}" 2>/dev/null || { echo "another C56b paired evaluator owns ${lock}" >&2; exit 75; }
 trap 'rmdir "${lock}" 2>/dev/null || true' EXIT
 
-while [[ ! -s "${main_ready}" || ! -s "${c61_ready}" ]]; do
+while [[ ! -s "${main_ready}" || ! -s "${c61_ready}" || ! -s "${c58_results}" ]]; do
   sleep 30
 done
 
@@ -136,4 +137,5 @@ for pid in "${pids[@]}"; do wait "${pid}"; done
 "${sim_python}" scripts/h3wam/aggregate_c56b_fact_paired_libero.py \
   --root "${rollout_root}" --gate "${paired_report}" \
   --main-ready "${main_ready}" --c61-ready "${c61_ready}" \
+  --c58-results "${c58_results}" \
   --output "${rollout_root}/RESULTS.json"

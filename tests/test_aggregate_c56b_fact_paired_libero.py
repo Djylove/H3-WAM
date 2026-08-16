@@ -42,10 +42,16 @@ def result(path: Path, suite: str, checkpoint: Path, arm: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     successes = (
         (lambda task: task % 2 == 0)
-        if arm == "c60_main" else (lambda task: task % 3 == 0)
+        if arm == "c60_main" else (
+            (lambda task: task % 3 == 0)
+            if arm == "c61_matched" else (lambda task: task % 4 == 0)
+        )
     )
     path.write_text(json.dumps({
-        "policy": "h3_fact_online_int8",
+        "policy": (
+            "h3_fastwam_online_int8"
+            if arm == "c58_parent" else "h3_fact_online_int8"
+        ),
         "checkpoint": str(checkpoint.resolve()),
         "suite": suite,
         "task_ids": list(range(10)),
@@ -96,31 +102,67 @@ def fixture(tmp_path: Path):
                 root / arm / suite / "results.json", suite,
                 Path(ready["checkpoint"]), arm,
             )
-    return root, gate, main_ready, c61_ready
+    c58_checkpoint = tmp_path / "c58.pt"
+    c58_checkpoint.write_bytes(b"c58")
+    sources = {}
+    for suite in MODULE.SUITES:
+        path = tmp_path / "c58" / suite / "results.json"
+        result(path, suite, c58_checkpoint, "c58_parent")
+        sources[suite] = {"path": str(path.resolve()), "sha256": sha(path)}
+    c58 = tmp_path / "C58_RESULTS.json"
+    c58.write_text(json.dumps({
+        "format": "h3wam-c58b-vs-d0-paired-fresh-libero-trial33-v2",
+        "status": "COMPLETE",
+        "paired_episodes_per_arm": 40,
+        "candidate_checkpoint": str(c58_checkpoint.resolve()),
+        "candidate_checkpoint_sha256": sha(c58_checkpoint),
+        "paired_episode_keys": "suite,task_id,trial_index",
+        "protocol": {
+            "trial_indices": [33], "action_horizon": 32,
+            "replan_interval": 8, "inference_steps": 10,
+            "suites": list(MODULE.SUITES), "tasks_per_suite": 10,
+        },
+        "sources": {"candidate_c58b": sources},
+    }))
+    # The C56 endpoints identify this exact C58 parent.
+    for ready_path in (main_ready, c61_ready):
+        ready = json.loads(ready_path.read_text())
+        ready["c58_parent_sha256"] = sha(c58_checkpoint)
+        ready_path.write_text(json.dumps(ready))
+    # Rebind the heldout gate after changing endpoint bytes.
+    gate_payload = json.loads(gate.read_text())
+    gate_payload["checkpoint_identity"]["c60_main_ready_sha256"] = sha(main_ready)
+    gate_payload["checkpoint_identity"]["c61_matched_ready_sha256"] = sha(c61_ready)
+    gate.write_text(json.dumps(gate_payload))
+    return root, gate, main_ready, c61_ready, c58
 
 
 def test_aggregate_requires_complete_matched_grid(tmp_path):
-    root, gate, main_ready, c61_ready = fixture(tmp_path)
-    report = MODULE.aggregate(root, gate, main_ready, c61_ready)
+    root, gate, main_ready, c61_ready, c58 = fixture(tmp_path)
+    report = MODULE.aggregate(root, gate, main_ready, c61_ready, c58)
     assert report["paired_episodes_per_arm"] == 40
     assert report["main_successes"] == 20
     assert report["c61_successes"] == 16
+    assert report["c58_parent_successes"] == 12
     assert report["protocol"]["globally_unused_init_state"] is False
-    assert report["paired_effect"]["c61_wins"] == 8
-    assert report["paired_effect"]["main_wins"] == 12
+    assert report["paired_effects"]["c61_vs_main"]["first_wins"] == 8
+    assert report["paired_effects"]["c61_vs_main"]["second_wins"] == 12
+    assert set(report["paired_effects"]) == {
+        "c61_vs_main", "main_vs_c58", "c61_vs_c58"
+    }
 
 
 def test_aggregate_rejects_execution_drift(tmp_path):
-    root, gate, main_ready, c61_ready = fixture(tmp_path)
+    root, gate, main_ready, c61_ready, c58 = fixture(tmp_path)
     path = root / "c61_matched/libero_goal/results.json"
     payload = json.loads(path.read_text())
     payload["replan_steps"] = 32
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match="rollout contract mismatch"):
-        MODULE.aggregate(root, gate, main_ready, c61_ready)
+        MODULE.aggregate(root, gate, main_ready, c61_ready, c58)
 
 
 def test_exact_mcnemar_direction():
-    assert MODULE.exact_mcnemar(10, 0)["one_sided_p_c61_better"] == pytest.approx(
+    assert MODULE.exact_mcnemar(10, 0)["one_sided_p_first_better"] == pytest.approx(
         1 / 1024
     )
