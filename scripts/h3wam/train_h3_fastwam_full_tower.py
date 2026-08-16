@@ -406,6 +406,17 @@ def infinite_batches(loader: Iterable[dict[str, Any]]):
         yield from loader
 
 
+def probe_dataset_selection(args: argparse.Namespace) -> dict[str, int]:
+    """Keep the initialization probe inside the exact training slice.
+
+    C58b's first cached canary starts deep in the dense manifest.  Returning
+    to row zero here silently makes the trainer depend on a cache outside its
+    declared slice and, more importantly, probes a different sample contract.
+    """
+
+    return {"limit": 1, "sample_offset": int(args.sample_offset)}
+
+
 def _atomic_torch_save(payload: dict[str, Any], path: Path) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.partial")
@@ -571,10 +582,11 @@ def main() -> None:
         num_heads=56,
         attn_head_dim=128,
         action_horizon=args.action_horizon,
-        limit=1,
-        sample_offset=0,
+        **probe_dataset_selection(args),
     )
     probe_cpu = PARENT.collate_cached_batch([probe_dataset[0]])
+    if probe_cpu["sample_ids"] != [str(dataset.rows[0]["id"])]:
+        raise RuntimeError("C58 initialization probe escaped the training slice")
     probe = PARENT.move_batch(probe_cpu, device, dtype)
     flow_scheduler = PARENT.FlowMatchScheduler(
         num_train_timesteps=1000, shift=args.action_shift
