@@ -37,8 +37,11 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def split_for_group(group_id: int) -> str:
-    digest = hashlib.blake2b(f"c60:{group_id}".encode(), digest_size=8).digest()
+def split_for_source(suite: str, task: int, trial: int) -> str:
+    """Keep both d3/d5 states and every action arm from one parent together."""
+
+    identity = f"{suite}:task{task}:trial{trial}"
+    digest = hashlib.blake2b(f"c60:{identity}".encode(), digest_size=8).digest()
     return "validation" if int.from_bytes(digest, "little") % 5 == 0 else "train"
 
 
@@ -98,7 +101,7 @@ def main() -> None:
     samples = []
     episodes = []
     counts = {
-        split: {"episodes": 0, "samples": 0, "groups": set()}
+        split: {"episodes": 0, "samples": 0, "groups": set(), "sources": set()}
         for split in ("train", "validation")
     }
     for job in jobs:
@@ -135,9 +138,11 @@ def main() -> None:
             raise ValueError(f"trajectory does not start at intervention: {trajectory}")
 
         episode_id = len(episodes)
-        split = split_for_group(int(job["group_id"]))
+        source_identity = f"{job['suite']}:task{int(job['task'])}:trial{int(job['trial'])}"
+        split = split_for_source(str(job["suite"]), int(job["task"]), int(job["trial"]))
         counts[split]["episodes"] += 1
         counts[split]["groups"].add(int(job["group_id"]))
+        counts[split]["sources"].add(source_identity)
         observation_ids = []
         for index in range(row_count):
             observation_id = len(observations)
@@ -257,6 +262,8 @@ def main() -> None:
     validation_groups = counts["validation"]["groups"]
     if train_groups & validation_groups:
         raise RuntimeError("C60 group split leakage")
+    if counts["train"]["sources"] & counts["validation"]["sources"]:
+        raise RuntimeError("C60 parent source episode split leakage")
     output_root.mkdir(parents=True)
     observations_path = output_root / "observations.jsonl"
     episodes_path = output_root / "failure_rollouts.jsonl"
@@ -273,6 +280,7 @@ def main() -> None:
             "episodes": value["episodes"],
             "samples": value["samples"],
             "groups": len(value["groups"]),
+            "source_episodes": len(value["sources"]),
         }
         for split, value in counts.items()
     }
