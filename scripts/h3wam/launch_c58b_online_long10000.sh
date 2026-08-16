@@ -63,4 +63,5 @@ PY
   consumed=$((consumed + limit))
   completed="${target}"
 done
-echo "[C58b] online long training reached step ${completed}"
+echo "[C58b] online long training reached step ${completed}; starting independent final restore"
+bash scripts/h3wam/finalize_c58b_online_long10000.sh
