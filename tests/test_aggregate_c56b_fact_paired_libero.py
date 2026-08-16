@@ -58,12 +58,12 @@ def result(path: Path, suite: str, checkpoint: Path, arm: str) -> None:
         "trial_indices": [33],
         "trials_per_task": 1,
         "max_steps": 400,
-        "wait_steps": 0,
+        "wait_steps": 30,
         "replan_steps": 8,
         "action_horizon": 32,
         "model_evaluations": 10,
-        "environment_seed": 42,
-        "policy_noise_seed_base": 330042,
+        "environment_seed": None,
+        "policy_noise_seed_base": None,
         "normalized_action_pre_clamp": True,
         "sample_ensemble_size": 1,
         "use_action_ensembler": False,
@@ -71,7 +71,17 @@ def result(path: Path, suite: str, checkpoint: Path, arm: str) -> None:
         "tasks": [
             {
                 "task_id": task,
-                "episodes": [{"trial": 33, "success": successes(task)}],
+                "episodes": [{
+                    "trial": 33,
+                    "success": successes(task),
+                    "replans": 2,
+                    "episode_seed": 42 + task * 100_000 + 33 * 1_000,
+                    "environment_seed": None,
+                    "replan_noise_seeds": list(range(
+                        42 + task * 100_000 + 33 * 1_000,
+                        42 + task * 100_000 + 33 * 1_000 + 2,
+                    )),
+                }],
             }
             for task in range(10)
         ],
@@ -120,6 +130,11 @@ def fixture(tmp_path: Path):
         "protocol": {
             "trial_indices": [33], "action_horizon": 32,
             "replan_interval": 8, "inference_steps": 10,
+            "wait_steps": 30, "environment_seed": None,
+            "policy_noise_seed_base": None,
+            "episode_seed_contract": (
+                "seed_plus_task_id_times_100000_plus_trial_index_times_1000"
+            ),
             "suites": list(MODULE.SUITES), "tasks_per_suite": 10,
         },
         "sources": {"candidate_c58b": sources},
@@ -159,6 +174,16 @@ def test_aggregate_rejects_execution_drift(tmp_path):
     payload["replan_steps"] = 32
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match="rollout contract mismatch"):
+        MODULE.aggregate(root, gate, main_ready, c61_ready, c58)
+
+
+def test_aggregate_rejects_episode_seed_drift(tmp_path):
+    root, gate, main_ready, c61_ready, c58 = fixture(tmp_path)
+    path = root / "c61_matched/libero_goal/results.json"
+    payload = json.loads(path.read_text())
+    payload["tasks"][0]["episodes"][0]["episode_seed"] += 1
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="episode seed mismatch"):
         MODULE.aggregate(root, gate, main_ready, c61_ready, c58)
 
 

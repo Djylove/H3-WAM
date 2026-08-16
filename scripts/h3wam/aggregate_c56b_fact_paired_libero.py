@@ -79,12 +79,12 @@ def _load_result(
         "trial_indices": [33],
         "trials_per_task": 1,
         "max_steps": 400,
-        "wait_steps": 0,
+        "wait_steps": 30,
         "replan_steps": 8,
         "action_horizon": 32,
         "model_evaluations": 10,
-        "environment_seed": 42,
-        "policy_noise_seed_base": 330_042,
+        "environment_seed": None,
+        "policy_noise_seed_base": None,
         "normalized_action_pre_clamp": True,
         "sample_ensemble_size": 1,
         "use_action_ensembler": False,
@@ -105,6 +105,16 @@ def _load_result(
             key = (suite, task_id, int(episode["trial"]))
             if key in pairs:
                 raise ValueError(f"duplicate rollout episode: {label}/{key}")
+            replans = int(episode.get("replans", -1))
+            expected_seed = 42 + task_id * 100_000 + 33 * 1_000
+            if (
+                episode.get("episode_seed") != expected_seed
+                or episode.get("environment_seed") is not None
+                or replans < 0
+                or episode.get("replan_noise_seeds")
+                != list(range(expected_seed, expected_seed + replans))
+            ):
+                raise ValueError(f"rollout episode seed mismatch: {label}/{key}")
             pairs[key] = bool(episode["success"])
     if set(pairs) != {(suite, task, 33) for task in range(10)}:
         raise ValueError(f"incomplete rollout suite: {label}/{suite}")
@@ -128,6 +138,11 @@ def _load_c58_control(
         or protocol.get("action_horizon") != 32
         or protocol.get("replan_interval") != 8
         or protocol.get("inference_steps") != 10
+        or protocol.get("wait_steps") != 30
+        or protocol.get("environment_seed") is not None
+        or protocol.get("policy_noise_seed_base") is not None
+        or protocol.get("episode_seed_contract")
+        != "seed_plus_task_id_times_100000_plus_trial_index_times_1000"
         or protocol.get("suites") != list(SUITES)
         or protocol.get("tasks_per_suite") != 10
         or report.get("paired_episode_keys") != "suite,task_id,trial_index"
@@ -268,7 +283,11 @@ def aggregate(
             "suites": list(SUITES), "tasks": list(range(10)),
             "trial_indices": [33], "replan_steps": 8,
             "action_horizon": 32, "inference_steps": 10,
-            "environment_seed": 42, "policy_noise_seed_base": 330_042,
+            "wait_steps": 30,
+            "environment_seed": None, "policy_noise_seed_base": None,
+            "episode_seed_contract": (
+                "seed_plus_task_id_times_100000_plus_trial_index_times_1000"
+            ),
             "online_h3_no_disk_kv": True,
         },
         "paired_episodes_per_arm": 40,

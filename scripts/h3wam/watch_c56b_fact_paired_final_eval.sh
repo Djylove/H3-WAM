@@ -116,10 +116,9 @@ run_suite() {
     --cache-root "${cache_root}" --h3-checkpoint "${h3_checkpoint}" \
     --h3-model "${h3_model}" --dreamwam-source-manifest "${source_manifest}" \
     --device cuda:0 --suite "${suite}" --task-ids 0 1 2 3 4 5 6 7 8 9 \
-    --trial-indices 33 --max-steps 400 --wait-steps 0 --replan-steps 8 \
+    --trial-indices 33 --max-steps 400 --wait-steps 30 --replan-steps 8 \
     --action-horizon 32 --h3-feature-audio-horizon 32 --target-latent-frames 12 \
-    --model-evaluations 10 --seed 42 --environment-seed 42 \
-    --policy-noise-seed-base 330042 --normalized-action-pre-clamp \
+    --model-evaluations 10 --seed 42 --normalized-action-pre-clamp \
     --output-dir "${output}" >"${output}/launcher.log" 2>&1
 }
 
