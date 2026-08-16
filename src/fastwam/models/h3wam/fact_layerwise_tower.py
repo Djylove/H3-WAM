@@ -316,17 +316,33 @@ class H3FACTLayerwiseTowerPolicy(nn.Module):
                 else nullcontext()
             )
             with context_manager:
-                tokens = self._shared_block_forward(
-                    block,
-                    tokens,
-                    prefix_key,
-                    prefix_value,
-                    token_time_mod,
-                    freqs,
-                    action_state["context"],
-                    context_mask,
-                    attention_mask,
-                )
+                if self.tower.use_gradient_checkpointing and self.training:
+                    tokens = torch.utils.checkpoint.checkpoint(
+                        lambda x, k, v, tm, fr, ctx, cm, am, owner=block: self._shared_block_forward(
+                            owner, x, k, v, tm, fr, ctx, cm, am
+                        ),
+                        tokens,
+                        prefix_key,
+                        prefix_value,
+                        token_time_mod,
+                        freqs,
+                        action_state["context"],
+                        context_mask,
+                        attention_mask,
+                        use_reentrant=False,
+                    )
+                else:
+                    tokens = self._shared_block_forward(
+                        block,
+                        tokens,
+                        prefix_key,
+                        prefix_value,
+                        token_time_mod,
+                        freqs,
+                        action_state["context"],
+                        context_mask,
+                        attention_mask,
+                    )
         return tokens, layout
 
     def forward_action(
