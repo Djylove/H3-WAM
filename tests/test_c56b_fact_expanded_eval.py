@@ -98,3 +98,29 @@ def test_prepare_rejects_nonpositive_trial33_screen(tmp_path, monkeypatch):
         assert "expansion screen" in str(error)
     else:
         raise AssertionError("nonpositive trial33 screen was accepted")
+
+
+def test_finalizer_waits_for_both_completed_before_aggregate():
+    source = (
+        ROOT / "scripts/h3wam/watch_c56b_fact_expanded_finalizer.sh"
+    ).read_text()
+    wait = source.index('while [[ ! -s "${c60_root}/COMPLETED.json"')
+    aggregate = source.index('aggregate_c56b_fact_expanded_paired_eval.py \\')
+    assert wait < aggregate
+    prefix = source[:aggregate]
+    assert "results.json" not in prefix
+    assert "success" not in prefix
+
+
+def test_expanded_aggregator_pins_full_promotion_gate():
+    source = (
+        ROOT / "scripts/h3wam/aggregate_c56b_fact_expanded_paired_eval.py"
+    ).read_text()
+    for gate in (
+        "absolute_gain_at_least_0_03", "net_wins_at_least_20",
+        "one_sided_exact_mcnemar_p_at_most_0_05",
+        "no_suite_regression_below_minus_0_03",
+    ):
+        assert gate in source
+    assert 'len(pairs) != 680' in source
+    assert "initial_state_sha256" in source
