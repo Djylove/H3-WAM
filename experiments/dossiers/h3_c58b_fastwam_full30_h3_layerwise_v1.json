@@ -31,7 +31,7 @@
       "kind": "local_implementation",
       "title": "H3-WAM C58b layer-wise FastWAM carrier",
       "locator": "/home/ubuntu/fastwam_deploy",
-      "revision": "ea43479 + 2e1a0c8 plus the online-DDP working diff",
+      "revision": "0b95369 plus legacy-resume compatibility 87f9542",
       "official": false,
       "clean": false
     }
@@ -104,15 +104,15 @@
     ],
     "optimization": [
       {
-        "field": "paired canary optimization",
+        "field": "online long optimization",
         "paper": "Multi-GPU AdamW FastWAM training.",
         "upstream_code": "AdamW .9/.95, LR1e-4, WD1e-2 and warmup-cosine.",
-        "local": "8 A800, global batch8, ten real steps, identical C58 optimizer/schedule and D0 initialization.",
+        "local": "8 A800, global batch8, 10000 online-H3 steps, identical C58 optimizer/schedule and D0 initialization; the strict ten-step DDP/restore gate passed first.",
         "status": "EQUIVALENT",
         "evidence": [
           "scripts/h3wam/launch_c58b_online_ddp_canary.sh"
         ],
-        "rationale": "The ten-step run is a mechanical canary only; a matched longer budget requires canary promotion."
+        "rationale": "The ten-step run remains mechanical evidence; it authorizes the isolated 10000-step optimization run but does not establish rollout effectiveness."
       }
     ],
     "evaluation": [
@@ -179,15 +179,15 @@
       ]
     },
     "smoke_finite": {
-      "status": "FAIL",
+      "status": "PASS",
       "evidence": [
-        "Single-A800 real online H3 plus full30 backward/AdamW passed: all 30 gradients nonzero, peak allocated 41.46 GB, hot step 1.021 s; report SHA256 84a1a541dcfbfb1a083af0cfd5de79b6c1c0b2d5f0ba0279d9a82890a968a1fc."
+        "Single-A800 online step passed (report SHA256 84a1a541dcfbfb1a083af0cfd5de79b6c1c0b2d5f0ba0279d9a82890a968a1fc); 8-A800 global-batch8 ten-step DDP passed with 80 unique rows/seeds, all-30 gradients and per-rank peak allocated 42.401 GB (READY SHA256 457588c7d1c8edfbfaf9f7406c54b95ab8e50a905767175cd62ff9989a1bb5b4)."
       ]
     },
     "checkpoint_restore": {
-      "status": "FAIL",
+      "status": "PASS",
       "evidence": [
-        "C58b checkpoint does not exist before the authorized canary."
+        "The 12.18 GB online s10 checkpoint restored strictly on eight ranks with prediction max_abs=0; checkpoint SHA256 c94aa0b3f38efcdcefb1d5cbbb8d588da8289e82968ec7025798efaff15e67fa and restore report SHA256 bdc57881495a840550cc70491d3703565feb87125b7feba25aa064fc0d4a8157."
       ]
     },
     "parent_baseline": {
@@ -211,20 +211,20 @@
   },
   "budget": {
     "global_batch": 8,
-    "optimizer_steps": 10,
-    "training_samples": 80,
-    "unique_windows": 80,
-    "effective_epochs": 0.00039844804486524984,
+    "optimizer_steps": 10000,
+    "training_samples": 80000,
+    "unique_windows": 80000,
+    "effective_epochs": 0.3984480448652498,
     "gpu_count": 8,
-    "estimated_hours": 1,
+    "estimated_hours": 4,
     "cache_items": 0,
     "cache_tensor_bytes": 0,
     "projected_80000_tensor_bytes": 0
   },
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Real online H3 parity, memory and all-30 backward passed on one A800. Run the frozen 8-rank DDP sample/seed/checkpoint-restore gate next; no cache generation or rollout-effect claim is authorized by this dossier state.",
-    "launch_command": "bash scripts/h3wam/launch_c58b_online_ddp_canary.sh",
+    "status": "GO_LONG",
+    "rationale": "Real online H3 parity, all-30 backward, 8-rank DDP uniqueness and strict checkpoint restore all passed. The bounded 10000-step action-only run may proceed without any disk K/V cache; LIBERO rollout effectiveness remains a later gate.",
+    "launch_command": "bash scripts/h3wam/launch_c58b_online_long10000.sh",
     "effect_status": "NOT_EVIDENCE_READY"
   }
 }
