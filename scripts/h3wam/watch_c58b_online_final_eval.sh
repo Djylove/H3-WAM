@@ -19,6 +19,7 @@ source_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_all.js
 train_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"
 val_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_val.jsonl"
 cache_root="${workspace}/data/v7_dense_h3_cache"
+expected_d0_sha256="36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3"
 
 mkdir -p "${eval_root}/balanced80" "${rollout_root}"
 lock="${eval_root}/.watcher.lock"
@@ -30,6 +31,11 @@ for path in "${project}" "${policy_python}" "${sim_python}" "${h3_checkpoint}" \
   "${cache_root}/stats.pt" "${d0_checkpoint}"; do
   [[ -e "${path}" ]] || { echo "missing C58b final input: ${path}" >&2; exit 2; }
 done
+actual_d0_sha256="$(sha256sum "${d0_checkpoint}" | awk '{print $1}')"
+[[ "${actual_d0_sha256}" == "${expected_d0_sha256}" ]] || {
+  echo "D0 parent checkpoint SHA256 mismatch" >&2
+  exit 2
+}
 
 while [[ ! -s "${long_ready}" ]]; do
   sleep 30

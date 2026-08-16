@@ -116,7 +116,7 @@ def test_rollout_routes_c58b_with_offline_gate(tmp_path):
     assert "--c58b-balanced80-ready" in command
 
 
-def test_fresh_aggregate_requires_all_four_exact_suites(tmp_path):
+def test_fresh_aggregate_requires_all_four_exact_suites(tmp_path, monkeypatch):
     checkpoint = tmp_path / "s10000.pt"
     checkpoint.touch()
     gate = tmp_path / "gate.json"
@@ -128,6 +128,7 @@ def test_fresh_aggregate_requires_all_four_exact_suites(tmp_path):
     }), encoding="utf-8")
     d0_checkpoint = tmp_path / "d0.pt"
     d0_checkpoint.write_bytes(b"d0")
+    monkeypatch.setattr(AGG, "EXPECTED_D0_SHA256", AGG.sha256_file(d0_checkpoint))
     for arm, policy in AGG.ARMS.items():
         for suite in AGG.SUITES:
             directory = tmp_path / arm / suite

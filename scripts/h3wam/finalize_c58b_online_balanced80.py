@@ -131,6 +131,9 @@ def finalize(report_path: Path) -> dict[str, Any]:
                 "candidate_c58b_online_h3_full30_layerwise",
                 "control_d0_online_h3_repeat_layer49",
             ],
+            "control_d0_checkpoint_sha256": (
+                "36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3"
+            ),
             "suites": ["libero_spatial", "libero_object", "libero_goal", "libero_10"],
             "tasks_per_suite": 10,
             "trial_indices": [33],

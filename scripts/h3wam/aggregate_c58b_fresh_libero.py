@@ -13,6 +13,7 @@ from typing import Any
 
 
 SUITES = ("libero_spatial", "libero_object", "libero_goal", "libero_10")
+EXPECTED_D0_SHA256 = "36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3"
 
 
 def sha256_file(path: Path) -> str:
@@ -105,6 +106,9 @@ def aggregate(root: Path, gate: Path, d0_checkpoint: Path) -> dict[str, Any]:
     d0_checkpoint = d0_checkpoint.resolve()
     if not d0_checkpoint.is_file():
         raise FileNotFoundError(d0_checkpoint)
+    d0_checkpoint_sha256 = sha256_file(d0_checkpoint)
+    if d0_checkpoint_sha256 != EXPECTED_D0_SHA256:
+        raise ValueError("D0 parent checkpoint SHA256 mismatch")
     rows = []
     sources: dict[str, Any] = {arm: {} for arm in ARMS}
     all_candidate: dict[tuple[str, int, int], bool] = {}
@@ -169,7 +173,7 @@ def aggregate(root: Path, gate: Path, d0_checkpoint: Path) -> dict[str, Any]:
         "candidate_checkpoint": str(candidate_checkpoint),
         "candidate_checkpoint_sha256": gate_payload["checkpoint_sha256"],
         "control_checkpoint": str(d0_checkpoint),
-        "control_checkpoint_sha256": sha256_file(d0_checkpoint),
+        "control_checkpoint_sha256": d0_checkpoint_sha256,
         "balanced80_gate": str(gate.resolve()),
         "balanced80_gate_sha256": sha256_file(gate),
         "protocol": gate_payload["closed_loop_protocol"],
