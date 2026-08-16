@@ -1,0 +1,194 @@
+{
+  "experiment_id": "h3_c58b_expanded_paired_eval_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "The +5 percentage-point C58b trial33 effect persists across LIBERO trials33..49 when compared with the exact D0 parent under the same wait30/replan8/horizon32 contract.",
+  "single_variable": "Relative to the completed trial33 micro-benchmark, expand only the initial-state trial coverage from one to seventeen; model checkpoints, forty tasks, action execution, inference solver and RNG formula remain fixed.",
+  "parent_baseline": "D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3, historical fresh trials33..49 success 270/680 under the byte-reproduced benchmark contract.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FastWAM",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "arXiv:2603.16666",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "YuanTianYuan01/FastWAM official repository",
+      "locator": "https://github.com/YuanTianYuan01/FastWAM",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "C58b expanded paired LIBERO evaluator",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "launcher 3e39368; aggregate/test working revision after 3e39368",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "candidate and control model identity",
+        "paper": "FastWAM evaluates one fixed world-action checkpoint in closed loop.",
+        "upstream_code": "The policy checkpoint is restored before rollout and is not modified by evaluation.",
+        "local": "C58b s10000 SHA256 2e629471 is fixed for all 680 candidate pairs; D0 s14000 SHA256 36c56157 is fixed for all controls.",
+        "status": "EXACT",
+        "evidence": [
+          "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/READY.json",
+          "/mnt/h3-wam/eval/c58b-expanded-d0-control-v1/READY.json"
+        ],
+        "rationale": "Evaluation changes no trainable parameter or architecture."
+      }
+    ],
+    "data": [
+      {
+        "field": "initial-state coverage and historical D0 reuse",
+        "paper": "LIBERO success is measured over benchmark task initial states.",
+        "upstream_code": "Each requested trial index selects the corresponding official task init state.",
+        "local": "All four suites, ten tasks and trials33..49 yield 680 paired init states. Trial33 D0 was rerun and all 40 outcomes plus ten mechanical fields reproduced C55 exactly; trials34..49 reuse 640 independently contract-checked and content-hashed D0 results/trajectories.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-final-eval-v1/fresh-libero-trial33/RESULTS.json SHA256 f7e9c8f65c177d33a3b168d0e0a47e79034d0054c99866a66ba09f82ee916ab3",
+          "/mnt/h3-wam/eval/c58b-expanded-d0-control-v1/READY.json",
+          "scripts/h3wam/audit_freeze_c58b_expanded_d0.py"
+        ],
+        "rationale": "The control is reused only after exact same-checkpoint bridge reproduction and per-result/trajectory hashing; any audit failure would require a paired D0 rerun. This saves 640 redundant GPU episodes without changing pair outcomes."
+      }
+    ],
+    "action": [
+      {
+        "field": "LIBERO execution contract",
+        "paper": "Closed-loop action chunks are executed in the benchmark simulator.",
+        "upstream_code": "FastWAM uses 7D actions with receding-horizon execution.",
+        "local": "Both arms use normalized pre-clamp, binarized gripper, horizon32, replan8, wait30, max400 and no temporal ensemble.",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/launch_c58b_expanded_candidate_only.sh",
+          "/mnt/h3-wam/eval/c58b-expanded-d0-control-v1/READY.json"
+        ],
+        "rationale": "The corrected trial33 run proved this resolved action contract reproduces D0 actions exactly."
+      }
+    ],
+    "objective": [
+      {
+        "field": "evaluation objective and success predicate",
+        "paper": "Policy quality is determined by environment task success.",
+        "upstream_code": "LIBERO env.check_success terminates and scores an episode.",
+        "local": "No training objective runs; the only effect endpoint is the unchanged LIBERO success predicate, paired by suite/task/trial.",
+        "status": "EXACT",
+        "evidence": [
+          "scripts/h3wam/rollout_libero.py:run_episode",
+          "scripts/h3wam/aggregate_c58b_expanded_paired_eval.py"
+        ],
+        "rationale": "Offline losses cannot promote the candidate in this stage."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "bounded evaluation budget",
+        "paper": "Multi-GPU evaluation parallelizes independent episodes.",
+        "upstream_code": "No optimizer is active in rollout.",
+        "local": "Eight A800 GPUs each run one immutable 80-episode segment, for exactly 640 new candidate episodes; no intermediate success-based stopping or checkpoint selection is permitted.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/expanded-paired-trials34-49-v2/PREPARED.json",
+          "scripts/h3wam/launch_c58b_expanded_candidate_only.sh"
+        ],
+        "rationale": "The dossier validator expresses the 80 evaluation waves as optimizer_steps solely for budget arithmetic; no training occurs."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "paired statistical report and promotion gate",
+        "paper": "LIBERO reports task success rate.",
+        "upstream_code": "Official evaluation aggregates closed-loop successes.",
+        "local": "The frozen report includes 680 paired outcomes, per-trial and per-suite rates, Wilson95 arm intervals, paired-difference 95% interval and exact McNemar tests. Promotion requires gain>=3pp, net wins>=20, one-sided p<=0.05 and no suite below -3pp.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "scripts/h3wam/aggregate_c58b_expanded_paired_eval.py",
+          "tests/test_c58b_expanded_paired_eval.py"
+        ],
+        "rationale": "The stricter project promotion gate prevents a favorable single-trial point estimate from being called generalized improvement."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": ["FastWAM commit45d8e145, C58b checkpoint2e629471, D0 checkpoint36c56157 and trial33 reportf7e9c8f6 are pinned."]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": ["C58b s10000 passed 30/30 gradient, restore max_abs0 and online-H3 balanced80 gates before rollout."]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": ["D0 reuse audit passed 640/640 controls with manifest SHA256 e20a6f6c479d7b57dda106cf0e2d73f2ce41305d8926223aea685114ee0a7a0a."]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": ["Corrected trial33 D0 reproduced 40/40 historical outcomes and 40x10 mechanical fields exactly under wait30/default task-specific seeds."]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": ["Only env.check_success is aggregated; no offline surrogate can enter the final gate."]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": ["PREPARED fixes eight disjoint 80-episode candidate jobs and prohibits intermediate stopping."]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": ["Aggregator requires exact 680 pair identities, task-specific seeds, full initial-state equality for trials34..49 and preregistered statistical gates."]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": ["Inherited C58b long-run evidence: all thirty ActionDiT blocks had finite positive gradients; evaluation itself is inference-only."]
+    },
+    "smoke_finite": {
+      "status": "PASS",
+      "evidence": ["Trial33 completed 80 episodes without non-finite actions; v2 expanded first object episode completed successfully with finite saved trajectory."
+      ]
+    },
+    "checkpoint_restore": {
+      "status": "PASS",
+      "evidence": ["C58b s10000 fresh restore max_abs=0 and checkpoint SHA256 2e629471 are verified by READY and balanced gate."
+      ]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": ["D0 trial33 exact bridge gives 16/40; frozen trials34..49 give254/640, reconstructing the published270/680 baseline exactly."
+      ]
+    },
+    "mechanism_signal": {
+      "status": "PASS",
+      "evidence": ["Online-H3 balanced80 conditioning gates passed and corrected trial33 closed loop was18/40 vs D0 16/40."
+      ]
+    },
+    "closed_loop_canary": {
+      "status": "PASS",
+      "evidence": ["Corrected paired trial33 completed40 pairs; point estimate +5pp but remained NOT_EVIDENCE_READY pending this expansion."
+      ]
+    }
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 80,
+    "training_samples": 640,
+    "unique_windows": 640,
+    "effective_epochs": 1.0,
+    "gpu_count": 8,
+    "estimated_hours": 3.0
+  },
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "All source, control-reuse, action and closed-loop harness gates pass. The first v1 launch was fail-closed before any formal episode because its destination snapshot was still being copied; only the subsequently verified read-only v2 snapshot/output is admissible.",
+    "launch_command": "C58B_EXPANDED_ROOT=/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/expanded-paired-trials34-49-v2 bash /mnt/h3-wam/runtime-snapshots/project-3e39368-c58expanded/scripts/h3wam/launch_c58b_expanded_candidate_only.sh",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}
