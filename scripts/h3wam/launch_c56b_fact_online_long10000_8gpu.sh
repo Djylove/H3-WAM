@@ -6,15 +6,34 @@ project="${PROJECT_ROOT:-${workspace}/candidate-d0-rollout-96976ce/project}"
 python_bin="${PYTHON_BIN:-${workspace}/runtime/h3-int8-native/bin/python}"
 source_root="${H3WAM_FASTWAM_SOURCE_ROOT:-${workspace}/upstream-readonly/FastWAM-45d8e145/wan22}"
 c58_parent="${C58_PARENT_CHECKPOINT:?Set C58_PARENT_CHECKPOINT to the completed online C58b checkpoint}"
+c58_ready="${C58_PARENT_READY:?Set C58_PARENT_READY to the audited C58b final READY.json}"
 canary_marker="${CANARY_MARKER:-${workspace}/outputs/c56b-fact-online-v1/optimizer-canary10-v1/GO_LONG.json}"
 output_root="${OUTPUT_ROOT:-${workspace}/outputs/c56b-fact-online-v1/online-long10000-v1}"
 
-[[ -f "${c58_parent}" && -f "${canary_marker}" ]] || { echo "missing C56b long parent/gate" >&2; exit 2; }
-"${python_bin}" - "${canary_marker}" <<'PY'
-import json, sys
+[[ -f "${c58_parent}" && -f "${c58_ready}" && -f "${canary_marker}" ]] || { echo "missing C56b long parent/gate" >&2; exit 2; }
+"${python_bin}" - "${canary_marker}" "${c58_ready}" "${c58_parent}" <<'PY'
+import hashlib, json, sys
 from pathlib import Path
 if json.loads(Path(sys.argv[1]).read_text()).get("status") != "GO_LONG":
     raise SystemExit("C56b mechanical canary is not GO_LONG")
+ready = json.loads(Path(sys.argv[2]).read_text())
+parent = Path(sys.argv[3]).resolve()
+checks = {
+    "status": ready.get("status") == "PASS_C58B_ONLINE_LONG10000_STRICT_RESTORE",
+    "permission": ready.get("permission") == "READY_FOR_CHILD_BRANCH_AND_LIBERO_EVAL",
+    "steps": int(ready.get("completed_steps", -1)) == 10000,
+    "checkpoint": Path(ready.get("checkpoint", "")).resolve() == parent,
+    "size": parent.is_file() and parent.stat().st_size == int(ready.get("checkpoint_size_bytes", -1)),
+}
+if all(checks.values()):
+    digest = hashlib.sha256()
+    with parent.open("rb") as stream:
+        while chunk := stream.read(16 * 1024 * 1024):
+            digest.update(chunk)
+    checks["sha256"] = digest.hexdigest() == ready.get("checkpoint_sha256")
+failed = [key for key, value in checks.items() if not value]
+if failed:
+    raise SystemExit("C56b fixed C58 parent gate failed: " + ",".join(failed))
 PY
 [[ ! -e "${output_root}" ]] || { echo "refusing existing C56b long output" >&2; exit 2; }
 mkdir -p "${output_root}/checkpoints" "${output_root}/reports" "${output_root}/restore"

@@ -357,8 +357,9 @@ def main() -> None:
             c58_contract.get("candidate") != "C58B_FASTWAM_FULL30_H3_LAYERWISE"
             or c58_contract.get("h3_execution") != "online_frozen_int8_per_rank_v1"
             or c58_contract.get("disk_kv_training_input") is not False
+            or int(c58_parent.get("completed_steps", -1)) != 10000
         ):
-            raise ValueError("C56b formal parent is not the online C58b layerwise arm")
+            raise ValueError("C56b formal parent is not the fixed online C58b s10000 layerwise arm")
         tower.load_state_dict(c58_parent["model"], strict=True)
         c58_parent_sha256 = sha(a.c58_parent_checkpoint.resolve())
         initialization = {

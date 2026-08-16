@@ -3,7 +3,7 @@
   "classification": "backbone_port",
   "hypothesis": "If frozen INT8 H3 produces all thirty layer-aligned current-observation K/V prefixes online while FACT future/state/value tracks update those same thirty ActionDiT blocks, then future-prediction supervision will improve episode-disjoint action conditioning without the train/deploy gap of stored H3 features.",
   "single_variable": "Relative to C58 online frozen-H3 action training, add FACT clean-action, future-H3, future-state and value tracks plus official failure action masks inside the same thirty ActionDiT blocks; H3 checkpoint, online packing, action contract, dense windows and optimizer parent remain fixed.",
-  "parent_baseline": "Pending fixed C58 online interface commit initialized from D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3.",
+  "parent_baseline": "The fixed online C58b s10000 checkpoint initialized from D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3. C56b may not start from C58b s10/s1000/intermediate or directly from D0.",
   "references": [
     {
       "kind": "paper",
@@ -33,9 +33,9 @@
       "kind": "local_implementation",
       "title": "C56b no-cache online data boundary and shared FACT tower",
       "locator": "src/fastwam/models/h3wam/fact_online_data.py and fact_layerwise_tower.py",
-      "revision": "working tree pending C58 online interface commit",
+      "revision": "f23d09b plus the strict C58b-s10000 final-parent gate",
       "official": false,
-      "clean": false
+      "clean": true
     }
   ],
   "alignment": {
@@ -44,13 +44,14 @@
         "field": "online frozen world prefix and shared action/consequence blocks",
         "paper": "P/A/G/V/I use one causal video transformer and future losses update the action-generating backbone.",
         "upstream_code": "One Wan causal transformer runs teacher-forced tracks; VAE latents may be cached but transformer K/V is not a training dataset artifact.",
-        "local": "C56b shared30 tower exists; the online frozen INT8 H3 provider that must supply exact layer-aligned K/V is pending the fixed C58 interface.",
-        "status": "UNKNOWN",
+        "local": "Every rank runs the pinned INT8 H3 online with no gradients, materializes all thirty layer-aligned current-observation K/V prefixes in memory, and jointly updates A/G/future-state/value/future-H3 tracks in the same thirty FACT blocks.",
+        "status": "INTENTIONAL_DEVIATION",
         "evidence": [
           "src/fastwam/models/h3wam/fact_layerwise_tower.py",
-          "scripts/h3wam/launch_c56b_fact_online_8gpu.sh"
+          "scripts/h3wam/train_c56b_fact_online.py",
+          "/mnt/h3-wam/outputs/c56b-fact-online-v1/optimizer-canary10-v1/GO_LONG.json SHA256 9c87b9a3f7e8ebc803dacd13848a047a1d833e391a603eda0b4eb4b1489affdb"
         ],
-        "rationale": "No duplicate online provider will be invented before C58 fixes its API and commit identity."
+        "rationale": "H3 replaces Wan and is frozen INT8 rather than jointly updated; all shared FACT action/consequence blocks remain trainable and all thirty received nonzero gradients in every real canary step."
       }
     ],
     "data": [
@@ -86,13 +87,15 @@
         "field": "10:1:0.4:0.4 shared FACT flow objectives",
         "paper": "Action, future image, future state and value flow losses jointly update one backbone.",
         "upstream_code": "wa_casual_trainer.py applies the four objectives and action failure mask.",
-        "local": "C56b loss/tower code exists, but the future-H3 online target adapter and distinct future-state mask integration await C58 online output contract.",
-        "status": "UNKNOWN",
+        "local": "The port applies 10:1:0.4:0.4 action/future-H3/future-state/value flow losses with independent masks. Future-H3 targets are whitened with a 7168D train-only empirical mean/std computed online from frozen H3.",
+        "status": "INTENTIONAL_DEVIATION",
         "evidence": [
           "src/fastwam/models/h3wam/fact_layerwise_tower.py",
-          "src/fastwam/models/h3wam/fact_online_data.py"
+          "src/fastwam/models/h3wam/fact_online_data.py",
+          "/mnt/h3-wam/outputs/c56b-fact-online-v1/target-norm-train512-v1/report.json SHA256 ad5e55a7498d405aa951d397421daa64c6a32b555614c9a4d8db341d84933b90",
+          "/mnt/h3-wam/outputs/c56b-fact-online-v1/loss-balance-mixed8-v1/AGGREGATE.json SHA256 d083fe955266b8f56da2a39f250f7bdb7e63d6fbb463984b417e8302ea08ac7f"
         ],
-        "rationale": "Target width/normalization must be derived from the fixed online provider rather than guessed."
+        "rationale": "Official FACT whitens Wan VAE latents with pretrained statistics; H3 K/V has no published upstream statistics, so train-split-only empirical whitening is a declared H3-port deviation. Raw target RMS 53.49984 becomes normalized RMS 1.0 without changing action predictions."
       }
     ],
     "optimization": [
@@ -100,12 +103,14 @@
         "field": "eight-GPU online H3 training budget",
         "paper": "Long multi-GPU training with separate parameter groups.",
         "upstream_code": "Resolved FACT config uses distributed training and episode mixture sampling.",
-        "local": "Launcher is hard-gated on a fixed C58 online commit, provider symbol, GO_LONG dossier and absent output root.",
-        "status": "UNKNOWN",
+        "local": "Eight A800 ranks, microbatch1 and global batch8 use exact rank mixture 4 expert/2 success/1 observational failure/1 causal failure, AdamW base LR2e-5/action LR2e-4, warmup500 and cosine horizon10000. Ten real steps plus independent full-state restore passed; the long launcher saves and restores every 1000 steps.",
+        "status": "EQUIVALENT",
         "evidence": [
-          "scripts/h3wam/launch_c56b_fact_online_8gpu.sh"
+          "scripts/h3wam/train_c56b_fact_online.py",
+          "scripts/h3wam/launch_c56b_fact_online_long10000_8gpu.sh",
+          "/mnt/h3-wam/outputs/c56b-fact-online-v1/optimizer-canary10-v1/train.json SHA256 3f20f0f3bd76ecb0ba22d6c31fd97f6ff4212fd87e71453f4c1ea901c24c32d9"
         ],
-        "rationale": "Microbatch, seconds/step, effective epochs and memory remain unknown until the online provider can run a bounded probe."
+        "rationale": "FACT's separate parameter-group intent and distributed episode-mixture optimization are preserved; exact LR values and the four-stream LIBERO mixture are the pre-registered H3/LIBERO port contract."
       }
     ],
     "evaluation": [
@@ -128,8 +133,8 @@
       "evidence": ["FACT 618a6c1 and FastWAM 45d8e145 are pinned."]
     },
     "architecture_contract": {
-      "status": "FAIL",
-      "evidence": ["C58 online provider commit/module/symbol are pending."]
+      "status": "PASS",
+      "evidence": ["The real mixed-stream canary executes frozen online INT8 H3 and all thirty shared FACT blocks; every block has a finite positive gradient in all ten steps."]
     },
     "data_contract": {
       "status": "PASS",
@@ -140,36 +145,36 @@
       "evidence": ["Action round-trip and failure masks are directly tested."]
     },
     "objective_contract": {
-      "status": "FAIL",
-      "evidence": ["Future-H3 target width and normalization await the fixed C58 online provider contract."]
+      "status": "PASS",
+      "evidence": ["Train-only target normalization and the exact 4/2/1/1 mixed-rank balance gate passed; successful action loss is nonzero, both failure action losses are exactly zero, and future/action masks remain independent."]
     },
     "optimization_contract": {
-      "status": "FAIL",
-      "evidence": ["Real online H3 throughput/global batch/effective epoch budget are not measured."]
+      "status": "PASS",
+      "evidence": ["Ten optimizer steps on eight A800 ranks were finite; max C56 reserved memory was 57,491,324,928 bytes and steady step mean excluding initialization was 1.58653 s."]
     },
     "evaluation_contract": {
       "status": "PASS",
       "evidence": ["C58 online is pre-registered as the paired parent and fresh LIBERO success is decisive."]
     },
     "gradient_path": {
-      "status": "FAIL",
-      "evidence": ["Online H3 no-grad plus shared30 Action/FACT gradient test cannot run before integration."]
+      "status": "PASS",
+      "evidence": ["All thirty shared blocks had positive finite gradients in every real optimizer step (minimum observed mean-across-ranks block norm 2.32811); frozen H3 received no gradients and future-target-to-action leak remained exactly zero."]
     },
     "smoke_finite": {
-      "status": "FAIL",
-      "evidence": ["No real online C56b forward/backward exists."]
+      "status": "PASS",
+      "evidence": ["GO_LONG marker 9c87b9a3f7e8ebc803dacd13848a047a1d833e391a603eda0b4eb4b1489affdb records 10/10 finite mixed online steps."]
     },
     "checkpoint_restore": {
-      "status": "FAIL",
-      "evidence": ["No online C56b checkpoint exists."]
+      "status": "PASS",
+      "evidence": ["The 12,201,948,249-byte s10 checkpoint SHA256 2d302b2cef4a2e9d1eb371a480cb235e50113c73267ae675de3ea5f735f39521 restored model, optimizer and scheduler strictly with prediction max_abs 0; restore report SHA256 6b18749fa1240804fb18b626d24011b099ba82d5ff8fa62e8f1875a7d5908f8a."]
     },
     "parent_baseline": {
-      "status": "FAIL",
-      "evidence": ["C58 online parent commit/checkpoint are pending."]
+      "status": "PASS",
+      "evidence": ["The parent arm is fixed as online C58b s10000 with FastWAM 45d8e145, INT8 H3 e889202c, D0 36c56157, seed42 and the layerwise 30-block contract. Runtime launch additionally requires the independent C58b final READY and matching checkpoint SHA256, so no intermediate parent is accepted."]
     },
     "mechanism_signal": {
-      "status": "FAIL",
-      "evidence": ["No online future/action paired result exists."]
+      "status": "PASS",
+      "evidence": ["The normalized mixed-batch gate proves non-dominating finite future/action gradients and no future-target leakage. This permits long optimization but is not held-out or rollout-effect evidence."]
     },
     "closed_loop_canary": {
       "status": "FAIL",
@@ -177,18 +182,41 @@
     }
   },
   "budget": {
-    "global_batch": "UNKNOWN until real online memory probe",
-    "optimizer_steps": "UNKNOWN until windows/effective-epoch registration",
-    "training_samples": "UNKNOWN",
-    "unique_windows": "dataset audit pending on cloud",
-    "effective_epochs": "UNKNOWN",
+    "global_batch": 8,
+    "rank_mixture": "4 expert_demo + 2 success_rollout + 1 observational_failure + 1 causal_failure per optimizer step",
+    "optimizer_steps": 10000,
+    "training_samples": 80000,
+    "unique_windows": 218125,
+    "unique_windows_by_stream": {
+      "expert_demo": 200779,
+      "success_rollout": 2467,
+      "observational_failure": 12950,
+      "causal_failure": 1929
+    },
+    "episodes": {
+      "expert_demo": 1542,
+      "success_rollout": 141,
+      "observational_failure": 259,
+      "causal_failure": 51
+    },
+    "effective_epochs": 0.366761,
+    "effective_window_epochs_by_stream": {
+      "expert_demo": 0.199224,
+      "success_rollout": 8.107013,
+      "observational_failure": 0.772201,
+      "causal_failure": 5.184033
+    },
+    "sampling_note": "Each stream samples episode then frame, so window-epoch ratios report exposure but do not imply uniform-window sampling.",
     "gpu_count": 8,
-    "estimated_hours": "UNKNOWN until seconds/step probe"
+    "estimated_hours": 4.41,
+    "estimated_hours_note": "Steady optimizer estimate only; add ten 12.2GB checkpoint writes and independent restores, then re-estimate from s1000 wall time before claiming completion ETA.",
+    "checkpoint_interval": 1000,
+    "projected_checkpoint_storage_bytes": 122019482490
   },
   "decision": {
-    "status": "NO_GO",
-    "rationale": "CPU no-cache data work is permitted, but GPU canary/long training is blocked until the fixed C58 online provider is integrated and architecture, objective, gradient, memory and restore gates pass.",
-    "launch_command": "C58_ONLINE_INTERFACE_COMMIT=<fixed_sha> bash scripts/h3wam/launch_c56b_fact_online_8gpu.sh",
+    "status": "GO_LONG",
+    "rationale": "The online frozen-H3 architecture, mixed FACT objectives, memory, gradients and strict restore gates passed. Training permission is released, but the actual launch remains fail-closed until C58b s10000 has an independent strict-restore READY with matching checkpoint SHA256.",
+    "launch_command": "C58_PARENT_CHECKPOINT=/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt C58_PARENT_READY=/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/READY.json bash scripts/h3wam/launch_c56b_fact_online_long10000_8gpu.sh",
     "effect_status": "NOT_EVIDENCE_READY"
   }
 }
