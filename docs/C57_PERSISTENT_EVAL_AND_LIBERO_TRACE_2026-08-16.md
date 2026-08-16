@@ -90,8 +90,9 @@ with online H3 inference.
 | 1200 | 0.084842 | 0.076288 | -11.21% | 33.75% | NO_GO |
 | 1400 | 0.083139 | 0.076288 | -8.98% | 36.25% | NO_GO |
 | 1600 | 0.081978 | 0.076288 | -7.46% | 35.00% | NO_GO |
+| 1800 | 0.081410 | 0.076288 | -6.71% | 33.75% | NO_GO |
 
-The paired mean-loss curve is improving monotonically through s1600, while
+The paired mean-loss curve is improving monotonically through s1800, while
 sample wins fluctuate between 33.75% and 36.25% after s1000.  C57 remains
 worse than D0.  These are diagnostics only; no intermediate checkpoint can be
 selected for rollout.  The only effect decision remains s5000.
