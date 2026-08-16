@@ -34,8 +34,8 @@ DreamWAM `6e989facc0c452fd3488d75f60bc36411005558c`、MiniWorld
 |---|---|---|
 | n0 | `117.50.181.177:32611` | C58b online frozen-H3 / full-30 ActionDiT 长训 |
 | n1 | `117.50.181.177:30907` | C57 LingBot 长训；利用显存余量并置 C56 train-only scale gate |
-| n2 | `117.50.181.177:32409` | C58 repeated-layer49 对照臂续训与固定评测队列 |
-| n3 | `117.50.181.177:30234` | C61 四候选 causal failure rollout 扩容 |
+| n2 | `117.50.181.177:32409` | C57 固定评测队列；C58b 最终 READY 后自动切换 C56 主臂 10k |
+| n3 | `117.50.181.177:30234` | C61 四候选 causal failure rollout；数据终审后自动切换 C56+C61 匹配臂 10k |
 
 共享工作区固定为 `/mnt/h3-wam`，项目为
 `/mnt/h3-wam/candidate-d0-rollout-96976ce/project`。不得使用 `/root` 保存项目或权重。
@@ -85,3 +85,39 @@ H3、30层ActionDiT反向和AdamW可在单张A800约42.21GiB reserved内完成�
 
 已有缓存只允许被已经启动且合同冻结的C57/C61读取，不再扩建。原始观测windows、manifest、split、
 normalization stats、checkpoint、评测轨迹和事故证据不属于可删缓存，必须保留以便严格恢复和复现。
+
+## 2026-08-16 在线执行状态
+
+以下状态是训练中的证据快照，不代表最终效果结论：
+
+- 已删除约 182 GiB 不再进入正式合同的 C56a structured5、StarWAM/DreamWAM NO_GO、
+  C58b parity 与机械探针缓存；共享盘仍约有 24 TiB 可用。C57 已冻结的持久 KV 资产与正式
+  raw windows 保留，不再生成新的 H3/KV 缓存。
+- C58b 的 8-GPU 10k 在线长训已通过 10-step DDP、30/30 层梯度、无磁盘 KV、严格恢复门；
+  `s1000..s4000` 已原子落盘，训练进入 s5000。最终 watcher PID `952239` 等待
+  `online-long10000/READY.json`，随后运行 online-H3/no-disk-KV balanced80，并以同
+  trial33、environment seed42、policy seed330042 配对 C58b 与固定 SHA 的 D0，各跑完整
+  40-task LIBERO micro-benchmark，报告 exact McNemar。
+- C56b 完整 FACT 端口的 mixed8 loss/scale gate 与 10-step optimizer canary 已通过：四类 rank
+  配比固定为 `4 expert / 2 success / 1 observational failure / 1 causal failure`，30 层均有
+  非零梯度，失败样本动作损失严格为零，future-to-action leak 为零，restore max-abs 为零。
+  n2 watcher PID `387447` 只接受 C58b s10000 最终 checkpoint 的路径、大小和 SHA，随后启动
+  C60 主臂 10k。
+- C61 共 1128 个 exact-state 反事实分叉正在 n3 采集。finalizer PID `861397` 只在 1128 份
+  results 与 trajectory 和单节点完成 marker 全部齐全后生成正式数据；matched watcher PID
+  `906377` 再校验 `COMPLETED.json`、dataset/observations SHA，并以与 C56 主臂完全一致的
+  父模型、seed、LR、loss、target norm、10k steps 启动。唯一变量是 C60/C61 causal pool。
+- C56 两臂各自 s10000 后必须通过最后 1000 步有限 loss、30/30 梯度、零 future leak、
+  checkpoint contract 和 bit-exact restore 才能发布 READY。随后统一 balanced80，并在相同
+  trial33/seed 下输出 C61-vs-C60、C60-vs-C58b、C61-vs-C58b 三组配对闭环效应；不能仅凭
+  训练 loss 或 C61-vs-C60 单一比较宣布 FACT 有效。
+- C57 5k 训练固定每 200 步保存并在 80 条、每 suite 20 条的 episode-disjoint heldout 上评测；
+  相对 D0 的曲线为 s200 `-75.58%`、s400 `-36.35%`、s600 `-24.82%`、s800
+  `-17.64%`、s1000 `-13.77%`，样本胜率从 `6.25%` 升至 `35%`，但仍是 NO_GO。
+  s1000 首次评测暴露了 CUDA/cuBLAS 动态库顺序错误；空闲 A800 最小 BF16 Linear 可复现，
+  固定使用 h3-int8 runtime 自带 cu13 后探针和完整 80 条评测均通过。n2 queue PID `388059`
+  与终点 watcher PID `387552` 已加入真实 C56 进程识别、失败隔离和 fail-closed 重试。
+
+所有中间趋势只用于诊断，不用于挑 checkpoint。C57 只允许预注册 s5000、C58b/C56/C61 只允许
+预注册 s10000 进入最终闭环；闭环报告未生成前，四条线的效果状态均为
+`NOT_EVIDENCE_READY`。
