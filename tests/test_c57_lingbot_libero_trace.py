@@ -133,3 +133,39 @@ def test_heldout_plan_is_episode_disjoint_and_seed_frozen(tmp_path: Path) -> Non
     assert frozen["checkpoint_milestones"] == list(range(200, 5001, 200))
     assert frozen["promotion_checkpoint"] == 5000
     assert len({row["eval_flow_seed"] for row in chosen}) == 2
+
+
+def test_sequence_capacity_failure_does_not_publish_manifest(tmp_path: Path) -> None:
+    source = tmp_path / "source.jsonl"
+    output = tmp_path / "sequence.jsonl"
+    audit = tmp_path / "audit.json"
+    source.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "id": f"sample{start}",
+                    "suite": "goal",
+                    "episode": 1,
+                    "start": start,
+                }
+            )
+            + "\n"
+            for start in range(130)
+        )
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/h3wam/build_c57_lingbot_sequence_manifest.py",
+            str(source),
+            str(output),
+            "--audit", str(audit),
+            "--max-history-chunks", "15",
+        ],
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "persistent token capacity exceeded" in result.stderr
+    assert not output.exists()
+    assert not audit.exists()

@@ -144,13 +144,12 @@ def main() -> None:
         json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
         for row in output_rows
     ).encode()
-    atomic_write(args.output_manifest, manifest_payload)
     audit = {
         "schema": SCHEMA,
         "source_manifest": str(args.source_manifest.resolve()),
         "source_manifest_sha256": sha256_file(args.source_manifest),
         "output_manifest": str(args.output_manifest.resolve()),
-        "output_manifest_sha256": sha256_file(args.output_manifest),
+        "output_manifest_sha256": hashlib.sha256(manifest_payload).hexdigest(),
         "rows": len(output_rows),
         "episodes": len(by_episode_start),
         "replan": args.replan,
@@ -170,6 +169,9 @@ def main() -> None:
     }
     if audit["gate"] != "PASS":
         raise RuntimeError(f"persistent token capacity exceeded: {max_tokens}")
+    # Fail closed: a capacity-invalid candidate must never replace a prior
+    # audited manifest merely because validation happens after serialization.
+    atomic_write(args.output_manifest, manifest_payload)
     atomic_write(args.audit, (json.dumps(audit, indent=2, sort_keys=True) + "\n").encode())
     print(json.dumps(audit, sort_keys=True))
 

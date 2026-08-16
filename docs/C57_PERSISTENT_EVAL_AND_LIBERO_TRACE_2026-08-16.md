@@ -39,7 +39,10 @@ LIBERO canary.  Offline loss alone cannot promote C57.
 
 ## Launch order (idle GPU only)
 
-1. Build a held-out C57 sequence manifest from the frozen validation source.
+1. Build a held-out C57 sequence manifest from the frozen validation source
+   with `--max-history-chunks 7`.  Seven chunks produce at most 15 observation
+   frames plus 56 action rows, i.e. 536 tokens under the training contract;
+   using the model constructor's nominal 15-window count here is invalid.
 2. Freeze the selected manifest and plan with
    `freeze_c57_heldout_eval_plan.py`.
 3. Export the `C57_EVAL_*` variables and run
