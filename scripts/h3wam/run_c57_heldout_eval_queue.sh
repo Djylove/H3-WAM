@@ -14,7 +14,9 @@ C57_EVAL_DEVICE=${C57_EVAL_DEVICE:-cuda:0}
 C57_EVAL_PHYSICAL_GPU=${C57_EVAL_PHYSICAL_GPU:-0}
 C57_EVAL_KV_SUBDIR=${C57_EVAL_KV_SUBDIR:-h3_int8_dreamwam_kv_5x32_dense_v1}
 C57_EVAL_IDLE_CONFIRM_SECONDS=${C57_EVAL_IDLE_CONFIRM_SECONDS:-30}
-C57_HIGH_PRIORITY_MARKER=${C57_HIGH_PRIORITY_MARKER:-/mnt/h3-wam/outputs/c56b-fact-online-v1/GO_LONG.json}
+C57_C56_GO_LONG=${C57_C56_GO_LONG:-/mnt/h3-wam/outputs/c56b-fact-online-v1/GO_LONG.json}
+C57_C56_PARENT_CHECKPOINT=${C57_C56_PARENT_CHECKPOINT:-/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt}
+C57_C56_PARENT_READY=${C57_C56_PARENT_READY:-/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/READY.json}
 C57_EVAL_PREEMPT_POLL_SECONDS=${C57_EVAL_PREEMPT_POLL_SECONDS:-5}
 
 if ! [[ "${C57_EVAL_PHYSICAL_GPU}" =~ ^[0-9]+$ ]]; then
@@ -32,9 +34,16 @@ if ! [[ "${C57_EVAL_PREEMPT_POLL_SECONDS}" =~ ^[0-9]+$ ]] || \
   exit 2
 fi
 
+c56_parent_ready() {
+  [[ -s "${C57_C56_GO_LONG}" && \
+     -s "${C57_C56_PARENT_CHECKPOINT}" && \
+     -s "${C57_C56_PARENT_READY}" ]]
+}
+
 higher_priority_reserved() {
-  [[ -e "${C57_HIGH_PRIORITY_MARKER}" ]] || \
-    pgrep -f '([c]56|[C]56)' >/dev/null 2>&1
+  # GO_LONG alone is not a reservation. C56 cannot start until its C58b
+  # s10000 parent and final strict-restore READY are both published.
+  c56_parent_ready || pgrep -f '([c]56|[C]56)' >/dev/null 2>&1
 }
 
 gpu_compute_pids() {
