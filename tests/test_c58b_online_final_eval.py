@@ -150,10 +150,13 @@ def test_fresh_aggregate_requires_all_four_exact_suites(tmp_path, monkeypatch):
                         "task_id": task,
                         "episodes": [{
                             "trial": 33,
-                            "episode_seed": 33_042,
+                            "episode_seed": 33_042 + task * 100_000,
                             "environment_seed": None,
                             "replans": 50,
-                            "replan_noise_seeds": list(range(33_042, 33_092)),
+                            "replan_noise_seeds": list(range(
+                                33_042 + task * 100_000,
+                                33_092 + task * 100_000,
+                            )),
                             "success": (
                                 task % 2 == 0
                                 if arm == "candidate_c58b" else task % 3 == 0
@@ -203,14 +206,17 @@ def test_fresh_aggregate_accepts_early_success_seed_prefix(tmp_path, monkeypatch
             tasks = []
             for task in range(10):
                 replans = 7 if task == 0 else 50
+                episode_seed = 33_042 + task * 100_000
                 tasks.append({
                     "task_id": task,
                     "episodes": [{
                         "trial": 33,
-                        "episode_seed": 33_042,
+                        "episode_seed": episode_seed,
                         "environment_seed": None,
                         "replans": replans,
-                        "replan_noise_seeds": list(range(33_042, 33_042 + replans)),
+                        "replan_noise_seeds": list(range(
+                            episode_seed, episode_seed + replans
+                        )),
                         "success": task == 0,
                     }],
                 })

@@ -143,8 +143,11 @@ def finalize(report_path: Path) -> dict[str, Any]:
             "wait_steps": 30,
             "environment_seed": None,
             "policy_noise_seed_base": None,
-            "episode_seed_contract": "trial_index_times_1000_plus_seed",
-            "expected_trial33_episode_seed": 33_042,
+            "episode_seed_contract": (
+                "seed_plus_task_id_times_100000_plus_trial_index_times_1000"
+            ),
+            "expected_trial33_task0_episode_seed": 33_042,
+            "episode_seed_task_stride": 100_000,
             "action_horizon": 32,
             "replan_interval": 8,
             "inference_steps": 10,

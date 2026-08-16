@@ -104,7 +104,8 @@ normalization stats、checkpoint、评测轨迹和事故证据不属于可删缓
   `wait_steps=0`/显式 seed `330042`；固定 D0 因而从既有 trial33 的 `16/40` 退化为前 31 条
   `0/31`，证实评测合同失效。该轮已 fail-closed 并归档为
   `fresh-libero-trial33.invalid-wait0-20260816T093403Z`，不计 policy trial。修正版严格复用既有
-  `wait30`、`seed42 -> episode_seed33042` 合同重新配对 80 episodes；D0 的
+  `wait30`、`episode_seed=42+task_id*100000+trial*1000` 合同重新配对 80 episodes（task0/trial33
+  为 `33042`）；D0 的
   spatial/task0/trial33 已复现历史成功轨迹，初始物体状态、首个 32×7 action chunk 和 11 次
   replan 首动作逐值 `max_abs=0`。聚合器同时修正为按实际 replans 校验早停成功 episode 的 seed
   前缀，而非误要求固定 50 个 seed。闭环完成前不宣布收益。
