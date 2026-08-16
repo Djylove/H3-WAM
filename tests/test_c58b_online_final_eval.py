@@ -175,3 +175,11 @@ def test_exact_mcnemar_direction_and_no_discordance():
     strong = AGG._exact_mcnemar(10, 0)
     assert strong["one_sided_p_candidate_better"] == pytest.approx(1 / 1024)
     assert strong["two_sided_p"] == pytest.approx(2 / 1024)
+
+
+def test_final_watcher_pins_official_fastwam_source_for_eval_and_rollout():
+    source = (
+        ROOT / "scripts/h3wam/watch_c58b_online_final_eval.sh"
+    ).read_text(encoding="utf-8")
+    assert "upstream-readonly/FastWAM-45d8e145/wan22" in source
+    assert 'export H3WAM_FASTWAM_SOURCE_ROOT="${source_root}"' in source

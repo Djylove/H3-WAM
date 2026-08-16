@@ -19,6 +19,7 @@ source_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_all.js
 train_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"
 val_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_val.jsonl"
 cache_root="${workspace}/data/v7_dense_h3_cache"
+source_root="${H3WAM_FASTWAM_SOURCE_ROOT:-${workspace}/upstream-readonly/FastWAM-45d8e145/wan22}"
 expected_d0_sha256="36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3"
 
 mkdir -p "${eval_root}/balanced80" "${rollout_root}"
@@ -28,7 +29,8 @@ trap 'rmdir "${lock}" 2>/dev/null || true' EXIT
 
 for path in "${project}" "${policy_python}" "${sim_python}" "${h3_checkpoint}" \
   "${h3_model}" "${source_manifest}" "${train_manifest}" "${val_manifest}" \
-  "${cache_root}/stats.pt" "${d0_checkpoint}"; do
+  "${cache_root}/stats.pt" "${d0_checkpoint}" "${source_root}/action_dit.py" \
+  "${source_root}/wan_video_dit.py" "${source_root}/helpers/gradient.py"; do
   [[ -e "${path}" ]] || { echo "missing C58b final input: ${path}" >&2; exit 2; }
 done
 actual_d0_sha256="$(sha256sum "${d0_checkpoint}" | awk '{print $1}')"
@@ -44,6 +46,7 @@ done
 cd "${project}"
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 export PYTHONPATH="${project}/third_party/diffusers_h3/src:${project}/src:${project}"
+export H3WAM_FASTWAM_SOURCE_ROOT="${source_root}"
 
 if [[ ! -s "${balanced_report}" ]]; then
   CUDA_VISIBLE_DEVICES=0 "${policy_python}" \
