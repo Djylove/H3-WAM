@@ -1031,3 +1031,39 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `ad5829e5478ee2a37dcd9ecc52803e99046c72fb0fed3b3d1d4f923d556d9f57`。2026-08-16已在四节点32张
   A800启动；canary阶段只读取完整性、初态、checkpoint与seed合同，不聚合success，机械通过后才生成
   trials37..49的1560条剩余任务并最终一次性统计33..49的680组三臂配对。
+
+### 2026-08-16 — C55 fresh闭环否证与四条完整机制支线
+
+- C55 fresh闭环最终一次性聚合680组同初态、同seed、同replan8三臂结果：joint为
+  `231/680=33.97%`，同预算action-only为`234/680=34.41%`，原擂主D0为
+  `270/680=39.71%`。joint相对action-only为36胜39负，exact McNemar
+  `p=0.6778`；相对D0绝对退化`5.74pp`。因此C55判定
+  `FAIL_CLOSED_LOOP / NO_GO_FUSION`，不允许用后果预测改善覆盖动作成功率退化。最终artifact为
+  `/mnt/h3-wam/outputs/c55-fresh-closed-loop-v1/FINAL.json`，SHA256
+  `72a840eba03e0f79ff3a8568153adc9c5fe72165f4c8f2bec932aba390e4c799`。
+- 该结果否定的是“在D0后追加浅层future/state/value head即可把H3世界知识转成动作收益”，不是否定
+  H3作为世界骨干。后续停止该类补丁，改为四线并行：C56 FACT共享causal backbone、C57 LingBot真实
+  observation/action persistent KV生命周期、C58 FastWAM完整30层ActionDiT与C58b逐层H3 carrier、
+  C59-C61真实失败/反事实数据合同。
+- C56a只验证官方`[P,A,G,V,I]`顺序、causal mask、两阶段不泄漏、失败动作mask和future/value梯度；
+  因其仍是D0五层后的独立4层causal trunk，明确标为`INTENTIONAL_DEVIATION / PROBE_ONLY / NO_GO_LONG`。
+  8卡机械aggregate为8/8 PASS、D0 parity和restore max-abs均0，峰值reserved 4.62GiB；真正C56b必须把
+  P/A/G/V/I置入C58b的30个逐层shared blocks。
+- C57按LingBot官方5000-step/global80/AdamW1e-5/warmup10/save200配方启动8卡长训；冻结sequence
+  manifest有200779窗口/1542 episode、0缺失、0 future leakage，持久窗口最大536 token小于540。
+  真实8卡canary 10/10 finite，严格恢复max-abs0；该支线完整移植persistent lifecycle，但承载体仍为
+  D0五层，禁止称为官方30层shared backbone复现。长训目录为
+  `/mnt/h3-wam/outputs/c57-lingbot-persistent-kv/long5000`。
+- C58从固定FastWAM commit `45d8e1458921d83f8ad6cf9ce993d371208dabd0`直接加载30个官方
+  ActionDiT block，function-preserving地把D0从5层扩为30层。8卡真实probe中30/30 block梯度非零、
+  D0 step0 parity与严格恢复max-abs均0，峰值reserved 24.27GiB；10000-step长训每1000原子保存。
+  但C58把H3 layer49重复给全部30层，只能作为`CONTROLLED_ARM_REPEATED_LAYER49`，不是完整
+  FastWAM世界—动作联合训练。
+- C58b固定H3 50层到ActionDiT 30层的单调映射
+  `(0,2,3,5,7,8,10,12,14,15,17,19,20,22,24,25,27,29,30,32,34,35,37,39,41,42,44,46,47,49)`；
+  每个action block消费对应H3层K/V。80样本cache canary约2.202GB，80k训练slice纯tensor约2.202TB；
+  先过真实cache/no-alias/layer49退化等价/真实layerwise非零delta/30层梯度/恢复门，再扩全量。
+- C59 outcome-only overlay冻结560 episode/362 failure/21559 samples，不伪造failure onset；C60从成功父
+  轨迹exact state restore得到83条失败分支/3115样本，按父episode split-disjoint。C61进一步从141条
+  train-only成功父轨迹的d3/d5状态生成1128个四seed分叉；只保留终局失败分支，干预边界作为显式onset，
+  action imitation全mask，真实post-intervention future和value仍监督。
