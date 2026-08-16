@@ -1093,3 +1093,32 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - C57继续按LingBot官方预算运行到5000步；step200固定held-out已明确退化：C57/D0 loss为
   `0.133945/0.076288`，相对差75.58%，样本胜率5/80，四suite均退化。该早期点为`NO_GO`，但不据此
   中止预注册5000步；只允许step5000通过离线门后进入真实persistent LIBERO canary。
+
+### 2026-08-16 — C56b完整在线训练门与四线自动接力
+
+- C56b future-H3 scale只消费train split的512个在线样本，固定构成为expert/success/
+  observational-failure/causal-failure=`256/128/64/64`。7168维raw target RMS为`53.49984`，逐维
+  z-score后RMS为`1.0`；std最小/中位/最大为`5.90/19.62/169.08`，0维触发clamp。统计SHA256为
+  `95df1f65eba1b1c3bfb9cebea90983ca54dffa69f60e6135354eb67e8551d000`，未写任何K/V或feature cache。
+- 随后的8卡mixed balance gate固定4 expert、2 success、1 observational failure、1 causal failure。
+  success action loss全部非零、两类failure action loss严格为0，替换future target对Stage-1动作输出
+  max-abs为0，30个shared block最小归一化梯度norm为`5.1686`，完整state restore max-abs为0。
+  raw future loss `1608.54..3657.31`降为normalized `1.684..2.455`；aggregate SHA256为
+  `d083fe955266b8f56da2a39f250f7bdb7e63d6fbb463984b417e8302ea08ac7f`。
+- 完整online optimizer canary使用FACT固定loss权重`10/1/0.4/0.4`、base/action LR
+  `2e-5/2e-4`、每步新的4/2/1/1样本和online current+future H3。10/10步finite、每步30层梯度
+  全正、future leak为0；完整model+optimizer+scheduler独立恢复max-abs为0，峰值reserved
+  `57.49GiB`，热态约`1.587s/step`。`GO_LONG.json`状态为`GO_LONG / NOT_EVIDENCE_READY`，checkpoint
+  SHA256为`2d302b2cef4a2e9d1eb371a480cb235e50113c73267ae675de3ea5f735f39521`。正式10000步必须等待
+  C58b online s10000及其final strict READY，不得用canary或D0替代父模型。
+- C58b online长训已跨过s1000/s2000原子checkpoint并通过下一段strict load，继续s3000；为修复原launcher
+  只训练不发布final restore的问题，新增后台finalizer。它只在s10000 report/checkpoint完成、训练退出后
+  运行独立8卡restore，审计completed steps、模型身份、30层映射、final1000步梯度、文件大小及三个SHA，
+  仅`restore_probe_max_abs=0`才原子写`online-long10000/READY.json`。
+- C57固定held-out趋势为：s200相对D0 `-75.58%`/样本胜率`6.25%`，s400为
+  `-36.35%/16.25%`，s600为`-24.82%/25.0%`；均为`NO_GO`，但连续改善支持按预注册预算继续到s5000。
+  n2在C58重复layer49对照s10000及final restore完成后自动补每200步评测；C58b final READY出现时可原子
+  抢占单次约70秒评测并让位给C56，不提前封锁空闲GPU。
+- C61的1128分支采集保持在n3；已部署严格后台finalizer。只有node completion marker、1128个精确result与
+  trajectory、冻结job/FROZEN SHA及每条branch身份全部通过，才生成C60兼容的failure dataset；未完成期间
+  不写正式dataset/COMPLETED。C61完成后另开matched C56+C61 arm，禁止把新数据热插入在途C56 run。
