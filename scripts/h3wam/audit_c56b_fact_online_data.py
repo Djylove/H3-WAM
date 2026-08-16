@@ -68,7 +68,6 @@ def main() -> None:
         args.demo_source_manifest,
         args.demo_cache_root,
         split=args.split,
-        limit=1,
     )
     c48 = OnlineH3FACTRolloutDataset(
         args.c48_dataset,

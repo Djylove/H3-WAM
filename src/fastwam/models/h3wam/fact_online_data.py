@@ -167,10 +167,12 @@ class OnlineH3FACTDemoDataset(Dataset):
         self.action_max = stats["action_max"].float()
         self.state_min = stats["state_min"].float()
         self.state_max = stats["state_max"].float()
-        self._future_by_key = {
-            (str(row["suite"]), int(row["episode"]), int(row["start"])): row
-            for row in source_rows
-        }
+        self._future_by_key = {}
+        for row in source_rows:
+            key = (str(row["suite"]), int(row["episode"]), int(row["start"]))
+            if key in self._future_by_key:
+                raise ValueError(f"duplicate demo suite/episode/start key: {key}")
+            self._future_by_key[key] = row
         self.episode_to_indices: dict[tuple[str, int], list[int]] = defaultdict(list)
         for index, row in enumerate(self.rows):
             self.episode_to_indices[(str(row["suite"]), int(row["episode"]))].append(
