@@ -1067,3 +1067,29 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   轨迹exact state restore得到83条失败分支/3115样本，按父episode split-disjoint。C61进一步从141条
   train-only成功父轨迹的d3/d5状态生成1128个四seed分叉；只保留终局失败分支，干预边界作为显式onset，
   action imitation全mask，真实post-intervention future和value仍监督。
+
+### 2026-08-16 — 停止大缓存并回归四线训练主线
+
+- C58b 的80样本逐层K/V parity canary已完成其唯一用途：online H3与磁盘K/V在30个映射层逐tensor
+  bit-exact，缓存/在线ActionDiT输出也bit-exact；单卡真实online H3 + 30层ActionDiT一步训练峰值
+  allocated/reserved为`41.46/42.21GiB`，热态H3抽取约`0.225s`、动作前后向与AdamW约`0.793s`，
+  总计约`1.021s`。因此正式训练改为每rank驻留冻结INT8 H3并在线抽取，不再生成80k约2.2TB的K/V缓存。
+- 按可追溯删除边界清理约182GB失效派生物：C56a structured5缓存约15GB、两个已判NO_GO的历史
+  DreamWAM/StarWAM缓存约165GB、C58b parity缓存约2.1GB及小型机械canary。保留原始windows、manifest、
+  数据集、事故日志、checkpoint，以及仍被C57/C61在途任务读取的既有dense K/V。删除不改变任何训练样本
+  或已发布artifact；共享存储当前约49TB总量、24TB可用。
+- C58b在线8卡DDP门禁使用80个唯一样本完成10步：30/30 ActionDiT层每步均有非零梯度，单rank峰值
+  allocated/reserved为`42.401/43.742GiB`，12.18GB checkpoint独立恢复
+  `restore_max_abs=0.0`，checkpoint SHA256为
+  `c94aa0b3f38efcdcefb1d5cbbb8d588da8289e82968ec7025798efaff15e67fa`。门禁状态为
+  `PASS_ONLINE_DDP_CANARY / GO_ONLINE_10000`，但仅是机械证据；n0已启动online 10000步、每1000步保存。
+- C58重复layer49对照臂在s8000前因probe sample identity检查严格停止。根因是fresh probe offset变更及
+  online新合同字段误入legacy cached合同，不是checkpoint损坏。兼容修复保持旧合同字节不变后，s7000
+  独立恢复`restore_probe_max_abs=0.0`，现从s7000严格续跑s8000，之后仍需s9000/s10000和final restore。
+- C56b online共享30层机械门虽证明8/8 rank、30层梯度、H3冻结和恢复均正确，但首批全为C60失败样本，
+  按合同action loss恰为0，且未标准化7168维future-H3目标使loss约2520–2868。因此它仍是
+  `NO_GO_LONG`：先只用train split拟合target normalization，再以expert/success/failure混合批验证成功
+  action mask非零、失败action mask为零及raw/normalized梯度尺度；通过前不写candidate checkpoint。
+- C57继续按LingBot官方预算运行到5000步；step200固定held-out已明确退化：C57/D0 loss为
+  `0.133945/0.076288`，相对差75.58%，样本胜率5/80，四suite均退化。该早期点为`NO_GO`，但不据此
+  中止预注册5000步；只允许step5000通过离线门后进入真实persistent LIBERO canary。

@@ -32,9 +32,9 @@ DreamWAM `6e989facc0c452fd3488d75f60bc36411005558c`、MiniWorld
 
 | 节点 | 地址 | 当前独占任务 |
 |---|---|---|
-| n0 | `117.50.181.177:32611` | C56 完整 FACT/H3 causal backbone |
-| n1 | `117.50.181.177:30907` | C57 LingBot persistent observation/action KV |
-| n2 | `117.50.181.177:32409` | C58 FastWAM full-30 ActionDiT |
+| n0 | `117.50.181.177:32611` | C58b online frozen-H3 / full-30 ActionDiT 长训 |
+| n1 | `117.50.181.177:30907` | C57 LingBot 长训；利用显存余量并置 C56 train-only scale gate |
+| n2 | `117.50.181.177:32409` | C58 repeated-layer49 对照臂续训与固定评测队列 |
 | n3 | `117.50.181.177:30234` | C61 四候选 causal failure rollout 扩容 |
 
 共享工作区固定为 `/mnt/h3-wam`，项目为
@@ -76,3 +76,12 @@ C60 的 split 以成功父 episode 为单位，d3/d5 和所有 action arms 不�
 
 四线完成后先做单线淘汰。只有闭环胜者才进入两两融合；融合仍采用单变量比赛，不把四种机制
 一次性堆在一起。
+
+## 在线训练与缓存边界
+
+C58b 已在同一80样本上证明在线冻结INT8 H3与逐层磁盘K/V在30层逐tensor bit-exact，并证明在线
+H3、30层ActionDiT反向和AdamW可在单张A800约42.21GiB reserved内完成。正式C56b/C58b因此使用
+`online_frozen_int8_per_rank_v1`，不再构建新的全量K/V缓存；机械parity缓存完成审计后可删除。
+
+已有缓存只允许被已经启动且合同冻结的C57/C61读取，不再扩建。原始观测windows、manifest、split、
+normalization stats、checkpoint、评测轨迹和事故证据不属于可删缓存，必须保留以便严格恢复和复现。
