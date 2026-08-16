@@ -48,6 +48,17 @@ def test_c58_resume_reconstructs_frozen_checkpoint_probe_by_id():
         )
 
 
+def test_online_contract_extension_does_not_mutate_legacy_cached_contract():
+    legacy = {"candidate": "C58_FASTWAM_FULL30_H3_LAYER49", "kv_subdir": "old"}
+    assert C58.add_online_h3_contract_fields(
+        dict(legacy), online_h3=False
+    ) == legacy
+    online = C58.add_online_h3_contract_fields(dict(legacy), online_h3=True)
+    assert online["h3_execution"] == "online_frozen_int8_per_rank_v1"
+    assert online["disk_kv_training_input"] is False
+    assert online["kv_subdir"] is None
+
+
 def test_online_probe_selects_declared_manifest_offset():
     with tempfile.TemporaryDirectory() as directory:
         manifest = Path(directory) / "manifest.jsonl"

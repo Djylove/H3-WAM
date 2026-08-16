@@ -358,11 +358,7 @@ def checkpoint_contract(
         "h3_checkpoint_path": str(dataset.first_checkpoint_path),
         "h3_checkpoint_sha256": args.expected_h3_checkpoint_sha256,
         "verify_h3_checkpoint_sha256": args.verify_h3_checkpoint_sha256,
-        "h3_execution": (
-            "online_frozen_int8_per_rank_v1" if online_h3 else "precomputed_kv_v1"
-        ),
-        "disk_kv_training_input": not online_h3,
-        "kv_subdir": None if online_h3 else args.kv_subdir,
+        "kv_subdir": args.kv_subdir,
         "kv_schema": PARENT.DREAMWAM_KV_SCHEMA,
         "kv_strategy": PARENT.DREAMWAM_KV_STRATEGY,
         "kv_layers": list(spec.carrier_layers),
@@ -405,6 +401,18 @@ def checkpoint_contract(
         contract["action_block_to_h3_layer"] = list(
             LAYERWISE_H3_50_TO_ACTION_30
         )
+    return add_online_h3_contract_fields(contract, online_h3=online_h3)
+
+
+def add_online_h3_contract_fields(
+    contract: dict[str, Any], *, online_h3: bool
+) -> dict[str, Any]:
+    """Extend only new online contracts; cached checkpoint bytes stay stable."""
+
+    if online_h3:
+        contract["h3_execution"] = "online_frozen_int8_per_rank_v1"
+        contract["disk_kv_training_input"] = False
+        contract["kv_subdir"] = None
     return contract
 
 
