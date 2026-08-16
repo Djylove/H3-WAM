@@ -81,3 +81,20 @@ def test_finalizer_rejects_nonexact_restore_and_carrier_identity(tmp_path):
     bad["action_block_to_h3_layer"] = [49] * 30
     with pytest.raises(ValueError, match="mapping mismatch"):
         F.require_contract(bad)
+
+
+def test_checkpoint_contract_comparison_canonicalizes_tuples_only():
+    checkpoint_contract = contract()
+    checkpoint_contract["model_spec"]["carrier_layers"] = tuple(F.LAYERS)
+    checkpoint_contract["initialization"] = {
+        "anchor_target_indices": (0, 7, 14, 22, 29),
+        "nested": ((1, 2),),
+    }
+    json_contract = contract()
+    json_contract["initialization"] = {
+        "anchor_target_indices": [0, 7, 14, 22, 29],
+        "nested": [[1, 2]],
+    }
+    assert F.json_canonical(checkpoint_contract) == json_contract
+    json_contract["model_spec"]["action_layers"] = 29
+    assert F.json_canonical(checkpoint_contract) != json_contract

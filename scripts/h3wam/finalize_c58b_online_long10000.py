@@ -40,6 +40,16 @@ def load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def json_canonical(value: Any) -> Any:
+    """Match torch checkpoint containers to their lossless JSON report form."""
+
+    if isinstance(value, dict):
+        return {str(key): json_canonical(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_canonical(item) for item in value]
+    return value
+
+
 def require_train_report(report: dict[str, Any], checkpoint: Path) -> None:
     if report.get("event") != "h3_c58b_online_frozen_h3_full30_train":
         raise ValueError("s10000 report event mismatch")
@@ -125,7 +135,7 @@ def finalize(root: Path) -> dict[str, Any]:
         raise ValueError("checkpoint top-level schema mismatch")
     if checkpoint_payload.get("completed_steps") != 10_000:
         raise ValueError("checkpoint milestone mismatch")
-    if checkpoint_payload.get("contract") != train["contract"]:
+    if json_canonical(checkpoint_payload.get("contract")) != train["contract"]:
         raise ValueError("checkpoint/report contract mismatch")
     probe_ids = checkpoint_payload.get("probe_sample_ids")
     if not isinstance(probe_ids, list) or len(probe_ids) != 1:
