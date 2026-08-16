@@ -163,10 +163,18 @@ def main() -> None:
         if set(arms) != ARMS:
             raise ValueError(f"C55 tri-arm group incomplete: {(trial, suite, task)}")
         reference = arms["d0_parent"]
-        reference_archive = np.load(reference["trajectory"])
+        with np.load(reference["trajectory"]) as reference_archive:
+            reference_initial = {
+                name: np.array(reference_archive[name][0], copy=True)
+                for name in INITIAL_STATE_KEYS
+            }
         for arm in ("action_only", "joint_aux"):
             candidate = arms[arm]
-            candidate_archive = np.load(candidate["trajectory"])
+            with np.load(candidate["trajectory"]) as candidate_archive:
+                candidate_initial = {
+                    name: np.array(candidate_archive[name][0], copy=True)
+                    for name in INITIAL_STATE_KEYS
+                }
             shared = min(
                 len(candidate["replan_noise_seeds"]),
                 len(reference["replan_noise_seeds"]),
@@ -177,7 +185,7 @@ def main() -> None:
                 and candidate["replan_noise_seeds"][:shared]
                 == reference["replan_noise_seeds"][:shared]
                 and all(
-                    np.array_equal(candidate_archive[name][0], reference_archive[name][0])
+                    np.array_equal(candidate_initial[name], reference_initial[name])
                     for name in INITIAL_STATE_KEYS
                 )
             )

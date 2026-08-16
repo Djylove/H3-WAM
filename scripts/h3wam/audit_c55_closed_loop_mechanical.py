@@ -46,7 +46,10 @@ def main() -> None:
         payload = json.loads(result_path.read_text())
         episode = payload["tasks"][0]["episodes"][0]
         trajectory = Path(episode["trajectory"])
-        archive = np.load(trajectory)
+        with np.load(trajectory) as archive:
+            initial_state = {
+                name: np.array(archive[name][0], copy=True) for name in COMPARE_KEYS
+            }
         if (
             payload["replan_steps"] != 8
             or payload["action_horizon"] != 32
@@ -59,7 +62,7 @@ def main() -> None:
             raise ValueError(f"C55 rollout contract mismatch: {result_path}")
         key = (row["trial"], row["suite"], row["task"])
         groups[key][row["arm"]] = {
-            "archive": archive,
+            "initial_state": initial_state,
             "episode_seed": episode["episode_seed"],
             "replan_noise_seeds": episode["replan_noise_seeds"],
         }
@@ -84,7 +87,7 @@ def main() -> None:
                 raise ValueError(f"C55 policy noise schedule mismatch: {key}/{arm}")
             for name in COMPARE_KEYS:
                 if not np.array_equal(
-                    candidate["archive"][name][0], reference["archive"][name][0]
+                    candidate["initial_state"][name], reference["initial_state"][name]
                 ):
                     raise ValueError(f"C55 initial state mismatch: {key}/{arm}/{name}")
     report = {
