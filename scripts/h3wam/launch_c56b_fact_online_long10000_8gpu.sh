@@ -9,8 +9,13 @@ c58_parent="${C58_PARENT_CHECKPOINT:?Set C58_PARENT_CHECKPOINT to the completed 
 c58_ready="${C58_PARENT_READY:?Set C58_PARENT_READY to the audited C58b final READY.json}"
 canary_marker="${CANARY_MARKER:-${workspace}/outputs/c56b-fact-online-v1/optimizer-canary10-v1/GO_LONG.json}"
 output_root="${OUTPUT_ROOT:-${workspace}/outputs/c56b-fact-online-v1/online-long10000-v1}"
+causal_dataset="${CAUSAL_FAILURE_DATASET:-${workspace}/eval/c60-counterfactual-failure-dataset-v1/dataset.pt}"
+causal_observations="${CAUSAL_FAILURE_OBSERVATIONS:-${workspace}/eval/c60-counterfactual-failure-dataset-v1/observations.jsonl}"
+causal_dataset_sha="${EXPECTED_CAUSAL_DATASET_SHA256:-1abeee1ef4e5e71f66b656c9920124086046c3e7d3b3a22b769449b72b1fc1d4}"
+causal_observations_sha="${EXPECTED_CAUSAL_OBSERVATIONS_SHA256:-b9a812afe034f236181a6915369535545a997688a9dac8c351df3f51c0357a55}"
 
-[[ -f "${c58_parent}" && -f "${c58_ready}" && -f "${canary_marker}" ]] || { echo "missing C56b long parent/gate" >&2; exit 2; }
+[[ -f "${c58_parent}" && -f "${c58_ready}" && -f "${canary_marker}" \
+   && -f "${causal_dataset}" && -f "${causal_observations}" ]] || { echo "missing C56b long parent/gate/data" >&2; exit 2; }
 "${python_bin}" - "${canary_marker}" "${c58_ready}" "${c58_parent}" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
@@ -57,8 +62,10 @@ common=(
   --c48-dataset "${workspace}/eval/c48-fact-dense-value-dataset-v1/dataset.pt"
   --c48-observations "${workspace}/eval/c48-fact-dense-value-dataset-v1/observations.jsonl"
   --c59-overlay-root "${workspace}/eval/c59-fact-failure-active-overlay-v1"
-  --c60-dataset "${workspace}/eval/c60-counterfactual-failure-dataset-v1/dataset.pt"
-  --c60-observations "${workspace}/eval/c60-counterfactual-failure-dataset-v1/observations.jsonl"
+  --c60-dataset "${causal_dataset}"
+  --c60-observations "${causal_observations}"
+  --expected-causal-dataset-sha256 "${causal_dataset_sha}"
+  --expected-causal-observations-sha256 "${causal_observations_sha}"
   --h3-checkpoint "${workspace}/int8-action/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors"
   --h3-model "${workspace}/models/MiniMax-H3"
   --d0-parent-checkpoint "${workspace}/outputs/dense-carrier-d0-h32-s20000-v1/checkpoints/d0_h32_s14000.pt"

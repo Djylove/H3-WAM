@@ -1,0 +1,129 @@
+{
+  "experiment_id": "h3_c56b_fact_online_c61_matched_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Replacing only C56b's 51-episode C60 causal-failure pool with the finalized, more diverse C61 exact-state failure pool improves consequence-conditioned action learning and fresh LIBERO success without weakening action conditioning.",
+  "single_variable": "The causal_failure rank reads the finalized C61 train split instead of C60; C58b s10000 parent, C56 architecture, INT8 H3, target normalization, seed, 4/2/1/1 rank mixture, losses, LR schedule, 10000 steps, checkpoint cadence and evaluator remain identical to the C56b main arm.",
+  "parent_baseline": "h3_c56b_fact_online_v1 using C60 causal failures, initialized independently from the same fixed C58b online s10000 parent.",
+  "references": [
+    {
+      "kind": "upstream_code",
+      "title": "Bariona/FACT official failure-aware sampler and loss",
+      "locator": "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py and fact_datasets/samplers/episode_mixture_sampler.py",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "Strict C61 exact-state branch finalizer",
+      "locator": "scripts/h3wam/finalize_c61_failure_rollout_dataset.py",
+      "revision": "dde00cf",
+      "official": false,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "C56b/C61 matched automatic launcher",
+      "locator": "scripts/h3wam/watch_and_launch_c56b_c61_matched.sh",
+      "revision": "working tree",
+      "official": false,
+      "clean": false
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "model and parent identity",
+        "paper": "Failure-aware data changes supervision, not the world-action backbone.",
+        "upstream_code": "FACT samples failure episodes into the same causal model.",
+        "local": "The C61 arm invokes the exact C56 long launcher and fixed C58b s10000 parent; no model or optimizer flag is duplicated in the C61 wrapper.",
+        "status": "EXACT",
+        "evidence": ["scripts/h3wam/watch_and_launch_c56b_c61_matched.sh"],
+        "rationale": "The wrapper contains no LR, loss, seed, step or architecture override."
+      }
+    ],
+    "data": [
+      {
+        "field": "causal failure pool",
+        "paper": "Observed failed consequences supervise future/value while failure actions are excluded from imitation.",
+        "upstream_code": "Failure samples have action_loss_mask zero and retain consequence targets.",
+        "local": "C61 retains only terminal failed exact-state action-resampling branches, preserves actual future observations/value, masks action imitation, and splits by successful parent episode.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["scripts/h3wam/finalize_c61_failure_rollout_dataset.py", "experiments/dossiers/h3_c61_failure_rollout_finalizer_v1.json"],
+        "rationale": "LIBERO exact-state counterfactual branches replace FACT's RoboTwin failure episodes; the finalized dataset and observations SHA256 remain pending until all 1128 frozen jobs complete."
+      }
+    ],
+    "action": [
+      {
+        "field": "failure imitation mask and LIBERO action contract",
+        "paper": "Failure action imitation is disabled.",
+        "upstream_code": "action_loss_mask is zero for failure episodes.",
+        "local": "Every retained C61 row has action_loss_mask=0 and uses the unchanged LIBERO absolute7D horizon32 environment-to-dataset inverse.",
+        "status": "EQUIVALENT",
+        "evidence": ["tests/test_finalize_c61_failure_rollout_dataset.py", "src/fastwam/models/h3wam/fact_online_data.py"]
+      }
+    ],
+    "objective": [
+      {
+        "field": "FACT loss and target normalization",
+        "paper": "Action/future/state/value losses are weighted 10:1:0.4:0.4.",
+        "upstream_code": "The same loss is used across expert and failure streams with masks.",
+        "local": "The matched arm reuses the main arm's fixed target_norm.pt and exact trainer; only the causal dataset/observations identities change.",
+        "status": "EXACT",
+        "evidence": ["scripts/h3wam/launch_c56b_fact_online_long10000_8gpu.sh"]
+      }
+    ],
+    "optimization": [
+      {
+        "field": "paired training budget",
+        "paper": "Distributed episode-mixture training.",
+        "upstream_code": "Dataset, episode and frame are sampled hierarchically.",
+        "local": "Eight A800 ranks, global batch8, seed20260816, 4/2/1/1 rank mixture, 10000 steps and 1000-step checkpoint/restore cadence are inherited from C56b.",
+        "status": "EXACT",
+        "evidence": ["scripts/h3wam/watch_and_launch_c56b_c61_matched.sh", "scripts/h3wam/launch_c56b_fact_online_long10000_8gpu.sh"]
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "paired held-out and fresh LIBERO",
+        "paper": "Closed-loop success is decisive.",
+        "upstream_code": "Failure-aware training is evaluated through action generation.",
+        "local": "C61 matched versus C60 main uses identical checkpoints, held-out rows, action solver and fresh initial states; no training-loss-only promotion is allowed.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["experiments/dossiers/h3_c56b_fact_online_c61_matched_v1.json"],
+        "rationale": "LIBERO replaces RoboTwin."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT 618a6c1, C61 FROZEN 17f39b26 and jobs 6e2d76e6 are fixed."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["The C61 wrapper reuses the exact C56 watcher and long launcher."]},
+    "data_contract": {"status": "FAIL", "evidence": ["C61 final COMPLETED.json and finalized dataset/observations hashes are pending; the automatic gate fails closed until they exist and match."]},
+    "action_contract": {"status": "PASS", "evidence": ["C61 finalizer tests enforce failed branches only and action_loss_mask=0."]},
+    "objective_contract": {"status": "PASS", "evidence": ["No loss or target-normalization override exists in the C61 wrapper."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["The same C56 launcher fixes seed, LR, rank mixture, 10k schedule and restore cadence."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["The arm is pre-registered as a single-variable C61-vs-C60 comparison."]},
+    "gradient_path": {"status": "PASS", "evidence": ["The shared trainer's C56 canary proved all thirty gradients; only a dataset identity is parameterized."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["No finalized C61 batch may be read before COMPLETED.json."]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["No C61 matched checkpoint exists."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C60 main and C61 matched are sibling arms from the same fixed C58b s10000 SHA-gated parent."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["No C61 matched training or held-out comparison exists."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No C61 matched checkpoint has run LIBERO."]}
+  },
+  "budget": {
+    "global_batch": 8,
+    "optimizer_steps": 10000,
+    "training_samples": 80000,
+    "unique_windows": "UNKNOWN until strict C61 finalization",
+    "effective_epochs": "10000 / finalized C61 train windows for the one causal-failure rank; other streams match C56 main",
+    "gpu_count": 8,
+    "estimated_hours": 4.41,
+    "checkpoint_interval": 1000
+  },
+  "decision": {
+    "status": "NO_GO",
+    "rationale": "The matched contract is frozen and may wait unattended, but training remains fail-closed until C61 COMPLETED.json proves exact 1128-job finalization and authenticates dataset/observations bytes. The watcher writes C61_DATA_READY.json before launch.",
+    "launch_command": "bash scripts/h3wam/watch_and_launch_c56b_c61_matched.sh",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}

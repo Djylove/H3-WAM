@@ -89,6 +89,13 @@ def args() -> argparse.Namespace:
     parser.add_argument("--c59-overlay-root", type=Path, required=True)
     parser.add_argument("--c60-dataset", type=Path, required=True)
     parser.add_argument("--c60-observations", type=Path, required=True)
+    parser.add_argument(
+        "--expected-causal-dataset-sha256", default=EXPECTED_C60_SHA256
+    )
+    parser.add_argument(
+        "--expected-causal-observations-sha256",
+        default=EXPECTED_C60_OBS_SHA256,
+    )
     parser.add_argument("--h3-checkpoint", type=Path, required=True)
     parser.add_argument("--h3-model", type=Path, required=True)
     parser.add_argument("--d0-parent-checkpoint", type=Path, required=True)
@@ -121,8 +128,9 @@ class MixedPools:
         )
         self.c60 = OnlineH3FACTRolloutDataset(
             a.c60_dataset, a.c60_observations, a.source_manifest, a.demo_cache_root,
-            split="train", expected_dataset_sha256=EXPECTED_C60_SHA256,
-            expected_observations_sha256=EXPECTED_C60_OBS_SHA256,
+            split="train",
+            expected_dataset_sha256=a.expected_causal_dataset_sha256,
+            expected_observations_sha256=a.expected_causal_observations_sha256,
         )
         pools: dict[str, list[list[int]]] = {
             "expert_demo": [list(v) for v in self.demo.episode_to_indices.values()],
@@ -306,6 +314,12 @@ def main() -> None:
         raise ValueError("restore-check-only requires load-checkpoint")
     if min(a.steps, a.base_lr, a.action_lr, a.max_grad_norm) <= 0:
         raise ValueError("invalid C56b training arguments")
+    for name, value in (
+        ("causal dataset", a.expected_causal_dataset_sha256),
+        ("causal observations", a.expected_causal_observations_sha256),
+    ):
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise ValueError(f"invalid expected {name} SHA256")
     if sha(a.h3_checkpoint.resolve()) != EXPECTED_H3_SHA256 or sha(a.d0_parent_checkpoint.resolve()) != EXPECTED_D0_SHA256:
         raise ValueError("C56b backbone identity mismatch")
     device = torch.device("cuda", local_rank)
@@ -380,6 +394,8 @@ def main() -> None:
         "target_norm_sha256": sha(a.target_norm.resolve()), "h3_sha256": EXPECTED_H3_SHA256,
         "d0_sha256": EXPECTED_D0_SHA256, "initialization": initialization,
         "c58_parent_sha256": c58_parent_sha256,
+        "causal_failure_dataset_sha256": a.expected_causal_dataset_sha256,
+        "causal_failure_observations_sha256": a.expected_causal_observations_sha256,
         "base_lr": a.base_lr, "action_lr": a.action_lr, "warmup_steps": a.warmup_steps,
         "scheduler_horizon": a.scheduler_horizon, "gradient_checkpointing": a.gradient_checkpointing,
         "no_kv_cache": True,
