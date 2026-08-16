@@ -19,11 +19,28 @@ source_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_all.js
 train_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_train_uniform.jsonl"
 val_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_val.jsonl"
 cache_root="${workspace}/data/v7_dense_h3_cache"
+source_root="${H3WAM_FASTWAM_SOURCE_ROOT:-${workspace}/upstream-readonly/FastWAM-45d8e145/wan22}"
+expected_action_dit_sha256="1301d9224149de43bb701f620a5d41858ecc63c6b19a573ec32edd45a3bdb0a2"
+expected_video_dit_sha256="d098ad77665feeefa81634f31f5bb1d5771c4556d1a67859135f0ed35f9eb6c2"
+expected_gradient_sha256="ba5d8f7272eb029dc6cd2849ca99b70f6ad5abb838d21c818beb0590620dc793"
 
 for path in "${project}" "${policy_python}" "${sim_python}" "${h3_checkpoint}" \
   "${h3_model}" "${source_manifest}" "${train_manifest}" "${val_manifest}" \
-  "${cache_root}/stats.pt"; do
+  "${cache_root}/stats.pt" "${source_root}/action_dit.py" \
+  "${source_root}/wan_video_dit.py" "${source_root}/helpers/gradient.py"; do
   [[ -e "${path}" ]] || { echo "missing C56b paired-eval input: ${path}" >&2; exit 2; }
+done
+for spec in \
+  "${source_root}/action_dit.py:${expected_action_dit_sha256}" \
+  "${source_root}/wan_video_dit.py:${expected_video_dit_sha256}" \
+  "${source_root}/helpers/gradient.py:${expected_gradient_sha256}"; do
+  path="${spec%%:*}"
+  expected="${spec##*:}"
+  actual="$(sha256sum "${path}" | awk '{print $1}')"
+  [[ "${actual}" == "${expected}" ]] || {
+    echo "pinned FastWAM source SHA256 mismatch: ${path}" >&2
+    exit 2
+  }
 done
 mkdir -p "${eval_root}/balanced80" "${rollout_root}"
 lock="${eval_root}/.watcher.lock"
@@ -74,6 +91,7 @@ while ! gpu_idle; do sleep 30; done
 cd "${project}"
 export PYTHONPATH="${project}/third_party/diffusers_h3/src:${project}/src:${project}"
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+export H3WAM_FASTWAM_SOURCE_ROOT="${source_root}"
 export TMPDIR="${workspace}/tmp/c56b-paired-final-eval"
 mkdir -p "${TMPDIR}"
 
