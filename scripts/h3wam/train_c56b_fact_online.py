@@ -394,10 +394,25 @@ def main() -> None:
         "target_norm_sha256": sha(a.target_norm.resolve()), "h3_sha256": EXPECTED_H3_SHA256,
         "d0_sha256": EXPECTED_D0_SHA256, "initialization": initialization,
         "c58_parent_sha256": c58_parent_sha256,
+        # These identities make the C60/C61 pair independently auditable from
+        # the checkpoint bytes.  The paired evaluator permits only the two
+        # causal-failure hashes below to differ between arms.
+        "demo_manifest_sha256": sha(a.demo_manifest.resolve()),
+        "source_manifest_sha256": sha(a.source_manifest.resolve()),
+        "demo_stats_sha256": sha(a.demo_cache_root.resolve() / "stats.pt"),
+        "c48_dataset_sha256": sha(a.c48_dataset.resolve()),
+        "c48_observations_sha256": sha(a.c48_observations.resolve()),
+        "c59_completed_sha256": sha(a.c59_overlay_root.resolve() / "COMPLETED.json"),
+        "c59_sample_labels_sha256": sha(pools.c48.labels.labels_path),
         "causal_failure_dataset_sha256": a.expected_causal_dataset_sha256,
         "causal_failure_observations_sha256": a.expected_causal_observations_sha256,
         "base_lr": a.base_lr, "action_lr": a.action_lr, "warmup_steps": a.warmup_steps,
-        "scheduler_horizon": a.scheduler_horizon, "gradient_checkpointing": a.gradient_checkpointing,
+        "scheduler_horizon": a.scheduler_horizon, "weight_decay": a.weight_decay,
+        "max_grad_norm": a.max_grad_norm, "seed": a.seed,
+        "gradient_checkpointing": a.gradient_checkpointing,
+        "action_horizon": 32, "action_shift": 5.0,
+        "h3_carrier_layers": list(LAYERWISE_H3_50_TO_ACTION_30),
+        "h3_execution": "online_frozen_int8_per_rank_v1",
         "no_kv_cache": True,
     }
     completed = 0

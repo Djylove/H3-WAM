@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
             "h3_starwam_int8",
             "h3_dreamwam_kv_int8",
             "h3_fastwam_online_int8",
+            "h3_fact_online_int8",
             "baseline",
         ),
         required=True,
@@ -90,6 +91,11 @@ def parse_args() -> argparse.Namespace:
         "--c58b-balanced80-ready",
         type=Path,
         help="Required offline gate artifact for h3_fastwam_online_int8.",
+    )
+    parser.add_argument(
+        "--c56b-paired-ready",
+        type=Path,
+        help="Required paired balanced80 gate for h3_fact_online_int8.",
     )
     parser.add_argument(
         "--progress-probe",
@@ -2402,6 +2408,233 @@ class H3DreamWAMKVInt8Policy:
         }
 
 
+class _H3FACTActionOnlyAdapter(torch.nn.Module):
+    """Expose C56b's deployment action path without teacher-only FACT tracks."""
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        super().__init__()
+        self.model = model
+
+    def forward(self, noisy_actions, timestep, **kwargs):
+        return self.model.forward_action(noisy_actions, timestep, **kwargs)
+
+
+def _validate_c56b_paired_ready(
+    paired: dict, checkpoint_sha256: str
+) -> tuple[str, dict]:
+    identities = paired.get("checkpoint_identity", {})
+    by_sha = {
+        identities.get("c60_main_checkpoint_sha256"): "C60_MAIN",
+        identities.get("c61_matched_checkpoint_sha256"): "C61_MATCHED",
+    }
+    arm = by_sha.get(checkpoint_sha256)
+    gates = paired.get("conditioning_gates", {})
+    expected_gate_arms = {"c60_main", "c61_matched"}
+    if (
+        paired.get("format")
+        != "h3wam-c56b-fact-online-paired-balanced80-v1"
+        or paired.get("status") != "PASS_PAIRED_BALANCED80"
+        or paired.get("permission") != "GO_PAIRED_LIBERO"
+        or paired.get("effect_status") != "NOT_EVIDENCE_READY"
+        or arm not in {"C60_MAIN", "C61_MATCHED"}
+        or paired.get("execution", {}).get("disk_kv_read") is not False
+        or paired.get("execution", {}).get("disk_kv_write") is not False
+        or set(gates) != expected_gate_arms
+        or not all(gates[name] and all(gates[name].values()) for name in gates)
+    ):
+        raise ValueError("C56b paired heldout gate/checkpoint identity failed")
+    causal = paired.get("paired_contract", {}).get(
+        "main" if arm == "C60_MAIN" else "c61", {}
+    )
+    if set(causal) != {
+        "causal_failure_dataset_sha256", "causal_failure_observations_sha256"
+    }:
+        raise ValueError("C56b paired gate lacks exact causal identity")
+    return arm, causal
+
+
+class H3FACTOnlineInt8Policy(H3DreamWAMKVInt8Policy):
+    """Strict no-cache LIBERO adapter for the two matched C56b endpoints."""
+
+    def __init__(self, args: argparse.Namespace) -> None:
+        if args.h3_checkpoint is None or args.h3_model is None:
+            raise ValueError("h3_fact_online_int8 requires H3 checkpoint/model")
+        if args.dreamwam_source_manifest is None or args.c56b_paired_ready is None:
+            raise ValueError(
+                "h3_fact_online_int8 requires source manifest and paired READY"
+            )
+        if (
+            args.context_mode != "cached"
+            or args.model_evaluations != 10
+            or args.action_horizon != 32
+            or args.sample_ensemble_size != 1
+            or args.consequence_best_of_n != 1
+            or args.progress_probe is not None
+            or args.consequence_ranker_checkpoint is not None
+            or args.dense_value_checkpoint is not None
+            or args.h3_video_lora_checkpoint is not None
+            or args.h3_tail_delta is not None
+            or args.h3_feature_ablation != "none"
+        ):
+            raise ValueError("C56b paired rollout contract forbids deployment extras")
+        if (
+            not args.binarize_gripper
+            or args.action_median_window != 1
+            or args.action_scale != 1.0
+            or not args.normalized_action_pre_clamp
+        ):
+            raise ValueError("C56b paired rollout decoder contract drifted")
+        self.device = torch.device(args.device)
+        if self.device.type != "cuda":
+            raise ValueError("h3_fact_online_int8 requires CUDA")
+        torch.cuda.set_device(self.device)
+        self.dtype = torch.bfloat16
+        self.cache_root = args.cache_root.resolve()
+        self.source_manifest = args.dreamwam_source_manifest.resolve()
+        self.horizon = 32
+        self.inference_steps = 10
+        self.binarize_gripper = True
+        self.action_median_window = 1
+        self.action_scale = 1.0
+        self.normalized_action_pre_clamp = True
+        self.sample_ensemble_size = 1
+        self.feature_ablation = "none"
+        self.consequence_best_of_n = 1
+        self.consequence_candidate_seed_offsets = (0,)
+        self.consequence_selection_min_step = 0
+        self.consequence_selection_max_step = None
+        self.consequence_ranker = None
+        self.int8_hidden_provider = None
+        self.action_ranker_type = None
+        self.progress_probe = None
+
+        checkpoint = args.checkpoint.resolve()
+        checkpoint_sha256 = _sha256_file(checkpoint)
+        paired_path = args.c56b_paired_ready.resolve()
+        paired = json.loads(paired_path.read_text(encoding="utf-8"))
+        arm, causal_contract = _validate_c56b_paired_ready(
+            paired, checkpoint_sha256
+        )
+        payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+        contract = payload.get("contract", {})
+        expected_layers = (
+            0, 2, 3, 5, 7, 8, 10, 12, 14, 15, 17, 19, 20, 22, 24,
+            25, 27, 29, 30, 32, 34, 35, 37, 39, 41, 42, 44, 46, 47, 49,
+        )
+        if (
+            payload.get("schema_version") != 1
+            or payload.get("completed_steps") != 10_000
+            or contract.get("format") != "h3wam-c56b-fact-online-training-v1"
+            or contract.get("classification")
+            != "FACT_full_backbone_port_online_frozen_int8_h3"
+            or contract.get("h3_execution") != "online_frozen_int8_per_rank_v1"
+            or contract.get("no_kv_cache") is not True
+            or tuple(contract.get("h3_carrier_layers", ())) != expected_layers
+            or contract.get("action_horizon") != 32
+            or contract.get("action_shift") != 5.0
+            or any(contract.get(key) != value for key, value in causal_contract.items())
+        ):
+            raise ValueError("C56b online FACT checkpoint contract mismatch")
+        actual_h3_sha256 = _sha256_file(args.h3_checkpoint.resolve())
+        if actual_h3_sha256 != contract.get("h3_sha256"):
+            raise ValueError("C56b H3 checkpoint SHA256 mismatch")
+        if _sha256_file(self.source_manifest) != contract.get("source_manifest_sha256"):
+            raise ValueError("C56b source manifest differs from training")
+        if _sha256_file(self.cache_root / "stats.pt") != contract.get("demo_stats_sha256"):
+            raise ValueError("C56b normalization stats differ from training")
+
+        from diffusers import AutoencoderKLMiniMaxH3
+        from fastwam.models.h3wam import (
+            H3Int8FeatureBackbone,
+            H3Int8OnlineKVContract,
+            H3Int8OnlineKVProvider,
+            encode_h3_vae_condition_standalone,
+        )
+        from fastwam.models.h3wam.fact_layerwise_tower import (
+            H3FACTLayerwiseTowerPolicy,
+        )
+        from fastwam.models.h3wam.fastwam_full_tower import (
+            H3FastWAMFullTowerPolicy,
+        )
+        from fastwam.models.h3wam.starwam_feature_action import (
+            _load_pinned_starwam_action_dit,
+        )
+
+        _load_pinned_starwam_action_dit()
+        from starwam.modules.scheduler import FlowMatchScheduler
+
+        tower = H3FastWAMFullTowerPolicy(
+            enabled=True,
+            carrier_layers=expected_layers,
+            action_dim=7,
+            proprio_dim=8,
+            context_dim=5120,
+            hidden_dim=1024,
+            ffn_dim=4096,
+            num_heads=56,
+            attn_head_dim=128,
+            freq_dim=256,
+            num_layers=30,
+            use_gradient_checkpointing=False,
+            action_block_to_h3_layer=expected_layers,
+        ).to(device=self.device, dtype=self.dtype)
+        fact_model = H3FACTLayerwiseTowerPolicy(
+            tower, future_state_dim=8, future_representation_dim=56 * 128
+        ).to(device=self.device, dtype=self.dtype)
+        fact_model.load_state_dict(payload["model"], strict=True)
+        self.action_model = _H3FACTActionOnlyAdapter(fact_model).eval()
+        self.flow_scheduler = FlowMatchScheduler(
+            num_train_timesteps=1000, shift=5.0
+        )
+        self.h3_model = H3Int8FeatureBackbone.from_checkpoint(
+            args.h3_checkpoint.resolve()
+        ).to(self.device).requires_grad_(False).eval()
+        self.carrier_layers = expected_layers
+        self.captured_h3_layers = expected_layers
+        self.carrier_source_mode = "uniform_h3_50_to_action30"
+        self.int8_kv_provider = H3Int8OnlineKVProvider(
+            self.h3_model,
+            H3Int8OnlineKVContract(
+                layers=expected_layers,
+                action_horizon=32,
+                target_latent_frames=12,
+                video_timestep=1.0,
+                condition_video_timestep=1.0,
+                capture_token_count=32,
+                pool_strategy="adaptive_avg_pool1d_sequence_v1",
+            ),
+        )
+        self.video_vae = AutoencoderKLMiniMaxH3.from_pretrained(
+            args.h3_model.resolve(), subfolder="vae", torch_dtype=torch.float32,
+            low_cpu_mem_usage=True,
+        ).to(self.device).eval()
+        self._encode_vae_condition = encode_h3_vae_condition_standalone
+        self.stats = torch.load(
+            self.cache_root / "stats.pt", map_location="cpu", weights_only=False
+        )
+        if tuple(self.stats["action_min"].shape) != (7,) or tuple(
+            self.stats["state_min"].shape
+        ) != (8,):
+            raise ValueError("C56b normalization stats shape mismatch")
+        self.context_width = 5120
+        self.task_context_ids = self._load_task_context_ids()
+        self._contexts: dict[str, dict] = {}
+        self.completed_steps = 10_000
+        self.history_action_steps = 0
+        self.h3_checkpoint_sha256 = actual_h3_sha256
+        self.fastwam_online = True
+        self.candidate = f"C56B_FACT_{arm}"
+        self.paired_ready_sha256 = _sha256_file(paired_path)
+
+    def predict(self, request: dict) -> tuple[np.ndarray, dict]:
+        actions, metadata = super().predict(request)
+        metadata["action_objective"] = "c56b_fact_shared30_action_path_shift5_flow"
+        metadata["paired_heldout_ready_sha256"] = self.paired_ready_sha256
+        metadata["disk_kv_read"] = False
+        metadata["disk_kv_write"] = False
+        return actions, metadata
+
+
 def main() -> None:
     args = parse_args()
     if (
@@ -2424,6 +2657,8 @@ def main() -> None:
         policy = H3StarWAMInt8Policy(args)
     elif args.policy in ("h3_dreamwam_kv_int8", "h3_fastwam_online_int8"):
         policy = H3DreamWAMKVInt8Policy(args)
+    elif args.policy == "h3_fact_online_int8":
+        policy = H3FACTOnlineInt8Policy(args)
     else:
         policy = BaselinePolicy(args)
     listener = Listener((args.host, args.port), authkey=args.authkey.encode("utf-8"))

@@ -106,8 +106,28 @@ def finalize(root: Path, c58_ready_path: Path, causal_ready: Path | None) -> dic
         "optimizer": contract.get("base_lr") == 2e-5
         and contract.get("action_lr") == 2e-4
         and contract.get("warmup_steps") == 500
-        and contract.get("scheduler_horizon") == 10000,
-        "online_no_cache": contract.get("no_kv_cache") is True,
+        and contract.get("scheduler_horizon") == 10000
+        and contract.get("weight_decay") == 1e-4
+        and contract.get("max_grad_norm") == 1.0
+        and contract.get("seed") == 20260816,
+        "shared_data_identity": all(
+            isinstance(contract.get(key), str)
+            and len(contract[key]) == 64
+            for key in (
+                "demo_manifest_sha256", "source_manifest_sha256",
+                "demo_stats_sha256", "c48_dataset_sha256",
+                "c48_observations_sha256", "c59_completed_sha256",
+                "c59_sample_labels_sha256",
+            )
+        ),
+        "online_no_cache": contract.get("no_kv_cache") is True
+        and contract.get("h3_execution") == "online_frozen_int8_per_rank_v1"
+        and contract.get("action_horizon") == 32
+        and contract.get("action_shift") == 5.0
+        and contract.get("h3_carrier_layers") == [
+            0, 2, 3, 5, 7, 8, 10, 12, 14, 15, 17, 19, 20, 22, 24,
+            25, 27, 29, 30, 32, 34, 35, 37, 39, 41, 42, 44, 46, 47, 49,
+        ],
         "c58_ready": c58_ready.get("status")
         == "PASS_C58B_ONLINE_LONG10000_STRICT_RESTORE"
         and c58_ready.get("completed_steps") == 10000,

@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
             "h3_starwam_int8",
             "h3_dreamwam_kv_int8",
             "h3_fastwam_online_int8",
+            "h3_fact_online_int8",
             "baseline",
         ),
         required=True,
@@ -149,6 +150,11 @@ def parse_args() -> argparse.Namespace:
         "--c58b-balanced80-ready",
         type=Path,
         help="Required offline gate artifact for C58b fresh closed-loop rollout.",
+    )
+    parser.add_argument(
+        "--c56b-paired-ready",
+        type=Path,
+        help="Required paired balanced80 gate for C56b rollout.",
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--target-latent-frames", type=int, default=12)
@@ -319,6 +325,7 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
         "h3_starwam_int8",
         "h3_dreamwam_kv_int8",
         "h3_fastwam_online_int8",
+        "h3_fact_online_int8",
     ):
         for flag, value in (
             ("--h3-checkpoint", args.h3_checkpoint),
@@ -346,7 +353,10 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                     str(args.starwam_source_manifest.resolve()),
                 )
             )
-        if args.policy in ("h3_dreamwam_kv_int8", "h3_fastwam_online_int8"):
+        if args.policy in (
+            "h3_dreamwam_kv_int8", "h3_fastwam_online_int8",
+            "h3_fact_online_int8",
+        ):
             if args.dreamwam_source_manifest is None:
                 raise ValueError(
                     f"{args.policy} rollout requires "
@@ -367,9 +377,18 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                     "--c58b-balanced80-ready",
                     str(args.c58b_balanced80_ready.resolve()),
                 ))
+            if args.policy == "h3_fact_online_int8":
+                if args.c56b_paired_ready is None:
+                    raise ValueError(
+                        "h3_fact_online_int8 requires --c56b-paired-ready"
+                    )
+                command.extend((
+                    "--c56b-paired-ready",
+                    str(args.c56b_paired_ready.resolve()),
+                ))
             if args.progress_probe is not None:
                 if args.policy != "h3_dreamwam_kv_int8":
-                    raise ValueError("C58b fresh canary forbids --progress-probe")
+                    raise ValueError("online paired canary forbids --progress-probe")
                 command.extend(
                     ("--progress-probe", str(args.progress_probe.resolve()))
                 )
