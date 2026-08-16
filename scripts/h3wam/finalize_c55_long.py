@@ -17,7 +17,13 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def summarize_step(action: dict, joint: dict, mechanism: dict, baseline_h3: float) -> dict:
+def summarize_step(
+    action: dict,
+    joint: dict,
+    mechanism: dict,
+    baseline_h3: float,
+    parent: dict | None = None,
+) -> dict:
     action_metrics = action["metrics"]
     joint_metrics = joint["metrics"]
     consequence = mechanism["metrics"]
@@ -37,7 +43,7 @@ def summarize_step(action: dict, joint: dict, mechanism: dict, baseline_h3: floa
             consequence["future_h3_shuffle_degradation"]
         ) >= 0.01,
     }
-    return {
+    result = {
         "action_only": {
             "normalized_action_mse": action_norm,
             "physical_action_mse": action_physical,
@@ -61,11 +67,32 @@ def summarize_step(action: dict, joint: dict, mechanism: dict, baseline_h3: floa
         "gates": gates,
         "eligible": all(gates.values()),
     }
+    if parent is not None:
+        parent_metrics = parent["metrics"]
+        parent_norm = float(
+            parent_metrics["normalized_clip5_model_domain"]["action_mse"]
+        )
+        parent_physical = float(
+            parent_metrics["denormalized_official_minmax_clamp"]["action_mse"]
+        )
+        parent_gripper = float(parent_metrics["gripper_sign"]["macro_f1"])
+        result["incumbent_d0"] = {
+            "normalized_action_mse": parent_norm,
+            "physical_action_mse": parent_physical,
+            "gripper_macro_f1": parent_gripper,
+        }
+        result["joint_vs_incumbent_relative_improvement"] = {
+            "normalized_action_mse": 1.0 - joint_norm / parent_norm,
+            "physical_action_mse": 1.0 - joint_physical / parent_physical,
+            "gripper_macro_f1_delta": joint_gripper - parent_gripper,
+        }
+    return result
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--parent-evaluation", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     root = args.root.resolve()
@@ -74,9 +101,14 @@ def main() -> None:
         raise FileExistsError(f"refusing to overwrite C55 final report: {output}")
     step10_path = root / "mechanism" / "step10.json"
     step10 = json.loads(step10_path.read_text())
+    parent_path = args.parent_evaluation.resolve()
+    parent = json.loads(parent_path.read_text())
     baseline_h3 = float(step10["metrics"]["future_h3_clean"])
     rows = []
-    sources = {"mechanism_step10": sha256_file(step10_path)}
+    sources = {
+        "mechanism_step10": sha256_file(step10_path),
+        "incumbent_d0_evaluation": sha256_file(parent_path),
+    }
     for step in STEPS:
         paths = {
             "action_only": root / "evaluations" / "action_only" / f"step{step}.balanced80.json",
@@ -85,7 +117,11 @@ def main() -> None:
         }
         payloads = {key: json.loads(path.read_text()) for key, path in paths.items()}
         summary = summarize_step(
-            payloads["action_only"], payloads["joint_aux"], payloads["mechanism"], baseline_h3
+            payloads["action_only"],
+            payloads["joint_aux"],
+            payloads["mechanism"],
+            baseline_h3,
+            parent,
         )
         summary["step"] = step
         summary["source_sha256"] = {key: sha256_file(path) for key, path in paths.items()}

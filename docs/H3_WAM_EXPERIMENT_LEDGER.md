@@ -1011,3 +1011,23 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `0.062424`降到`0.061413`（改善1.62%），physical MSE从`0.025925`降到`0.025540`（改善1.49%），
   gripper macro-F1从`0.931255`升到`0.933214`；双臂fresh restore max-abs均为0。因此step1000是首个完整
   eligible milestone，但仍按预注册跑完2k..6k，从所有eligible点中只选physical MSE最低者。
+- 两臂均已完成6000步并产生1k间隔的全部checkpoint，native final restore max-abs均为0。2k..6k的
+  future-H3 clean MSE继续从`0.224781`降至`0.182070`，shuffle退化从`0.108615`升至`0.139360`；但动作
+  收益不随机制指标单调增长。2k/3k/5k/6k没有同时达到两个1%动作门，4k虽有1.71%的normalized改善，
+  physical仅改善0.82%，也不合格。因此冻结选择仍是唯一eligible的step1000，而不是事后选择单项
+  physical MSE最低的4k。
+- 同一balanced-80上的原擂主D0为normalized/physical MSE `0.056571/0.024190`、gripper F1
+  `0.942075`；selected joint step1000分别为`0.061413/0.025540/0.933214`，即仍比D0差
+  `8.56%/5.58%/-0.00886`。所以离线结论仅是FACT式联合辅助优于匹配的action-only续训且机制有效，尚未
+  证明替换擂主。最终报告为`PASS_C55_OFFLINE_GATE / GO_FRESH_CLOSED_LOOP`，artifact：
+  `/mnt/h3-wam/outputs/c55-fact-joint-action-long-v2/offline_final.json`。
+- fresh闭环在里程碑选择前固定为三臂，而不是只比两个continuation：selected joint、同step action-only、
+  原擂主D0-H32-s14000。先用trials33..36只做harness机械canary，不据其效果早停；通过后消费LIBERO四
+  suite×10 tasks所有剩余未见init-state trials33..49，即每臂680 episode。主joint-vs-action-only门为
+  `+3pp`、净胜至少20、exact one-sided McNemar `p<=0.05`、任一suite退化不超过3pp；升级擂主还要求joint
+  overall不低于原D0且任一suite相对D0退化不超过3pp。这样不能把“两条续训都退化但joint少退一点”称为成功。
+- step1000两臂已导出为D0兼容deployment-only权重并记录source/parent/output SHA256；fresh机械canary清单
+  冻结为trials33..36、四suite×10 tasks×三臂，共480 episode，manifest SHA256
+  `ad5829e5478ee2a37dcd9ecc52803e99046c72fb0fed3b3d1d4f923d556d9f57`。2026-08-16已在四节点32张
+  A800启动；canary阶段只读取完整性、初态、checkpoint与seed合同，不聚合success，机械通过后才生成
+  trials37..49的1560条剩余任务并最终一次性统计33..49的680组三臂配对。

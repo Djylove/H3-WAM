@@ -462,3 +462,11 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
 - **首个信号**：step1000已完整过离线门：normalized/physical action MSE相对同step action-only改善
   `1.62%/1.49%`，gripper macro-F1改善0.00196；future-H3 MSE相对step10下降78.55%，动作shuffle退化
   0.085893。训练继续到6000以执行冻结的全里程碑选择，尚未得到fresh LIBERO成功率结论。
+- **长训最终选择**：action-only与joint均完成6000步；2k..6k的后果预测继续增强，但没有新的里程碑同时
+  通过两个1%动作门，故按预注册唯一选择step1000。它仍落后原D0：normalized/physical MSE差
+  `8.56%/5.58%`且gripper F1低0.00886，所以当前是`PASS_C55_OFFLINE_GATE`而非新擂主。
+- **fresh闭环边界**：最终跑selected joint、同step action-only和原D0三臂；trials33..36只验证harness，
+  不按效果早停，随后覆盖四suite×10 tasks×全部未见trials33..49（每臂680 episode）。joint胜过
+  action-only只证明联合辅助有效；只有同时不劣于原D0整体及per-suite安全门，才有资格登记新擂主。
+- **当前执行**：两个step1000部署导出已严格恢复并冻结哈希；trials33..36的480-episode机械canary已用
+  32张A800启动。此阶段禁止查看/聚合成功率，通过初态与seed审计后才继续trials37..49。

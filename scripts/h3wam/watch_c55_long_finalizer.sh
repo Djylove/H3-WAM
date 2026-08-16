@@ -14,4 +14,6 @@ done
 [[ ! -e "${output}" ]] || exit 0
 cd "${project}"
 PYTHONPATH=src "${python_bin}" scripts/h3wam/finalize_c55_long.py \
-  --root "${root}" --output "${output}"
+  --root "${root}" \
+  --parent-evaluation "${workspace}/outputs/dense-carrier-d0-h32-s20000-v1/evaluations/d0_h32_s14000_balanced80.json" \
+  --output "${output}"

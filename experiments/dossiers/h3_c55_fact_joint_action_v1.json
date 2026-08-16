@@ -143,7 +143,7 @@
         "field": "paired sample and optimizer budget",
         "paper": "150000 steps, batch32/GPU, action LR2e-4 and base LR2e-5",
         "upstream_code": "8-GPU configurable launcher with warmup cosine",
-        "local": "Planned per arm: 8 GPUs, each step 8 demo + 4 success rollout + 4 failure rollout, AdamW 5e-5, warmup500, 6000 steps, checkpoints every1000",
+                "local": "Completed per arm: 8 GPUs, each step 8 demo + 4 success rollout + 4 failure rollout, AdamW 5e-5, warmup500, 6000 steps, checkpoints every1000",
         "status": "INTENTIONAL_DEVIATION",
         "evidence": [
           "third_party/FACT/world_action_model/configs/robotwin.py:63",
@@ -239,29 +239,34 @@
         "D0-H32-s14000 SHA256 36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3"
       ]
     },
-    "mechanism_signal": {
-      "status": "PASS",
-      "evidence": [
+        "mechanism_signal": {
+            "status": "PASS",
+            "evidence": [
         "Pre-registered before reading any step1000 evaluation result: an eligible joint milestone must beat its paired action-only arm by at least 1% on both normalized and physical balanced-80 action MSE, lose no more than 0.005 gripper macro-F1, reduce fixed C48-validation future-H3 MSE by at least 5% from step10, and have shuffled-action future-H3 MSE exceed clean by at least 0.01",
         "Step10 baseline on fixed 256 validation rows: future-H3 clean 1.338880, shuffled 1.343398, degradation 0.004518; it does not pass and is not effect evidence",
-        "Step1000 passes every pre-registered offline criterion: normalized action MSE improves 1.62%, physical action MSE improves 1.49%, gripper macro-F1 improves 0.00196, future-H3 MSE drops 78.55%, and shuffled-action degradation is 0.085893"
-      ]
-    },
+                "Step1000 passes every pre-registered offline criterion: normalized action MSE improves 1.62%, physical action MSE improves 1.49%, gripper macro-F1 improves 0.00196, future-H3 MSE drops 78.55%, and shuffled-action degradation is 0.085893",
+                "Both arms completed 6000 steps with checkpoints every1000 and exact final native restore. Steps2000..6000 further improve future-H3 prediction but no later step passes both 1% action-MSE gates, so the frozen selection is uniquely step1000.",
+                "On the exact same balanced-80 rows, selected joint step1000 remains 8.56% worse normalized and 5.58% worse physical than incumbent D0, with gripper F1 lower by 0.00886; offline evidence therefore does not authorize promotion."
+            ]
+        },
     "closed_loop_canary": {
       "status": "FAIL",
       "evidence": [
-        "No fresh C55 LIBERO rollout yet"
+                "Fresh mechanical-only trials33..36 are frozen as 480 tri-arm episodes and running on 32 A800 GPUs; no success field is read or aggregated before the mechanical audit passes and all remaining fresh trials complete",
+        "Pre-registered before milestone selection: after a mechanical-only trials33..36 canary, consume every remaining unseen LIBERO init-state trial33..49 across four suites and ten tasks for selected joint, same-step action-only, and incumbent D0-H32-s14000 with identical environment/policy seeds and replan8",
+        "Primary joint-vs-action-only gate on 680 pairs: at least +3 percentage points, net wins at least 20, exact one-sided McNemar p<=0.05, and no suite degrades by more than 3 points; incumbent promotion additionally requires joint not below D0 overall and no D0 suite degradation beyond 3 points"
       ]
     }
   },
-  "budget": {
+    "budget": {
     "global_batch": 16,
     "optimizer_steps": 6000,
     "training_samples": 96000,
     "unique_windows": 219329,
     "effective_epochs": 0.4376956091542873,
     "gpu_count": 8,
-    "estimated_hours": 0.6,
+        "estimated_hours": 0.6,
+        "closed_loop_episodes": 2040,
     "stream_budget": {
       "demo_samples": 48000,
       "demo_effective_epochs": 0.23906952420322823,
@@ -271,10 +276,11 @@
       "balanced_rollout_success_failure": "24000/24000 with replacement"
     }
   },
-  "decision": {
-    "status": "GO_LONG",
-    "rationale": "Exact cache coverage, train-only target scaling, paired eight-rank finite canaries, native restore and existing-evaluator restore all pass. Mechanism and closed-loop gates remain unclaimed and will be evaluated only after paired long milestones.",
-    "launch_command": "node0: bash scripts/h3wam/launch_c55_fact_joint_long.sh action_only; node1: bash scripts/h3wam/launch_c55_fact_joint_long.sh joint_aux",
-    "effect_status": "NOT_EVIDENCE_READY"
+    "decision": {
+        "status": "GO_LONG",
+        "current_permission": "GO_FRESH_CLOSED_LOOP",
+        "rationale": "Both 6000-step arms completed. Step1000 is the unique preregistered offline winner over its matched action-only continuation, while remaining worse than incumbent D0. This authorizes the frozen fresh tri-arm closed-loop test but not promotion.",
+        "launch_command": "32 deterministic workers over mechanical trials33..36; only after PASS_C55_MECHANICAL_CANARY launch fresh trials37..49 and finalize all 680 tri-arm pairs once",
+        "effect_status": "NOT_EVIDENCE_READY"
   }
 }
