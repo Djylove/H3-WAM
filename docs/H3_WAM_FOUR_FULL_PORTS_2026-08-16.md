@@ -32,10 +32,10 @@ DreamWAM `6e989facc0c452fd3488d75f60bc36411005558c`、MiniWorld
 
 | 节点 | 地址 | 当前独占任务 |
 |---|---|---|
-| n0 | `117.50.181.177:32611` | C58b online frozen-H3 / full-30 ActionDiT 长训 |
-| n1 | `117.50.181.177:30907` | C57 LingBot 长训；利用显存余量并置 C56 train-only scale gate |
-| n2 | `117.50.181.177:32409` | C57 固定评测队列；C58b 最终 READY 后自动切换 C56 主臂 10k |
-| n3 | `117.50.181.177:30234` | C61 四候选 causal failure rollout；数据终审后自动切换 C56+C61 匹配臂 10k |
+| n0 | `117.50.181.177:32611` | C58b fresh-seed LIBERO paired eval（C58b vs D0） |
+| n1 | `117.50.181.177:30907` | C57 LingBot 持久 KV 长训到预注册 s5000 |
+| n2 | `117.50.181.177:32409` | C56 FACT+C60 主臂 10k；C57 固定评测队列并置 |
+| n3 | `117.50.181.177:30234` | C56 FACT+C61 匹配臂 10k；终点三方闭环接力并置 |
 
 共享工作区固定为 `/mnt/h3-wam`，项目为
 `/mnt/h3-wam/candidate-d0-rollout-96976ce/project`。不得使用 `/root` 保存项目或权重。
@@ -58,7 +58,7 @@ FACT 代码只公开 `failure_rollouts.jsonl` 的消费合同，没有公开 fai
 |---|---|
 | C59 outcome-only overlay | 560 episodes、362 failures、21559 samples；0 条伪造 onset；`COMPLETED.json` 位于 `/mnt/h3-wam/eval/c59-fact-failure-active-overlay-v1` |
 | C60 state-aligned causal failure | 83 failed branches、3115 samples；train 51 ep/17 parent sources，validation 32 ep/11 parent sources；dataset SHA256 `1abeee1ef4e5e71f66b656c9920124086046c3e7d3b3a22b769449b72b1fc1d4` |
-| C61 rollout expansion | C48 train-only 的 141 个成功父轨迹，d3/d5 两个状态，每状态四个首动作 seed，共 1128 jobs；同组 continuation seed 完全一致 |
+| C61 rollout expansion | 1128/1128 exact-state jobs 完成；保留 387 个失败分支、排除 741 个成功分支；train 301 ep/95 groups/59 parent，validation 86 ep/28 groups/15 parent；dataset SHA256 `bd2bd005d387836aa9da7a0772e11742a0d90a33d4da099a6c2cf47f75bcfcdb`，observations SHA256 `a8317cc4e86051280a0ff914ef43999bf9d6e71605d18b87f49be5127e57c71d`；7/7 finalization gates PASS |
 
 C60 的 split 以成功父 episode 为单位，d3/d5 和所有 action arms 不得跨 train/validation。
 第一版按 group split 的产物已移到 `.invalid-group-split`，禁止训练读取。
@@ -93,27 +93,37 @@ normalization stats、checkpoint、评测轨迹和事故证据不属于可删缓
 - 已删除约 182 GiB 不再进入正式合同的 C56a structured5、StarWAM/DreamWAM NO_GO、
   C58b parity 与机械探针缓存；共享盘仍约有 24 TiB 可用。C57 已冻结的持久 KV 资产与正式
   raw windows 保留，不再生成新的 H3/KV 缓存。
-- C58b 的 8-GPU 10k 在线长训已通过 10-step DDP、30/30 层梯度、无磁盘 KV、严格恢复门；
-  `s1000..s4000` 已原子落盘，训练进入 s5000。最终 watcher PID `952239` 等待
-  `online-long10000/READY.json`，随后运行 online-H3/no-disk-KV balanced80，并以同
-  trial33、environment seed42、policy seed330042 配对 C58b 与固定 SHA 的 D0，各跑完整
-  40-task LIBERO micro-benchmark，报告 exact McNemar。
+- C58b 的 8-GPU 10k 在线长训已经完成。s10000 checkpoint 为
+  `/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt`，
+  SHA256 `2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541`；30/30 层末段梯度
+  有限非零，独立实例严格恢复 `max_abs=0`，正式 `READY.json` 已发布。online-H3/no-disk-KV
+  balanced80 也已 6/6 门 PASS：normalized action MSE `0.05933`、physical MSE `0.02545`、
+  gripper macro-F1 `0.93644`、prediction std `0.47879`、language delta `0.23174`、
+  visual-shuffle delta MSE `0.03163`。这只证明机制没有塌缩；trial33、environment seed42、
+  policy seed330042 的 C58b-vs-D0 80-episode fresh LIBERO paired eval 正在 n0 运行，闭环完成前
+  不宣布收益。
 - C56b 完整 FACT 端口的 mixed8 loss/scale gate 与 10-step optimizer canary 已通过：四类 rank
   配比固定为 `4 expert / 2 success / 1 observational failure / 1 causal failure`，30 层均有
   非零梯度，失败样本动作损失严格为零，future-to-action leak 为零，restore max-abs 为零。
-  n2 watcher PID `387447` 只接受 C58b s10000 最终 checkpoint 的路径、大小和 SHA，随后启动
-  C60 主臂 10k。
-- C61 共 1128 个 exact-state 反事实分叉正在 n3 采集。finalizer PID `861397` 只在 1128 份
-  results 与 trajectory 和单节点完成 marker 全部齐全后生成正式数据；matched watcher PID
-  `906377` 再校验 `COMPLETED.json`、dataset/observations SHA，并以与 C56 主臂完全一致的
-  父模型、seed、LR、loss、target norm、10k steps 启动。唯一变量是 C60/C61 causal pool。
+  n2 C60 主臂与 n3 C61 匹配臂已在同一个不可变源码快照
+  `/mnt/h3-wam/runtime-snapshots/project-8dfdc9c-c56` 上同时启动 10k。两臂首步的 action loss
+  均为 `0.0663565`，30/30 层梯度有限非零、future-to-action leak 为 0；future loss 按唯一的
+  C60/C61 causal pool 变量产生预期差异。实测约 `1.16–1.25 s/step`，每 1000 步保存并做独立
+  恢复审计。
+- C61 的 1128 份 results/trajectory 已全部完成并严格终审，正式数据见
+  `/mnt/h3-wam/eval/c61-finalized-fact-failure-dataset-v1/COMPLETED.json`。旧的 C56 等待脚本曾因
+  共享 live project 热替换而在启动边界读取失败；没有进入训练，失败目录已保留为
+  `.failed-hot-reload-20260816T0911Z`。所有重启后的训练 watcher、launcher、trainer、finalizer
+  和 paired-eval relay 均固定到上述 immutable snapshot，禁止运行中源码漂移。
 - C56 两臂各自 s10000 后必须通过最后 1000 步有限 loss、30/30 梯度、零 future leak、
   checkpoint contract 和 bit-exact restore 才能发布 READY。随后统一 balanced80，并在相同
   trial33/seed 下输出 C61-vs-C60、C60-vs-C58b、C61-vs-C58b 三组配对闭环效应；不能仅凭
   训练 loss 或 C61-vs-C60 单一比较宣布 FACT 有效。
 - C57 5k 训练固定每 200 步保存并在 80 条、每 suite 20 条的 episode-disjoint heldout 上评测；
   相对 D0 的曲线为 s200 `-75.58%`、s400 `-36.35%`、s600 `-24.82%`、s800
-  `-17.64%`、s1000 `-13.77%`，样本胜率从 `6.25%` 升至 `35%`，但仍是 NO_GO。
+  `-17.64%`、s1000 `-13.77%`、s1200 `-11.21%`、s1400 `-8.98%`、s1600
+  `-7.46%`、s1800 `-6.71%`；s1800 样本胜率 `33.75%`，仍是 NO_GO，但训练继续到预注册
+  s5000，禁止按中间 heldout 挑点。
   s1000 首次评测暴露了 CUDA/cuBLAS 动态库顺序错误；空闲 A800 最小 BF16 Linear 可复现，
   固定使用 h3-int8 runtime 自带 cu13 后探针和完整 80 条评测均通过。n2 queue PID `388059`
   与终点 watcher PID `387552` 已加入真实 C56 进程识别、失败隔离和 fail-closed 重试。
