@@ -1,0 +1,43 @@
+{
+  "experiment_id": "h3_c70_sampler_coverage_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "If repeated failure-stream exposure is displacing the dense expert state coverage needed for action execution, then a matched 20k 6/1/0.5/0.5 sampler will outperform C67's 4/2/1/1 sampler while retaining FACT conditioning.",
+  "single_variable": "Relative to C67, only the deterministic per-step rank schedule changes from four expert, two success, one observational-failure and one causal-failure samples to six expert, one success and one rank alternating observational/causal failure by absolute-step parity. Model, C58 parent, objective weights, masks, data pools and hashes, seed, optimizer, global batch, schedule, steps and evaluator stay fixed.",
+  "parent_baseline": "C67 s20000 is the sole matched sampler control; both trajectories initialize from C58B s10000 SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541.",
+  "references": [
+    {"kind": "paper", "title": "FACT: Failure-Aware Causal Training for World-Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "arXiv:2608.10232", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "Bariona/FACT official trainer and episode mixture", "locator": "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py and fact_datasets/samplers/episode_mixture_sampler.py", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "C67 matched H3/FACT trajectory", "locator": "scripts/h3wam/train_c56b_fact_online.py", "revision": "C67 published result 9a1c1bf4614a2ade58489465d6f0b24a2518d2f3f04f47aef998d477dde7dc3b", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "C58 parent and 30-layer H3/FACT tower", "paper": "Failure-aware causal training uses one shared causal transformer.", "upstream_code": "FACT joint action/future/value transformer.", "local": "Byte-identical C67 architecture and initialization.", "status": "EXACT", "evidence": ["scripts/h3wam/train_c56b_fact_online.py"], "rationale": "No architecture variable."}],
+    "data": [{"field": "deterministic stream mixture", "paper": "Failures supervise consequences without action imitation.", "upstream_code": "FACT sampler separates success and failure episodes and masks failure actions.", "local": "Six expert ranks, one success rank, and rank7 alternating observational/causal failure; all existing pools and masks unchanged.", "status": "INTENTIONAL_DEVIATION", "evidence": ["tests/test_c70_sampler_schedule.py"], "rationale": "This is the sole variable and raises dense expert exposure without removing either failure stream."}],
+    "action": [{"field": "absolute 7D horizon32 shift5 flow", "paper": "Training and execution action contracts must match.", "upstream_code": "FastWAM shifted-flow action chunks.", "local": "Unchanged from C67.", "status": "EXACT", "evidence": ["scripts/h3wam/train_c56b_fact_online.py"], "rationale": "No action variable."}],
+    "objective": [{"field": "FACT 10:1:0.4:0.4 globally masked means", "paper": "Failures keep future/value supervision and zero imitation.", "upstream_code": "FACT joint objective.", "local": "Unchanged globally_normalize_masked_losses; only the samples contributing to each masked global mean change.", "status": "EQUIVALENT", "evidence": ["tests/test_c56b_fact_online_trainer.py"], "rationale": "Loss mathematics and weights remain fixed."}],
+    "optimization": [{"field": "matched 20k budget", "paper": "Sampler ablation requires equal optimizer budget.", "upstream_code": "Fixed distributed training schedule.", "local": "8 A800, GB8, 160000 samples, AdamW 2e-5/2e-4, warmup500, cosine20k, seed20260816.", "status": "EXACT", "evidence": ["docs/H3_WAM_PHASE_REVIEW_2026-08-17.md"], "rationale": "Equal compute to C67."}],
+    "evaluation": [{"field": "fixed balanced80 and paired LIBERO", "paper": "Closed-loop success is the action criterion.", "upstream_code": "FACT evaluates in closed-loop simulation.", "local": "Every 1k checkpoint uses the frozen balanced80 protocol; only fixed s20 vs C67-s20 may reach fresh paired rollout after offline conditioning gates.", "status": "EQUIVALENT", "evidence": ["docs/H3_WAM_PHASE_REVIEW_2026-08-17.md"], "rationale": "No checkpoint selection."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT 618a6c1 and immutable complete source snapshot required."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["C67 architecture unchanged."]},
+    "data_contract": {"status": "PASS", "evidence": ["Existing pools/hashes fixed; two-step schedule unit test passes."]},
+    "action_contract": {"status": "PASS", "evidence": ["C67 action path unchanged."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Joint objective code unchanged."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Matched 20k budget preregistered."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Fixed balanced80 and endpoint-only comparison."]},
+    "gradient_path": {"status": "FAIL", "evidence": ["Real eight-rank C70 gradients pending canary."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["Real ten-step C70 smoke pending."]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["C70 strict restore pending."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["Fixed promoted C58B parent and matched C67 control."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["No C70 held-out result."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No C70 rollout."]}
+  },
+  "budget": {"world_size": 8, "gpu_count": 8, "global_batch": 8, "unique_windows": 222929, "optimizer_steps": 20000, "training_samples": 160000, "effective_epochs": 0.733522, "checkpoint_interval": 1000, "estimated_hours": 8.82, "projected_checkpoint_storage_bytes": 244038964980},
+  "effect_preregistration": {
+    "primary_comparison": "C70 sampler s20000 minus C67 sampler s20000",
+    "offline_gate": "Both endpoints strict-restore; C70 must improve normalized and physical means by at least 1%, win at least 55% of samples in both domains, preserve gripper within 0.005 and at least 90% of C67 language/visual response.",
+    "stop": "Any conditioning collapse or failure to improve both action domains keeps C70 out of rollout; no longer budget or checkpoint substitution.",
+    "interpretation": "A pass supports expert state coverage as the sampler bottleneck under the fixed FACT objective; it does not prove FACT auxiliary targets are useful, which remains C69's separate attribution question."
+  },
+  "decision": {"status": "PROBE_ONLY", "rationale": "Source and single-variable contracts pass, but real eight-rank gradients are still unknown. Run exactly one non-retained optimizer step before requesting canary permission.", "launch_command": "C70_PROBE_ONLY=1 bash scripts/h3wam/launch_c70_sampler_coverage_canary_8gpu.sh from a complete immutable snapshot; update and revalidate this dossier before any checkpoint-producing canary."}
+}

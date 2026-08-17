@@ -53,6 +53,9 @@ RANK_CATEGORIES = (
     "expert_demo", "expert_demo", "expert_demo", "expert_demo",
     "success_rollout", "success_rollout", "observational_failure", "causal_failure",
 )
+DEFAULT_RANK_SCHEDULE = "c67_4_2_1_1"
+C70_RANK_SCHEDULE = "c70_6_1_half_half"
+RANK_SCHEDULES = (DEFAULT_RANK_SCHEDULE, C70_RANK_SCHEDULE)
 OBJECTIVE_MODES = ("fact_joint", "action_only")
 ACTION_ONLY_FROZEN_MODULES = (
     "future_state_encoder",
@@ -124,6 +127,17 @@ def args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=20260816)
     parser.add_argument("--gradient-checkpointing", action="store_true")
     parser.add_argument(
+        "--rank-schedule",
+        choices=RANK_SCHEDULES,
+        default=DEFAULT_RANK_SCHEDULE,
+        help=(
+            "c67_4_2_1_1 preserves the historical fixed rank streams; "
+            "c70_6_1_half_half assigns six expert ranks, one success rank, "
+            "and alternates the last rank between observational and causal "
+            "failure by absolute-step parity"
+        ),
+    )
+    parser.add_argument(
         "--objective-mode",
         choices=OBJECTIVE_MODES,
         default="fact_joint",
@@ -134,6 +148,55 @@ def args() -> argparse.Namespace:
         ),
     )
     return parser.parse_args()
+
+
+def rank_category(schedule_name: str, rank: int, absolute_step: int) -> str:
+    """Resolve one auditable stream identity for a rank and absolute step."""
+
+    if rank not in range(8) or absolute_step <= 0:
+        raise ValueError("rank schedule requires rank 0..7 and positive absolute step")
+    if schedule_name == DEFAULT_RANK_SCHEDULE:
+        return RANK_CATEGORIES[rank]
+    if schedule_name == C70_RANK_SCHEDULE:
+        if rank < 6:
+            return "expert_demo"
+        if rank == 6:
+            return "success_rollout"
+        return "observational_failure" if absolute_step % 2 else "causal_failure"
+    raise ValueError(f"unknown rank schedule: {schedule_name}")
+
+
+def rank_schedule_contract(schedule_name: str) -> dict[str, Any]:
+    if schedule_name == DEFAULT_RANK_SCHEDULE:
+        return {"rank_categories": list(RANK_CATEGORIES)}
+    if schedule_name != C70_RANK_SCHEDULE:
+        raise ValueError(f"unknown rank schedule: {schedule_name}")
+    return {
+        "rank_categories": [
+            "expert_demo", "expert_demo", "expert_demo", "expert_demo",
+            "expert_demo", "expert_demo", "success_rollout",
+            "alternating_observational_failure_causal_failure",
+        ],
+        "rank_schedule": {
+            "name": C70_RANK_SCHEDULE,
+            "period_steps": 2,
+            "odd_step_rank7": "observational_failure",
+            "even_step_rank7": "causal_failure",
+            "mean_streams_per_step": {
+                "expert_demo": 6.0,
+                "success_rollout": 1.0,
+                "observational_failure": 0.5,
+                "causal_failure": 0.5,
+            },
+        },
+    }
+
+
+def rank_requires_vae(schedule_name: str, rank: int) -> bool:
+    return any(
+        rank_category(schedule_name, rank, step) != "expert_demo"
+        for step in (1, 2)
+    )
 
 
 class MixedPools:
@@ -403,7 +466,7 @@ def main() -> None:
 
     from diffusers import AutoencoderKLMiniMaxH3
     vae = None
-    if RANK_CATEGORIES[rank] != "expert_demo":
+    if rank_requires_vae(a.rank_schedule, rank):
         vae = AutoencoderKLMiniMaxH3.from_pretrained(
             a.h3_model.resolve(), subfolder="vae", torch_dtype=torch.float32,
             low_cpu_mem_usage=True,
@@ -462,7 +525,7 @@ def main() -> None:
     contract = {
         "format": FORMAT, "classification": "FACT_full_backbone_port_online_frozen_int8_h3",
         "objective_mode": a.objective_mode,
-        "rank_categories": list(RANK_CATEGORIES),
+        **rank_schedule_contract(a.rank_schedule),
         "loss_weights": (
             [10.0, 1.0, 0.4, 0.4]
             if a.objective_mode == "fact_joint"
@@ -505,7 +568,8 @@ def main() -> None:
         completed = int(loaded["completed_steps"])
 
     def probe_prediction(step: int) -> torch.Tensor:
-        item = pools.item(RANK_CATEGORIES[rank], absolute_step=step, rank=rank, seed=a.seed)
+        category = rank_category(a.rank_schedule, rank, step)
+        item = pools.item(category, absolute_step=step, rank=rank, seed=a.seed)
         inputs, _ = build_step(
             item, vae=vae, provider=provider, mean=mean, std=std,
             model_device=device, seed=a.seed + step * 1_000_003 + rank * 10_000_019,
@@ -546,7 +610,7 @@ def main() -> None:
     for local_step in range(1, a.steps + 1):
         step_started = time.perf_counter()
         absolute = completed + local_step
-        category = RANK_CATEGORIES[rank]
+        category = rank_category(a.rank_schedule, rank, absolute)
         item = pools.item(category, absolute_step=absolute, rank=rank, seed=a.seed)
         inputs, targets = build_step(
             item, vae=vae, provider=provider, mean=mean, std=std,
