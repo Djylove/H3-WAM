@@ -16,7 +16,6 @@ C58_SHA256 = "2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541"
 D0_SHA256 = "36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3"
 CONFIRMATORY_FINAL_SHA256 = "53a06ac5c3c36298ed2ee397688eb03e6918219d32f469897e9139530d954f88"
 CONFIRMATORY_EVIDENCE_SHA256 = "e44a32833c1d9f71485f3cca37785b5d813f59c7af4eea12311dfd1ed14f1e3c"
-SNAPSHOT_SHA256 = "90dcd111b6e6ca8d30c141f77987b8d2f658d0b41468377517d5e304634e9cfb"
 
 
 def sha256_file(path: Path) -> str:
@@ -51,8 +50,30 @@ def prepare(
         raise ValueError("D0 checkpoint SHA256 mismatch")
     if sha256_file(confirmatory_final) != CONFIRMATORY_FINAL_SHA256:
         raise ValueError("confirmatory FINAL SHA256 mismatch")
-    if sha256_file(snapshot_manifest) != SNAPSHOT_SHA256:
-        raise ValueError("runtime snapshot manifest SHA256 mismatch")
+    snapshot = json.loads(snapshot_manifest.read_text(encoding="utf-8"))
+    snapshot_root = snapshot_manifest.parent
+    required_snapshot_hashes = {
+        "preparer": "scripts/h3wam/prepare_c58b_full50_descriptive_eval.py",
+        "launcher": "scripts/h3wam/launch_c58b_full50_descriptive_arm.sh",
+        "aggregator": "scripts/h3wam/aggregate_c58b_full50_descriptive_eval.py",
+        "finalizer": "scripts/h3wam/watch_c58b_full50_descriptive_finalizer.sh",
+        "starwam_wan_block": "third_party/StarWAM/starwam/modules/wan_block.py",
+    }
+    if (
+        snapshot.get("format") != "h3wam-c58b-full50-runtime-snapshot-v1"
+        or snapshot.get("status") != "VERIFIED_FOR_READ_ONLY_FREEZE"
+        or not isinstance(snapshot.get("source_commit"), str)
+        or not snapshot["source_commit"]
+    ):
+        raise ValueError("runtime snapshot manifest contract mismatch")
+    for name, relative in required_snapshot_hashes.items():
+        path = snapshot_root / relative
+        if (
+            not path.is_file()
+            or sha256_file(path) != snapshot.get("hashes", {}).get(name)
+            or path.stat().st_mode & 0o222
+        ):
+            raise ValueError(f"runtime snapshot source mismatch: {name}")
     final = json.loads(confirmatory_final.read_text(encoding="utf-8"))
     if (
         final.get("status") != "PASS_C58B_EXPANDED_PAIRED"
@@ -129,7 +150,8 @@ def prepare(
         "confirmatory_final_sha256": CONFIRMATORY_FINAL_SHA256,
         "confirmatory_pair_evidence_sha256": CONFIRMATORY_EVIDENCE_SHA256,
         "runtime_snapshot_manifest": str(snapshot_manifest),
-        "runtime_snapshot_manifest_sha256": SNAPSHOT_SHA256,
+        "runtime_snapshot_manifest_sha256": sha256_file(snapshot_manifest),
+        "runtime_snapshot_source_commit": snapshot["source_commit"],
         "checkpoints": {
             "candidate_c58b": {"path": str(c58_checkpoint), "sha256": C58_SHA256},
             "control_d0": {"path": str(d0_checkpoint), "sha256": D0_SHA256},

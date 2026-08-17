@@ -43,12 +43,28 @@ def test_prepare_freezes_exact_two_arm_trials0_32_grid(tmp_path, monkeypatch):
         "pair_evidence_sha256": PREPARE.CONFIRMATORY_EVIDENCE_SHA256,
         "gates": {"gate": True},
     }))
-    snapshot = tmp_path / "SNAPSHOT.json"; snapshot.write_text("snapshot\n")
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_hashes = {}
+    for name, relative in {
+        "preparer": "scripts/h3wam/prepare_c58b_full50_descriptive_eval.py",
+        "launcher": "scripts/h3wam/launch_c58b_full50_descriptive_arm.sh",
+        "aggregator": "scripts/h3wam/aggregate_c58b_full50_descriptive_eval.py",
+        "finalizer": "scripts/h3wam/watch_c58b_full50_descriptive_finalizer.sh",
+        "starwam_wan_block": "third_party/StarWAM/starwam/modules/wan_block.py",
+    }.items():
+        path = snapshot_root / relative; path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(name); path.chmod(0o444)
+        snapshot_hashes[name] = PREPARE.sha256_file(path)
+    snapshot = snapshot_root / "FULL50_SNAPSHOT.json"
+    snapshot.write_text(json.dumps({
+        "format": "h3wam-c58b-full50-runtime-snapshot-v1",
+        "status": "VERIFIED_FOR_READ_ONLY_FREEZE", "source_commit": "test",
+        "hashes": snapshot_hashes,
+    }))
     real_sha = PREPARE.sha256_file
     expected = {
         c58: PREPARE.C58_SHA256, d0: PREPARE.D0_SHA256,
         final: PREPARE.CONFIRMATORY_FINAL_SHA256,
-        snapshot: PREPARE.SNAPSHOT_SHA256,
     }
     monkeypatch.setattr(PREPARE, "sha256_file", lambda path: expected.get(Path(path), real_sha(Path(path))))
     root = tmp_path / "full50"
