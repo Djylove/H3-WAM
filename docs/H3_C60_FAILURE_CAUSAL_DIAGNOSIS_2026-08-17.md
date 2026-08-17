@@ -121,6 +121,15 @@ head 就不能用于 BoN，继续训练或闭环尝试都没有依据。
 RGB/proprio 也相等”修正为“动作来源 simulator state 精确相等，且两候选统一复用 branch 当前模型
 输入”。32 对身份和全部统计门均未改变；评测结果中必须报告该 erratum，不能把它隐去。
 
+第二项 pre-score implementation erratum：首轮 v1 在 H3 inference tensor boundary 被安全门拒绝，
+没有产生 score；v2 在第一对完成模型计算后、写出任何 shard/score 文件前，被 value shape gate 拒绝。
+审计确认官方 FACT `wa_pipeline.py:317-318` 明确初始化 future state `[B,1,D]`、value `[B,1,1]`，
+Stage-2 在 `:737-738` 按 token 数构造 timestep，并在 `:820-823` 保持原 shape 更新。本地 C60
+`_vector_tokens`/decoder 同样只有一个 value token。v2 错误地用 `[B,1]` sample 更新 `[B,1,1]`
+prediction，广播成 `[B,B,1]`。修复固定所有 Stage-2 track 为三维 token tensor，并在每一步严格断言
+`future_state=[B,1,8]`、`value=[B,1,1]`、`future_representation=[B,1,7168]`；最终直接读取唯一的
+`value[:,0,0]`，禁止 mean 或末 token 选择。32 对、噪声、solver 和统计门仍未改变。
+
 ### 冻结 offline gate
 
 - primary：成功 action 被选中至少 `22/32`；one-sided exact binomial `p<=0.05`（22/32 的

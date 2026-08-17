@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
+import torch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +43,21 @@ def test_executed_chunk_splices_between_replans_and_pads():
     assert chunk[8:10, 0].tolist() == [3, 3]
     assert pad[:10].tolist() == [False] * 10
     assert pad[10:].tolist() == [True] * 22
+
+
+def test_stage2_value_is_exactly_one_token_per_candidate():
+    state = torch.zeros(2, 1, 8)
+    value = torch.tensor([[[0.25]], [[0.75]]])
+    representation = torch.zeros(2, 1, 56 * 128)
+    selected = PAIRS.assert_stage2_track_shapes(
+        state, value, representation, batch=2, future_dim=56 * 128
+    )
+    assert selected.tolist() == [0.25, 0.75]
+    with pytest.raises(ValueError, match="token shape mismatch"):
+        PAIRS.assert_stage2_track_shapes(
+            state, torch.zeros(2, 2, 1), representation,
+            batch=2, future_dim=56 * 128,
+        )
 
 
 def rows(success_spatial: int, success_object: int):

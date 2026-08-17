@@ -66,6 +66,32 @@ def tensor_identity(actions: np.ndarray, is_pad: np.ndarray) -> str:
     return digest.hexdigest()
 
 
+def assert_stage2_track_shapes(
+    future_state: torch.Tensor,
+    value: torch.Tensor,
+    future_representation: torch.Tensor,
+    *,
+    batch: int,
+    future_dim: int,
+) -> torch.Tensor:
+    """Enforce official FACT's one-token state/value Stage-2 contract."""
+
+    expected = {
+        "future_state": (batch, 1, 8),
+        "value": (batch, 1, 1),
+        "future_representation": (batch, 1, future_dim),
+    }
+    actual = {
+        "future_state": tuple(future_state.shape),
+        "value": tuple(value.shape),
+        "future_representation": tuple(future_representation.shape),
+    }
+    if actual != expected:
+        raise ValueError(f"C63 Stage-2 token shape mismatch: {actual} != {expected}")
+    # This is the sole value token, not a mean or an arbitrary last-token pick.
+    return value[:, 0, 0]
+
+
 def _jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 

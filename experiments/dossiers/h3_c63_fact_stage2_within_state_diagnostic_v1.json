@@ -49,5 +49,11 @@
     "finding": "All 32 branch/parent pairs have byte-exact sim_state and previous_action at the same simulator step, but restored RGB and EEF observations are not byte-exact because the state-restored environment was observed/rendered again.",
     "protocol_correction": "Use the branch-onset RGB/proprio/text identically for both candidate actions and require byte-exact parent/branch sim_state, previous_action and step. Pair identities and all statistical gates are unchanged."
   },
+  "pre_score_implementation_erratum": {
+    "timing": "Recorded after v1 failed before any Stage-2 score and v2 failed its first-pair output-shape gate before any shard or score file was written.",
+    "official_contract": "FACT wa_pipeline prepares future_state [B,1,D] and value [B,1,1], preserves their token counts through Stage-2, and updates those exact-shaped tensors.",
+    "finding": "The probe initialized value as [B,1]; updating it with the local one-token [B,1,1] prediction broadcast it to [B,B,1]. This is not a two-value-token model output.",
+    "protocol_correction": "Keep future-state, value and future-representation tracks three-dimensional at every solver step, assert exact [B,1,8]/[B,1,1]/[B,1,7168] shapes, and read the sole value[:,0,0] token without mean or last-token selection. Pair identities, noise, solver and statistical gates remain unchanged."
+  },
   "claim_boundary": "This is an offline, suite-imbalanced diagnostic of the integrated C60 value head. Passing cannot establish LIBERO success, four-suite generalization, or C60 promotion; failing forbids C60 best-of-N and 20k continuation under this hypothesis."
 }

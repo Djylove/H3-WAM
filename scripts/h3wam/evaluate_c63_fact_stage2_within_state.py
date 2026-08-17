@@ -88,9 +88,9 @@ def score_order(
     text_mask: torch.Tensor,
 ) -> torch.Tensor:
     batch = clean_actions.shape[0]
-    state = base_state_noise.repeat(batch, 1)
-    value = base_value_noise.repeat(batch, 1)
-    representation = base_rep_noise.repeat(batch, 1)
+    state = base_state_noise.repeat(batch, 1, 1)
+    value = base_value_noise.repeat(batch, 1, 1)
+    representation = base_rep_noise.repeat(batch, 1, 1)
     context = text_context.repeat(batch, 1, 1)
     robot_state = proprio.repeat(batch, 1)
     mask = text_mask.repeat(batch, 1)
@@ -111,12 +111,24 @@ def score_order(
                 video_kv_cache=cache,
                 text_mask=mask,
             )
+        PAIRS.assert_stage2_track_shapes(
+            prediction["future_state"], prediction["value"],
+            prediction["future_representation"], batch=batch,
+            future_dim=TRAIN.FUTURE_DIM,
+        )
         state = scheduler.step(prediction["future_state"], delta, state)
         value = scheduler.step(prediction["value"], delta, value)
         representation = scheduler.step(
             prediction["future_representation"], delta, representation
         )
-    return value.float().reshape(batch).cpu()
+        PAIRS.assert_stage2_track_shapes(
+            state, value, representation, batch=batch,
+            future_dim=TRAIN.FUTURE_DIM,
+        )
+    return PAIRS.assert_stage2_track_shapes(
+        state, value, representation, batch=batch,
+        future_dim=TRAIN.FUTURE_DIM,
+    ).float().cpu()
 
 
 def main() -> None:
@@ -245,9 +257,13 @@ def main() -> None:
         generator = torch.Generator(device=device).manual_seed(
             args.seed + int(pair["pair_index"]) * 1_000_003
         )
-        base_state = torch.randn((1, 8), generator=generator, device=device, dtype=dtype)
-        base_value = torch.randn((1, 1), generator=generator, device=device, dtype=dtype)
-        base_rep = torch.randn((1, TRAIN.FUTURE_DIM), generator=generator, device=device, dtype=dtype)
+        # Official FACT prepares future state/value as [B,1,D]/[B,1,1].
+        # Keeping the token axis prevents accidental [B,B,1] broadcasting.
+        base_state = torch.randn((1, 1, 8), generator=generator, device=device, dtype=dtype)
+        base_value = torch.randn((1, 1, 1), generator=generator, device=device, dtype=dtype)
+        base_rep = torch.randn(
+            (1, 1, TRAIN.FUTURE_DIM), generator=generator, device=device, dtype=dtype
+        )
         normal = score_order(
             model, scheduler, clean,
             base_state_noise=base_state, base_value_noise=base_value,
