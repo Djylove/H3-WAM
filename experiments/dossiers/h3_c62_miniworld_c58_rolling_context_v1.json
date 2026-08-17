@@ -1,0 +1,116 @@
+{
+  "experiment_id": "h3_c62_miniworld_c58_rolling_context_v1",
+  "classification": "intentional_composition",
+  "hypothesis": "With the promoted C58 carrier, action-aligned real-observation rolling world context improves paired Goal and LIBERO-10 action success while no suite regresses more than 3 percentage points.",
+  "single_variable": "C62 prepends a MiniWorld-style persistent-sink plus FIFO sequence of real H3 world K/V, modulated by the 4-step-grouped actions that led to each observation; C58 weights, H3, action objective, data, normalization, optimizer, noise, replan8 and evaluator remain fixed.",
+  "parent_baseline": "C58 carrier champion s10000 SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541; fresh paired LIBERO 295/680 versus D0 270/680.",
+  "references": [
+    {
+      "kind": "upstream_code",
+      "title": "zhao-yian/MiniWorld official repository",
+      "locator": "https://github.com/zhao-yian/MiniWorld",
+      "revision": "e484206bbd4360ae56ed8abad51c83f2457ac092",
+      "official": true,
+      "clean": true,
+      "openness": "TRAINABLE_WORLD_MODEL_ONLY_NO_LICENSE_FILE"
+    },
+    {
+      "kind": "parent_checkpoint",
+      "title": "C58 FastWAM full30 H3 layerwise carrier champion",
+      "locator": "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt",
+      "revision": "SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "world versus action role",
+        "paper": "MiniWorld predicts future video conditioned on known actions.",
+        "upstream_code": "The only learned target is video velocity; actions enter video-block modulation.",
+        "local": "Frozen H3 supplies world K/V and the promoted C58 ActionDiT remains the only action generator.",
+        "status": "INTENTIONAL_COMPOSITION",
+        "evidence": ["third_party/MiniWorld/miniworld/denoiser.py:446", "src/fastwam/models/h3wam/c62_miniworld_context.py"]
+      },
+      {
+        "field": "rolling context lifecycle",
+        "paper": "Committed chunks use a persistent sink plus bounded FIFO K/V history.",
+        "upstream_code": "generate_eval_latents_streaming appends per-block K/V, pins one sink and evicts oldest post-sink chunks.",
+        "local": "Only real observation chunks are committed; first observation is pinned and the newest post-sink chunks are retained.",
+        "status": "EQUIVALENT",
+        "evidence": ["third_party/MiniWorld/miniworld/denoiser.py:527", "tests/test_c62_miniworld_context.py"]
+      }
+    ],
+    "data": [
+      {
+        "field": "action-to-world temporal alignment",
+        "paper": "Four raw actions condition one Wan-VAE latent transition.",
+        "upstream_code": "build_cond_seq_from_actions prepends a null seed slot and reshapes actions in groups of four.",
+        "local": "Every non-seed real observation requires the exact 4n executed actions that preceded it; no proposed or future action is accepted.",
+        "status": "EQUIVALENT",
+        "evidence": ["third_party/MiniWorld/miniworld/conditioning/actions.py:17", "src/fastwam/models/h3wam/c62_miniworld_context.py"]
+      }
+    ],
+    "action": [
+      {
+        "field": "policy action contract",
+        "paper": "MiniWorld has no action output.",
+        "upstream_code": "DROID actions are inputs only.",
+        "local": "C58 keeps 7D horizon32 flow action output and replan8 execution unchanged.",
+        "status": "EXACT_PARENT_INVARIANT",
+        "evidence": ["src/fastwam/models/h3wam/fastwam_full_tower.py"]
+      }
+    ],
+    "objective": [
+      {
+        "field": "optimization target",
+        "paper": "MiniWorld trains video velocity MSE.",
+        "upstream_code": "forward_diffusion_forcing masks clean context and returns only v_loss.",
+        "local": "C62 does not port the video objective; C58 action-flow loss trains C58 and the action-to-context modulation route.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["third_party/MiniWorld/miniworld/denoiser.py:446", "scripts/h3wam/probe_c62_miniworld_context.py"]
+      }
+    ],
+    "optimization": [
+      {
+        "field": "curriculum and restore",
+        "paper": "MiniWorld continues 6 to 16 to 32 to 64 latent frames.",
+        "upstream_code": "train_droid.sh uses four stages; shape-changing loads are non-strict.",
+        "local": "Planned context length curriculum keeps the C58 parent fixed, but every same-shape candidate resume must be strict and bit-exact.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["third_party/MiniWorld/scripts/train_droid.sh", "third_party/MiniWorld/miniworld/train.py:131"]
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "effect gate",
+        "paper": "MiniWorld evaluates generated videos and throughput.",
+        "upstream_code": "No action-policy or LIBERO success evaluator is provided.",
+        "local": "Mechanism uses held-out action shuffle; effectiveness requires fresh paired LIBERO against C58 under the frozen rollout contract.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["third_party/MiniWorld/miniworld/sample.py", "docs/C62_MINIWORLD_C58_ROLLING_CONTEXT_2026-08-17.md"]
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Official remote HEAD and clean local checkout both resolve to e484206bbd4360ae56ed8abad51c83f2457ac092; six execution files are byte-pinned."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Local 5-test mechanical suite passes default-off parity, sink/FIFO, action grouping, shape and restore."]},
+    "data_contract": {"status": "FAIL", "evidence": ["An episode-disjoint C58 sequence manifest with exact executed-action-before-observation references has not yet been frozen."]},
+    "action_contract": {"status": "FAIL", "evidence": ["The real LIBERO runner has not yet emitted a C62 reset/predict/execute/observe/commit trace."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Synthetic action loss reaches the shared action modulation, active layer refiners and C58 parent blocks."]},
+    "optimization_contract": {"status": "FAIL", "evidence": ["Real C58-parent optimizer-step and optimizer/scheduler strict restore canary is pending."]},
+    "evaluation_contract": {"status": "FAIL", "evidence": ["No held-out action-shuffle mechanism result or fresh paired LIBERO result exists."]},
+    "gradient_path": {"status": "PENDING_N1", "evidence": ["n1 must show action loss reaches 30/30 C58 blocks and 30/30 layer-local refiners on the real s10000 parent."]},
+    "smoke_finite": {"status": "PENDING_N1", "evidence": ["Real BF16 C58-parent probe is pending."]},
+    "checkpoint_restore": {"status": "PENDING_N1", "evidence": ["Real C58 strict restore plus bridge/runtime max_abs=0 is pending."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C58 s10000 identity and 680-pair promotion result are frozen in the candidate registry."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Mechanical sensitivity is not a held-out causal mechanism result."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No C62 rollout exists."]}
+  },
+  "decision": {
+    "status": "NO_GO_LONG",
+    "effect_status": "NOT_EVIDENCE_READY",
+    "rationale": "The official source and local lifecycle implementation are ready, but real C58 mechanical, causal data, optimizer restore, mechanism and rollout gates remain. MiniWorld is never treated as an action policy."
+  }
+}
