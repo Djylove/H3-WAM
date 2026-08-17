@@ -1,0 +1,104 @@
+{
+  "experiment_id": "h3_c66_lingbot_c58_block_persistent_v1",
+  "classification": "source_aligned_block_internal_committed_context_port",
+  "hypothesis": "C57's null effect was caused by a local-first-frame versus absolute-rollout temporal gap and duplicate-current observation, not by insufficient steps. Moving LingBot's committed real-observation/executed-action K/V lifecycle into all thirty promoted C58 self-attention blocks, with exact H3 temporal key reindex and no learned adapter, should make context mechanically reachable before any optimizer experiment.",
+  "parent_baseline": "Promoted C58B s10000 SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541; frozen online INT8 H3 SHA256 e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a.",
+  "references": [
+    {
+      "kind": "upstream_code",
+      "title": "Robbyant LingBot-VA official repository",
+      "locator": "third_party/code_audit/lingbot-va",
+      "revision": "7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "parent_checkpoint",
+      "title": "C58B FastWAM full30 H3 layerwise promoted parent",
+      "locator": "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt",
+      "revision": "SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541",
+      "official": false,
+      "clean": true
+    },
+    {
+      "kind": "frozen_data",
+      "title": "C57 replan8 observe-every4 sequence manifest and audit",
+      "locator": "/mnt/h3-wam/data/c57-lingbot-replan8-v1",
+      "revision": "manifest SHA256 8f95005ac66fd89ca3a22a80d75480e9792b09f976e928f2eb70d4f08680049f; AUDIT SHA256 a383bd0d201b8eb9e3ed52b93bad712a96a4e74ecc063d8d71fcc000e46329fb",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "single_variable": {
+    "parent": "C58B_FASTWAM_FULL30_H3_LAYERWISE",
+    "change": "Enable committed real-observation/executed-action persistent K/V inside each of the same thirty C58 ActionDiT blocks. No parameter or state-dict key is added.",
+    "invariants": [
+      "C58 checkpoint weights and 30-layer H3 mapping",
+      "frozen online INT8 H3",
+      "32x7 action flow objective and normalization",
+      "episode-disjoint C57 sequence rows"
+    ],
+    "falsification": "Default-off and active-empty must be bit-exact to C58; real action loss must reach 30/30 block K projections; redundant current carrier must be inert after committed feedback. Any failure stops before optimization."
+  },
+  "intentional_boundaries": [
+    "C66 ports LingBot committed feedback lifecycle, not the joint video/action denoising tower.",
+    "Predicted-video K/V is omitted because the current H3 action policy has no equivalent joint predicted-video token stream.",
+    "C58 one-dimensional action RoPE is retained; it is not LingBot's three-dimensional video/action grid geometry.",
+    "Mechanical or offline MSE success cannot establish LIBERO action success."
+  ],
+  "historical_diagnosis": {
+    "c57_train_temporal_gap": "Training concatenated separately cached local-first-frame H3 K without reindex; rollout changed H3 layout by absolute frame_position.",
+    "c57_duplicate_current_gap": "Training committed the last current observation into state and also forwarded the same current carrier again.",
+    "c57_effect": "Heldout MSE relative to D0 -1.166%, win rate 43.75%; C57 is a failed baseline, not promotion evidence."
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS_LOCAL",
+      "evidence": [
+        "LingBot checkout is clean at 7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb; model.py SHA256 f65fdca5f28b327bfc89ca082a7b55eee3fb4ab1ffc469c642a075920e6f4487, wan_va_server.py 9c2a427611db487fea5cf40f184b713bf2088e533990ee00fdcd020d2668b4bf, LIBERO client.py 63a48baa2cfecd924963b8a8f7e7eda2b367785a7e29ad0a6326f80517c7e004."
+      ]
+    },
+    "source_diff_audit": {
+      "status": "PASS",
+      "evidence": [
+        "docs/C66_LINGBOT_C58_BLOCK_PERSISTENT_SOURCE_AUDIT_2026-08-17.md distinguishes exact/equivalent lifecycle elements from omitted predicted-video and joint-world paths."
+      ]
+    },
+    "unit_contract": {
+      "status": "PASS",
+      "evidence": [
+        "17 focused C66 plus C64/C57 regression tests pass locally: parent parity, H3 time reindex, no duplicate current, 30/30 block gradient, FIFO and restore."
+      ]
+    },
+    "real_checkpoint_mechanical_and_data": {
+      "status": "PENDING_RESOURCE",
+      "evidence": [
+        "Probe is restricted to zero optimizer steps and one real C57 history row. Existing n0/n1/n2/n3 workloads must not be preempted."
+      ]
+    },
+    "optimizer_contract": {
+      "status": "FAIL_NOT_AUTHORIZED",
+      "evidence": [
+        "No optimizer step or C66 training checkpoint is authorized before the real checkpoint/data gate passes."
+      ]
+    },
+    "mechanism_signal": {
+      "status": "FAIL_NOT_MEASURED",
+      "evidence": [
+        "No episode-disjoint clean-vs-history-shuffle C66 result exists."
+      ]
+    },
+    "paired_libero": {
+      "status": "FAIL_NOT_AUTHORIZED",
+      "evidence": [
+        "No C66 rollout is allowed before mechanical and bounded effect gates."
+      ]
+    }
+  },
+  "decision": {
+    "status": "GO_REAL_MECHANICAL_AND_DATA_ONLY",
+    "permission": "NO_GO_OPTIMIZER",
+    "effect_status": "NOT_EVIDENCE_READY",
+    "rationale": "C66 is not a post-hoc adapter: the committed prefix is read inside all thirty existing C58 attention blocks and clean executed-action K/V is generated by those same blocks. Source and unit gates pass, but the real H3/C58/C57-row gate is pending an unoccupied GPU; training remains forbidden."
+  }
+}
