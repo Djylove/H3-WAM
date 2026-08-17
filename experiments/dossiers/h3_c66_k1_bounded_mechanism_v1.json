@@ -13,6 +13,22 @@
       "clean": true
     },
     {
+      "kind": "formal_result",
+      "title": "C66-k1 fresh-parent s100 formal report",
+      "locator": "/mnt/h3-wam/outputs/c66-k1-bounded-mechanism/s100-fresh-v1/report.json",
+      "revision": "SHA256 70975e1b9de6612f6bdb65ff8d0bbeb9fdff3530b82e6b22cc4a7c781aba908a",
+      "official": false,
+      "clean": true
+    },
+    {
+      "kind": "read_only_diagnostic",
+      "title": "C66-k1 restore precision-scope diagnostic v2",
+      "locator": "/mnt/h3-wam/outputs/c66-k1-bounded-mechanism/restore-diagnostic-v2/RESULTS.json",
+      "revision": "SHA256 f2bc3344ec7dded536605d5bb935f4fdbfc821296e284b56df14c21ccc416019",
+      "official": false,
+      "clean": true
+    },
+    {
       "kind": "diagnostic",
       "title": "C66 context-length diagnostic",
       "locator": "/mnt/h3-wam/outputs/c66-lingbot-c58-block-persistent/context-length-diagnostic-v1/RESULTS.json",
@@ -34,9 +50,9 @@
   },
   "gates": {
     "source_data_evidence": {
-      "status": "PENDING_REMOTE_AUDIT",
+      "status": "PASS",
       "evidence": [
-        "Fail-closed auditor pins reviewed C66 source, frozen data, fresh parent, INT8 H3, failed C66 report/checkpoint and k1-selecting diagnostic."
+        "Fail-closed remote auditor passed all reviewed C66 source, frozen data, fresh parent, INT8 H3, failed C66 report/checkpoint and k1-selecting diagnostic identities."
       ]
     },
     "unit_contract": {
@@ -46,8 +62,11 @@
       ]
     },
     "mechanism_signal": {
-      "status": "PENDING",
-      "evidence": []
+      "status": "FAIL",
+      "evidence": [
+        "Formal clean/shuffle/off MSE is 0.0821909424/0.0828969684/0.0780162402: clean-over-shuffle 0.851691% misses the >=1% gate and clean-versus-off regression 5.351068% exceeds the <=5% gate.",
+        "The formal runtime_restore_exact false is an evaluation precision-scope false negative, not a state defect: read-only v2 replay found exact snapshot tensors and absolute coordinates on 64/64, with matched-scope original/restored max-abs 0. Cross-scope formal comparison alone was nonzero on 64/64 with maximum 0.0234375."
+      ]
     },
     "paired_libero": {
       "status": "NOT_AUTHORIZED",
@@ -57,9 +76,9 @@
     }
   },
   "decision": {
-    "status": "GO_BOUNDED_CANARY_ONLY",
-    "permission": "GO_FRESH_C58_S100_K1_MECHANISM_ONLY",
+    "status": "FAIL_C66_K1_BOUNDED_MECHANISM",
+    "permission": "NO_GO_C66_K1_LONG_OR_ROLLOUT",
     "effect_status": "NOT_LIBERO_EVIDENCE",
-    "rationale": "The failed full-history run and paired context-length diagnostic justify exactly one k1 mechanism canary. No result from this dossier grants long training or rollout."
+    "rationale": "The restore gate false negative is fully explained by mismatched BF16 autocast scope and does not indicate a serialization or prefix defect. Independent efficacy gates still fail exactly as preregistered, so no long training, threshold change, rollout or promotion is authorized."
   }
 }

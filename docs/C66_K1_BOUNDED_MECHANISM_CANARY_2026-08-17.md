@@ -49,3 +49,28 @@
 - 输出：`/mnt/h3-wam/outputs/c66-k1-bounded-mechanism/s100-fresh-v1`
 
 启动器要求项目位于 `/mnt/h3-wam/code-snapshots/`、无 symlink、所有文件只读；审计固定 C66 trainer/model/freezer/diagnostic 源码和 plan/train/heldout/parent/H3/C66/diagnostic 的 SHA。输出目录已存在时拒绝覆盖。
+
+## 正式结果与最终决策
+
+正式 report SHA256 `70975e1b9de6612f6bdb65ff8d0bbeb9fdff3530b82e6b22cc4a7c781aba908a`，checkpoint SHA256 `861e95d891ca9128c2cb3bcc514243104fe70fb05c01fc9c0076d384a9201eeb`。固定 heldout64 的结果为：
+
+- clean-k1 MSE `0.0821909424`；shuffle-k1 `0.0828969684`；context-off `0.0780162402`；
+- clean 相对 shuffle 改善 `0.851691%`，未达到预注册 `>=1%`；
+- clean 相对 context-off 退化 `5.351068%`，超过预注册 `<=5%`；
+- 正式结论 `FAIL_C66_K1_BOUNDED_MECHANISM / NO_GO_C66_K1_LONG_OR_ROLLOUT / NOT_LIBERO_EVIDENCE`。
+
+因此 k1 明显缩小了 full-history 的 `+32.249%` context harm，但仍没有通过两个 efficacy 门。不能把接近阈值解释成通过，不能追加 steps、改阈值或发起 rollout。
+
+## `runtime_restore_exact` 假阴性诊断
+
+正式 trainer 的精度作用域不一致：`train_c66_lingbot_c58_persistent_canary.py:476-483` 在 CUDA BF16 autocast 中产生 clean/shuffle/off，而 `:492-503` 离开 autocast 后才对 restored state 重算 prediction；因此 `:512` 比较的并非同一数值执行合同。
+
+只读 v2 诊断从正式 checkpoint 回放相同 heldout64/noise，optimizer steps 和新 checkpoint 都为 0。RESULTS SHA256 `f2bc3344ec7dded536605d5bb935f4fdbfc821296e284b56df14c21ccc416019`：
+
+- 64/64 snapshot 的所有 K/V、metadata bit-exact，最大差异 `0`；
+- 64/64 k1 absolute coordinates 均为 frame/action/update `15/56/14`；
+- 同为 autocast 内时 original-state 对 restored-state 最大差异 `0`，同为 autocast 外时也为 `0`；
+- 同一 state 在各自精度作用域重复 forward 最大差异 `0`；
+- 只有 formal 的“clean 在内、restore 在外”跨作用域比较非零：64/64 非零，全局最大 `0.0234375`（heldout index 44）。
+
+分类收口为 `EVALUATION_AUTOCAST_SCOPE_MISMATCH_NOT_SERIALIZATION_OR_K1_PREFIX`：不是模型机制非确定性，不是 state 序列化缺陷，也不是 k1 absolute-prefix bug，而是 restore gate 的精度上下文假阴性。正式 artifact 和原 gate verdict 保持不改；即使排除该假阴性，两个独立 efficacy 门仍失败，所以最终 NO_GO 不变。

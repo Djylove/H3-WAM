@@ -1281,6 +1281,17 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   C66-s100将对应值修复到`0.0775573/0.0816324/0.0904292`，但仍差于自身off `0.0677915`；因此只选择
   k1作为下一 bounded mechanism test，不给C66长训或LIBERO许可。RESULTS SHA256为
   `50a726dd6bc69fa185c9c9bf17cac9ed138d9d8ef6a229b886d44af76c241237`。
+- C66-k1按该诊断做了严格单变量fresh-parent s100：同一train800/heldout64、seed、AdamW与8卡预算，
+  仅把实际committed history从7个完整chunk改为最近1个。clean/shuffle/off MSE为
+  `0.08219094/0.08289697/0.07801624`；clean-over-shuffle仅`0.8517%`（门`>=1%`），clean相对off
+  退化`5.3511%`（门`<=5%`），正式report SHA256
+  `70975e1b9de6612f6bdb65ff8d0bbeb9fdff3530b82e6b22cc4a7c781aba908a`，结论
+  `FAIL_C66_K1_BOUNDED_MECHANISM / NO_GO_C66_K1_LONG_OR_ROLLOUT`。只读restore v2诊断进一步证明正式
+  `runtime_restore_exact=false`是eval精度作用域假阴性：clean在BF16 autocast内而restore重算在外；64/64
+  state snapshot K/V和15/56/14坐标精确，同精度作用域original/restored与重复forward最大差异均0，只有跨
+  作用域比较64/64非零、最大`0.0234375`。诊断SHA256
+  `f2bc3344ec7dded536605d5bb935f4fdbfc821296e284b56df14c21ccc416019`；这排除了serialization、k1
+  prefix和机制非确定性缺陷，但不改变两个efficacy门均失败，仍禁止长训、改阈值或rollout。
 - C69补齐历史缺失的严格world-objective-off对照。它与C67保持同一C58 parent、30层joint-token forward、
   seed、4/2/1/1 rank样本顺序、失败action mask、base/action LR和20k cosine；唯一变量为loss权重从
   `[10,1,0.4,0.4]`变成`[10,0,0,0]`，并冻结/排除六个auxiliary encoder/decoder。CPU单测证明
