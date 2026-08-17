@@ -1,0 +1,129 @@
+{
+  "experiment_id": "h3_c69_matched_action_only_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "If C67's FACT consequence objectives are responsible for its action and LIBERO effect, then the matched C67-s20000 joint arm will outperform this action-only s20000 arm; otherwise the observed change is attributable to additional action-tower optimization rather than future-representation/state/value supervision.",
+  "single_variable": "Relative to C67, C69 sets future-representation/state/value objective weights to zero and freezes only their six encoder/decoder modules. C58 parent, full 30-layer shared tower, online frozen INT8 H3, model initialization seed, joint-token forward topology, deterministic sample order, 4/2/1/1 rank categories, failure action masks, AdamW groups for every still-trainable parameter, learning rates, warmup, cosine horizon, 20000 optimizer steps and checkpoint cadence remain fixed.",
+  "parent_baseline": "Both arms initialize from promoted C58B s10000 SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541. C67-s20000 is the sole matched joint-objective treatment; historical C60/C55/D0 results are context only.",
+  "references": [
+    {
+      "kind": "upstream_code",
+      "title": "Bariona/FACT official repository",
+      "locator": "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py and fact_datasets/samplers/episode_mixture_sampler.py",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "FastWAM official ActionDiT",
+      "locator": "third_party/FastWAM/src/fastwam/models/wan22/action_dit.py",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "WLA paired action and image_action recipes",
+      "locator": "source review recorded in docs/H3_WAM_PHASE_REVIEW_2026-08-17.md",
+      "revision": "155ac94e",
+      "official": true,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [{
+      "field": "same 30-layer H3-to-Action tower and joint causal forward",
+      "paper": "World-action attribution requires a world-objective-off control with the same action policy capacity.",
+      "upstream_code": "FACT shares action and consequence tracks; FastWAM uses the full ActionDiT tower.",
+      "local": "C69 constructs the identical H3FACTLayerwiseTowerPolicy and executes the same P/A/G/V/I masked forward as C67. Only six consequence-only encoders/decoders are frozen.",
+      "status": "EQUIVALENT",
+      "evidence": ["scripts/h3wam/train_c56b_fact_online.py", "tests/test_c56b_fact_online_trainer.py"],
+      "rationale": "Using forward_action would alter numerical topology, so C69 deliberately retains C67's joint forward."
+    }],
+    "data": [{
+      "field": "identical deterministic 4/2/1/1 samples and masks",
+      "paper": "Failure actions are excluded from imitation.",
+      "upstream_code": "FACT mixes episodes and masks failure action loss.",
+      "local": "All eight ranks call the unchanged MixedPools.item with seed20260816 and absolute step. The two failure ranks remain zero-mask examples; they are not replaced by expert samples.",
+      "status": "EQUIVALENT",
+      "evidence": ["scripts/h3wam/train_c56b_fact_online.py:MixedPools.item"],
+      "rationale": "Changing failure ranks would confound objective attribution with sample exposure."
+    }],
+    "action": [{
+      "field": "unchanged absolute 7D horizon32 shifted-flow contract",
+      "paper": "Deployment action representation must match training.",
+      "upstream_code": "FastWAM uses shifted flow action chunks.",
+      "local": "C69 reuses C67 normalization, padding, shift5, horizon32 and deployment evaluator without modification.",
+      "status": "EQUIVALENT",
+      "evidence": ["src/fastwam/models/h3wam/fact_online_data.py", "scripts/h3wam/train_c56b_fact_online.py"],
+      "rationale": "No action-contract variable is introduced."
+    }],
+    "objective": [{
+      "field": "action component only",
+      "paper": "An action-only control isolates the causal value of world prediction objectives.",
+      "upstream_code": "WLA publishes matched action versus image_action training; FACT supplies the joint objective being ablated.",
+      "local": "C69 uses weight vector [10,0,0,0]. DDP scales the six supervised ranks by 8/6, exactly matching C67's action component; auxiliary losses are detached diagnostics and their heads are excluded from AdamW.",
+      "status": "EQUIVALENT",
+      "evidence": ["tests/test_c56b_fact_online_trainer.py::test_c69_action_only_is_the_exact_c67_global_action_component"],
+      "rationale": "This is the sole intended variable."
+    }],
+    "optimization": [{
+      "field": "fresh 20000-step matched trajectory",
+      "paper": "Control and treatment require equal optimizer budgets.",
+      "upstream_code": "Distributed action/world recipes use fixed schedules.",
+      "local": "Eight A800 ranks, global batch8, base/action LR2e-5/2e-4, warmup500, cosine horizon20000, seed20260816 and 1000-step checkpoints match C67.",
+      "status": "EQUIVALENT",
+      "evidence": ["scripts/h3wam/launch_c67_c60_budget_ablation_20k_8gpu.sh", "scripts/h3wam/launch_c69_matched_action_only_canary_8gpu.sh"],
+      "rationale": "Frozen auxiliary parameters are intentionally absent from AdamW; every shared/action parameter keeps its C67 group and hyperparameters."
+    }],
+    "evaluation": [{
+      "field": "fixed offline bridge then paired LIBERO attribution",
+      "paper": "Closed-loop success, not training loss, decides policy effectiveness.",
+      "upstream_code": "World-on/off arms are compared at equal budgets.",
+      "local": "C69-s20000 and C67-s20000 receive the same balanced80 diagnostics. Fresh paired LIBERO is allowed only if mechanical and offline conditioning gates pass.",
+      "status": "EQUIVALENT",
+      "evidence": ["docs/H3_WAM_PHASE_REVIEW_2026-08-17.md"],
+      "rationale": "No milestone is selected from training loss."
+    }]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Pinned FACT/FastWAM/WLA revisions and mandatory complete read-only snapshot."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Existing C67 model plus explicit six-module freeze; unit tests pass."]},
+    "data_contract": {"status": "PASS", "evidence": ["Unchanged C67 hashes, MixedPools sampler, rank categories and seed."]},
+    "action_contract": {"status": "PASS", "evidence": ["Unchanged horizon32 absolute7D shift5 path."]},
+    "objective_contract": {"status": "PASS", "evidence": ["CPU unit test proves exact equality to 10x C67 globally normalized action component and detached auxiliary diagnostics."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["C67-matched 20k schedule preregistered; canary required before long launch."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["C67-s20 is the sole matched treatment; fixed balanced80 precedes any rollout."]},
+    "gradient_path": {"status": "FAIL", "evidence": ["Real eight-rank C69 all-30 global-gradient evidence does not exist before canary."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["Real ten-step C69 finite smoke not yet run."]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["C69 strict restore not yet run."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["Fixed promoted C58B s10000 SHA256 and READY required by launcher."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["No C69 held-out result yet."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No C69 rollout exists."]}
+  },
+  "budget": {
+    "world_size": 8,
+    "global_batch": 8,
+    "optimizer_steps": 20000,
+    "training_samples": 160000,
+    "checkpoint_interval": 1000,
+    "estimated_hours": 8.82,
+    "projected_checkpoint_storage_bytes": 244038964980
+  },
+  "effect_preregistration": {
+    "primary_comparison": "C67 joint s20000 minus C69 action-only s20000",
+    "offline_gate": "Both checkpoints must strict-restore and retain fixed visual/language/gripper safety; report normalized and physical action MSE with no post-hoc checkpoint substitution.",
+    "rollout_gate": {
+      "absolute_gain": 0.03,
+      "net_wins": 20,
+      "one_sided_exact_mcnemar_p": 0.05,
+      "suite_regression_floor": -0.03
+    },
+    "interpretation": "C67 passing proves incremental value of consequence supervision under this contract. C69 tying or winning rejects that value and favors action-only continuation. Either outcome leaves C58 champion until a candidate separately beats it in fresh closed loop."
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Source, contracts and CPU equivalence tests pass; real eight-rank gradients, finite optimizer steps and strict restore remain mandatory before long training.",
+    "launch_command": "Run scripts/h3wam/launch_c69_matched_action_only_canary_8gpu.sh from a complete read-only snapshot; issue long-run release only if GO_LONG.json says GO_C69_LONG."
+  }
+}

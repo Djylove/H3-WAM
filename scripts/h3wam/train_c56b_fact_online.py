@@ -53,6 +53,15 @@ RANK_CATEGORIES = (
     "expert_demo", "expert_demo", "expert_demo", "expert_demo",
     "success_rollout", "success_rollout", "observational_failure", "causal_failure",
 )
+OBJECTIVE_MODES = ("fact_joint", "action_only")
+ACTION_ONLY_FROZEN_MODULES = (
+    "future_state_encoder",
+    "value_encoder",
+    "future_representation_encoder",
+    "future_state_decoder",
+    "value_decoder",
+    "future_representation_decoder",
+)
 
 
 def load_script(name: str, path: Path):
@@ -114,6 +123,16 @@ def args() -> argparse.Namespace:
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=20260816)
     parser.add_argument("--gradient-checkpointing", action="store_true")
+    parser.add_argument(
+        "--objective-mode",
+        choices=OBJECTIVE_MODES,
+        default="fact_joint",
+        help=(
+            "fact_joint preserves the C67 10:1:0.4:0.4 objective; action_only "
+            "is the matched C69 attribution arm and retains the exact 4/2/1/1 "
+            "sample/mask contract while optimizing only the action component"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -204,6 +223,29 @@ def optimizer_groups(model: H3FACTLayerwiseTowerPolicy, base_lr: float, action_l
         }
         for (group, no_decay), values in buckets.items()
     ]
+
+
+def freeze_action_only_auxiliary_heads(
+    model: H3FACTLayerwiseTowerPolicy,
+) -> tuple[str, ...]:
+    """Freeze only FACT consequence encoders/decoders for the C69 control.
+
+    The shared thirty-block tower, action encoder/head and proprio path remain
+    trainable.  Keeping the modules in the forward graph preserves C67's exact
+    joint-token topology while excluding auxiliary-head updates from AdamW.
+    """
+
+    frozen: list[str] = []
+    for module_name in ACTION_ONLY_FROZEN_MODULES:
+        module = getattr(model, module_name, None)
+        if not isinstance(module, torch.nn.Module):
+            raise RuntimeError(f"missing C69 auxiliary module: {module_name}")
+        for parameter_name, parameter in module.named_parameters():
+            parameter.requires_grad_(False)
+            frozen.append(f"{module_name}.{parameter_name}")
+    if not frozen:
+        raise RuntimeError("C69 auxiliary freeze selected no parameters")
+    return tuple(sorted(frozen))
 
 
 def schedule(optimizer, warmup: int, horizon: int):
@@ -304,6 +346,32 @@ def globally_normalize_masked_losses(
     return scaled
 
 
+def globally_normalize_action_only_losses(
+    losses: dict[str, torch.Tensor], targets: dict[str, torch.Tensor], world: int
+) -> dict[str, torch.Tensor]:
+    """Match C67's globally masked action component and disable auxiliaries.
+
+    Failure ranks keep their zero action mask.  With DDP's rank-mean gradient,
+    multiplying each local masked loss by ``world / global_action_examples``
+    is exactly the action term used by ``globally_normalize_masked_losses``.
+    The other losses remain detached diagnostics and cannot update shared or
+    auxiliary parameters.
+    """
+
+    action_examples = targets["action_loss_mask"].float().sum()
+    dist.all_reduce(action_examples, op=dist.ReduceOp.SUM)
+    if float(action_examples) <= 0:
+        raise RuntimeError("C69 global batch lost action supervision")
+    scaled_action = losses["action_loss"] * (float(world) / action_examples)
+    return {
+        "action_loss": scaled_action,
+        "future_representation_loss": losses["future_representation_loss"].detach(),
+        "future_state_loss": losses["future_state_loss"].detach(),
+        "value_loss": losses["value_loss"].detach(),
+        "loss": 10.0 * scaled_action,
+    }
+
+
 def main() -> None:
     a = args()
     rank, world = int(os.environ.get("RANK", 0)), int(os.environ.get("WORLD_SIZE", 1))
@@ -383,6 +451,9 @@ def main() -> None:
         del c58_parent
     del d0
     model = H3FACTLayerwiseTowerPolicy(tower, future_state_dim=8, future_representation_dim=FUTURE_DIM).to(device, torch.bfloat16)
+    frozen_auxiliary_parameters: tuple[str, ...] = ()
+    if a.objective_mode == "action_only":
+        frozen_auxiliary_parameters = freeze_action_only_auxiliary_heads(model)
     optimizer = torch.optim.AdamW(
         optimizer_groups(model, a.base_lr, a.action_lr, a.weight_decay),
         betas=(0.9, 0.95), eps=1e-8,
@@ -390,7 +461,14 @@ def main() -> None:
     lr_scheduler = schedule(optimizer, a.warmup_steps, a.scheduler_horizon)
     contract = {
         "format": FORMAT, "classification": "FACT_full_backbone_port_online_frozen_int8_h3",
-        "rank_categories": list(RANK_CATEGORIES), "loss_weights": [10.0, 1.0, 0.4, 0.4],
+        "objective_mode": a.objective_mode,
+        "rank_categories": list(RANK_CATEGORIES),
+        "loss_weights": (
+            [10.0, 1.0, 0.4, 0.4]
+            if a.objective_mode == "fact_joint"
+            else [10.0, 0.0, 0.0, 0.0]
+        ),
+        "frozen_auxiliary_parameters": list(frozen_auxiliary_parameters),
         "target_norm_sha256": sha(a.target_norm.resolve()), "h3_sha256": EXPECTED_H3_SHA256,
         "d0_sha256": EXPECTED_D0_SHA256, "initialization": initialization,
         "c58_parent_sha256": c58_parent_sha256,
@@ -479,7 +557,11 @@ def main() -> None:
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             predictions = ddp(**inputs)
             losses = fact_backbone_port_losses(predictions, **targets)
-            losses = globally_normalize_masked_losses(losses, targets, world)
+            losses = (
+                globally_normalize_masked_losses(losses, targets, world)
+                if a.objective_mode == "fact_joint"
+                else globally_normalize_action_only_losses(losses, targets, world)
+            )
         action_value = float(losses["action_loss"].detach())
         if (action_value > 0) != (category in {"expert_demo", "success_rollout"}):
             raise RuntimeError("C56b per-step action mask failed")
@@ -494,8 +576,22 @@ def main() -> None:
                 raise RuntimeError("C56b future target leaked into action")
         losses["loss"].backward()
         block_gradients = [C58.PARENT.PARENT.module_grad_norm(block) for block in model.shared_blocks]
-        if not all(math.isfinite(v) and v > 0 for v in block_gradients):
+        block_tensor = torch.tensor(block_gradients, device=device)
+        dist.all_reduce(block_tensor, op=dist.ReduceOp.SUM)
+        block_tensor /= world
+        gradient_gate = (
+            block_tensor.cpu().tolist()
+            if a.objective_mode == "action_only"
+            else block_gradients
+        )
+        if not all(math.isfinite(v) and v > 0 for v in gradient_gate):
             raise RuntimeError("C56b shared block gradient gate failed")
+        if any(
+            parameter.grad is not None
+            for name, parameter in model.named_parameters()
+            if name in frozen_auxiliary_parameters
+        ):
+            raise RuntimeError("C69 frozen auxiliary parameter received gradients")
         if any(parameter.grad is not None for parameter in backbone.parameters()):
             raise RuntimeError("frozen H3 received gradients during C56b training")
         clipped = float(torch.nn.utils.clip_grad_norm_(ddp.parameters(), a.max_grad_norm, error_if_nonfinite=True))
@@ -509,9 +605,6 @@ def main() -> None:
         ], device=device)
         dist.all_reduce(metrics, op=dist.ReduceOp.SUM)
         metrics[:5] /= world
-        block_tensor = torch.tensor(block_gradients, device=device)
-        dist.all_reduce(block_tensor, op=dist.ReduceOp.SUM)
-        block_tensor /= world
         record = {
             "step": absolute, "loss": float(metrics[0]), "action_loss": float(metrics[1]),
             "future_representation_loss": float(metrics[2]), "future_state_loss": float(metrics[3]),

@@ -1,7 +1,22 @@
+import importlib.util
+import sys
 from pathlib import Path
+
+import torch
+from torch import nn
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_trainer():
+    path = ROOT / "scripts/h3wam/train_c56b_fact_online.py"
+    spec = importlib.util.spec_from_file_location("_test_c69_action_only", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_online_trainer_preserves_full_fact_contract():
@@ -68,3 +83,74 @@ def test_c61_matched_arm_reuses_the_exact_c56_launcher():
     assert "online-long10000-c61-matched-v1" in source
     assert "base-lr" not in source
     assert "action-lr" not in source
+
+
+def test_c69_action_only_is_the_exact_c67_global_action_component(monkeypatch):
+    trainer = load_trainer()
+
+    def fake_all_reduce(value, op=None):
+        if value.numel() == 1:
+            value.fill_(6.0)
+        else:
+            value.copy_(torch.tensor([6.0, 8.0, 8.0, 8.0]))
+
+    monkeypatch.setattr(trainer.dist, "all_reduce", fake_all_reduce)
+    raw_action = torch.tensor(2.0, requires_grad=True)
+    losses = {
+        "action_loss": raw_action,
+        "future_representation_loss": torch.tensor(3.0, requires_grad=True),
+        "future_state_loss": torch.tensor(4.0, requires_grad=True),
+        "value_loss": torch.tensor(5.0, requires_grad=True),
+    }
+    targets = {
+        "action_loss_mask": torch.ones(1),
+        "future_loss_mask": torch.ones(1),
+        "future_state_loss_mask": torch.ones(1),
+        "value_loss_mask": torch.ones(1),
+    }
+    joint = trainer.globally_normalize_masked_losses(losses, targets, world=8)
+    action_only = trainer.globally_normalize_action_only_losses(
+        losses, targets, world=8
+    )
+    torch.testing.assert_close(
+        action_only["loss"], 10.0 * joint["action_loss"], rtol=0, atol=0
+    )
+    joint_action_gradient = torch.autograd.grad(
+        10.0 * joint["action_loss"], raw_action, retain_graph=True
+    )[0]
+    action_only_gradient = torch.autograd.grad(
+        action_only["loss"], raw_action
+    )[0]
+    torch.testing.assert_close(
+        action_only_gradient, joint_action_gradient, rtol=0, atol=0
+    )
+    assert not action_only["future_representation_loss"].requires_grad
+    assert not action_only["future_state_loss"].requires_grad
+    assert not action_only["value_loss"].requires_grad
+
+
+class _TinyC69Policy(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.tower = nn.Linear(2, 2)
+        for name in (
+            "future_state_encoder",
+            "value_encoder",
+            "future_representation_encoder",
+            "future_state_decoder",
+            "value_decoder",
+            "future_representation_decoder",
+        ):
+            setattr(self, name, nn.Linear(2, 2))
+
+
+def test_c69_freezes_only_auxiliary_heads_and_excludes_them_from_adamw():
+    trainer = load_trainer()
+    model = _TinyC69Policy()
+    frozen = trainer.freeze_action_only_auxiliary_heads(model)
+    assert frozen
+    assert all(not dict(model.named_parameters())[name].requires_grad for name in frozen)
+    assert all(parameter.requires_grad for parameter in model.tower.parameters())
+    groups = trainer.optimizer_groups(model, base_lr=2e-5, action_lr=2e-4, wd=1e-4)
+    optimized = {id(parameter) for group in groups for parameter in group["params"]}
+    assert optimized == {id(parameter) for parameter in model.tower.parameters()}
