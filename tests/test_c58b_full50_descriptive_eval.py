@@ -99,6 +99,8 @@ def test_launcher_pins_fresh_process_and_action_contract():
     assert 'mv "${output}" "${retry_quarantine}"' in source
     assert 'row["gpu"]=index % 8' in source
     assert '"${work_manifest}" "${arm}"' in source
+    assert '"${dreamwam_root}/layers.py"' in source
+    assert "3cd38ad24eff05e748d9353af3f39200e93b16b6d07d22f153ccef0f36becd96" in source
 
 
 def test_aggregator_hard_codes_descriptive_boundary_and_2000_pairs():

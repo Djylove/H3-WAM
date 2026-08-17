@@ -16,6 +16,7 @@ h3_model="${workspace}/models/MiniMax-H3"
 source_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_all.jsonl"
 cache_root="${workspace}/data/v7_dense_h3_cache"
 source_root="${H3WAM_FASTWAM_SOURCE_ROOT:-${workspace}/upstream-readonly/FastWAM-45d8e145/wan22}"
+dreamwam_root="${project}/third_party/DreamWAM/dreamwam"
 resume="${C58_FULL50_RESUME:-0}"
 resume_rebalance="${C58_FULL50_RESUME_REBALANCE:-0}"
 max_attempts="${C58_FULL50_MAX_ATTEMPTS:-3}"
@@ -31,9 +32,21 @@ case "${resume_rebalance}" in 0|1) ;; *) echo "C58_FULL50_RESUME_REBALANCE must 
 
 for path in "${prepared}" "${manifest}" "${policy_python}" "${sim_python}" \
   "${gate}" "${h3_checkpoint}" "${h3_model}" "${source_manifest}" \
-  "${cache_root}/stats.pt" "${source_root}/action_dit.py"; do
+  "${cache_root}/stats.pt" "${source_root}/action_dit.py" \
+  "${dreamwam_root}/layers.py" "${dreamwam_root}/experts.py" \
+  "${dreamwam_root}/mot.py"; do
   [[ -e "${path}" ]] || { echo "missing full50 input: ${path}" >&2; exit 2; }
 done
+while IFS=: read -r path expected; do
+  actual="$(sha256sum "${path}" | cut -d' ' -f1)"
+  [[ "${actual}" == "${expected}" ]] || {
+    echo "pinned DreamWAM source hash mismatch: ${path}" >&2; exit 2;
+  }
+done <<EOF
+${dreamwam_root}/layers.py:3cd38ad24eff05e748d9353af3f39200e93b16b6d07d22f153ccef0f36becd96
+${dreamwam_root}/experts.py:9ba51dbb15b8df8e4ff01c5a08acf443a950c422544e4497d13e0e2658bd489c
+${dreamwam_root}/mot.py:5467d135287a6e77074cb653fc3d72218490fcfa40ac486b61d5cc5975ab6c01
+EOF
 completed="${root}/${arm}.COMPLETED.json"
 [[ ! -e "${completed}" ]] || { echo "${arm} already complete"; exit 0; }
 lock="${root}/.${arm}.launcher.lock"
