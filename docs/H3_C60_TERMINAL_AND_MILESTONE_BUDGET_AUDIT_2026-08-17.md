@@ -50,3 +50,25 @@ C60 global batch8，s10000共见80000样本、218125 unique windows，总混合 
 `0.772201`、causal failure `5.184033`。训练最后三段 action loss 均值为s8k `0.064754`、s9k
 `0.066642`、s10k `0.063429`，没有仅凭训练 loss 证明继续的依据；且原 cosine scheduler 在s10000
 已经到 LR=0。任何 s20k 都必须视为新优化合同，而不是原 checkpoint 的无变化续跑。
+
+## 固定曲线结果与预算结论
+
+十个checkpoint全部完成，共`10×80=800`个模型-样本评测；每个checkpoint都通过conditioning与
+strict restore，selected IDs、H3、数据、噪声、solver和normalization身份完全一致。正式结果为
+`/mnt/h3-wam/outputs/c56b-fact-online-v1/milestone-balanced80-s1k-s10k-v1/RESULTS.json`，SHA256
+`2008293c4cc11ccfb333c67aaf72dd888920b59c1e1ebeb2ddb343a8268e325e`。不导入正式聚合模块的独立JSON
+重算验证了10个report hash、80个逐样本身份、全部指标与门禁，结论一致。
+
+- 中期s4k–s6k与晚期s8k–s10k平均physical MSE为`0.0256052 -> 0.0252404`，normalized MSE为
+  `0.0616219 -> 0.0601616`，两项窗口门通过；
+- s5k physical/normalized为`0.0252263/0.0611622`，s10k为`0.0252567/0.0602009`。s10k normalized
+  较好，但physical差`0.00003042`，所以`s10_physical_not_worse_than_s5=false`；
+- s10k gripper `0.933197`、language delta `0.224284`、visual-shuffle MSE `0.0370162`，均通过相对s5k
+  的保真门；因此不是conditioning collapse，而是动作误差曲线没有给出继续训练的完整证据；
+- 逐样本paired字段中`left=s1k/right=s10k`，较小误差记胜：normalized上s10k为49胜、s1k为31胜，
+  但`s10k-s1k`均值仍为`+0.00229842`；physical上s10k为51胜、s1k为29胜，均值仍为
+  `+0.0000383514`。这表示多数样本小幅变好、少数退化幅度更大，不能把“49/51胜”误写成总体MSE改善。
+
+预注册门要求全部通过；physical s10k-vs-s5k一项失败即得到
+`NO_EVIDENCE_FOR_S20K_CONTINUATION`。因此不创建s20k dossier、不重启scheduler、不启动长训；n2评测进程
+已自然退出并释放8张GPU。C60的闭环结论仍为`KEEP_C58_PARENT`。

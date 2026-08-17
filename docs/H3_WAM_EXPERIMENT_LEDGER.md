@@ -1238,7 +1238,10 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - C61额外失败分支版本仅做预注册trial33 canary：C61 `17/40`、C60 `20/40`、C58 `18/40`；相对C60为
   `-7.5pp`且0胜3负，相对C58为`-2.5pp`。判定`NO_GO_EXPANSION`，不得扩大到trials34..49，也不得以
   “更多负例”名义热插入C60或替代C58。
-- C60 s1k..s10k的固定balanced80离线曲线已在只读snapshot并行评测；该曲线只回答训练预算是否仍有
-  未兑现趋势，不用于从已看过闭环结果的十个checkpoint中择优。s10k时原cosine scheduler已到LR=0，
-  因此即使曲线通过，也只能先预注册新scheduler、新样本/effective epoch预算、每1k保存及新policy-seed
-  闭环合同，再决定是否启动s20k。
+- C60 s1k..s10k固定balanced80共完成800个模型-样本评测，10/10 strict restore和conditioning gate通过，
+  数据/噪声/solver/normalization身份一致。晚期s8k–s10k相对中期s4k–s6k的physical/normalized平均MSE
+  均改善，但s10k physical MSE `0.0252567`差于s5k `0.0252263`，失败唯一预注册续训门；正式判定
+  `NO_EVIDENCE_FOR_S20K_CONTINUATION`。RESULTS SHA256为
+  `2008293c4cc11ccfb333c67aaf72dd888920b59c1e1ebeb2ddb343a8268e325e`，独立JSON重算与正式结果一致。
+  s10k scheduler已到LR=0，故不创建新s20k dossier、不启动长训，n2八卡释放；该诊断也不改变
+  `KEEP_C58_PARENT`。

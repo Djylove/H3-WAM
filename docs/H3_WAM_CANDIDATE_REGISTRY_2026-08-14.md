@@ -518,6 +518,8 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   SHA256 `5eb9623c570c371062ed8d8b8262bec90eec3973c88f3feafe4c48904a3c349d`。独立只读重聚合逐字段一致。
 - **C61边界**：trial33固定canary为C61 `17/40`、C60 `20/40`、C58 `18/40`；C61相对C60
   `-7.5pp`且0胜3负，判定`NO_GO_EXPANSION`。C61不进入扩展闭环，也不成为可融合候选。
-- **后续预算门**：C60 s1k..s10k固定balanced80曲线只用于判断新训练预算是否有依据，不能反向选择已看过
-  闭环的checkpoint。原s10k scheduler已降至LR=0；任何s20k必须另立dossier并预注册新scheduler、
-  160000总样本/effective epochs、每1k保存及新policy-seed闭环，且需先报告门禁再启动。
+- **后续预算门**：C60 s1k..s10k固定balanced80共800个模型-样本评测；10/10 restore和conditioning
+  通过，但s10k physical MSE `0.0252567`差于s5k `0.0252263`，失败预注册续训门。正式状态为
+  `NO_EVIDENCE_FOR_S20K_CONTINUATION`，RESULTS SHA256
+  `2008293c4cc11ccfb333c67aaf72dd888920b59c1e1ebeb2ddb343a8268e325e`；独立重算一致。原s10k
+  scheduler已降至LR=0，因此不创建s20k dossier、不启动长训，也不反向选择已看过闭环的checkpoint。
