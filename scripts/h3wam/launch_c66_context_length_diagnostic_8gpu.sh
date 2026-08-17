@@ -6,6 +6,7 @@ project="${PROJECT_ROOT:?PROJECT_ROOT must be a reviewed immutable source snapsh
 python_bin="${PYTHON_BIN:-${workspace}/runtime/conda-py311/bin/python}"
 supplemental_site="${SUPPLEMENTAL_SITE_PACKAGES:-${workspace}/.venv/lib/python3.11/site-packages}"
 int8_runtime_deps="${INT8_RUNTIME_DEPS:-${workspace}/runtime/c66-conda-deps}"
+source_root="${H3WAM_FASTWAM_SOURCE_ROOT:-${workspace}/upstream-readonly/FastWAM-45d8e145/wan22}"
 plan_root="${C66_PLAN_ROOT:-${workspace}/data/c66-lingbot-c58-canary-v1}"
 canary_root="${C66_CANARY_ROOT:-${workspace}/outputs/c66-lingbot-c58-block-persistent/paired-canary-s100-conda-v3}"
 output_root="${C66_DIAGNOSTIC_ROOT:-${workspace}/outputs/c66-lingbot-c58-block-persistent/context-length-diagnostic-v1}"
@@ -22,7 +23,9 @@ for path in \
   "${evaluator}" "${plan_root}/PLAN.json" \
   "${plan_root}/manifest_heldout64.jsonl" "${parent}" "${h3}" \
   "${canary_root}/c66_s00100.pt" "${canary_root}/report.json" \
-  "${dense}" "${source}" "${cache}/stats.pt"; do
+  "${dense}" "${source}" "${cache}/stats.pt" \
+  "${source_root}/action_dit.py" "${source_root}/wan_video_dit.py" \
+  "${source_root}/helpers/gradient.py"; do
   [[ -e "${path}" ]] || { echo "missing C66 diagnostic input: ${path}" >&2; exit 2; }
 done
 [[ "$(stat -c '%A' "${evaluator}")" != *w* ]] || {
@@ -37,6 +40,7 @@ done
 mkdir -p "${output_root}"
 cd "${project}"
 export PYTHONPATH="${project}/src:${project}/third_party/diffusers_h3/src:${int8_runtime_deps}:${supplemental_site}"
+export H3WAM_FASTWAM_SOURCE_ROOT="${source_root}"
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 export PYTHONNOUSERSITE=1
