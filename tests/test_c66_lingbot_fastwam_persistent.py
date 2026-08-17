@@ -194,11 +194,17 @@ def test_cloud_launcher_exposes_pinned_h3_diffusers_layout_source():
     assert "${project_root}/third_party/diffusers_h3" in launcher
     assert "export PYTHONPATH=" in launcher
     assert "/usr/local/nvidia/lib:/usr/local/nvidia/lib64" in launcher
-    assert "torch.bfloat16,torch.float16" in launcher
-    assert "torch.randn(256,256" in launcher
-    assert "torch.randn(64,64" not in launcher
-    assert "C66_CUDA_DIFFUSERS_PREFLIGHT_PASS" in launcher
+    assert '"${python_bin}" -c' not in launcher
     assert '--diffusers-h3-source "${diffusers_h3_root}"' in launcher
+
+    probe = (
+        Path(__file__).resolve().parents[1]
+        / "scripts/h3wam/probe_c66_lingbot_c58_persistent.py"
+    ).read_text(encoding="utf-8")
+    assert "cuda_actiondit_preflight()" in probe
+    assert "same_process_as_h3_and_actiondit" in probe
+    assert "shape = (128, 3072, 3072)" in probe
+    assert "torch.bfloat16, torch.float16" in probe
 
 
 def test_bf16_feedback_commit_keeps_fp32_timestep_but_matches_linear_dtype():

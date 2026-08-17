@@ -72,6 +72,38 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def cuda_actiondit_preflight() -> dict[str, Any]:
+    """Exercise cuBLAS in the probe process that will execute real H3.
+
+    The cloud CUDA-13 image intermittently fails a newly spawned, tiny GEMM
+    even when the following H3 process is healthy.  A launcher-side child is
+    therefore not evidence about this process.  Keep the gate here and use the
+    real ActionDiT hidden width (3072) for both execution dtypes.
+    """
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("the real C66 mechanical/data probe requires CUDA")
+    device = torch.device("cuda:0")
+    torch.cuda.set_device(device)
+    shape = (128, 3072, 3072)
+    for dtype in (torch.bfloat16, torch.float16):
+        left = torch.randn(shape[0], shape[1], device=device, dtype=dtype)
+        right = torch.randn(shape[1], shape[2], device=device, dtype=dtype)
+        result = left @ right
+        if not torch.isfinite(result).all():
+            raise RuntimeError(f"non-finite C66 CUDA preflight for {dtype}")
+        del left, right, result
+    torch.cuda.synchronize(device)
+    torch.cuda.empty_cache()
+    return {
+        "process_scope": "same_process_as_h3_and_actiondit",
+        "gemm_shape": [shape[0], shape[1], shape[2]],
+        "dtypes": ["bfloat16", "float16"],
+        "torch_version": torch.__version__,
+        "cuda_version": torch.version.cuda,
+    }
+
+
 def atomic_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.partial")
@@ -322,6 +354,7 @@ def parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = parser().parse_args()
     started = time.perf_counter()
+    cuda_preflight = cuda_actiondit_preflight()
     source_report = verify_lingbot_source(args.lingbot_source)
     diffusers_h3_report = verify_diffusers_h3_source(args.diffusers_h3_source)
 
@@ -403,8 +436,6 @@ def main() -> None:
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
     parent_checks = validate_c58_parent_payload(payload)
 
-    if not torch.cuda.is_available():
-        raise RuntimeError("the real C66 mechanical/data probe requires CUDA")
     device = torch.device("cuda:0")
     torch.cuda.set_device(device)
     torch.manual_seed(args.seed)
@@ -654,6 +685,7 @@ def main() -> None:
         "effect_status": "NOT_EVIDENCE_READY",
         "permission": "NO_GO_OPTIMIZER",
         "classification": "source_aligned_block_internal_committed_context_port",
+        "cuda_actiondit_preflight": cuda_preflight,
         "source": source_report,
         "diffusers_h3_source": diffusers_h3_report,
         "c58_checkpoint": str(checkpoint),

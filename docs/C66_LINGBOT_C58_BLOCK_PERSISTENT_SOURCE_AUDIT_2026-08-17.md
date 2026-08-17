@@ -121,5 +121,17 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
   `CUBLAS_STATUS_INVALID_VALUE` 退出；相同环境交互运行该小矩阵偶尔成功，而 `256x256` 两种 dtype
   连续稳定成功，且 v4 已进入真实 H3 forward。因此 v5/v6 永久记为 `INFRA_PREFLIGHT_FAIL`，没有
   report、optimizer step 或模型 verdict，不能用作 C66 机制反证。
-- 门禁现改为 `256x256` BF16/FP16 tensor-core GEMM，以规避该 A800 runtime 对 tiny-GEMM 算法选择的
-  假阴性；模型、数据、seed、阈值与 probe 均未改变。下一次只能使用全新输出目录重跑。
+- 门禁一度改为 `256x256` BF16/FP16 tensor-core GEMM，以规避该 A800 runtime 对 tiny-GEMM 算法选择的
+  假阴性；模型、数据、seed、阈值与 probe 均未改变。
+- 后续复核发现独立 `256x256` 子进程仍可偶发同类错误，因此它同样不是有效执行门：
+  `mechanical-v8-formal` 永久记为 `INFRA_PREFLIGHT_FAIL`，无 report/verdict。门禁已移入真实 probe 的
+  **同一个 Python/CUDA 进程**，并改用 ActionDiT 实际 hidden width 的
+  `[128,3072]@[3072,3072]` BF16/FP16 GEMM；通过后同一进程继续 H3 与 ActionDiT，不再由独立 child
+  替真实执行进程作判断。
+- `/mnt/h3-wam/outputs/c66-lingbot-c58-block-persistent/mechanical-v7-direct/report.json`
+  已完成严格复核，SHA256 `dba327cd41f26596cec23228eb5d4be67ff2fa6a4c354b198271ef48cd87468e`：
+  全部源码、H3/C58、sequence/AUDIT/source manifest/stats 重新哈希一致；真实 H3 temporal reindex 为
+  `96` tokens、V max-abs `0`；active-empty parent parity `0`；commit 后 30 层均为 `104` tokens；
+  redundant current 与 restore max-abs 均为 `0`；history effect `0.6484375`；30/30 block K gradient
+  有限正值；H3 无梯度；optimizer/checkpoint 均为 `0`。因此机械与数据门正式通过，只放行固定预算的
+  episode-disjoint context-on/context-off/history-shuffle paired canary；尚无任何动作效果或 LIBERO 结论。

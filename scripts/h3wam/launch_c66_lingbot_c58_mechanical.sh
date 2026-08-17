@@ -38,15 +38,9 @@ cd "${project_root}"
 export PYTHONPATH="${project_root}/src:${diffusers_h3_root}/src:${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
-# Fail before hashing the 20+ GiB H3 checkpoint if the runtime cannot import
-# the released layout code or initialize cuBLAS. Both BF16 and FP16 are used by
-# the online H3 stack on A800.
-# A 64x64 GEMM is not a valid availability probe on this A800 image: the
-# heuristic-selected tiny-matrix cuBLAS path intermittently reports
-# CUBLAS_STATUS_INVALID_VALUE under nohup even though the real H3 linears run.
-# 256x256 exercises the stable BF16/FP16 tensor-core path used by ActionDiT.
-"${python_bin}" -c 'import torch; from diffusers.modular_pipelines.minimax_h3.before_denoise import MiniMaxH3PrepareLayoutStep; assert torch.cuda.is_available(); device=torch.device("cuda:0"); [(torch.randn(256,256,device=device,dtype=d) @ torch.randn(256,256,device=device,dtype=d)).sum().item() for d in (torch.bfloat16,torch.float16)]; torch.cuda.synchronize(); print("C66_CUDA_DIFFUSERS_PREFLIGHT_PASS", flush=True)'
-
+# CUDA/H3/layout preflight intentionally runs inside the probe process.  A
+# separate launcher child was observed to fail intermittently while the real
+# H3 process passed, so it cannot be used as an execution gate.
 exec "${python_bin}" scripts/h3wam/probe_c66_lingbot_c58_persistent.py \
   --checkpoint "${checkpoint}" \
   --h3-checkpoint "${h3_checkpoint}" \
