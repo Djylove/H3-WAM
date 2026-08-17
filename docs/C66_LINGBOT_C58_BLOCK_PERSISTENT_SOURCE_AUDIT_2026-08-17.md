@@ -104,3 +104,10 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
   `${project_root}/third_party/diffusers_h3/src`；新增测试防止再次遗漏。模型、数据、seed 和全部阈值不变。
 - `mechanical-v1` 不得改写或复用；后续必须写入全新 `mechanical-v2` 目录，并重新完成所有身份、数据、
   real H3、C58 block 和 restore gates。
+- `mechanical-v2` 仍从旧 d2 snapshot 启动，重复同一个 missing-diffusers 错误；同样是 `INFRA_FAIL`、
+  无 report、无 verdict。
+- `mechanical-v3` 改用 `h3-int8-native` 和有效 vendor 后进入首个 H3 linear，但缺少云端
+  `/usr/local/nvidia/lib{,64}` 动态库路径，以 `CUBLAS_STATUS_NOT_INITIALIZED` 退出；仍为 `INFRA_FAIL`。
+- 正式重跑前 launcher 现在强制：`h3-int8-native`、pinned `before_denoise.py` SHA256
+  `530b007c1d689c3ee1fc1690527f5253522d2da6b44dd326bec99faaf9f72fff`、CUDA library path，以及
+  BF16/FP16 matmul preflight。前三个目录永不晋升为证据。

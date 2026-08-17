@@ -190,5 +190,10 @@ def test_cloud_launcher_exposes_pinned_h3_diffusers_layout_source():
         Path(__file__).resolve().parents[1]
         / "scripts/h3wam/launch_c66_lingbot_c58_mechanical.sh"
     ).read_text(encoding="utf-8")
-    assert "${project_root}/third_party/diffusers_h3/src" in launcher
+    assert "${workspace}/runtime/h3-int8-native/bin/python" in launcher
+    assert "${project_root}/third_party/diffusers_h3" in launcher
     assert "export PYTHONPATH=" in launcher
+    assert "/usr/local/nvidia/lib:/usr/local/nvidia/lib64" in launcher
+    assert "torch.bfloat16,torch.float16" in launcher
+    assert "C66_CUDA_DIFFUSERS_PREFLIGHT_PASS" in launcher
+    assert '--diffusers-h3-source "${diffusers_h3_root}"' in launcher

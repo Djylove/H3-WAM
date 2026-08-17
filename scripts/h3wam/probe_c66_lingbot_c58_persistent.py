@@ -58,6 +58,10 @@ EXPECTED_FASTWAM_COMMIT = "45d8e1458921d83f8ad6cf9ce993d371208dabd0"
 EXPECTED_ACTION_DIT_SHA256 = (
     "1301d9224149de43bb701f620a5d41858ecc63c6b19a573ec32edd45a3bdb0a2"
 )
+DIFFUSERS_H3_REVISION = "huggingface/diffusers PR14355 head f37ab93e621d5ce206c9662e8291ca8b67d9c555"
+DIFFUSERS_H3_BEFORE_DENOISE_SHA256 = (
+    "530b007c1d689c3ee1fc1690527f5253522d2da6b44dd326bec99faaf9f72fff"
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -97,6 +101,57 @@ def verify_lingbot_source(root: Path) -> dict[str, Any]:
         "revision": EXPECTED_LINGBOT_COMMIT,
         "identity": "execution_file_sha256",
         "sha256": hashes,
+    }
+
+
+def verify_diffusers_h3_source(root: Path) -> dict[str, Any]:
+    root = root.resolve()
+    before_denoise = (
+        root
+        / "src/diffusers/modular_pipelines/minimax_h3/before_denoise.py"
+    )
+    if not before_denoise.is_file():
+        raise FileNotFoundError(before_denoise)
+    digest = sha256_file(before_denoise)
+    if digest != DIFFUSERS_H3_BEFORE_DENOISE_SHA256:
+        raise RuntimeError(f"H3 diffusers layout source SHA256 mismatch: {digest}")
+
+    from diffusers.modular_pipelines.minimax_h3 import before_denoise as imported
+
+    imported_path = Path(imported.__file__).resolve()
+    if imported_path != before_denoise:
+        raise RuntimeError(
+            f"H3 diffusers import escaped pinned source: {imported_path}"
+        )
+    layout = imported.MiniMaxH3PrepareLayoutStep.build_packed_sequence(
+        text_token_tags=torch.zeros(14, dtype=torch.long),
+        num_latent_frames=12,
+        latent_height=14,
+        latent_width=28,
+        num_audio_latents=32,
+        patch_size=(1, 2, 2),
+        audio_channels=2,
+        audio_tag=2,
+        video_tag=0,
+        keyframe_anchors=("first",),
+    )
+    positions, _, video_indices, _, _, condition_rows, _ = layout
+    condition_positions = positions[video_indices[:condition_rows].long()]
+    unique_times = torch.unique(condition_positions[:, 0]).tolist()
+    if (
+        int(condition_rows) != 98
+        or tuple(condition_positions.shape) != (98, 3)
+        or unique_times != [14.0]
+    ):
+        raise RuntimeError("pinned H3 diffusers real-window layout smoke failed")
+    return {
+        "root": str(root),
+        "revision": DIFFUSERS_H3_REVISION,
+        "before_denoise": str(before_denoise),
+        "before_denoise_sha256": digest,
+        "condition_rows": int(condition_rows),
+        "condition_position_shape": list(condition_positions.shape),
+        "condition_unique_temporal_positions": unique_times,
     }
 
 
@@ -254,6 +309,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--checkpoint", type=Path, required=True)
     result.add_argument("--h3-checkpoint", type=Path, required=True)
     result.add_argument("--lingbot-source", type=Path, required=True)
+    result.add_argument("--diffusers-h3-source", type=Path, required=True)
     result.add_argument("--sequence-manifest", type=Path, required=True)
     result.add_argument("--sequence-audit", type=Path, required=True)
     result.add_argument("--source-manifest", type=Path, required=True)
@@ -267,6 +323,7 @@ def main() -> None:
     args = parser().parse_args()
     started = time.perf_counter()
     source_report = verify_lingbot_source(args.lingbot_source)
+    diffusers_h3_report = verify_diffusers_h3_source(args.diffusers_h3_source)
 
     sequence_manifest = args.sequence_manifest.resolve()
     sequence_audit = args.sequence_audit.resolve()
@@ -598,6 +655,7 @@ def main() -> None:
         "permission": "NO_GO_OPTIMIZER",
         "classification": "source_aligned_block_internal_committed_context_port",
         "source": source_report,
+        "diffusers_h3_source": diffusers_h3_report,
         "c58_checkpoint": str(checkpoint),
         "c58_checkpoint_sha256": c58_sha,
         "c58_parent_identity_checks": parent_checks,

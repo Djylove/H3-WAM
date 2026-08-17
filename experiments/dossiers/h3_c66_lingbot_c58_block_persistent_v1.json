@@ -74,7 +74,8 @@
       "status": "PENDING_INFRA_RETRY",
       "evidence": [
         "mechanical-v1 is a permanent INFRA_FAIL: the lean cloud launcher omitted third_party/diffusers_h3/src and exited at the first online-H3 layout import with ModuleNotFoundError before producing a report or model verdict.",
-        "The launcher now exports both project/src and the pinned vendored diffusers_h3/src, with a regression test. A clean mechanical-v2 directory must rerun every gate; v1 cannot be reused."
+        "mechanical-v2 repeated the old d2 snapshot missing-diffusers failure; mechanical-v3 reached the first H3 linear under h3-int8-native but lacked the cloud NVIDIA library path and exited with CUBLAS_STATUS_NOT_INITIALIZED. Neither produced a report or verdict.",
+        "The launcher now pins the H3 diffusers before_denoise.py SHA256 530b007c, defaults to h3-int8-native, exports /usr/local/nvidia/lib and lib64, and requires a CUDA BF16/FP16 matmul preflight. A clean new directory must rerun every gate; v1/v2/v3 cannot be reused."
       ]
     },
     "optimizer_contract": {
