@@ -54,6 +54,7 @@ DYNAMIC_EXECUTION_FILES = (
     "scripts/h3wam/seal_c69_milestone_previews.py",
     "scripts/h3wam/aggregate_c67_c69_fixed_s20_attribution.py",
     "scripts/h3wam/launch_c67_c69_fixed_s20_attribution_gate.sh",
+    "scripts/h3wam/watch_c67_c69_fixed_s20_attribution_gate.sh",
     "scripts/h3wam/train_c56b_fact_online.py",
     "scripts/h3wam/finalize_c67_c60_budget_ablation_20k.py",
     "scripts/h3wam/prepare_c67_milestone_preview_audit.py",

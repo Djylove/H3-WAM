@@ -452,6 +452,18 @@ def test_only_two_historical_c67_contract_defaults_are_allowed():
         AGG._contract_attribution(c67, c69)
 
 
+def test_attribution_watcher_waits_for_both_fixed_complete_chains_without_training():
+    source = (
+        ROOT / "scripts/h3wam/watch_c67_c69_fixed_s20_attribution_gate.sh"
+    ).read_text()
+    assert '"${c67_sealed_root}/SEALED.json"' in source
+    assert '"${c69_preview_root}/PREVIEWS_COMPLETE.json"' in source
+    assert '"${c69_complete}"' in source
+    assert "launch_c67_c69_fixed_s20_attribution_gate.sh" in source
+    assert "train_c56b_fact_online.py" not in source
+    assert "rollout_libero" not in source
+
+
 def test_cross_arm_gate_rehashes_fixed_endpoint_bytes(tmp_path: Path):
     paths = fixture(tmp_path)
     endpoint = paths["c69_train"] / "checkpoints/c69_action_only_s20000.pt"
