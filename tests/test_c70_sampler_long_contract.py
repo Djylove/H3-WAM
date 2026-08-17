@@ -95,3 +95,17 @@ def test_complete_source_freeze_covers_c70_long_execution() -> None:
     source = (ROOT / "scripts/h3wam/freeze_c67_rollout_source.py").read_text()
     assert '"scripts/h3wam/launch_c70_sampler_coverage_20k_8gpu.sh"' in source
     assert '"scripts/h3wam/finalize_c70_sampler_coverage_20k.py"' in source
+    assert '"scripts/h3wam/prepare_c70_milestone_preview_audit.py"' in source
+    assert '"scripts/h3wam/launch_c70_sampler_milestone_preview_queue.sh"' in source
+
+
+def test_c70_preview_queue_is_read_only_and_uses_fixed_balanced80() -> None:
+    source = (ROOT / "scripts/h3wam/launch_c70_sampler_milestone_preview_queue.sh").read_text()
+    for required in (
+        "c70_sampler_s${milestone}.pt", "--variant c70", "--preview-audit",
+        "seq 1000 1000 20000", "manifest_val.jsonl",
+        "PASS_C70_ALL_20_PREVIEWS_COMPLETE",
+    ):
+        assert required in source
+    assert "--save-checkpoint" not in source
+    assert "--load-checkpoint" not in source

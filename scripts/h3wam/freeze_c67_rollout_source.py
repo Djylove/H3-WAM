@@ -51,6 +51,8 @@ DYNAMIC_EXECUTION_FILES = (
     "scripts/h3wam/launch_c70_sampler_coverage_canary_8gpu.sh",
     "scripts/h3wam/launch_c70_sampler_coverage_20k_8gpu.sh",
     "scripts/h3wam/finalize_c70_sampler_coverage_20k.py",
+    "scripts/h3wam/prepare_c70_milestone_preview_audit.py",
+    "scripts/h3wam/launch_c70_sampler_milestone_preview_queue.sh",
     "scripts/h3wam/finalize_c69_matched_action_only_20k.py",
     "scripts/h3wam/prepare_c69_milestone_preview_audit.py",
     "scripts/h3wam/launch_c69_action_only_milestone_preview_queue.sh",

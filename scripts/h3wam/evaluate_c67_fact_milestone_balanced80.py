@@ -100,15 +100,19 @@ def contract_sha256(contract: dict[str, Any]) -> str:
 
 
 def require_c67_contract(contract: dict[str, Any], *, variant: str = "c67") -> None:
-    if variant not in {"c67", "c69"}:
+    if variant not in {"c67", "c69", "c70"}:
         raise ValueError(f"unsupported milestone variant: {variant}")
+    rank_categories = (
+        list(TRAIN.rank_schedule_contract(TRAIN.C70_RANK_SCHEDULE)["rank_categories"])
+        if variant == "c70" else list(TRAIN.RANK_CATEGORIES)
+    )
     fixed = {
         "format": TRAIN.FORMAT,
         "classification": "FACT_full_backbone_port_online_frozen_int8_h3",
-        "rank_categories": list(TRAIN.RANK_CATEGORIES),
+        "rank_categories": rank_categories,
         "loss_weights": (
             [10.0, 1.0, 0.4, 0.4]
-            if variant == "c67"
+            if variant in {"c67", "c70"}
             else [10.0, 0.0, 0.0, 0.0]
         ),
         "target_norm_sha256": "95df1f65eba1b1c3bfb9cebea90983ca54dffa69f60e6135354eb67e8551d000",
@@ -132,6 +136,10 @@ def require_c67_contract(contract: dict[str, Any], *, variant: str = "c67") -> N
         "no_kv_cache": True,
         **FIXED_SHARED_DATA_SHA256,
     }
+    if variant == "c70":
+        fixed["rank_schedule"] = TRAIN.rank_schedule_contract(
+            TRAIN.C70_RANK_SCHEDULE
+        )["rank_schedule"]
     mismatch = {
         key: {"actual": contract.get(key), "expected": expected}
         for key, expected in fixed.items()
@@ -144,12 +152,14 @@ def require_c67_contract(contract: dict[str, Any], *, variant: str = "c67") -> N
         "c58_completed_steps": 10_000,
     }:
         raise ValueError("C67 fixed C58 initialization mismatch")
-    expected_objective = "fact_joint" if variant == "c67" else "action_only"
+    expected_objective = (
+        "fact_joint" if variant in {"c67", "c70"} else "action_only"
+    )
     if contract.get("objective_mode", "fact_joint") != expected_objective:
         raise ValueError(f"{variant.upper()} objective-mode contract mismatch")
     frozen = contract.get("frozen_auxiliary_parameters")
-    if variant == "c67" and frozen not in (None, []):
-        raise ValueError("C67 unexpectedly froze auxiliary parameters")
+    if variant in {"c67", "c70"} and frozen not in (None, []):
+        raise ValueError(f"{variant.upper()} unexpectedly froze auxiliary parameters")
     if variant == "c69":
         prefixes = (
             "future_state_encoder.", "value_encoder.",
@@ -175,6 +185,8 @@ def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]
         raise ValueError("select exactly one C67 final or preview binding")
     if config.variant == "c69" and final_mode:
         raise ValueError("C69 final rebinding requires the fixed cross-arm aggregator")
+    if config.variant == "c70" and final_mode:
+        raise ValueError("C70 final rebinding requires the fixed sampler aggregator")
     if final_mode:
         if config.restore_audit is None:
             raise ValueError("final C67 evaluation requires --restore-audit")
@@ -214,11 +226,20 @@ def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]
         preview_path = config.preview_audit.resolve()
         preview = load_json(preview_path)
         restore = preview.get("milestone_audit", {})
-        expected_preview = (
-            ("h3wam-c67-milestone-preview-audit-v1", "PASS_C67_MILESTONE_PREVIEW_AUDIT")
-            if config.variant == "c67"
-            else ("h3wam-c69-milestone-preview-audit-v1", "PASS_C69_MILESTONE_PREVIEW_AUDIT")
-        )
+        expected_preview = {
+            "c67": (
+                "h3wam-c67-milestone-preview-audit-v1",
+                "PASS_C67_MILESTONE_PREVIEW_AUDIT",
+            ),
+            "c69": (
+                "h3wam-c69-milestone-preview-audit-v1",
+                "PASS_C69_MILESTONE_PREVIEW_AUDIT",
+            ),
+            "c70": (
+                "h3wam-c70-milestone-preview-audit-v1",
+                "PASS_C70_MILESTONE_PREVIEW_AUDIT",
+            ),
+        }[config.variant]
         if (
             preview.get("format") != expected_preview[0]
             or preview.get("status") != expected_preview[1]
@@ -245,17 +266,28 @@ def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]
             and restore.get("effect_status") == "NOT_EVIDENCE_READY"
         )
         if config.variant == "c67"
-        else restore.get("status") == "PASS_C69_MILESTONE_STRICT_RESTORE"
+        else (
+            restore.get("status") == "PASS_C69_MILESTONE_STRICT_RESTORE"
+            if config.variant == "c69"
+            else (
+                restore.get("format") == "h3wam-c70-sampler-milestone-restore-audit-v1"
+                and restore.get("status") == "PASS_C70_SAMPLER_MILESTONE_STRICT_RESTORE"
+                and restore.get("effect_status") == "NOT_EVIDENCE_READY"
+            )
+        )
     )
     if (
         not restore_identity_ok
         or restore.get("milestone") != config.milestone
         or Path(restore.get("checkpoint", "")).resolve() != checkpoint
         or (
-            config.variant == "c67"
+            config.variant in {"c67", "c70"}
             and restore.get("checkpoint_size_bytes") != checkpoint.stat().st_size
         )
-        or (config.variant == "c67" and restore.get("restore_max_abs") != 0.0)
+        or (
+            config.variant in {"c67", "c70"}
+            and restore.get("restore_max_abs") != 0.0
+        )
         or not restore.get("gate")
         or not all(restore["gate"].values())
     ):
@@ -298,8 +330,8 @@ def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]
 
 
 def run(config: Config) -> dict[str, Any]:
-    if config.variant not in {"c67", "c69"}:
-        raise ValueError("milestone variant must be c67 or c69")
+    if config.variant not in {"c67", "c69", "c70"}:
+        raise ValueError("milestone variant must be c67, c69 or c70")
     if config.seed != 42 or config.inference_steps != 10:
         raise ValueError("C67 balanced80 seed/solver is fixed")
     payload, checkpoint_sha, binding = load_checkpoint(config)
@@ -351,10 +383,11 @@ def run(config: Config) -> dict[str, Any]:
     gc.collect()
     torch.cuda.empty_cache()
     report = {
-        "format": (
-            FORMAT if config.variant == "c67"
-            else "h3wam-c69-action-only-milestone-balanced80-v1"
-        ),
+        "format": {
+            "c67": FORMAT,
+            "c69": "h3wam-c69-action-only-milestone-balanced80-v1",
+            "c70": "h3wam-c70-sampler-coverage-milestone-balanced80-v1",
+        }[config.variant],
         "status": "PASS_FIXED_BALANCED80" if all(gates.values()) else "FAIL_CONDITIONING_COLLAPSE",
         "permission": (
             "DIAGNOSTIC_ONLY_PENDING_FIXED_AGGREGATION"
@@ -427,7 +460,7 @@ def parse_args() -> Config:
     parser.add_argument("--val-manifest", type=Path, required=True)
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--variant", choices=("c67", "c69"), default="c67")
+    parser.add_argument("--variant", choices=("c67", "c69", "c70"), default="c67")
     parser.add_argument("--device", default="cuda:0")
     values = parser.parse_args()
     return Config(**vars(values))
