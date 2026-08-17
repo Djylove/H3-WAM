@@ -1,0 +1,1180 @@
+{
+  "best_of_n_deployment": false,
+  "c63_disjointness": {
+    "branch_trajectory_sha_overlap": 0,
+    "candidate_action_sha_overlap": 0,
+    "parent_proposed_action_sha_overlap": 0,
+    "parent_trajectory_sha_overlap": 0,
+    "pass": true,
+    "state_sha_overlap": 0,
+    "suite_task_trial_step_overlap": 0
+  },
+  "decision": {
+    "data_gate": "FAIL",
+    "permission": "NO_SCORE_COLLECT_C65_DEPLOYMENT_DISTRIBUTION_PAIRS",
+    "reason": "Strict four-suite source-balanced capacity is 0; C65 requires at least 20 independent mixed sources per suite."
+  },
+  "effect_status": "NOT_EVALUATED",
+  "format": "h3wam-c65-c61-same-state-source-data-audit-v1",
+  "generation_identity": {
+    "candidates_per_state": 4,
+    "continuation_replan_steps": 8,
+    "distribution_assessment": "All C61 candidates are genuine frozen D0-H32-s14000 diffusion samples, but C65 would rank candidates from the current C60/C58 deployment carrier; therefore C61 is a near-neighbor, not an exact deployment-candidate distribution.",
+    "first_replan_steps": 32,
+    "policy_checkpoint": "/mnt/h3-wam/outputs/dense-carrier-d0-h32-s20000-v1/checkpoints/d0_h32_s14000.pt",
+    "policy_checkpoint_sha256": "36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3",
+    "same_continuation_noise_within_group": true
+  },
+  "inputs": {
+    "c61_frozen_sha256": "17f39b26cd033171bc9cc0afad819ea6b2794f24d1e03d4218c988969a76f6b4",
+    "c61_jobs_sha256": "6e2d76e60cdf2a514cb5378c9b0cccf56a97df7b7698b74d1729a28dfa487666",
+    "c61_root": "/mnt/h3-wam/eval/c61-failure-rollout-expansion-v1",
+    "c63_pairs": "/mnt/h3-wam/outputs/c63-fact-stage2-within-state-bbf799a-v3/PAIRS.json",
+    "c63_pairs_sha256": "c3ead728d362d53ad57f02508cb66febfa128dad79e95911d0da89cd40d8c25a"
+  },
+  "inventory": {
+    "failed_jobs": 387,
+    "groups": 282,
+    "jobs": 1128,
+    "mixed_groups": 48,
+    "sources": 141,
+    "strict_balanced_independent_sources_per_suite": 0,
+    "successful_jobs": 741
+  },
+  "mechanical_gates": {
+    "all_results_present": true,
+    "four_unique_actions_per_group": true,
+    "parent_branch_previous_action_byte_exact": true,
+    "parent_branch_sim_state_byte_exact": true,
+    "single_policy_checkpoint": true
+  },
+  "mixed_groups": [
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        0,
+        1,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 2
+      },
+      "group_id": 8,
+      "source_id": 4,
+      "start_step": 128,
+      "state_sha256": "7a3d68c905810682a644ba7fdfb07171a92c11a4c4a68df8ee2908544161ca4e",
+      "success_candidates": [
+        2
+      ],
+      "suite": "libero_object",
+      "task": 6,
+      "trial": 12
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1,
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 9,
+      "source_id": 4,
+      "start_step": 112,
+      "state_sha256": "ea944b5a9607012de246960d77334f70243da3c30be2e457d76ca9b32d0cda30",
+      "success_candidates": [
+        0,
+        3
+      ],
+      "suite": "libero_object",
+      "task": 6,
+      "trial": 12
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        1,
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 12,
+      "source_id": 6,
+      "start_step": 120,
+      "state_sha256": "d31166d8b68a4826049bfc5039c00587ebf98dceff02056f7e16f5a1a8898810",
+      "success_candidates": [
+        0
+      ],
+      "suite": "libero_object",
+      "task": 8,
+      "trial": 12
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 15,
+      "source_id": 7,
+      "start_step": 264,
+      "state_sha256": "c74055d90715b8095fce2a1658dc873f8204730ee5b3c4ad3c6e9db0b3141e23",
+      "success_candidates": [
+        0,
+        2
+      ],
+      "suite": "libero_object",
+      "task": 9,
+      "trial": 12
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        0,
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 20,
+      "source_id": 10,
+      "start_step": 80,
+      "state_sha256": "110943702275babf1f61badfb7d9573a6e3847d93a64cd4543831cc58efdd1f6",
+      "success_candidates": [
+        1
+      ],
+      "suite": "libero_spatial",
+      "task": 3,
+      "trial": 12
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1,
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 25,
+      "source_id": 12,
+      "start_step": 48,
+      "state_sha256": "f62f7c7f7e3c75345395baeffda479b78d588a83b8783b088892159300b97854",
+      "success_candidates": [
+        0
+      ],
+      "suite": "libero_spatial",
+      "task": 8,
+      "trial": 12
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        0
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 32,
+      "source_id": 16,
+      "start_step": 96,
+      "state_sha256": "9bfd63f0b86d8105629e2febc1c09a17da2d153f0039cb3ee882500dbceefcd4",
+      "success_candidates": [
+        1,
+        2,
+        3
+      ],
+      "suite": "libero_object",
+      "task": 0,
+      "trial": 13
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 33,
+      "source_id": 16,
+      "start_step": 80,
+      "state_sha256": "a819abd7e02e2b8c25331444769225f636b624973d0c5653629b91e313f924dd",
+      "success_candidates": [
+        0,
+        1
+      ],
+      "suite": "libero_object",
+      "task": 0,
+      "trial": 13
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 44,
+      "source_id": 22,
+      "start_step": 104,
+      "state_sha256": "0fa4e0615b80b70e8656e0b41ab0f60e0b3845d3aaa8d4a28fb95f0fcf7f3487",
+      "success_candidates": [
+        0,
+        1
+      ],
+      "suite": "libero_object",
+      "task": 7,
+      "trial": 13
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 67,
+      "source_id": 33,
+      "start_step": 136,
+      "state_sha256": "21d639292997be65823e81650a9b7b526d7bd10ebba8d000736f7e572bcceb70",
+      "success_candidates": [
+        0,
+        2,
+        3
+      ],
+      "suite": "libero_object",
+      "task": 6,
+      "trial": 14
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 77,
+      "source_id": 38,
+      "start_step": 88,
+      "state_sha256": "be2dac577bdaedebc766fcd0c11e321ffd575a56125316e5cbcaca7b148bfa14",
+      "success_candidates": [
+        0,
+        2
+      ],
+      "suite": "libero_spatial",
+      "task": 3,
+      "trial": 14
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 80,
+      "source_id": 40,
+      "start_step": 192,
+      "state_sha256": "4a20fd4a2d49056a8fe273b27a276583d9e29e2a2dcbb121c64b64c63fe2d222",
+      "success_candidates": [
+        0,
+        1,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 5,
+      "trial": 14
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 105,
+      "source_id": 52,
+      "start_step": 128,
+      "state_sha256": "24d79b4880085e34ca6ab81a2823663546f424055bd433305b54d92d632a8953",
+      "success_candidates": [
+        0,
+        1,
+        3
+      ],
+      "suite": "libero_object",
+      "task": 6,
+      "trial": 15
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 109,
+      "source_id": 54,
+      "start_step": 128,
+      "state_sha256": "28480decc99145a35806e1e2572dd31a79636043518ac430e7d49f4137ab7c00",
+      "success_candidates": [
+        0,
+        1
+      ],
+      "suite": "libero_object",
+      "task": 8,
+      "trial": 15
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 111,
+      "source_id": 55,
+      "start_step": 32,
+      "state_sha256": "02e61ddb05fb9689398b5b0b7c2a20f5303bb1ecc131f50dae55f7e09ffe5500",
+      "success_candidates": [
+        0,
+        1
+      ],
+      "suite": "libero_spatial",
+      "task": 0,
+      "trial": 15
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        1
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 114,
+      "source_id": 57,
+      "start_step": 248,
+      "state_sha256": "72b703f6b6754fe79c93aee984218ef3a951fd6acf001a51ceda464d617c4daa",
+      "success_candidates": [
+        0,
+        2,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 2,
+      "trial": 15
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 115,
+      "source_id": 57,
+      "start_step": 232,
+      "state_sha256": "bfcd2469bcdc0e495c4885e43afe69c55faab9c57155c0c33bc6978d54cf2ded",
+      "success_candidates": [
+        0,
+        2,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 2,
+      "trial": 15
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        0,
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 117,
+      "source_id": 58,
+      "start_step": 48,
+      "state_sha256": "d24b103653bbcc412ed7e9f71ce369e7e130489a57dbbbc0478a0a593da4d2ec",
+      "success_candidates": [
+        1
+      ],
+      "suite": "libero_spatial",
+      "task": 3,
+      "trial": 15
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        0
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 122,
+      "source_id": 61,
+      "start_step": 120,
+      "state_sha256": "1a8574a54466490ea85aeb734ef9eae0233759957ab8e3858e8514a9aa616f04",
+      "success_candidates": [
+        1,
+        2,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 6,
+      "trial": 15
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 126,
+      "source_id": 63,
+      "start_step": 272,
+      "state_sha256": "098c7a2e52f8d8fb7f02c8118dad5517f73ea177af380d62d678baa02a2fef12",
+      "success_candidates": [
+        0,
+        1,
+        3
+      ],
+      "suite": "libero_goal",
+      "task": 3,
+      "trial": 16
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        0,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 127,
+      "source_id": 63,
+      "start_step": 256,
+      "state_sha256": "0d12f555a38abbca61af4e0a842be2a0da7e98428559c2377b48ca19b84aa5e6",
+      "success_candidates": [
+        1,
+        2
+      ],
+      "suite": "libero_goal",
+      "task": 3,
+      "trial": 16
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 130,
+      "source_id": 65,
+      "start_step": 136,
+      "state_sha256": "78658cbcb12377adb1cebe51a0af46acb19bd97c38ac5cf27d0d5a3c1b47f656",
+      "success_candidates": [
+        0,
+        1,
+        3
+      ],
+      "suite": "libero_goal",
+      "task": 8,
+      "trial": 16
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        0,
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 131,
+      "source_id": 65,
+      "start_step": 120,
+      "state_sha256": "d296c38fdffbf54890f528dbad7589ffe0f38ad0b4e27d4972f545b77469f6ce",
+      "success_candidates": [
+        1
+      ],
+      "suite": "libero_goal",
+      "task": 8,
+      "trial": 16
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        1,
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 144,
+      "source_id": 72,
+      "start_step": 104,
+      "state_sha256": "349887db46fd4249fbebebb5145cc041fce8549d7025b7b3e9582d1c6b77030b",
+      "success_candidates": [
+        0
+      ],
+      "suite": "libero_spatial",
+      "task": 9,
+      "trial": 16
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        0,
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 145,
+      "source_id": 72,
+      "start_step": 88,
+      "state_sha256": "26ef725d2af6e63b61289fd72c3a49aaa0941dd2e8b8534e0f19943873568a9f",
+      "success_candidates": [
+        1
+      ],
+      "suite": "libero_spatial",
+      "task": 9,
+      "trial": 16
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 161,
+      "source_id": 80,
+      "start_step": 32,
+      "state_sha256": "e1508aae7eda87b0ee1624305070fe0b9bdc4a535cc16b19cfe6bd4971fa07b4",
+      "success_candidates": [
+        0,
+        2
+      ],
+      "suite": "libero_spatial",
+      "task": 0,
+      "trial": 17
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 164,
+      "source_id": 82,
+      "start_step": 72,
+      "state_sha256": "a15b8b546a000bb047de71c2536ecfd2f558e7925770be651ac3006885999919",
+      "success_candidates": [
+        0,
+        1
+      ],
+      "suite": "libero_spatial",
+      "task": 3,
+      "trial": 17
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        0,
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 170,
+      "source_id": 85,
+      "start_step": 88,
+      "state_sha256": "bc3df5b4efc6883444d218b691cb576052ee4b3875dfa47bf581d31da39a8d68",
+      "success_candidates": [
+        1
+      ],
+      "suite": "libero_spatial",
+      "task": 7,
+      "trial": 17
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 192,
+      "source_id": 96,
+      "start_step": 128,
+      "state_sha256": "31e470b1f4b072609862d40025fbce4b1796ce7eb3d4bfdff11caa57ab3271c3",
+      "success_candidates": [
+        0,
+        1,
+        3
+      ],
+      "suite": "libero_object",
+      "task": 8,
+      "trial": 18
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 3,
+        "success_candidate": 0
+      },
+      "group_id": 193,
+      "source_id": 96,
+      "start_step": 112,
+      "state_sha256": "9805ade38348cf4a2ee4b4740f7ca24d39ac01e57637ff4332b3e28137535dd6",
+      "success_candidates": [
+        0,
+        1,
+        2
+      ],
+      "suite": "libero_object",
+      "task": 8,
+      "trial": 18
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        1
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 194,
+      "source_id": 97,
+      "start_step": 80,
+      "state_sha256": "127a7a1e357ffc965fb8f187dc7b46c765107c74cd8cd5fb89a96afa41f1ce68",
+      "success_candidates": [
+        0,
+        2,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 3,
+      "trial": 18
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        0
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 197,
+      "source_id": 98,
+      "start_step": 96,
+      "state_sha256": "5906b476388102bf0bbf958140c5a737b59d51a73f52db3441f1da248db0573f",
+      "success_candidates": [
+        1,
+        2,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 5,
+      "trial": 18
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 202,
+      "source_id": 101,
+      "start_step": 72,
+      "state_sha256": "f8baf178468f12d791452cc8918484edbea21071a52e1fdf3d2ba402e9bfba5d",
+      "success_candidates": [
+        0,
+        1
+      ],
+      "suite": "libero_spatial",
+      "task": 8,
+      "trial": 18
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 218,
+      "source_id": 109,
+      "start_step": 96,
+      "state_sha256": "b1358be0171784b667410d62d61362beef2a899a0d043625daf5d39294670b86",
+      "success_candidates": [
+        0,
+        1
+      ],
+      "suite": "libero_object",
+      "task": 7,
+      "trial": 19
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1,
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 223,
+      "source_id": 111,
+      "start_step": 40,
+      "state_sha256": "fa9705265673da7af67cf9d33abe85fe66df792a19a195b85e03d1fd055c7bfb",
+      "success_candidates": [
+        0,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 3,
+      "trial": 19
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        0,
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 237,
+      "source_id": 118,
+      "start_step": 88,
+      "state_sha256": "50c181643d549b75c793f6f1fed5fc4bc62adc6db9eb601f89a69de07ebf03a6",
+      "success_candidates": [
+        1,
+        3
+      ],
+      "suite": "libero_object",
+      "task": 5,
+      "trial": 20
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        0
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 240,
+      "source_id": 120,
+      "start_step": 128,
+      "state_sha256": "89bc36d7d4a6c2b85d7d2ee9559b9d43a6ada0b0351d49e5017f71a76ad500db",
+      "success_candidates": [
+        1,
+        2,
+        3
+      ],
+      "suite": "libero_object",
+      "task": 8,
+      "trial": 20
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 3,
+        "success_candidate": 0
+      },
+      "group_id": 243,
+      "source_id": 121,
+      "start_step": 80,
+      "state_sha256": "4252afc472635c44b27ab9bc469749de3c40df32f753538431274cad06150f32",
+      "success_candidates": [
+        0,
+        1,
+        2
+      ],
+      "suite": "libero_object",
+      "task": 9,
+      "trial": 20
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 244,
+      "source_id": 122,
+      "start_step": 56,
+      "state_sha256": "b8e48f5bd801af9baa1c0130536d6cbb1d9df0d633389c6ef4a9c03974c84778",
+      "success_candidates": [
+        0,
+        1,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 0,
+      "trial": 20
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 245,
+      "source_id": 122,
+      "start_step": 40,
+      "state_sha256": "dc10371e0770b3f874dddb0631db22c1ad1ade81300b2f62788e921a6667f339",
+      "success_candidates": [
+        0,
+        1
+      ],
+      "suite": "libero_spatial",
+      "task": 0,
+      "trial": 20
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 247,
+      "source_id": 123,
+      "start_step": 48,
+      "state_sha256": "8c066e3705c070ef16b00da9578e8d8181b4a1c29649d19961f3865ff0160514",
+      "success_candidates": [
+        0,
+        1,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 2,
+      "trial": 20
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 2,
+        "success_candidate": 0
+      },
+      "group_id": 250,
+      "source_id": 125,
+      "start_step": 80,
+      "state_sha256": "61fcfca15cf13dc54499aad823680106f88246c143da8b5b4167069bf669c02d",
+      "success_candidates": [
+        0,
+        1,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 5,
+      "trial": 20
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1,
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 251,
+      "source_id": 125,
+      "start_step": 64,
+      "state_sha256": "0008a8c7fdc71fceacf7554f2657e0586606f9d2efeaddc0fb7f3aa9b70cd9c5",
+      "success_candidates": [
+        0,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 5,
+      "trial": 20
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        0,
+        1,
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 3
+      },
+      "group_id": 254,
+      "source_id": 127,
+      "start_step": 56,
+      "state_sha256": "d1a6deb6bdb9a49acb99a31f2579884a48c01290b41e55b712bc8311db96bdd2",
+      "success_candidates": [
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 8,
+      "trial": 20
+    },
+    {
+      "distance_replans": 5,
+      "failure_candidates": [
+        1,
+        2,
+        3
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 255,
+      "source_id": 127,
+      "start_step": 40,
+      "state_sha256": "30e33985bfb7aca959bc9fe11006eacbff924a044bd9d5fa6400eca5f9604f8a",
+      "success_candidates": [
+        0
+      ],
+      "suite": "libero_spatial",
+      "task": 8,
+      "trial": 20
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        0,
+        2
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 266,
+      "source_id": 133,
+      "start_step": 152,
+      "state_sha256": "bcb8eefc0de8addc529fd429e54a635d6c2f0e83b3cefaca91979cdf73d55917",
+      "success_candidates": [
+        1,
+        3
+      ],
+      "suite": "libero_object",
+      "task": 4,
+      "trial": 21
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        1
+      ],
+      "fixed_pair": {
+        "failure_candidate": 1,
+        "success_candidate": 0
+      },
+      "group_id": 268,
+      "source_id": 134,
+      "start_step": 120,
+      "state_sha256": "b8a09081a3d30d5a38e2716ac3928eaef5c056b5c019319f6d8a68ffe8f0d057",
+      "success_candidates": [
+        0,
+        2,
+        3
+      ],
+      "suite": "libero_object",
+      "task": 6,
+      "trial": 21
+    },
+    {
+      "distance_replans": 3,
+      "failure_candidates": [
+        0
+      ],
+      "fixed_pair": {
+        "failure_candidate": 0,
+        "success_candidate": 1
+      },
+      "group_id": 274,
+      "source_id": 137,
+      "start_step": 72,
+      "state_sha256": "f356eb3744ccda61725777f8ca1bdcd437e4b5700e746f5779dd828f7b160059",
+      "success_candidates": [
+        1,
+        2,
+        3
+      ],
+      "suite": "libero_spatial",
+      "task": 3,
+      "trial": 21
+    }
+  ],
+  "model_forwards": 0,
+  "parent_success_pair_diagnostic": {
+    "independent_sources_with_any_failure_by_suite": {
+      "libero_10": 2,
+      "libero_goal": 9,
+      "libero_object": 16,
+      "libero_spatial": 47
+    },
+    "not_primary_reason": "The successful parent executed replan=8 while C61 interventions executed their first chunk for 32 steps. Pairing those outcomes would use asymmetric execution contracts and cannot repair the strict mixed-candidate data gap."
+  },
+  "read_only": true,
+  "status": "FAIL_C65_C61_FOUR_SUITE_DATA_GATE_NO_SCORE",
+  "suite_inventory": {
+    "libero_10": {
+      "all_failure_groups": 3,
+      "all_success_groups": 15,
+      "any_failure_independent_sources": 2,
+      "failed_jobs": 12,
+      "groups": 18,
+      "mixed_independent_sources": 0,
+      "required_independent_sources": 20,
+      "strict_data_gate": "FAIL",
+      "successful_jobs": 60
+    },
+    "libero_goal": {
+      "all_failure_groups": 12,
+      "all_success_groups": 24,
+      "any_failure_independent_sources": 9,
+      "combinatorial_pairs": 13,
+      "failed_jobs": 55,
+      "groups": 40,
+      "mixed_failure_jobs": 7,
+      "mixed_groups": 4,
+      "mixed_independent_sources": 2,
+      "mixed_success_jobs": 9,
+      "required_independent_sources": 20,
+      "strict_data_gate": "FAIL",
+      "successful_jobs": 105
+    },
+    "libero_object": {
+      "all_failure_groups": 1,
+      "all_success_groups": 107,
+      "any_failure_independent_sources": 16,
+      "combinatorial_pairs": 62,
+      "failed_jobs": 34,
+      "groups": 126,
+      "mixed_failure_jobs": 30,
+      "mixed_groups": 18,
+      "mixed_independent_sources": 15,
+      "mixed_success_jobs": 42,
+      "required_independent_sources": 20,
+      "strict_data_gate": "FAIL",
+      "successful_jobs": 470
+    },
+    "libero_spatial": {
+      "all_failure_groups": 59,
+      "all_success_groups": 13,
+      "any_failure_independent_sources": 47,
+      "combinatorial_pairs": 86,
+      "failed_jobs": 286,
+      "groups": 98,
+      "mixed_failure_jobs": 50,
+      "mixed_groups": 26,
+      "mixed_independent_sources": 21,
+      "mixed_success_jobs": 54,
+      "required_independent_sources": 20,
+      "strict_data_gate": "PASS",
+      "successful_jobs": 106
+    }
+  },
+  "training_steps": 0
+}

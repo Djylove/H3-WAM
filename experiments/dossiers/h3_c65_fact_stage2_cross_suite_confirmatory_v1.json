@@ -1,0 +1,79 @@
+{
+  "format": "h3wam-experiment-dossier-v1",
+  "candidate": "C65_FACT_STAGE2_CROSS_SUITE_CONFIRMATORY",
+  "date": "2026-08-17",
+  "status": "BLOCKED_C61_DATA_GAP_NO_SCORE",
+  "hypothesis": "On fresh, source-independent, same-state C60 action-resampling pairs, the frozen C60 s10000 FACT Stage-2 value assigns lower cost to the action whose replan-8 branch succeeds than to the action whose otherwise-identical branch fails, consistently across all four LIBERO suites.",
+  "parent_and_history": {
+    "official_parent": "C58 remains the promoted carrier; C60 remains NOT_EVIDENCE_READY.",
+    "c63": "C63 is immutable and remains failed because 1/32 exact BF16 value ties violated its all-nonzero mechanical gate. C65 is a new candidate and does not reinterpret or overwrite C63.",
+    "training_allowed": false,
+    "best_of_n_allowed": false
+  },
+  "source_alignment": {
+    "official_fact_commit": "618a6c16868699b6d4138941de6a863589ac00dd",
+    "official_fact_stage2": "third_party/FACT/world_action_model/pipeline/wa_pipeline.py:317-318,737-738,820-823",
+    "official_fact_selection": "third_party/FACT/scripts/inference_server.py:342-351,410-428",
+    "local_c61_generation": "scripts/h3wam/prepare_c61_failure_rollout_expansion.py and scripts/h3wam/launch_c61_failure_rollout_node.sh",
+    "local_auditor": "scripts/h3wam/audit_c65_c61_same_state_pairs.py",
+    "source_data_evidence": "experiments/evidence/h3_c65_c61_same_state_source_data_audit_v1.json",
+    "source_data_evidence_sha256": "87ab2752b84192b0be6234eec1511b647631b6d0849e3940504cdbbbdf008e8c"
+  },
+  "c61_read_only_audit": {
+    "c61_frozen_sha256": "17f39b26cd033171bc9cc0afad819ea6b2794f24d1e03d4218c988969a76f6b4",
+    "c61_jobs_sha256": "6e2d76e60cdf2a514cb5378c9b0cccf56a97df7b7698b74d1729a28dfa487666",
+    "c63_pairs_sha256": "c3ead728d362d53ad57f02508cb66febfa128dad79e95911d0da89cd40d8c25a",
+    "jobs": 1128,
+    "successes": 741,
+    "failures": 387,
+    "mixed_groups": 48,
+    "strict_mixed_independent_sources": {
+      "libero_spatial": 21,
+      "libero_object": 15,
+      "libero_goal": 2,
+      "libero_10": 0
+    },
+    "strict_mixed_combinatorial_pairs": {
+      "libero_spatial": 86,
+      "libero_object": 62,
+      "libero_goal": 13,
+      "libero_10": 0
+    },
+    "mechanics": "1128/1128 parent-to-branch sim_state, previous_action and step are byte exact; every group has four unique candidate actions; one frozen D0 checkpoint generated every branch.",
+    "c63_disjoint": "PASS: parent trajectory, branch trajectory, simulator state, candidate action and suite/task/trial/step overlaps are all zero.",
+    "distribution_gap": "C61 sampled D0-H32-s14000 and used first_replan_steps=32. C65 deployment would sample the C60/C58 lineage under replan8, so C61 is a near-neighbor distribution, not the exact candidate distribution.",
+    "decision": "FAIL_C65_C61_FOUR_SUITE_DATA_GATE_NO_SCORE"
+  },
+  "rejected_shortcut": {
+    "proposal": "Pair every C61 failure with the successful parent trajectory action.",
+    "reason": "The parent outcome used replan8 while the C61 candidate intervention used its first action chunk for 32 steps. Those outcomes are execution-contract asymmetric. Independent source capacity would also be only spatial47/object16/goal9/L10=2, so duplicate candidates cannot create valid power."
+  },
+  "fresh_collection_data_gate": {
+    "policy_checkpoint": "C60 s10000 SHA256 d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36",
+    "source_pool": "Fresh C60 successful rollout trajectories from trials33..49; all source and intervention states must be disjoint from C63 and C61 by SHA/state identity.",
+    "execution": "All candidates are sampled at one exact restored state by the same C60 policy. Candidate-specific first diffusion seed is the only intervention; first and continuation replans both execute replan8; continuation noise schedule is identical within a state.",
+    "candidate_budget": "Freeze eight candidates for each frozen state before any branch outcome is read.",
+    "pair_selection": "A state is eligible only when at least one candidate succeeds and one fails. Select the smallest successful candidate id and smallest failed candidate id. At most one pair and one state per parent source enters scoring.",
+    "minimum": "20 unique mixed parent sources and exactly 20 fixed pairs per suite (80 total).",
+    "failure": "If any suite has fewer than 20 eligible independent sources after the frozen collection, publish the coverage shortfall and do not score."
+  },
+  "frozen_score_contract_after_data_gate": {
+    "model": "Frozen C60 s10000; no parameter updates.",
+    "input": "The same current branch RGB/proprio/text is reused for both current-state candidate action chunks. Future observations, terminal state and outcome labels are never model inputs.",
+    "solver": "Official FACT Stage-2 flow solver, shift=5, ten evaluations, identical initial future/value/representation noise within pair, repeated in reversed candidate order.",
+    "value": "Use the sole value[:,0,0] token. Model domain is BF16 normalized [-1,1]; raw=normalized+1; lower raw value wins exactly as official inference_server argmin.",
+    "precision": "Keep the deployed BF16 model/output path. A tie is exact equality of the two finite BF16 raw scalar values; no epsilon, FP32 rescue, or random tie break is allowed.",
+    "tie": "Abstention. Ties are excluded from the conditional preference denominator but remain in the coverage denominator.",
+    "coverage_gate": "At least 76/80 non-ties overall and at least 19/20 in every suite.",
+    "conditional_preference_gate": "At least 65% success-action preference among non-ties overall and one-sided exact binomial p<=0.05.",
+    "per_suite_gate": "At least 60% success-action preference among non-ties in every suite.",
+    "margin_gate": "Median failure-minus-success raw value is strictly positive over all 80 pairs, with ties represented as zero.",
+    "mechanical_gate": "All scores finite; source/state/action hashes exact; no pair duplicated; same noise; candidate-order max_abs=0."
+  },
+  "permissions": {
+    "current": "NO_SCORE_COLLECT_C65_DEPLOYMENT_DISTRIBUTION_PAIRS",
+    "pass": "GO_SEPARATE_PREREGISTERED_N1_VS_N4_CLOSED_LOOP_ONLY",
+    "fail": "NO_GO_C60_STAGE2_SELECTOR_KEEP_C58"
+  },
+  "claim_boundary": "Even a C65 offline PASS establishes action ranking on fresh candidate-sensitive states only. It does not establish closed-loop LIBERO improvement and does not itself authorize best-of-N deployment."
+}
