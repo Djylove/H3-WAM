@@ -281,26 +281,64 @@ class H3FastWAMLingBotPersistentPolicy(H3FastWAMFullTowerPolicy):
             if initial is not None:
                 keys.append(initial[layer]["k"].to(key))
                 values_v.append(initial[layer]["v"].to(value))
-            keys.append(key)
-            values_v.append(value)
-            mixed = upstream.flash_attention(
-                q=query,
-                k=torch.cat(keys, dim=1),
-                v=torch.cat(values_v, dim=1),
-                num_heads=self.num_heads,
-                ctx_mask=None,
-            )
-            tokens = block.gate(tokens, gate_msa, block.self_attn.o(mixed))
-            cross_mask = action_state["context_mask"]
-            if cross_mask.ndim == 3:
-                cross_mask = cross_mask.unsqueeze(1)
-            tokens = tokens + block.cross_attn(
-                block.norm3(tokens), action_state["context"], ctx_mask=cross_mask
-            )
-            ffn_input = upstream.modulate(
-                block.norm2(tokens), shift_mlp, scale_mlp
-            )
-            tokens = block.gate(tokens, gate_mlp, block.ffn(ffn_input))
+            history_key = torch.cat(keys, dim=1)
+            history_value = torch.cat(values_v, dim=1)
+
+            def finish_block(
+                current_tokens: torch.Tensor,
+                current_query: torch.Tensor,
+                current_key: torch.Tensor,
+                current_value: torch.Tensor,
+                prefix_key: torch.Tensor,
+                prefix_value: torch.Tensor,
+                owner=block,
+                gate_attention=gate_msa,
+                gate_feedforward=gate_mlp,
+                shift_feedforward=shift_mlp,
+                scale_feedforward=scale_mlp,
+                cross_context=action_state["context"],
+                cross_mask_value=action_state["context_mask"],
+            ) -> torch.Tensor:
+                mixed = upstream.flash_attention(
+                    q=current_query,
+                    k=torch.cat((prefix_key, current_key), dim=1),
+                    v=torch.cat((prefix_value, current_value), dim=1),
+                    num_heads=self.num_heads,
+                    ctx_mask=None,
+                )
+                output = owner.gate(
+                    current_tokens, gate_attention, owner.self_attn.o(mixed)
+                )
+                cross_mask = cross_mask_value
+                if cross_mask.ndim == 3:
+                    cross_mask = cross_mask.unsqueeze(1)
+                output = output + owner.cross_attn(
+                    owner.norm3(output),
+                    cross_context,
+                    ctx_mask=cross_mask,
+                )
+                ffn_input = upstream.modulate(
+                    owner.norm2(output), shift_feedforward, scale_feedforward
+                )
+                return owner.gate(
+                    output, gate_feedforward, owner.ffn(ffn_input)
+                )
+
+            if self.use_gradient_checkpointing and self.training:
+                tokens = torch.utils.checkpoint.checkpoint(
+                    finish_block,
+                    tokens,
+                    query,
+                    key,
+                    value,
+                    history_key,
+                    history_value,
+                    use_reentrant=False,
+                )
+            else:
+                tokens = finish_block(
+                    tokens, query, key, value, history_key, history_value
+                )
             generated.append((key, value))
         return self.action_expert.post_dit(tokens, action_state), generated
 

@@ -78,14 +78,15 @@
         "mechanical-v4 passed the infrastructure preflight and is a permanent MECHANICAL_FAIL: real clean-action feedback at FP32 timestep zero reached a BF16 ActionDiT Linear without autocast and failed mat1 Float versus mat2 BF16 before report generation.",
         "The minimal model fix preserves the FP32 continuous timestep and establishes the same BF16/FP16 autocast boundary used by C58 training inside the public feedback API; a CPU BF16 full feedback-commit regression test covers the repaired path.",
         "mechanical-v5 and mechanical-v6 are permanent INFRA_PREFLIGHT_FAIL runs: the 64x64 BF16/FP16 GEMM probe intermittently returned CUBLAS_STATUS_INVALID_VALUE under nohup, while the same environment sometimes passed interactively, stable 256x256 probes passed in both dtypes, and v4 had already entered real H3 forward. Neither run produced a report, optimizer step, or model verdict.",
-        "mechanical-v8-formal showed that even an independent 256x256 preflight process can intermittently fail, so the launcher child is removed. The ActionDiT-width [128,3072]@[3072,3072] BF16/FP16 preflight now executes inside the same Python/CUDA process that continues into H3 and ActionDiT.",
+        "mechanical-v8-formal and v11 showed that independent 256x256 and even same-process startup-time ActionDiT-width synthetic GEMMs can intermittently fail during CUDA context cold start. All synthetic matmul gates are removed; after CPU identity/data loading, the real frozen H3 and real C58 ActionDiT forwards are the stronger execution gate. The audited v7 pass is final and is not rerun.",
         "mechanical-v7-direct report SHA256 dba327cd41f26596cec23228eb5d4be67ff2fa6a4c354b198271ef48cd87468e passed strict independent audit: all source/model/data hashes match; real H3 K reindex changes temporal phase while V is exact; C58 parity, 30-layer 104-token feedback state, no duplicate current, strict restore and 30/30 finite positive block gradients pass; H3 gradients, optimizer steps and checkpoints are zero."
       ]
     },
     "optimizer_contract": {
       "status": "PASS_BOUNDED_ONLY",
       "evidence": [
-        "The audited mechanical/data pass authorizes only a preregistered small-budget episode-disjoint paired canary. It does not authorize long training or fusion."
+        "The audited mechanical/data pass authorizes only a preregistered small-budget episode-disjoint paired canary. It does not authorize long training or fusion.",
+        "The implemented canary fixes 8 ranks x 100 steps x microbatch1 = 800 unique train episodes plus 64 heldout episodes, balanced across all four LIBERO suites. Every row retains all seven history chunks, fifteen observations and fifty-six executed actions; no history is truncated or detached. Heldout arms are clean context, action-pair shuffle and context-off under identical model/noise/target."
       ]
     },
     "mechanism_signal": {

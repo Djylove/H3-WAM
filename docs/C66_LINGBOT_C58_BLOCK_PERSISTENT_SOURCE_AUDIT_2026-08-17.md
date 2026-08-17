@@ -123,11 +123,11 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
   report、optimizer step 或模型 verdict，不能用作 C66 机制反证。
 - 门禁一度改为 `256x256` BF16/FP16 tensor-core GEMM，以规避该 A800 runtime 对 tiny-GEMM 算法选择的
   假阴性；模型、数据、seed、阈值与 probe 均未改变。
-- 后续复核发现独立 `256x256` 子进程仍可偶发同类错误，因此它同样不是有效执行门：
-  `mechanical-v8-formal` 永久记为 `INFRA_PREFLIGHT_FAIL`，无 report/verdict。门禁已移入真实 probe 的
-  **同一个 Python/CUDA 进程**，并改用 ActionDiT 实际 hidden width 的
-  `[128,3072]@[3072,3072]` BF16/FP16 GEMM；通过后同一进程继续 H3 与 ActionDiT，不再由独立 child
-  替真实执行进程作判断。
+- 后续复核发现独立 `256x256`、乃至同进程启动初期的 ActionDiT-width synthetic GEMM 都可偶发同类
+  错误；`mechanical-v8-formal` 与 `v11` 因而永久记为 `INFRA_PREFLIGHT_FAIL`，无 report/verdict。
+  根因是该新节点 CUDA context 冷启动时机，而非矩阵尺寸。所有 synthetic matmul 门禁现已彻底删除：
+  probe 完成约 40 秒 CPU SHA/数据加载后直接执行真实 frozen H3，再执行真实 C58 ActionDiT。真实 forward
+  覆盖模型权重、layout、量化算子和实际 shape，是更强且与目标一致的机械门；已通过并审计的 v7 不再重跑。
 - `/mnt/h3-wam/outputs/c66-lingbot-c58-block-persistent/mechanical-v7-direct/report.json`
   已完成严格复核，SHA256 `dba327cd41f26596cec23228eb5d4be67ff2fa6a4c354b198271ef48cd87468e`：
   全部源码、H3/C58、sequence/AUDIT/source manifest/stats 重新哈希一致；真实 H3 temporal reindex 为
@@ -135,3 +135,17 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
   redundant current 与 restore max-abs 均为 `0`；history effect `0.6484375`；30/30 block K gradient
   有限正值；H3 无梯度；optimizer/checkpoint 均为 `0`。因此机械与数据门正式通过，只放行固定预算的
   episode-disjoint context-on/context-off/history-shuffle paired canary；尚无任何动作效果或 LIBERO 结论。
+
+## 固定 100-step paired canary
+
+- `freeze_c66_lingbot_c58_canary.py` 从完整 C57 sequence manifest 冻结 800 train + 64 heldout：四个
+  LIBERO suite 各 200/16，每个样本保留完整 7 个 replan chunk、15 帧 observation、56 条已执行动作；
+  每个 episode 只取一行，train/heldout episode intersection 必须为 0，并排除 C58 已消费的 current ID。
+- `train_c66_lingbot_c58_persistent_canary.py` 固定 8 rank、100 step、microbatch1、恰好一轮 800 unique
+  samples。真实 INT8 H3 在每 rank 在线生成全部 30 层 K/V；每个历史帧按绝对时间重索引；7 次 clean
+  feedback commit 和当前 action loss 均在 DDP forward 内，ActionDiT 全 30 层训练，H3 冻结。
+- heldout64 使用同一 checkpoint/noise/target 比较 clean context、只轮换历史 executed-action 配对的
+  history-shuffle、context-off 三臂。预注册门：30/30 block gradient；runtime restore exact；shuffle
+  prediction delta `>=1e-5`；clean 相对 shuffle MSE 至少改善 1%；clean 相对 context-off 退化不超过 5%。
+- 为完整 7-chunk 反传加入 C66 block 内 non-reentrant activation checkpointing；它只重算 block，既不
+  detach committed K/V，也不缩短历史。未通过上述门只保存分析 checkpoint，禁止追加 steps 或融合。

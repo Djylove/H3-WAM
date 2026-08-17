@@ -106,6 +106,7 @@ def test_committed_observation_is_not_duplicated_and_action_kv_is_block_internal
         persistent_window_frames=3,
         observation_tokens_per_frame=3,
         action_tokens_per_frame=4,
+        use_gradient_checkpointing=True,
         **_arguments(),
     )
     state = model.new_persistent_state("episode")
@@ -201,10 +202,9 @@ def test_cloud_launcher_exposes_pinned_h3_diffusers_layout_source():
         Path(__file__).resolve().parents[1]
         / "scripts/h3wam/probe_c66_lingbot_c58_persistent.py"
     ).read_text(encoding="utf-8")
-    assert "cuda_actiondit_preflight()" in probe
-    assert "same_process_as_h3_and_actiondit" in probe
-    assert "shape = (128, 3072, 3072)" in probe
-    assert "torch.bfloat16, torch.float16" in probe
+    assert "cuda_actiondit_preflight" not in probe
+    assert "torch.randn(256,256" not in probe
+    assert "C58OnlineFrozenH3Provider" in probe
 
 
 def test_bf16_feedback_commit_keeps_fp32_timestep_but_matches_linear_dtype():
@@ -241,3 +241,28 @@ def test_bf16_feedback_commit_keeps_fp32_timestep_but_matches_linear_dtype():
     assert all(
         entry["tokens"] == 7 for entry in state.audit()["layers"].values()
     )
+
+
+def test_c66_canary_keeps_full_lingbot_history_and_three_paired_arms():
+    root = Path(__file__).resolve().parents[1]
+    freezer = (root / "scripts/h3wam/freeze_c66_lingbot_c58_canary.py").read_text()
+    trainer = (
+        root / "scripts/h3wam/train_c66_lingbot_c58_persistent_canary.py"
+    ).read_text()
+    launcher = (
+        root / "scripts/h3wam/launch_c66_lingbot_c58_canary_8gpu.sh"
+    ).read_text()
+    assert '"train_rows": 800' in freezer
+    assert '"heldout_rows": 64' in freezer
+    assert '"history_chunks": 7' in freezer
+    assert '"history_observation_frames": 15' in freezer
+    assert '"history_executed_actions": 56' in freezer
+    assert '"clean_context", "history_action_shuffle", "context_off"' in freezer
+    assert 'if args.steps != 100' in trainer
+    assert 'world_size != 8' in trainer
+    assert 'shuffle_actions=True' in trainer
+    assert 'predict_off(raw.policy' in trainer
+    assert 'clean_beats_shuffle_by_1pct' in trainer
+    assert 'clean_vs_off_regression_at_most_5pct' in trainer
+    assert 'dba327cd41f26596cec23228eb5d4be67ff2fa6a4c354b198271ef48cd87468e' in launcher
+    assert '--nproc_per_node=8' in launcher
