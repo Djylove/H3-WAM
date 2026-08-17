@@ -103,3 +103,4 @@ def test_aggregate_rejects_mechanical_failure():
     result = AGG.aggregate_rows(values)
     assert result["status"] == "FAIL_C63_STAGE2_WITHIN_STATE_DIAGNOSTIC"
     assert not result["gates"]["mechanics"]
+    assert "FAIL_C63_STAGE2_SHARD_MECHANICS" in AGG.SHARD_STATUSES

@@ -16,6 +16,10 @@ from typing import Any
 
 FORMAT = "h3wam-c63-fact-stage2-within-state-result-v1"
 SHARD_FORMAT = "h3wam-c63-fact-stage2-within-state-shard-v1"
+SHARD_STATUSES = {
+    "PASS_C63_STAGE2_SHARD_MECHANICS",
+    "FAIL_C63_STAGE2_SHARD_MECHANICS",
+}
 PAIR_FORMAT = "h3wam-c63-fact-stage2-within-state-pairs-v1"
 C60_SHA256 = "d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36"
 EXPECTED_SUITE_COUNTS = {"libero_object": 2, "libero_spatial": 30}
@@ -108,7 +112,7 @@ def main() -> None:
         report = json.loads(path.read_text())
         if (
             report.get("format") != SHARD_FORMAT
-            or report.get("status") != "PASS_C63_STAGE2_SHARD_MECHANICS"
+            or report.get("status") not in SHARD_STATUSES
             or report.get("effect_status") != "SHARD_ONLY_NOT_INTERPRETABLE"
             or report.get("shard") != shard
             or report.get("num_shards") != 8
