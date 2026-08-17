@@ -1,0 +1,45 @@
+{
+  "format": "h3wam-experiment-dossier-v1",
+  "candidate": "C65_C60_DEPLOYMENT_PAIR_COLLECTION",
+  "date": "2026-08-17",
+  "status": "FROZEN_COLLECTION_RUNNING_NO_OUTCOME_READ",
+  "freeze_timing": "Prepared and committed while 0/3072 branch results existed.",
+  "prepared": {
+    "path": "/mnt/h3-wam/eval/c65-c60-deployment-pair-collection-v1/PREPARED.json",
+    "sha256": "a883db2662acbb8a2bb31fa9ebbd7ff344ab01d1af5626d5d02def07a0e1158a",
+    "jobs_sha256": "c9a13ede1ea111450ff4bd4f893fd729fc55190f92ce45e76e0240a9001b52cf",
+    "sources": 96,
+    "sources_per_suite": 24,
+    "states": 384,
+    "distances_replans_in_priority_order": [3, 5, 7, 9],
+    "candidates_per_state": 8,
+    "jobs": 3072
+  },
+  "execution": {
+    "candidate_policy": "h3_fact_online_int8",
+    "checkpoint_sha256": "d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36",
+    "first_replan_steps": 8,
+    "continuation_replan_steps": 8,
+    "action_horizon": 32,
+    "same_continuation_noise_within_state": true,
+    "outcome_early_stop": false,
+    "model_score_during_collection": false
+  },
+  "selection_frozen_before_outcomes": {
+    "eligible_state": "All eight candidates complete and contain at least one terminal success and one terminal failure.",
+    "state_per_source": "Choose the eligible group with the smallest group_id, equivalent to the first eligible distance in frozen order 3,5,7,9.",
+    "pair_within_state": "Choose the smallest successful candidate id and smallest failed candidate id.",
+    "sources_if_more_than_20": "Within each suite choose the 20 eligible sources with smallest source_id.",
+    "independence": "At most one state and one pair per successful C60 parent source."
+  },
+  "data_gate": {
+    "required": "At least 20 eligible independent sources in every suite.",
+    "pass": "Write exactly 20 pairs per suite and permit the separately frozen read-only C65 score.",
+    "fail": "Write the per-suite coverage gap and forbid every model score."
+  },
+  "nodes": {
+    "n1_30907": "libero_spatial,libero_object",
+    "n2_32409": "libero_goal,libero_10"
+  },
+  "claim_boundary": "Collection outcomes establish pair eligibility only. They are not a policy comparison, model score, or best-of-N result."
+}
