@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import socket
 import subprocess
@@ -155,6 +156,11 @@ def parse_args() -> argparse.Namespace:
         "--c56b-paired-ready",
         type=Path,
         help="Required paired balanced80 gate for C56b rollout.",
+    )
+    parser.add_argument(
+        "--c67-budget-rollout-authorization",
+        type=Path,
+        help="Required offline-gated s10/s20 authorization for C67 rollout.",
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--target-latent-frames", type=int, default=12)
@@ -378,14 +384,25 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                     str(args.c58b_balanced80_ready.resolve()),
                 ))
             if args.policy == "h3_fact_online_int8":
-                if args.c56b_paired_ready is None:
+                gates = (
+                    args.c56b_paired_ready,
+                    args.c67_budget_rollout_authorization,
+                )
+                if sum(value is not None for value in gates) != 1:
                     raise ValueError(
-                        "h3_fact_online_int8 requires --c56b-paired-ready"
+                        "h3_fact_online_int8 requires exactly one "
+                        "--c56b-paired-ready or --c67-budget-rollout-authorization"
                     )
-                command.extend((
-                    "--c56b-paired-ready",
-                    str(args.c56b_paired_ready.resolve()),
-                ))
+                if args.c56b_paired_ready is not None:
+                    command.extend((
+                        "--c56b-paired-ready",
+                        str(args.c56b_paired_ready.resolve()),
+                    ))
+                else:
+                    command.extend((
+                        "--c67-budget-rollout-authorization",
+                        str(args.c67_budget_rollout_authorization.resolve()),
+                    ))
             if args.progress_probe is not None:
                 if args.policy != "h3_dreamwam_kv_int8":
                     raise ValueError("online paired canary forbids --progress-probe")
@@ -1092,6 +1109,18 @@ def main() -> None:
     all_results = {
         "policy": args.policy,
         "checkpoint": str(args.checkpoint.resolve()),
+        "c67_budget_rollout_authorization": (
+            None
+            if args.c67_budget_rollout_authorization is None
+            else str(args.c67_budget_rollout_authorization.resolve())
+        ),
+        "c67_budget_rollout_authorization_sha256": (
+            None
+            if args.c67_budget_rollout_authorization is None
+            else hashlib.sha256(
+                args.c67_budget_rollout_authorization.resolve().read_bytes()
+            ).hexdigest()
+        ),
         "suite": args.suite,
         "task_ids": task_ids,
         "task_languages": args.task_languages,

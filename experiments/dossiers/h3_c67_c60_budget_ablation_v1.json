@@ -217,6 +217,31 @@
     "projected_checkpoint_storage_bytes": 244038964980,
     "minimum_free_bytes_before_launch": 322122547200
   },
+  "rollout_preregistration": {
+    "authorization_input": "Only h3wam-c67-budget-balanced80-result-v1 with PASS_C67_BUDGET_BALANCED80_GATE / GO_C67_PAIRED_680_ROLLOUT, all boolean gates true, and exact training-complete/checkpoint/restore SHA identities.",
+    "authorization_format": "h3wam-c67-budget-rollout-authorization-v1",
+    "authorization_status": "AUTHORIZED_C67_S10_S20_PAIRED_680",
+    "authorization_permission": "GO_C67_1360_FRESH_PROCESSES_NO_INTERMEDIATE_STOP",
+    "grid": "2 endpoints x 4 suites x 10 tasks x trials33..49 = 1360 fresh processes / 680 exact pairs",
+    "source_freeze": "A clean commit and exact git tree are archived completely; every tracked file plus known subprocess/dynamic-import target is SHA256 frozen and the extracted snapshot is recursively read-only. Launcher and aggregator re-verify the full tree.",
+    "historical_c60_exact_data_sha256": {
+      "demo_manifest_sha256": "b0d611c21059fa7da6fb08162b03efadd59aff68354bb101be41d3ae20d98eb1",
+      "source_manifest_sha256": "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9",
+      "demo_stats_sha256": "6f7e9f4a2232a798e4e30ad26f5748e71aeeda7fa54cb6ea2d0a3ec7d290e814",
+      "c48_dataset_sha256": "d416d86c09ba334fae449a131510b84fa1d111e665a77eabfb248f1c79a5bc61",
+      "c48_observations_sha256": "399d93f31a8f26297145942387a233b9667049efc60ac1f46514a3f7ce77a638",
+      "c59_completed_sha256": "4e67bb95b69ada2a854d3b2bf4ba434c6b3072c2bba11a91df2c30c6de5eeb99",
+      "c59_sample_labels_sha256": "f2be6801cac2f1c5b680b30c5e089f47e2bf428f179ee13c1ae283e2d47a9d53"
+    },
+    "effect_gates": {
+      "absolute_gain": 0.03,
+      "net_wins": 20,
+      "one_sided_exact_mcnemar_p": 0.05,
+      "suite_regression_floor": -0.03,
+      "s20000_success_floor": 313
+    },
+    "pass_boundary": "EVIDENCE_READY_BUDGET_ABLATION_ONLY; reused trials33..49 cannot promote C67 or rewrite historical C60."
+  },
   "decision": {
     "status": "GO_LONG",
     "rationale": "This is a bounded diagnostic that reuses a proven topology and changes only the pre-registered optimization horizon/budget. It is methodologically launchable, but this repository intentionally creates no release marker and starts no GPU process in this change.",

@@ -89,3 +89,29 @@ champion证据，不改变 `KEEP_C58_PARENT`，也不允许把旧 C60 680对失�
 - 若 s20未过，结论只覆盖“当前 C58初始化、C60数据/目标和20k cosine合同”，不证明任何更长训练永远无效；
 - 本仓库不自动生成 `C67_RELEASE_FILE`。只有独立审查把 dossier、trainer、launcher、C58 READY、C58
   checkpoint和 output root 的 hash/路径写入手工 release JSON 后，launcher才可能通过。
+
+## rollout/source freeze 执行阻断
+
+训练 release 与 rollout authorization 是两个独立门。训练完成后仍不能直接跑 LIBERO：固定 offline
+`RESULTS.json` 必须为 `PASS_C67_BUDGET_BALANCED80_GATE / GO_C67_PAIRED_680_ROLLOUT`，全部 gate
+为true，并逐字节绑定 `TRAINING_COMPLETE.json`、s10/s20 checkpoint和两份restore audit。随后
+`prepare_c67_budget_rollout.py`才允许生成未签名的 `AUTHORIZATION.json`与固定1360-job manifest；本次代码
+提交不生成该artifact。
+
+正式执行只接受由一个干净commit导出的完整只读snapshot。`freeze_c67_rollout_source.py`同时冻结commit、
+git tree、所有tracked file SHA256，以及rollout/server/aggregator、FastWAM三项动态源和StarWAM两项动态源；
+launcher和aggregator都会全树复核，并设置`PYTHONNOUSERSITE=1`、`PYTHONDONTWRITEBYTECODE=1`。snapshot
+任一文件可写、缺失、多出或hash漂移均拒绝执行。
+
+七项历史C60数据身份也不再只检查“64位字符串”，而是四层fail-close：
+
+- train manifest `b0d611c2...d98eb1`，source manifest `cab8876f...55b9`，stats
+  `6f7e9f4a...e814`；
+- C48 dataset `d416d86c...bc61`、observations `399d93f3...a638`；
+- C59 COMPLETED `4e67bb95...eb99`、sample labels `f2be6801...a9d53`。
+
+完整闭环固定为trials33..49、四suite×10 task×17 state，共680 pair/1360个新进程；旧C60/C58结果
+一条也不复用。每个结果绑定authorization SHA，最终completion绑定authorization与manifest SHA。聚合器再次
+验证两臂full initial state exact，并只按预注册的`+3pp / net wins>=20 / one-sided p<=0.05 /
+suite>=-3pp / s20 successes>=313`判定。即使全过，权限仍仅为
+`EVIDENCE_READY_BUDGET_ABLATION_ONLY`，不能直接替换C58父节点。
