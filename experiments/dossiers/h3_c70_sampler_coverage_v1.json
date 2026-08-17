@@ -25,12 +25,22 @@
     "objective_contract": {"status": "PASS", "evidence": ["Joint objective code unchanged."]},
     "optimization_contract": {"status": "PASS", "evidence": ["Matched 20k budget preregistered."]},
     "evaluation_contract": {"status": "PASS", "evidence": ["Fixed balanced80 and endpoint-only comparison."]},
-    "gradient_path": {"status": "FAIL", "evidence": ["Real eight-rank C70 gradients pending canary."]},
-    "smoke_finite": {"status": "FAIL", "evidence": ["Real ten-step C70 smoke pending."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Eight-rank non-retained probe2 produced finite positive gradients in all 30 shared blocks with zero future-target leak; PROBE.json SHA256 f07cd31de2a637361c5cdb1653325053afe198a6820212c3411ebb4ad8a61b36."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["One real C70 optimizer step is finite; the checkpoint-producing ten-step smoke remains pending."]},
     "checkpoint_restore": {"status": "FAIL", "evidence": ["C70 strict restore pending."]},
     "parent_baseline": {"status": "PASS", "evidence": ["Fixed promoted C58B parent and matched C67 control."]},
     "mechanism_signal": {"status": "FAIL", "evidence": ["No C70 held-out result."]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["No C70 rollout."]}
+  },
+  "probe_evidence": {
+    "status": "PASS_C70_PROBE_ONLY",
+    "output": "/mnt/h3-wam/outputs/c70-sampler-coverage-v1/probe2-v1",
+    "probe_sha256": "f07cd31de2a637361c5cdb1653325053afe198a6820212c3411ebb4ad8a61b36",
+    "train_sha256": "46bb029fe79f756b736073455f4a9fcf0285c76eb1c6285b892070391daeba53",
+    "source_commit": "45ee644606cf4b4f53f97244428140fd2611323b",
+    "source_freeze_sha256": "bafa228b52b329ddefae75508e4291b84fcb97ba787392718222d4929c09ed5c",
+    "gates": {"finite_step": true, "all_30_shared_gradients": true, "future_no_leak": true, "exact_sampler_contract": true, "no_checkpoint_written": true},
+    "failed_attempt_boundary": "probe1 used source e6d1009 and failed only because the trainer serialized absent save_checkpoint as the string 'None'; it wrote no checkpoint. Source 45ee644 fixed that reporting defect and probe2 reran the same optimizer step in a fresh output directory."
   },
   "budget": {"world_size": 8, "gpu_count": 8, "global_batch": 8, "unique_windows": 222929, "optimizer_steps": 20000, "training_samples": 160000, "effective_epochs": 0.733522, "checkpoint_interval": 1000, "estimated_hours": 8.82, "projected_checkpoint_storage_bytes": 244038964980},
   "effect_preregistration": {
@@ -39,5 +49,5 @@
     "stop": "Any conditioning collapse or failure to improve both action domains keeps C70 out of rollout; no longer budget or checkpoint substitution.",
     "interpretation": "A pass supports expert state coverage as the sampler bottleneck under the fixed FACT objective; it does not prove FACT auxiliary targets are useful, which remains C69's separate attribution question."
   },
-  "decision": {"status": "PROBE_ONLY", "rationale": "Source and single-variable contracts pass, but real eight-rank gradients are still unknown. Run exactly one non-retained optimizer step before requesting canary permission.", "launch_command": "C70_PROBE_ONLY=1 bash scripts/h3wam/launch_c70_sampler_coverage_canary_8gpu.sh from a complete immutable snapshot; update and revalidate this dossier before any checkpoint-producing canary."}
+  "decision": {"status": "GO_CANARY", "rationale": "The real eight-rank non-retained probe passed finite-loss, all-30-shared-gradient, zero-leak, sampler-contract and no-checkpoint gates. This authorizes only the preregistered ten-step checkpoint/strict-restore canary, not long training or an effect claim.", "launch_command": "C70_SOURCE_SNAPSHOT=<complete immutable snapshot containing this GO_CANARY dossier> C70_SOURCE_FREEZE_SHA256=<reviewed manifest SHA256> C70_PROBE_ONLY=0 OUTPUT_ROOT=/mnt/h3-wam/outputs/c70-sampler-coverage-v1/canary10-v1 bash scripts/h3wam/launch_c70_sampler_coverage_canary_8gpu.sh"}
 }
