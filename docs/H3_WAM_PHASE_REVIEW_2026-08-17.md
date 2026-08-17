@@ -107,7 +107,7 @@ checkpoint+restore 使里程碑间隔约 25.2min，端到端约 8.4h。相同 ca
 | FACT local `618a6c1...`；upstream `9427ea4...` 只多 README live-demo | `max_steps=150000`、8×32 GB256；expert/failure episode mixture；future RGB/state/value | act-then-imagine、clean-action consequence、failure imitation mask | 当前保留 causal mask，但 GB8、H3 frozen、future-H3 vector 替代 future video；固定4/2/1/1不是官方 episode-count mixture | `INTENTIONAL_DEVIATION` |
 | DreamWAM `6e989fac...` | 21,700 steps、batch16；33/4→9-frame+32-action | RGB+motion joint denoise；DINO/depth structured future；逐层 shared attention | 当前没有 RGB/motion/depth/DINO，只预测单个池化 future-H3 target | `MISMATCH`，不能称 DreamWAM port |
 | MiniWorld `e484206b...` | 6/16/32/64 latent-frame curriculum；100 epochs、50 epochs、30k、30k | action-conditioned streaming WM、Muon、长度课程、rolling KV | 当前没有逐阶段时域课程，C62只移植过 rolling context 且失败 | `MISMATCH` |
-| Light-WAM `b2785f66...` | launcher 默认 150k steps、4×16 GB64、25 epochs fallback | frozen compact backbone + all-layer LoRA；8/16/24 adapters；learned-query pooling；1-block action trunk；前8步动作加权 | 当前是 frozen INT8 H3 + 30-block action trunk，无 backbone LoRA/learned-query pooling | `TRAINABLE SOURCE / HIGH PRIORITY` |
+| Light-WAM `b2785f66...` | launcher 默认 150k steps、4×16 GB64、25 epochs fallback | frozen compact backbone + backbone-wide LoRA；只在8/16/24三层取adapter states；learned-query pooling；1-block action trunk；前8步动作加权 | 当前是 frozen INT8 H3 + 30-block action trunk，无 backbone LoRA/三层adapter state/learned-query pooling | `TRAINABLE SOURCE / HIGH PRIORITY` |
 | WLA `155ac94e...` | LIBERO all action/image-action 均 100k steps、per-device batch32 | image-action/action-only官方配对；history8；world expert通过meta-query影响action | AR/RynnBrain/Sana 与 H3 接口不同；可借鉴严格同预算 world-on/off 配对 | `TRAINABLE SOURCE / MECHANISM REFERENCE` |
 | GAM `18f5cf09...` | LIBERO 150k steps、GB24；冻结前13个GFM blocks；12-layer future predictor | 3D geometry prior、causal future latent、action history、future horizon mixture | 当前 future target 是H3 K/V均值，不含显式几何；架构替换量大 | `TRAINABLE SOURCE / LATER TRACK` |
 | Faster-WAM/DoT arXiv:2608.02365 | code未确认；paper-only | all-layer K/V + RoPE realignment + single-layer action head | 当前已有all-layer映射但仍用30-layer action tower | `PAPER_ONLY / use Light-WAM code first` |
@@ -134,9 +134,10 @@ checkpoint+restore 使里程碑间隔约 25.2min，端到端约 8.4h。相同 ca
 
 ### 6.1 优先减少动作专家深度，而不是继续堆辅助 head
 
-Faster-WAM 提出 single-layer action head；Light-WAM 已提供可执行的 learned-query multi-layer state
-fusion 和一层 trunk。我们的 C58 已证明 H3 all-layer carrier 有效，但仍让 30 层动作塔重复变换这些信息。
-因此下一条新架构线应从 Light-WAM 固定 commit 直接移植 pooling/trunk，而不是凭论文重写 DoT。
+Faster-WAM 提出 single-layer action head；Light-WAM 已提供可执行的 learned-query三层state fusion和一层
+trunk。官方实际只消费8/16/24三处adapter states，并非把全部30层送入pooler；此前“all-layer state
+fusion”的概括不准确。我们的 C58 已证明 H3 layerwise carrier 有效，但仍让30层动作塔重复变换这些信息。
+因此下一条新架构线应从 Light-WAM 固定commit直接加载pooling/trunk源码，而不是凭论文重写DoT。
 
 ### 6.2 future target 应更“动作相关”
 
@@ -186,10 +187,13 @@ paired arm，否则即使长训成功，也无法区分更多 action optimizatio
 
 ### P2-B：Light-WAM shallow state-fusion H3 port
 
-- 直接固定 `b2785f66...` 的 adapter/state-fusion/action expert 代码路径；先保持 H3 frozen，不宣称官方复现。
-- 用现有30层H3 K/V作为多层来源，learned-query pooling + 1-block trunk；与 C58 30-layer tower做相同
-  expert samples/steps的 paired comparison。
+- 直接固定 `b2785f66...` 的state-fusion/action expert代码路径；先保持H3 frozen，不宣称官方复现。
+- 按官方8/16/24三层相对深度映射到H3 `14/27/41`，以三层V state接learned-query pooling + 1-block
+  trunk；与C58 30-layer tower做相同expert samples/steps的paired comparison。把30层全部送入30个独立
+  pooler既不是官方实现，参数也会无谓膨胀，因此不作为首个端口。
 - INT8 H3 上不假装实现官方 all-layer LoRA；QLoRA/局部解冻是另一个变量，后置。
+- 官方launcher的前8步监督与H3 LoRA都分别改变objective/trainable boundary；首个端口先保留全32步动作
+  监督和frozen H3，二者后续各自做单变量消融。
 
 ## 8. 决策门
 

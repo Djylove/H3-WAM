@@ -559,7 +559,7 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   仍只得到前者。success/causal 小池在同一终点分别重复 `16.214/10.368` 次，因此不把直接100k/150k
   记作合法的单纯 epoch 扩展。
 - 新登记 TRAINABLE 来源：Light-WAM `b2785f66e13fd9987e94ae1ecc1c441d5059c9ae`，候选机制为
-  all-layer adapted-state learned-query pooling + one-block action trunk；WLA
+  backbone-wide LoRA、8/16/24三层adapter-state learned-query pooling + one-block action trunk；WLA
   `155ac94eaca8b3d1ae0789ae298fc55e37936081`，候选机制为同100k预算的action/image-action配对；GAM
   `18f5cf0932612af62f4c6c87d6532b90aae1f3eb`，候选机制为geometry foundation backbone上的causal
   future predictor。三者已读实际config/launcher，不仅依据论文摘要。
@@ -570,3 +570,24 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
 - 预注册下一候选只允许分开建立：C68 fresh30k same-mixture budget arm；C69与C67完全同数据/20k预算的
   action-only attribution arm；C70同20k算力的sampler-coverage arm；以及独立的Light-WAM shallow
   state-fusion H3 port。当前不改C67，不把上述候选混成一个新配置。
+
+### C71：Light-WAM三层state-fusion H3机械端口（2026-08-17）
+
+- **可证伪假设**：相同dense expert数据和样本预算下，三层learned-query直接动作decoder能比C58的30层
+  ActionDiT降低fixed balanced80 normalized/physical误差，同时保持gripper与语言/视觉反事实响应；否则
+  shallow bundle不进入LIBERO闭环。
+- **来源身份**：官方`L1ziang/Light-WAM` main仍固定在
+  `b2785f66e13fd9987e94ae1ecc1c441d5059c9ae`；真实
+  `state_fusion_action_expert.py` SHA256为
+  `f0f1f73e947e9cc5342b3e661a7e6d32a0a445488591c5c2d5b030c515de7b58`。launcher实际配置是Wan层
+  `8/16/24`、16 queries、1 trunk block，并非30层全部pooling。
+- **H3端口唯一架构bundle**：按相对深度映射H3层`14/27/41`，只读三层V states；上游官方class按文件
+  hash动态加载，INT8 H3冻结。由于H3不接robot state，新增8D proprio到7168D token后附加到每层state。
+  这是`backbone_port`的必要接口适配，不是官方复现。
+- **暂不混入的变量**：官方backbone LoRA、adapter residual、前8步单独加权、future-video loss均未启用；
+  首个端口保留全32步监督，后续若需要逐项建立父对照。C71不继承C58动作权重，C58只作为统一数据/eval
+  baseline。
+- **当前机械证据**：源码pin/default-off、direct-regression noise/timestep invariance、三层visual与proprio
+  sensitivity、query/proprio/output梯度、cache anti-alias和strict restore共`6/6` CPU测试PASS。训练吞吐、
+  显存和真实GB仍为`UNKNOWN`，因此当前仅完成`SOURCE_GATE/MECHANICAL_MODULE_GATE`，效果状态
+  `NOT_EVIDENCE_READY`；未创建训练checkpoint，也未启动云端canary。
