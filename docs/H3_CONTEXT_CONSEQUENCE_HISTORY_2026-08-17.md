@@ -206,3 +206,8 @@
   selection 与 rollout。20k 完成后，sealer 逐 checkpoint SHA256 比较 preview audit 与
   `TRAINING_COMPLETE.json` 内最终 audit，完全一致才无模型重算地绑定最终证据并交给原20点聚合器。
   该调度只减少训练结束后的评测等待，不改变模型、数据、160000 samples 或任何效果阈值。
+- 异步链执行源固定在 commit `3682e18f8f27277df98da763175e6a4c07fe7634`、tree
+  `fb79acf36bf30d38fed70e06df627a1da72e3ac5`；完整 source-freeze 共5446文件，manifest SHA256
+  `a8800b225a06008f84bbd1f4a1b78e9afb288b1ea943ffccc9197d56ff8899f0`，远端路径
+  `/mnt/h3-wam/code-snapshots/h3-wam-3682e18-c67-preview-v1` 的非符号链接可写项为0。n3 的接力顺序固定为
+  D0 full50完成 → C66 context-length diagnostic结束 → C67 preview queue；preview queue尚未占卡时不得记为已评测。
