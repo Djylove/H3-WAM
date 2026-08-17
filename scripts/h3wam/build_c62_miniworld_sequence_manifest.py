@@ -120,6 +120,24 @@ def select_episode_disjoint(
     heldout_episodes_per_suite: int,
     seed: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    def round_robin(
+        episode_rows: list[list[dict[str, Any]]], count: int
+    ) -> list[dict[str, Any]]:
+        selected = []
+        cursor = 0
+        while len(selected) < count:
+            added = False
+            for values in episode_rows:
+                if cursor < len(values):
+                    selected.append(values[cursor])
+                    added = True
+                    if len(selected) == count:
+                        break
+            if not added:
+                break
+            cursor += 1
+        return selected
+
     by_suite_episode: dict[str, dict[tuple[str, int], list[dict[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )
@@ -131,22 +149,22 @@ def select_episode_disjoint(
             by_suite_episode[suite], key=lambda key: episode_score(key, seed)
         )
         heldout_keys = set(episodes[:heldout_episodes_per_suite])
-        heldout_pool = [
-            row
+        heldout_episode_rows = [
+            sorted(by_suite_episode[suite][key], key=lambda value: int(value["start"]))
             for key in episodes
             if key in heldout_keys
-            for row in sorted(by_suite_episode[suite][key], key=lambda value: int(value["start"]))
         ]
-        train_pool = [
-            row
+        train_episode_rows = [
+            sorted(by_suite_episode[suite][key], key=lambda value: int(value["start"]))
             for key in episodes
             if key not in heldout_keys
-            for row in sorted(by_suite_episode[suite][key], key=lambda value: int(value["start"]))
         ]
+        heldout_pool = round_robin(heldout_episode_rows, heldout_per_suite)
+        train_pool = round_robin(train_episode_rows, train_per_suite)
         if len(train_pool) < train_per_suite or len(heldout_pool) < heldout_per_suite:
             raise ValueError(f"insufficient eligible C62 rows for {suite}")
-        train.extend(train_pool[:train_per_suite])
-        heldout.extend(heldout_pool[:heldout_per_suite])
+        train.extend(train_pool)
+        heldout.extend(heldout_pool)
     return train, heldout
 
 

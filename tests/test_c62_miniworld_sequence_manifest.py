@@ -68,3 +68,4 @@ def test_episode_disjoint_balanced_selection_is_deterministic():
     assert not train_episodes & heldout_episodes
     assert len(train) == 16
     assert len(heldout) == 8
+    assert len(heldout_episodes) == 4
