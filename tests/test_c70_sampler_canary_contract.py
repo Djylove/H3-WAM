@@ -21,3 +21,9 @@ def test_c70_launcher_freezes_the_only_training_variable() -> None:
 def test_c70_execution_source_is_in_complete_freeze() -> None:
     freeze = (ROOT / "scripts/h3wam/freeze_c67_rollout_source.py").read_text()
     assert '"scripts/h3wam/launch_c70_sampler_coverage_canary_8gpu.sh"' in freeze
+
+
+def test_probe_without_save_checkpoint_serializes_json_null() -> None:
+    source = (ROOT / "scripts/h3wam/train_c56b_fact_online.py").read_text()
+    assert "str(a.save_checkpoint) if a.save_checkpoint is not None else None" in source
+    assert '"checkpoint": str(a.save_checkpoint),' not in source

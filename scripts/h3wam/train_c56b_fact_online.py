@@ -704,7 +704,10 @@ def main() -> None:
         a.output.write_text(json.dumps({
             "format": FORMAT, "status": "PASS_C56B_ONLINE_TRAINING_INVOCATION",
             "effect_status": "NOT_EVIDENCE_READY", "completed_steps": completed,
-            "history": history, "contract": contract, "checkpoint": str(a.save_checkpoint),
+            "history": history, "contract": contract,
+            "checkpoint": (
+                str(a.save_checkpoint) if a.save_checkpoint is not None else None
+            ),
             "loaded_checkpoint": str(a.load_checkpoint) if a.load_checkpoint is not None else None,
             "checkpoint_bytes": checkpoint_bytes, "restore_at_load_max_abs": restore_max_abs,
             "max_peak_reserved_bytes": int(local_peak), "wall_seconds": time.perf_counter() - started,
