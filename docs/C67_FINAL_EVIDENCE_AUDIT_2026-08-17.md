@@ -1,6 +1,6 @@
 # C67 最终证据独立复核
 
-日期：2026-08-17。状态：`WATCHER_PREREGISTERED / WAITING_FOR_OFFICIAL_RESULTS`。
+日期：2026-08-17。状态：`PASS_C67_FINAL_EVIDENCE_INDEPENDENTLY_REPRODUCED`。
 
 本复核不训练、不运行模型推理、不选择 checkpoint、不修改正式输出，也不启动 LIBERO rollout。它只在正式
 `TRAINING_COMPLETE.json`、preview `SEALED.json` 和固定20点 `RESULTS.json` 都原子落盘后，从另一份完整只读
@@ -40,3 +40,11 @@ fail closed；失败输出不能作为新一次审计复用。
 
 部署后已复核watcher存活且全树验证通过；在正式三个marker到齐前输出根不存在，说明它仍处于纯等待状态，
 没有提前写入审计结论。
+
+## 最终审计结果
+
+- `AUDIT.json` SHA256：`21a3c28567d04116770c01c2f092b15276b8bcc47b183da4a6a97c8bbe2a7b58`。
+- 正式结果逐字段复算一致，仍为`FAIL_C67_BUDGET_BALANCED80_GATE / NO_C67_PAIRED_680_ROLLOUT`；正式
+  `RESULTS.json` SHA256为`9a1c1bf4614a2ade58489465d6f0b24a2518d2f3f04f47aef998d477dde7dc3b`。
+- 审计权限为`READ_ONLY_AUDIT_COMPLETE_NO_ROLLOUT_AUTHORIZATION`，没有运行模型forward、没有重评
+  checkpoint、没有修改正式artifact，也没有启动LIBERO。

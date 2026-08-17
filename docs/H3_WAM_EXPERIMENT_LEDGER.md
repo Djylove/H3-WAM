@@ -1313,3 +1313,10 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `7eaa799f3124fb7253cd9ae96f55e15126b6bb5ee5eb5d47c6f9d48ee2ff7fad`，全树`5478`文件验证通过。它只在
   C67 `TRAINING_COMPLETE`、20点preview seal和固定aggregate三者齐备后复算证据，不训练、不重评模型、
   不选择checkpoint且不自动rollout；部署时C67已进入固定`s19000→s20000`最后一段，输出根尚未创建。
+- C67最终完成20,000步/160,000 samples/aggregate `0.733522` epoch，20/20训练段、加载恢复、独立strict
+  restore及conditioning点门均完整。固定s10→s20的normalized/physical MSE却分别恶化`1.526%/1.729%`，
+  physical逐样本胜率仅`52.5%`；gripper与language守住，但visual response只保留`81.13%`。late-window
+  normalized改善`1.902%`，physical仅`0.956%`，故正式判定
+  `FAIL_C67_BUDGET_BALANCED80_GATE / NO_C67_PAIRED_680_ROLLOUT`，不启动680对闭环。独立审计逐字段复算
+  同一结果，`AUDIT.json` SHA256为
+  `21a3c28567d04116770c01c2f092b15276b8bcc47b183da4a6a97c8bbe2a7b58`；C58继续作为carrier champion。

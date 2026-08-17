@@ -1,7 +1,7 @@
 # C67：C60 训练预算受控实验
 
-日期：2026-08-17。状态：`GO_LONG_BUT_MANUAL_RELEASE_REQUIRED / NOT_EVIDENCE_READY`。本文件只冻结实验，
-不创建 release marker，也不启动 GPU。
+日期：2026-08-17。最终状态：`FAIL_C67_BUDGET_BALANCED80_GATE / NO_C67_PAIRED_680_ROLLOUT`。
+实验已按冻结合同完成20,000步及20点离线评测；结果不放行闭环。
 
 ## 要回答的问题
 
@@ -122,3 +122,21 @@ launcher和aggregator都会全树复核，并设置`PYTHONNOUSERSITE=1`、`PYTHO
 验证两臂full initial state exact，并只按预注册的`+3pp / net wins>=20 / one-sided p<=0.05 /
 suite>=-3pp / s20 successes>=313`判定。即使全过，权限仍仅为
 `EVIDENCE_READY_BUDGET_ABLATION_ONLY`，不能直接替换C58父节点。
+
+## 最终结果
+
+- 20段训练、20份checkpoint、20次加载恢复及20次独立strict restore全部通过；总预算160,000 samples，
+  aggregate `0.733522` effective epoch。s20000 checkpoint SHA256为
+  `9ae1929e7b6ebba303e547727f58e3fd35578b17aa7d4a98da76d0b29ac1272e`。
+- 固定s10000→s20000端点的normalized MSE从`0.05971646`变为`0.06062766`（恶化`1.526%`），physical
+  MSE从`0.02500661`变为`0.02543894`（恶化`1.729%`）。逐样本normalized胜率为`49/80=61.25%`，但
+  physical胜率仅`42/80=52.5%`；少量较大退化样本使两项均值门失败。
+- gripper macro-F1从`0.934451`变为`0.931592`（差`-0.002859`）且language response保留`99.06%`，两门
+  通过；visual shuffle response仅保留`81.13%`，低于预注册90%门。
+- late-window s18–s20相对s10–s12的normalized均值改善`1.902%`，physical均值只改善`0.956%`，后者未到
+  1%门。全部20点conditioning单点门虽通过，但不能覆盖端点视觉依赖下降。
+- 正式`RESULTS.json` SHA256为
+  `9a1c1bf4614a2ade58489465d6f0b24a2518d2f3f04f47aef998d477dde7dc3b`。结论只是否定当前C58初始化、
+  C60 joint objective、20k cosine合同下的“增加步数即可修复”假设，不外推为所有联合目标或更长预算无效。
+- 因offline门失败，预注册680对LIBERO不会启动；C58继续作为carrier champion。20份full-state checkpoint
+  暂时保留，供仍在运行的C67-s20/C69-s20严格归因链读取；归因完成前不得清理。
