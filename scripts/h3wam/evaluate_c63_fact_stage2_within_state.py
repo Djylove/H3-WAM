@@ -42,6 +42,12 @@ C60_SHA256 = "d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36"
 INFERENCE_STEPS = 10
 FLOW_SHIFT = 5.0
 ORDER_ATOL = 1e-5
+VALUE_CONTRACT = {
+    "model_domain": "normalized_minus1_to1",
+    "denormalization": "raw_equals_normalized_plus1",
+    "raw_range": [0.0, 2.0],
+    "ranking": "argmin_first_and_only_value_token",
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -277,13 +283,20 @@ def main() -> None:
             video_kv_cache=current_kv, text_mask=text_mask,
         ).flip(0)
         order_max_abs = float((normal - swapped).abs().max())
-        success_score, failure_score = map(float, normal.tolist())
+        success_normalized, failure_normalized = map(float, normal.tolist())
+        # Local C60 training stores normalized value = FACT raw value - 1
+        # for the fixed raw [0,2] range.  This is the exact monotone affine
+        # counterpart of official denormalize_value before argmin.
+        success_score = success_normalized + 1.0
+        failure_score = failure_normalized + 1.0
         rows.append(
             {
                 "pair_index": int(pair["pair_index"]), "episode_id": int(pair["episode_id"]),
                 "sample_id": int(pair["sample_id"]), "suite": pair["suite"],
                 "task": int(pair["task"]), "trial": int(pair["trial"]),
                 "success_score": success_score, "failure_score": failure_score,
+                "success_score_normalized": success_normalized,
+                "failure_score_normalized": failure_normalized,
                 "failure_minus_success": failure_score - success_score,
                 "success_preferred": bool(success_score < failure_score),
                 "score_finite": bool(math.isfinite(success_score) and math.isfinite(failure_score)),
@@ -308,6 +321,7 @@ def main() -> None:
         "dataset_sha256": PAIRS.DATASET_SHA256,
         "observations_sha256": PAIRS.OBSERVATIONS_SHA256,
         "solver": {"inference_steps": INFERENCE_STEPS, "flow_shift": FLOW_SHIFT},
+        "value_contract": VALUE_CONTRACT,
         "same_noise_within_pair": True,
         "candidate_order_repeated": True,
         "rows": sorted(rows, key=lambda row: row["pair_index"]),

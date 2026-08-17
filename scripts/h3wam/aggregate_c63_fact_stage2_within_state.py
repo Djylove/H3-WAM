@@ -19,6 +19,12 @@ SHARD_FORMAT = "h3wam-c63-fact-stage2-within-state-shard-v1"
 PAIR_FORMAT = "h3wam-c63-fact-stage2-within-state-pairs-v1"
 C60_SHA256 = "d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36"
 EXPECTED_SUITE_COUNTS = {"libero_object": 2, "libero_spatial": 30}
+VALUE_CONTRACT = {
+    "model_domain": "normalized_minus1_to1",
+    "denormalization": "raw_equals_normalized_plus1",
+    "raw_range": [0.0, 2.0],
+    "ranking": "argmin_first_and_only_value_token",
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -109,6 +115,7 @@ def main() -> None:
             or report.get("pair_manifest_sha256") != pair_sha
             or report.get("checkpoint_sha256") != C60_SHA256
             or report.get("solver") != {"inference_steps": 10, "flow_shift": 5.0}
+            or report.get("value_contract") != VALUE_CONTRACT
             or report.get("same_noise_within_pair") is not True
             or report.get("candidate_order_repeated") is not True
         ):

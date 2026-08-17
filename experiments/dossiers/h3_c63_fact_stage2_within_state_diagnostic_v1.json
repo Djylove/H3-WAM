@@ -53,7 +53,7 @@
     "timing": "Recorded after v1 failed before any Stage-2 score and v2 failed its first-pair output-shape gate before any shard or score file was written.",
     "official_contract": "FACT wa_pipeline prepares future_state [B,1,D] and value [B,1,1], preserves their token counts through Stage-2, and updates those exact-shaped tensors.",
     "finding": "The probe initialized value as [B,1]; updating it with the local one-token [B,1,1] prediction broadcast it to [B,B,1]. This is not a two-value-token model output.",
-    "protocol_correction": "Keep future-state, value and future-representation tracks three-dimensional at every solver step, assert exact [B,1,8]/[B,1,1]/[B,1,7168] shapes, and read the sole value[:,0,0] token without mean or last-token selection. Pair identities, noise, solver and statistical gates remain unchanged."
+    "protocol_correction": "Keep future-state, value and future-representation tracks three-dimensional at every solver step, assert exact [B,1,8]/[B,1,1]/[B,1,7168] shapes, convert the sole normalized value[:,0,0] token to fixed C60 raw units by raw=normalized+1, then argmin exactly as official inference_server.py:342-351 and :410-428. No mean or last-token selection is permitted. The observed [B,2,1] was a solver broadcasting artifact, not a two-value-token model output. Pair identities, noise, solver and statistical gates remain unchanged."
   },
   "claim_boundary": "This is an offline, suite-imbalanced diagnostic of the integrated C60 value head. Passing cannot establish LIBERO success, four-suite generalization, or C60 promotion; failing forbids C60 best-of-N and 20k continuation under this hypothesis."
 }

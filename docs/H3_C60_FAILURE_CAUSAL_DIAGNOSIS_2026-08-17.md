@@ -130,6 +130,14 @@ prediction，广播成 `[B,B,1]`。修复固定所有 Stage-2 track 为三维 to
 `future_state=[B,1,8]`、`value=[B,1,1]`、`future_representation=[B,1,7168]`；最终直接读取唯一的
 `value[:,0,0]`，禁止 mean 或末 token 选择。32 对、噪声、solver 和统计门仍未改变。
 
+官方 server 的最终排序合同也逐行固定：`third_party/FACT/scripts/inference_server.py:342-351` 先调用
+`denormalize_value`，再以 `v_denorm.view(-1)[0]` 取得每个候选的首标量；`:410-428` 对这些标量做
+`argmin`。`pipeline/utils.py:108-112` 显示 denormalization 是正斜率仿射变换。C60 本地 target 合同
+是固定 raw `[0,2]`、normalized=`raw-1`，所以 probe 明确用 `raw=normalized+1` 后按唯一
+`value[:,0,0]` argmin；这与在 normalized domain 排序等价，但输出同时保留两者以供审计。v2 的
+`[B,2,1]` 是 `[B,1]` sample 与 `[B,1,1]` prediction 错误广播后的 solver state，不是模型产生了
+两个合法 value token。
+
 ### 冻结 offline gate
 
 - primary：成功 action 被选中至少 `22/32`；one-sided exact binomial `p<=0.05`（22/32 的
