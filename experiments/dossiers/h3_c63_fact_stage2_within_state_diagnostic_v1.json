@@ -1,0 +1,47 @@
+{
+  "format": "h3wam-experiment-dossier-v1",
+  "candidate": "C63_FACT_STAGE2_WITHIN_STATE_DIAGNOSTIC",
+  "date": "2026-08-17",
+  "status": "PREREGISTERED_NO_TRAINING",
+  "hypothesis": "With current observation, proprio and text held exactly fixed, the frozen C60 s10000 Stage-2 consequence value assigns lower cost to the successful-parent executed action chunk than to the failed counterfactual executed action chunk.",
+  "single_variable": "Candidate action supplied to the already-trained C60 forward_consequence path; checkpoint, current state, H3 current features, text, future-state/value/representation initial noise, shift=5 and ten-step solver remain identical within each pair.",
+  "parent_baseline": "C60 s10000 remains failed for promotion and C58 remains the official parent; this diagnostic does not change either status.",
+  "training": {
+    "allowed": false,
+    "steps": 0,
+    "permission": "NO_20K"
+  },
+  "identities": {
+    "official_fact_commit": "618a6c16868699b6d4138941de6a863589ac00dd",
+    "c60_s10000_checkpoint_sha256": "d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36",
+    "c60_failure_dataset_sha256": "1abeee1ef4e5e71f66b656c9920124086046c3e7d3b3a22b769449b72b1fc1d4",
+    "c60_failure_observations_sha256": "b9a812afe034f236181a6915369535545a997688a9dac8c351df3f51c0357a55",
+    "validation_pairs": 32,
+    "successful_parent_trajectories": 11,
+    "suite_counts": {
+      "libero_spatial": 30,
+      "libero_object": 2
+    }
+  },
+  "mechanical_gate_requirements": {
+    "all_32_pairs_and_hashes_exact": "REQUIRED",
+    "branch_and_parent_current_state_and_images_exact": "REQUIRED",
+    "executed_action_roundtrip_exact": "REQUIRED",
+    "no_future_or_outcome_label_model_input": "REQUIRED",
+    "same_initial_noise_and_solver_within_pair": "REQUIRED",
+    "candidate_order_invariance": "REQUIRED",
+    "strict_full_c60_restore_and_action_output_unchanged": "REQUIRED",
+    "finite_nonzero_action_conditioned_value_delta": "REQUIRED"
+  },
+  "offline_gates": {
+    "primary_success_preference_min": "22/32",
+    "primary_one_sided_exact_binomial_p_max": 0.05,
+    "failure_minus_success_score_median_min_exclusive": 0.0,
+    "spatial_success_preference_min": "20/30",
+    "object_sanity_min": "1/2",
+    "all_scores_finite": true
+  },
+  "pass_permission": "GO_COLLECT_CROSS_SUITE_C63_CONFIRMATORY_PAIRS",
+  "fail_permission": "NO_GO_C60_STAGE2_RANKING_KEEP_C58",
+  "claim_boundary": "This is an offline, suite-imbalanced diagnostic of the integrated C60 value head. Passing cannot establish LIBERO success, four-suite generalization, or C60 promotion; failing forbids C60 best-of-N and 20k continuation under this hypothesis."
+}
