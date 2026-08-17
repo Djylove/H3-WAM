@@ -17,9 +17,14 @@ source_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_all.js
 cache_root="${workspace}/data/v7_dense_h3_cache"
 source_root="${H3WAM_FASTWAM_SOURCE_ROOT:-${workspace}/upstream-readonly/FastWAM-45d8e145/wan22}"
 resume="${C58_FULL50_RESUME:-0}"
+resume_rebalance="${C58_FULL50_RESUME_REBALANCE:-0}"
 max_attempts="${C58_FULL50_MAX_ATTEMPTS:-3}"
 
 case "${resume}" in 0|1) ;; *) echo "C58_FULL50_RESUME must be 0 or 1" >&2; exit 2;; esac
+case "${resume_rebalance}" in 0|1) ;; *) echo "C58_FULL50_RESUME_REBALANCE must be 0 or 1" >&2; exit 2;; esac
+[[ "${resume}" == 1 || "${resume_rebalance}" == 0 ]] || {
+  echo "C58_FULL50_RESUME_REBALANCE requires C58_FULL50_RESUME=1" >&2; exit 2;
+}
 [[ "${max_attempts}" =~ ^[1-9][0-9]*$ ]] || {
   echo "C58_FULL50_MAX_ATTEMPTS must be a positive integer" >&2; exit 2;
 }
@@ -33,7 +38,8 @@ completed="${root}/${arm}.COMPLETED.json"
 [[ ! -e "${completed}" ]] || { echo "${arm} already complete"; exit 0; }
 lock="${root}/.${arm}.launcher.lock"
 mkdir "${lock}" 2>/dev/null || { echo "another ${arm} launcher owns ${lock}" >&2; exit 75; }
-trap 'rmdir "${lock}" 2>/dev/null || true' EXIT
+work_manifest="${manifest}"
+trap '[[ "${work_manifest}" == "${manifest}" ]] || rm -f "${work_manifest}"; rmdir "${lock}" 2>/dev/null || true' EXIT
 
 "${sim_python}" - "${prepared}" "${arm}" <<'PY'
 import json,sys
@@ -49,6 +55,30 @@ export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 export PYTHONPATH="${project}/third_party/diffusers_h3/src:${project}/src:${project}"
 export H3WAM_FASTWAM_SOURCE_ROOT="${source_root}"
 mkdir -p "${root}/logs/${arm}"
+
+if [[ "${resume_rebalance}" == 1 ]]; then
+  work_manifest="${root}/.${arm}.resume-work.$$.jsonl"
+  "${sim_python}" - "${manifest}" "${arm}" "${work_manifest}" <<'PY'
+import json, os, sys
+from pathlib import Path
+
+rows=[]
+for line in open(sys.argv[1]):
+    row=json.loads(line)
+    if row["arm"] != sys.argv[2]:
+        continue
+    if (Path(row["output"])/"results.json").is_file():
+        continue
+    rows.append(row)
+for index,row in enumerate(rows):
+    row=dict(row); row["gpu"]=index % 8
+    rows[index]=row
+tmp=Path(sys.argv[3]).with_name(f".{Path(sys.argv[3]).name}.{os.getpid()}.partial")
+tmp.write_text("".join(json.dumps(row, sort_keys=True)+"\n" for row in rows))
+os.replace(tmp, sys.argv[3])
+print(f"resume_rebalanced_jobs={len(rows)}", flush=True)
+PY
+fi
 
 run_worker() {
   local gpu="$1" row ordinal assigned_gpu suite task trial policy checkpoint output
@@ -90,7 +120,7 @@ run_worker() {
       mv "${output}" "${retry_quarantine}"
       sleep 2
     done
-  done < <("${sim_python}" - "${manifest}" "${arm}" <<'PY'
+  done < <("${sim_python}" - "${work_manifest}" "${arm}" <<'PY'
 import json,sys
 for line in open(sys.argv[1]):
     row=json.loads(line)
