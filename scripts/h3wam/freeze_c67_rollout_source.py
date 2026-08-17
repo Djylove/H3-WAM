@@ -62,6 +62,8 @@ DYNAMIC_EXECUTION_FILES = (
     "scripts/h3wam/seal_c67_milestone_previews.py",
     "scripts/h3wam/aggregate_c67_fact_milestone_balanced80.py",
     "scripts/h3wam/launch_c67_fact_milestone_preview_queue.sh",
+    "scripts/h3wam/audit_c67_final_evidence.py",
+    "scripts/h3wam/watch_c67_final_evidence_audit.sh",
     "scripts/h3wam/probe_c56b_fact_online.py",
     "scripts/h3wam/fit_c56b_fact_online_target_norm.py",
     "src/fastwam/models/h3wam/fact_layerwise_tower.py",
