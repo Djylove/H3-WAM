@@ -228,3 +228,20 @@ def test_c69_long_launcher_keeps_the_c67_sample_and_schedule_contract():
     assert "restore-check-only" in source
     assert "C69_CANARY_GO_LONG" in source
     assert "source_freeze_sha256" in source
+
+
+def test_c69_preview_queue_is_read_only_and_cannot_select_a_checkpoint():
+    queue = (
+        ROOT / "scripts/h3wam/launch_c69_action_only_milestone_preview_queue.sh"
+    ).read_text()
+    evaluator = (
+        ROOT / "scripts/h3wam/evaluate_c67_fact_milestone_balanced80.py"
+    ).read_text()
+    assert "--variant c69" in queue
+    assert "c69_action_only_s${milestone}.pt" in queue
+    assert "PREVIEW_ONLY_PENDING_TRAINING_COMPLETE_REBIND" in queue
+    assert "freeze_c67_rollout_source.py" in queue
+    assert "train_c56b_fact_online.py" not in queue
+    assert "objective_mode" in evaluator
+    assert "[10.0, 0.0, 0.0, 0.0]" in evaluator
+    assert "C69 final rebinding requires the fixed cross-arm aggregator" in evaluator
