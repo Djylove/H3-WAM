@@ -143,3 +143,52 @@ def test_wrapper_delegates_budget_optimizer_and_data_to_reviewed_c66():
     assert "DataLoader" not in source
     assert "SOURCE_HISTORY_CHUNKS = 7" in source
     assert "K1_HISTORY_CHUNKS = 1" in source
+
+
+def test_restore_diagnostic_is_read_only_and_compares_snapshot_tensors_exactly():
+    path = ROOT / "scripts/h3wam/diagnose_c66_k1_restore_exact.py"
+    spec = importlib.util.spec_from_file_location("_test_c66_k1_restore", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    snapshot = {
+        "schema_version": 1,
+        "layers": (1,),
+        "token_capacity": 12,
+        "episode_key": "episode",
+        "frame_st_id": 15,
+        "action_st_id": 56,
+        "next_update_id": 14,
+        "entries": {
+            1: [
+                {
+                    "kind": "observation",
+                    "key": torch.ones(1, 2, 3),
+                    "value": torch.ones(1, 2, 3),
+                    "update_id": 12,
+                    "frame_start": 13,
+                    "frame_count": 2,
+                    "action_start": 0,
+                    "action_count": 0,
+                    "predicted": False,
+                }
+            ]
+        },
+    }
+    exact, maximum = module.snapshot_exact(snapshot, snapshot)
+    assert exact is True
+    assert maximum == 0
+    changed = {
+        **snapshot,
+        "entries": {
+            1: [{**snapshot["entries"][1][0], "key": torch.zeros(1, 2, 3)}]
+        },
+    }
+    exact, maximum = module.snapshot_exact(snapshot, changed)
+    assert exact is False
+    assert maximum == 1
+    source = path.read_text()
+    assert "torch.optim" not in source
+    assert "optimizer_steps\": 0" in source
+    assert "training_checkpoints_written\": 0" in source
