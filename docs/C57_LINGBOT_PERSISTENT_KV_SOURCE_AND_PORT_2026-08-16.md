@@ -170,3 +170,22 @@ model+runtime restore max_abs `0`、没有 candidate checkpoint。
 
 训练与恢复门已经允许 `LONG_RUNNING`，但这仍不是效果证据。只有真实 LIBERO process trace、固定
 milestone paired closed-loop 与完整 benchmark 通过后，才能声称 persistent lifecycle 提高动作成功率。
+
+## 2026-08-17 最终收口：NO_GO
+
+C57 已完整跑完预注册5000步，而不是因为训练轮次不足被提前淘汰：8卡共消费400000个训练样本，对
+200779个selected windows为`1.9922398248825817` effective epochs；训练耗时34646.34秒（约9.624
+小时）。最终checkpoint为
+`/mnt/h3-wam/outputs/c57-lingbot-persistent-kv/long5000/checkpoints/c57_step05000.pt`，大小
+2099867657 bytes，SHA256
+`4df57b0cd4f053f4cba064ad5a34adb3ec9ce26b3ffb3071885bb0423066ac58`，严格恢复通过。
+
+最终冻结80样本paired heldout报告为
+`/mnt/h3-wam/outputs/c57-lingbot-persistent-kv/heldout_eval/step05000_paired.json`，SHA256
+`05210e92106fd6b32eef14657036d1d16e351cd360b18f957e7a979c38c76ce4`。C57 mean MSE
+`0.07717749`，D0 `0.07628779`，相对改善`-1.166%`，sample win rate `43.75%`；预注册门为改善至少
+3%且win rate至少55%，两项均失败。最终记录
+`/mnt/h3-wam/outputs/c57-lingbot-persistent-kv/long5000/FINAL.json`固定为
+`C57_FINAL_OFFLINE_NO_GO / NO_GO`。因此不再启动C57 LIBERO canary、不追加训练步，也不把其checkpoint
+带入融合；只保留已验证的真实feedback生命周期设计经验。下一条context路线必须以已晋级的C58
+30层carrier为父模型重新做单变量验证。

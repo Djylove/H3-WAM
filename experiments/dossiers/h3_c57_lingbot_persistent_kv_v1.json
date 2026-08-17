@@ -119,13 +119,13 @@
         "field": "paired post-training budget",
         "paper": "Post-train the causal world-action model for downstream control.",
         "upstream_code": "LIBERO: eight GPUs, microbatch1, accumulation10, AdamW lr1e-5 betas0.9/0.95 wd0.1, warmup10, 5000 steps, save200.",
-        "local": "C57 long5000 uses eight A800 ranks, microbatch1, accumulation10, AdamW lr1e-5 betas0.9/0.95 wd0.1, warmup10 then constant, save200 and 400000 samples from D0-s14000. Canary mean was 7.961 s/step and the long run started at 2026-08-16 05:32:34 UTC.",
+        "local": "C57 long5000 completed on eight A800 ranks with microbatch1, accumulation10, AdamW lr1e-5 betas0.9/0.95 wd0.1, warmup10 then constant, save200 and 400000 samples from D0-s14000. This is 1.9922398249 effective epochs over 200779 selected windows.",
         "status": "EQUIVALENT",
         "evidence": [
           "third_party/code_audit/lingbot-va/wan_va/configs/va_libero_train_cfg.py:13",
           "scripts/h3wam/probe_c57_lingbot_persistent_kv.py"
         ],
-        "rationale": "The full budget is source-backed, but allocation remains blocked until a real one-GPU mechanical/throughput probe and frozen sequence manifest exist."
+        "rationale": "The source-backed budget completed, so insufficient step count is not the accepted explanation for the failed final heldout gate."
       }
     ],
     "evaluation": [
@@ -177,7 +177,7 @@
     "optimization_contract": {
       "status": "PASS",
       "evidence": [
-        "8-GPU canary 10/10 PASS: finite loss 0.337998..0.728052, nonzero head updates, mean 7.961 s/step, peak allocated 4.382 GiB; strict checkpoint restore max_abs=0. Long5000 is running with save200."
+        "8-GPU canary 10/10 PASS and long5000 completed all 5000 optimizer steps: 400000 samples, 200779 selected windows, 1.9922398249 effective epochs, elapsed 34646.34 seconds."
       ]
     },
     "evaluation_contract": {
@@ -201,7 +201,7 @@
     "checkpoint_restore": {
       "status": "PASS",
       "evidence": [
-        "Synthetic model state plus runtime K/V snapshot restore has max_abs=0."
+        "Final checkpoint c57_step05000.pt strict-restored successfully; SHA256 4df57b0cd4f053f4cba064ad5a34adb3ec9ce26b3ffb3071885bb0423066ac58. Synthetic model state plus runtime K/V snapshot restore also has max_abs=0."
       ]
     },
     "parent_baseline": {
@@ -213,7 +213,7 @@
     "mechanism_signal": {
       "status": "FAIL",
       "evidence": [
-        "No episode-disjoint paired mechanism evaluation exists yet."
+        "Final frozen 80-sample paired heldout fails: C57 mean MSE 0.07717749 versus D0 0.07628779, relative improvement -1.166%, sample win rate 43.75%; required gates were +3% and at least55%."
       ]
     },
     "closed_loop_canary": {
@@ -230,14 +230,15 @@
     "unique_windows": 200779,
     "effective_epochs": 1.9922398248825817,
     "gpu_count": 8,
-    "estimated_hours": "10.5-13.6 including checkpoint and shared-storage allowance",
-    "estimated_hours_status": "MEASURED_CANARY_AND_LONG_START",
-    "estimate_formula": "compute-only 5000*(6.4..7.4)/3600=8.9..10.3h; operational allowance includes save200 and shared-storage variance"
+    "estimated_hours": 9.624,
+    "estimated_hours_status": "MEASURED_COMPLETE",
+    "estimate_formula": "34646.34 elapsed seconds / 3600"
   },
   "decision": {
-    "status": "LONG_RUNNING",
+    "status": "C57_FINAL_OFFLINE_NO_GO",
+    "permission": "NO_GO",
     "effect_status": "NOT_EVIDENCE_READY",
-    "rationale": "Source, sequence, architecture, real BF16 mechanical, 8-GPU canary and strict restore gates pass; long5000 started on n1. Effect remains NOT_EVIDENCE_READY until real LIBERO lifecycle traces and paired closed-loop milestones pass. C57 is explicitly a five-block D0 persistent-lifecycle port, not the official 30-layer shared world/action architecture.",
+    "rationale": "The complete source-backed 5000-step/400000-sample budget and strict final restore pass, but the preregistered final heldout gate fails both required effect thresholds and is slightly worse than D0. Permission is NO_GO: do not run LIBERO or extend this five-block LingBot port. Preserve its lifecycle lesson only; the next context route starts from the promoted C58 carrier and remains separately gated.",
     "launch_command": "/mnt/h3-wam/candidate-d0-rollout-96976ce/project/scripts/h3wam/launch_c57_n1_long.sh"
   }
 }

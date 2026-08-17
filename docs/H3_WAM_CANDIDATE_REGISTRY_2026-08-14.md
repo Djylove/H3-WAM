@@ -523,3 +523,27 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   `NO_EVIDENCE_FOR_S20K_CONTINUATION`，RESULTS SHA256
   `2008293c4cc11ccfb333c67aaf72dd888920b59c1e1ebeb2ddb343a8268e325e`；独立重算一致。原s10k
   scheduler已降至LR=0，因此不创建s20k dossier、不启动长训，也不反向选择已看过闭环的checkpoint。
+
+### C57：LingBot five-block persistent-KV 最终淘汰（2026-08-17）
+
+- **预算已排除**：5000步完整结束，8卡共400000样本，对200779个window为`1.9922398249` effective
+  epochs，耗时34646.34秒。最终checkpoint SHA256为
+  `4df57b0cd4f053f4cba064ad5a34adb3ec9ce26b3ffb3071885bb0423066ac58`，strict restore通过。
+- **最终离线门**：固定80样本上C57 mean MSE `0.07717749`，D0 `0.07628779`，相对改善
+  `-1.166%`，sample win rate `43.75%`，同时失败`>=3%`改善和`>=55%`胜率门。
+- **决定**：`C57_FINAL_OFFLINE_NO_GO / NO_GO`。不做LIBERO、不追加步数、不融合该checkpoint；只保留
+  persistent real-feedback lifecycle经验。该结果也说明把LingBot生命周期补到五层D0不是可接受的context
+  winner。
+
+### C62：MiniWorld rolling context on C58（2026-08-17）
+
+- **边界**：MiniWorld固定官方commit `e484206bbd4360ae56ed8abad51c83f2457ac092`，它是
+  action-conditioned video world model而非action policy；C62始终由C58 s10000生成动作，只移植真实观测
+  sink+FIFO与4-step action alignment。
+- **机械门**：有效n1报告SHA256
+  `0adfbf47a821606cab8be8d416bcb975918701cc8706fdb4fb46d6d86412a54b`；真实C58 strict
+  restore、default-off/empty-context exact、冻结H3边界、30/30 bridge梯度及runtime restore全部PASS。
+- **短canary**：固定C58/H3，仅训练context bridge；800 train rows来自800 episodes，64 heldout来自32
+  episodes，交集0；8卡×100步×global batch8=800 unique samples/1.0 epoch。clean-vs-shuffle、context-off
+  safety与delta-checkpoint restore共同决定是否只放行bounded ablation。当前仍`NO_GO_LONG /
+  NOT_EVIDENCE_READY`。
