@@ -1263,3 +1263,32 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `ab289a4f34794f024f03dabd67f1f5c44e852c8a7279bcdf47b0d34740078084`，delta checkpoint SHA256
   `86d795d010bdacd95fee660e46354314302d85678a5f475d0c508f3cc6cda3c6`；仅审计保留，不长训、不rollout、
   不融合，n1释放。
+
+### 2026-08-17 — C58 full50、C65/C66诊断与C69同预算动作归因
+
+- C58完成四suite×10 tasks×trials0..49的描述性full50：`846/2000=42.3%`，D0为
+  `734/2000=36.7%`，差`+5.6pp`，discordant为284胜/172负，one-sided exact McNemar
+  `p=8.787e-08`。其中仍未消费的正式confirmatory部分trials33..49保持既有结果
+  `295/680`对`270/680`、`+3.676pp`、87胜/62负、`p=0.0244576`；trials0..32只作补充描述，
+  不重新产生promotion claim。`FINAL_DESCRIPTIVE.json` SHA256为
+  `866cf335b1dca2c097c482d09db42f58815740829deb3cde55fcb950312eeac0`。
+- C65 Stage-2 pair收集完成`3072/3072`，但预注册data gate fail-closed：四suite满足mixed-source
+  success/failure pair的数量仅Spatial17、Object2、Goal11、LIBERO-10 13，均未达到每suite20；正式
+  permission为`NO_SCORE_DATA_COVERAGE_GAP`，没有运行score，也没有降低阈值。Object大多为全成功轨迹，
+  是当前同状态成功/失败pair构造的主要覆盖瓶颈。
+- C66固定64条配对context-length诊断表明问题首先是结构性前缀干扰：未经训练的C58从context-off
+  MSE `0.0616758`恶化到k1/k3/k7的`0.117637/0.173727/0.248364`（`+90.7%/+181.7%/+302.7%`）。
+  C66-s100将对应值修复到`0.0775573/0.0816324/0.0904292`，但仍差于自身off `0.0677915`；因此只选择
+  k1作为下一 bounded mechanism test，不给C66长训或LIBERO许可。RESULTS SHA256为
+  `50a726dd6bc69fa185c9c9bf17cac9ed138d9d8ef6a229b886d44af76c241237`。
+- C69补齐历史缺失的严格world-objective-off对照。它与C67保持同一C58 parent、30层joint-token forward、
+  seed、4/2/1/1 rank样本顺序、失败action mask、base/action LR和20k cosine；唯一变量为loss权重从
+  `[10,1,0.4,0.4]`变成`[10,0,0,0]`，并冻结/排除六个auxiliary encoder/decoder。CPU单测证明
+  DDP action分量逐步等于C67的`10×global masked action mean`，不把两个failure ranks偷换为expert。
+- C69真实8×A800十步canary的8项门全部PASS：10/10 finite、30/30 global shared-block gradients、未来
+  target到action泄漏0、辅助head冻结、在线INT8 H3无disk K/V、strict restore max-abs0；checkpoint
+  SHA256为`af29173c780691f3f1a6f8d7efef1a49e24d349c2c938796a66d08e5865d4b07`，GO_LONG SHA256为
+  `5d448cbf94bc9820a66d148e294f133b469fa5bb66913b389b5456376b4c89a5`。这只给机械训练许可，不是效果证据。
+- C69正式20k从只读commit `a60b056`与SOURCE_FREEZE SHA256
+  `a9197001d9b545ba7542dccc864c104ac2ee99a6defbd4c50bb9acab9ef66d68`启动，固定每1000步保存并严格恢复；
+  最终只允许C69-s20与C67-s20做同预算归因，C58在fresh闭环被击败前仍是carrier champion。
