@@ -234,19 +234,25 @@ def materialize_sequence(
                 "actions": (
                     None
                     if raw["actions"] is None
-                    else raw["actions"].to(device=device, dtype=dtype)
+                    else raw["actions"].to(device=device, dtype=dtype).unsqueeze(0)
                 ),
             }
         )
-    return {
+    result = {
         "sequence_id": item["sequence_id"],
         "current": current,
         "current_kv": current_kv,
         "history": history,
         "actions_before_current": item["actions_before_current"].to(
             device=device, dtype=dtype
-        ),
+        ).unsqueeze(0),
     }
+    action_tensors = [
+        value["actions"] for value in result["history"] if value["actions"] is not None
+    ] + [result["actions_before_current"]]
+    if any(tuple(value.shape) != (1, 8, 7) for value in action_tensors):
+        raise RuntimeError("C62 executed-action history must be batched [1,8,7]")
+    return result
 
 
 def context_state(
