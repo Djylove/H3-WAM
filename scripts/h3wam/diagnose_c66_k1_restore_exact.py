@@ -30,7 +30,7 @@ import train_c66_k1_bounded_mechanism_canary as K1  # noqa: E402
 
 
 C66 = K1.C66
-FORMAT = "h3wam-c66-k1-restore-diagnostic-v1"
+FORMAT = "h3wam-c66-k1-restore-diagnostic-v2"
 CHECKPOINT_SHA256 = "861e95d891ca9128c2cb3bcc514243104fe70fb05c01fc9c0076d384a9201eeb"
 REPORT_SHA256 = "70975e1b9de6612f6bdb65ff8d0bbeb9fdff3530b82e6b22cc4a7c781aba908a"
 
@@ -178,21 +178,34 @@ def main() -> None:
                     policy, sequence, noisy, timesteps, shuffle_actions=True
                 )
                 C66.predict_off(policy, sequence, noisy, timesteps)
-                before = state.snapshot()
-                restored_state = C66.LingBotPersistentKVState.from_snapshot(
-                    before, device=device, dtype=dtype
-                )
-                after = restored_state.snapshot()
-                official_restored = predict_from_state(
-                    policy, sequence, noisy, timesteps, restored_state
-                )
-                same_state_repeat = predict_from_state(
+            before = state.snapshot()
+            restored_state = C66.LingBotPersistentKVState.from_snapshot(
+                before, device=device, dtype=dtype
+            )
+            after = restored_state.snapshot()
+            # This is the formal trainer's actual comparison: clean was
+            # produced inside CUDA BF16 autocast, while restore was recomputed
+            # after leaving that scope.
+            official_restored_outside = predict_from_state(
+                policy, sequence, noisy, timesteps, restored_state
+            )
+            same_state_outside = predict_from_state(
+                policy, sequence, noisy, timesteps, state
+            )
+            restored_outside_repeat = predict_from_state(
+                policy, sequence, noisy, timesteps, restored_state
+            )
+            same_state_outside_repeat = predict_from_state(
+                policy, sequence, noisy, timesteps, state
+            )
+            with torch.autocast("cuda", dtype=dtype):
+                same_state_inside = predict_from_state(
                     policy, sequence, noisy, timesteps, state
                 )
-                restored_repeat = predict_from_state(
+                restored_inside = predict_from_state(
                     policy, sequence, noisy, timesteps, restored_state
                 )
-                same_state_repeat2 = predict_from_state(
+                same_state_inside_repeat = predict_from_state(
                     policy, sequence, noisy, timesteps, state
                 )
             exact, snapshot_max = snapshot_exact(before, after)
@@ -202,16 +215,26 @@ def main() -> None:
                     "id": sequence["id"],
                     "snapshot_exact": exact,
                     "snapshot_max_abs": snapshot_max,
-                    "clean_vs_official_restored_max_abs": max_abs(clean, official_restored),
-                    "clean_vs_same_state_repeat_max_abs": max_abs(clean, same_state_repeat),
-                    "same_state_vs_restored_same_pass_max_abs": max_abs(
-                        same_state_repeat, restored_repeat
+                    "formal_clean_inside_vs_restored_outside_max_abs": max_abs(
+                        clean, official_restored_outside
                     ),
-                    "same_state_repeat_max_abs": max_abs(
-                        same_state_repeat, same_state_repeat2
+                    "same_state_outside_vs_restored_outside_max_abs": max_abs(
+                        same_state_outside, restored_outside_repeat
                     ),
-                    "restored_repeat_max_abs": max_abs(
-                        official_restored, restored_repeat
+                    "same_state_inside_vs_restored_inside_max_abs": max_abs(
+                        same_state_inside, restored_inside
+                    ),
+                    "clean_inside_vs_same_state_inside_max_abs": max_abs(
+                        clean, same_state_inside
+                    ),
+                    "same_state_outside_repeat_max_abs": max_abs(
+                        same_state_outside, same_state_outside_repeat
+                    ),
+                    "same_state_inside_repeat_max_abs": max_abs(
+                        same_state_inside, same_state_inside_repeat
+                    ),
+                    "restored_outside_repeat_max_abs": max_abs(
+                        official_restored_outside, restored_outside_repeat
                     ),
                     "coordinates": {
                         "frame_st_id": state.frame_st_id,
@@ -229,11 +252,13 @@ def main() -> None:
     if rank == 0:
         metric_names = [
             "snapshot_max_abs",
-            "clean_vs_official_restored_max_abs",
-            "clean_vs_same_state_repeat_max_abs",
-            "same_state_vs_restored_same_pass_max_abs",
-            "same_state_repeat_max_abs",
-            "restored_repeat_max_abs",
+            "formal_clean_inside_vs_restored_outside_max_abs",
+            "same_state_outside_vs_restored_outside_max_abs",
+            "same_state_inside_vs_restored_inside_max_abs",
+            "clean_inside_vs_same_state_inside_max_abs",
+            "same_state_outside_repeat_max_abs",
+            "same_state_inside_repeat_max_abs",
+            "restored_outside_repeat_max_abs",
         ]
         maxima = {name: max(row[name] for row in rows) for name in metric_names}
         serialization_exact = all(row["snapshot_exact"] for row in rows)
@@ -243,10 +268,15 @@ def main() -> None:
             }
             for row in rows
         )
-        repeat_nondeterminism = maxima["same_state_repeat_max_abs"] > 0
+        autocast_scope_mismatch = (
+            maxima["formal_clean_inside_vs_restored_outside_max_abs"] > 0
+            and maxima["same_state_outside_vs_restored_outside_max_abs"] == 0
+            and maxima["same_state_inside_vs_restored_inside_max_abs"] == 0
+            and maxima["clean_inside_vs_same_state_inside_max_abs"] == 0
+        )
         classification = (
-            "FORWARD_NUMERICAL_NONDETERMINISM_NOT_SERIALIZATION_OR_K1_PREFIX"
-            if serialization_exact and coordinates_exact and repeat_nondeterminism
+            "EVALUATION_AUTOCAST_SCOPE_MISMATCH_NOT_SERIALIZATION_OR_K1_PREFIX"
+            if serialization_exact and coordinates_exact and autocast_scope_mismatch
             else "UNRESOLVED_RESTORE_OR_PREFIX_DEFECT"
         )
         result = {
