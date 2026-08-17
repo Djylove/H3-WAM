@@ -211,3 +211,19 @@
   `a8800b225a06008f84bbd1f4a1b78e9afb288b1ea943ffccc9197d56ff8899f0`，远端路径
   `/mnt/h3-wam/code-snapshots/h3-wam-3682e18-c67-preview-v1` 的非符号链接可写项为0。n3 的接力顺序固定为
   D0 full50完成 → C66 context-length diagnostic结束 → C67 preview queue；preview queue尚未占卡时不得记为已评测。
+
+## 10. 2026-08-17 追加执行状态：C65 complete-only score接力
+
+- C65 fresh pair collection保持原3072-job、两节点和禁止中途读取outcome的合同不变；没有修改或重启
+  任何采集worker。complete-only finalizer仍先按每suite至少20个独立mixed source决定是否产生固定80对。
+- 新增冻结只读scorer：复用C63执行过的C60 restore、online INT8 H3 current K/V、十步shift5 Stage-2
+  solver、共享noise、候选反序复测、唯一`value[:,0,0]`与官方argmin；唯一更换为C65 fresh trajectory
+  row0的RGB/proprio/text和固定candidate actions。future/terminal/outcome不进入模型。
+- C65允许tie/abstention，但总体non-tie必须`>=76/80`且每suite`>=19/20`；总体conditional preference
+  `>=65%`且单侧精确二项`p<=0.05`，每suite`>=60%`，全80对median failure-minus-success严格大于0。
+  这些门在DATA_GATE/outcome产生前写入代码、dossier和测试。
+- 预算是`evaluation_only`：8 GPU、每shard10对、optimizer/training samples/effective epochs均为0，
+  预计不超过0.5小时。skill validator已增加显式evaluation-only模式，禁止用假训练samples绕过；原C67
+  training dossier回归仍通过。
+- 当前仍为`NOT_EVIDENCE_READY`。DATA_GATE失败则自动NO_SCORE；离线PASS也只允许另建事前注册的
+  N=1 vs N=4闭环，不能晋级C60或修改C58擂主身份。

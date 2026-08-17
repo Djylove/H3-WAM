@@ -1,79 +1,135 @@
 {
-  "format": "h3wam-experiment-dossier-v1",
-  "candidate": "C65_FACT_STAGE2_CROSS_SUITE_CONFIRMATORY",
-  "date": "2026-08-17",
-  "status": "BLOCKED_C61_DATA_GAP_NO_SCORE",
-  "hypothesis": "On fresh, source-independent, same-state C60 action-resampling pairs, the frozen C60 s10000 FACT Stage-2 value assigns lower cost to the action whose replan-8 branch succeeds than to the action whose otherwise-identical branch fails, consistently across all four LIBERO suites.",
-  "parent_and_history": {
-    "official_parent": "C58 remains the promoted carrier; C60 remains NOT_EVIDENCE_READY.",
-    "c63": "C63 is immutable and remains failed because 1/32 exact BF16 value ties violated its all-nonzero mechanical gate. C65 is a new candidate and does not reinterpret or overwrite C63.",
-    "training_allowed": false,
-    "best_of_n_allowed": false
-  },
-  "source_alignment": {
-    "official_fact_commit": "618a6c16868699b6d4138941de6a863589ac00dd",
-    "official_fact_stage2": "third_party/FACT/world_action_model/pipeline/wa_pipeline.py:317-318,737-738,820-823",
-    "official_fact_selection": "third_party/FACT/scripts/inference_server.py:342-351,410-428",
-    "local_c61_generation": "scripts/h3wam/prepare_c61_failure_rollout_expansion.py and scripts/h3wam/launch_c61_failure_rollout_node.sh",
-    "local_auditor": "scripts/h3wam/audit_c65_c61_same_state_pairs.py",
-    "source_data_evidence": "experiments/evidence/h3_c65_c61_same_state_source_data_audit_v1.json",
-    "source_data_evidence_sha256": "87ab2752b84192b0be6234eec1511b647631b6d0849e3940504cdbbbdf008e8c"
-  },
-  "c61_read_only_audit": {
-    "c61_frozen_sha256": "17f39b26cd033171bc9cc0afad819ea6b2794f24d1e03d4218c988969a76f6b4",
-    "c61_jobs_sha256": "6e2d76e60cdf2a514cb5378c9b0cccf56a97df7b7698b74d1729a28dfa487666",
-    "c63_pairs_sha256": "c3ead728d362d53ad57f02508cb66febfa128dad79e95911d0da89cd40d8c25a",
-    "jobs": 1128,
-    "successes": 741,
-    "failures": 387,
-    "mixed_groups": 48,
-    "strict_mixed_independent_sources": {
-      "libero_spatial": 21,
-      "libero_object": 15,
-      "libero_goal": 2,
-      "libero_10": 0
+  "experiment_id": "h3_c65_fact_stage2_cross_suite_confirmatory_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "On exactly 80 fresh, source-independent, same-state C60 action pairs balanced 20 per LIBERO suite, the frozen C60 Stage-2 value will prefer the successful action over the failed action in at least 65% of non-ties, with at least 95% non-tie coverage overall and per suite, a one-sided exact binomial p<=0.05, at least 60% preference in every suite, and positive median failure-minus-success cost.",
+  "single_variable": "Relative to the frozen C63 Stage-2 mechanism probe, replace the suite-imbalanced C60-dataset pairs with C65 fresh C60/replan8 deployment-distribution pairs. C60 checkpoint, online INT8 H3, Stage-2 solver, BF16 precision, value token, noise sharing, candidate-order repeat, normalization and argmin semantics remain unchanged.",
+  "parent_baseline": "C63 fixed C60 Stage-2 probe at commit bbf799a produced 27 wins, 1 tie and 4 losses on 32 pairs but failed its preregistered all-nonzero gate and was spatial-heavy. C58 remains the promoted carrier; C60 s10000 SHA256 d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36 remains NOT_EVIDENCE_READY.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FACT: Failure-Aware Causal Training for World-Action Models",
+      "locator": "https://arxiv.org/abs/2608.10232",
+      "revision": "v1 (2026-08-10)",
+      "official": true,
+      "clean": true
     },
-    "strict_mixed_combinatorial_pairs": {
-      "libero_spatial": 86,
-      "libero_object": 62,
-      "libero_goal": 13,
-      "libero_10": 0
+    {
+      "kind": "upstream_code",
+      "title": "Bariona/FACT official Stage-2 inference",
+      "locator": "third_party/FACT/world_action_model/pipeline/wa_pipeline.py and third_party/FACT/scripts/inference_server.py",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "official": true,
+      "clean": true
     },
-    "mechanics": "1128/1128 parent-to-branch sim_state, previous_action and step are byte exact; every group has four unique candidate actions; one frozen D0 checkpoint generated every branch.",
-    "c63_disjoint": "PASS: parent trajectory, branch trajectory, simulator state, candidate action and suite/task/trial/step overlaps are all zero.",
-    "distribution_gap": "C61 sampled D0-H32-s14000 and used first_replan_steps=32. C65 deployment would sample the C60/C58 lineage under replan8, so C61 is a near-neighbor distribution, not the exact candidate distribution.",
-    "decision": "FAIL_C65_C61_FOUR_SUITE_DATA_GATE_NO_SCORE"
+    {
+      "kind": "local_implementation",
+      "title": "C65 fresh-pair finalizer and frozen Stage-2 scorer",
+      "locator": "scripts/h3wam/finalize_c65_c60_pair_collection.py, evaluate_c65_fact_stage2_pairs.py and aggregate_c65_fact_stage2_pairs.py",
+      "revision": "the launch watcher requires a separately frozen read-only git snapshot",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "frozen C60 Stage-2 consequence/value model",
+        "paper": "FACT first predicts an action and then conditions future state, value and video on the clean action.",
+        "upstream_code": "wa_pipeline.py executes Stage-2 and inference_server.py selects the minimum predicted value.",
+        "local": "Restore the unchanged C60 30-layer H3/FACT port and execute forward_consequence with frozen online INT8 H3 current-state K/V.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["scripts/h3wam/evaluate_c63_fact_stage2_within_state.py", "scripts/h3wam/evaluate_c65_fact_stage2_pairs.py"],
+        "rationale": "H3 and LIBERO replace Wan and RoboTwin, but C65 introduces no architecture change relative to the audited C63 probe."
+      }
+    ],
+    "data": [
+      {
+        "field": "fresh balanced same-state successful/failed pairs",
+        "paper": "Failure-aware value learning and ranking require action-conditioned success/failure outcomes.",
+        "upstream_code": "FACT ranks candidate actions from the same current observation.",
+        "local": "C65 freezes 3072 branches before reading outcomes, requires eight unique actions per restored state, selects at most one pair per independent parent source, and permits scoring only with exactly 20 mixed sources per suite.",
+        "status": "EQUIVALENT",
+        "evidence": ["scripts/h3wam/finalize_c65_c60_pair_collection.py", "experiments/dossiers/h3_c65_c60_pair_collection_v1.json"],
+        "rationale": "The complete-only DATA_GATE is a runtime prerequisite; insufficient suite coverage terminates with NO_SCORE."
+      }
+    ],
+    "action": [
+      {
+        "field": "two candidate environment-action chunks per current state",
+        "paper": "The selected action is the candidate with minimum Stage-2 value.",
+        "upstream_code": "inference_server.py denormalizes value and applies argmin.",
+        "local": "Each 32x7 LIBERO environment action is hash-checked, inverted through the deployed gripper codec, min-max normalized with frozen training stats and scored with shared noise.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["src/fastwam/models/h3wam/fact_online_data.py:environment_actions_to_dataset", "scripts/h3wam/evaluate_c65_fact_stage2_pairs.py"],
+        "rationale": "LIBERO absolute7D replaces the official embodiment while preserving the deployed C60 action contract."
+      }
+    ],
+    "objective": [
+      {
+        "field": "read-only Stage-2 value ranking",
+        "paper": "Lower predicted consequence value ranks a candidate action ahead of higher value.",
+        "upstream_code": "The official pipeline uses the sole value token and minimum value selection.",
+        "local": "Ten shifted-flow evaluations return value[:,0,0]; raw=normalized+1 is monotone and lower wins. Ties are exact BF16 equality and become abstentions.",
+        "status": "EQUIVALENT",
+        "evidence": ["scripts/h3wam/evaluate_c63_fact_stage2_within_state.py:score_order", "scripts/h3wam/aggregate_c65_fact_stage2_pairs.py"],
+        "rationale": "No training objective or gradient is executed; this evaluates the already-trained selector mechanism."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "zero-step frozen scoring budget",
+        "paper": "Inference ranking does not update model parameters.",
+        "upstream_code": "Candidate values are produced in inference mode.",
+        "local": "Eight shards score ten pairs each; optimizer steps and training samples are zero, all model parameters are frozen, and outputs are written only after the complete data gate.",
+        "status": "EXACT",
+        "evidence": ["scripts/h3wam/launch_c65_fact_stage2_score_8gpu.sh", "scripts/h3wam/evaluate_c65_fact_stage2_pairs.py"],
+        "rationale": "GPU count only parallelizes deterministic read-only forwards."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "four-suite conditional preference with explicit abstention",
+        "paper": "World/action claims ultimately require closed-loop evaluation.",
+        "upstream_code": "FACT uses predicted value to choose among candidates.",
+        "local": "The frozen offline gate requires >=76/80 non-ties, >=19/20 per suite, >=65% overall conditional preference, exact p<=0.05, >=60% per suite and positive all-pair median margin. PASS only permits a separate N=1 vs N=4 rollout.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["docs/H3_C65_FACT_C61_SOURCE_DATA_AUDIT_2026-08-17.md", "scripts/h3wam/aggregate_c65_fact_stage2_pairs.py"],
+        "rationale": "This is a mechanism attribution gate, not LIBERO policy-success evidence."
+      }
+    ]
   },
-  "rejected_shortcut": {
-    "proposal": "Pair every C61 failure with the successful parent trajectory action.",
-    "reason": "The parent outcome used replan8 while the C61 candidate intervention used its first action chunk for 32 steps. Those outcomes are execution-contract asymmetric. Independent source capacity would also be only spatial47/object16/goal9/L10=2, so duplicate candidates cannot create valid power."
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FACT 618a6c16868699b6d4138941de6a863589ac00dd, C60 checkpoint SHA and C65 PREPARED/jobs SHA are hard-coded and checked."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["C63 already executed the exact frozen C60 restore and Stage-2 topology; C65 changes only pair provenance."]},
+    "data_contract": {"status": "PASS", "evidence": ["Scoring is conditional on the complete-only C65 DATA_GATE auditing all 3072 frozen jobs and publishing exactly 80 source-independent pairs; otherwise the watcher exits without a model forward."]},
+    "action_contract": {"status": "PASS", "evidence": ["Action shape/hash, distinctness, environment-to-dataset gripper inversion and fixed stats are checked before scoring."]},
+    "objective_contract": {"status": "PASS", "evidence": ["The C63-tested ten-step Stage-2 solver, sole value token, raw affine transform, argmin and exact BF16 tie semantics are unchanged."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Optimizer steps=0; eight read-only shards each own pair_index modulo8 and refuse existing outputs."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Coverage, preference, exact-binomial, per-suite and median-margin gates were frozen before C65 outcomes are read."]},
+    "gradient_path": {"status": "PASS", "evidence": ["torch.inference_mode and model.requires_grad_(False) are used; no optimizer exists."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["C63 produced finite scores for 32/32 pairs; C65 synthetic aggregation and static execution tests pass."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["The existing C60 READY loader and strict restore path are reused and checkpoint SHA is checked."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C63 is the frozen mechanism parent and C58 remains the promoted policy parent; C65 cannot rewrite either result."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["C65 DATA_GATE and scores do not exist yet; C63's 27/32 signal only motivated this confirmatory test."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No C65 N=1 vs N=4 rollout is authorized before an offline PASS."]}
   },
-  "fresh_collection_data_gate": {
-    "policy_checkpoint": "C60 s10000 SHA256 d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36",
-    "source_pool": "Fresh C60 successful rollout trajectories from trials33..49; all source and intervention states must be disjoint from C63 and C61 by SHA/state identity.",
-    "execution": "All candidates are sampled at one exact restored state by the same C60 policy. Candidate-specific first diffusion seed is the only intervention; first and continuation replans both execute replan8; continuation noise schedule is identical within a state.",
-    "candidate_budget": "Freeze eight candidates for each frozen state before any branch outcome is read.",
-    "pair_selection": "A state is eligible only when at least one candidate succeeds and one fails. Select the smallest successful candidate id and smallest failed candidate id. At most one pair and one state per parent source enters scoring.",
-    "minimum": "20 unique mixed parent sources and exactly 20 fixed pairs per suite (80 total).",
-    "failure": "If any suite has fewer than 20 eligible independent sources after the frozen collection, publish the coverage shortfall and do not score."
+  "budget": {
+    "mode": "evaluation_only",
+    "global_batch": 2,
+    "optimizer_steps": 0,
+    "training_samples": 0,
+    "unique_windows": 80,
+    "effective_epochs": 0.0,
+    "gpu_count": 8,
+    "estimated_hours": 0.5,
+    "model_forwards": 320,
+    "model_forwards_note": "80 pairs x two candidate orders x two actions; each candidate order uses the fixed ten-step Stage-2 solver."
   },
-  "frozen_score_contract_after_data_gate": {
-    "model": "Frozen C60 s10000; no parameter updates.",
-    "input": "The same current branch RGB/proprio/text is reused for both current-state candidate action chunks. Future observations, terminal state and outcome labels are never model inputs.",
-    "solver": "Official FACT Stage-2 flow solver, shift=5, ten evaluations, identical initial future/value/representation noise within pair, repeated in reversed candidate order.",
-    "value": "Use the sole value[:,0,0] token. Model domain is BF16 normalized [-1,1]; raw=normalized+1; lower raw value wins exactly as official inference_server argmin.",
-    "precision": "Keep the deployed BF16 model/output path. A tie is exact equality of the two finite BF16 raw scalar values; no epsilon, FP32 rescue, or random tie break is allowed.",
-    "tie": "Abstention. Ties are excluded from the conditional preference denominator but remain in the coverage denominator.",
-    "coverage_gate": "At least 76/80 non-ties overall and at least 19/20 in every suite.",
-    "conditional_preference_gate": "At least 65% success-action preference among non-ties overall and one-sided exact binomial p<=0.05.",
-    "per_suite_gate": "At least 60% success-action preference among non-ties in every suite.",
-    "margin_gate": "Median failure-minus-success raw value is strictly positive over all 80 pairs, with ties represented as zero.",
-    "mechanical_gate": "All scores finite; source/state/action hashes exact; no pair duplicated; same noise; candidate-order max_abs=0."
-  },
-  "permissions": {
-    "current": "NO_SCORE_COLLECT_C65_DEPLOYMENT_DISTRIBUTION_PAIRS",
-    "pass": "GO_SEPARATE_PREREGISTERED_N1_VS_N4_CLOSED_LOOP_ONLY",
-    "fail": "NO_GO_C60_STAGE2_SELECTOR_KEEP_C58"
-  },
-  "claim_boundary": "Even a C65 offline PASS establishes action ranking on fresh candidate-sensitive states only. It does not establish closed-loop LIBERO improvement and does not itself authorize best-of-N deployment."
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Permit only the frozen read-only 80-pair score after the complete-only DATA_GATE says GO_SCORE_C65. A coverage failure exits without scoring. PASS remains offline mechanism evidence and cannot promote C60.",
+    "launch_command": "PROJECT_ROOT=/readonly/c65-score C65_SCORE_ROOT=/mnt/h3-wam/outputs/c65-fact-stage2-cross-suite-v1 bash /readonly/c65-score/scripts/h3wam/watch_and_launch_c65_fact_stage2_score.sh",
+    "effect_status": "NOT_EVIDENCE_READY",
+    "automatic_launch": true
+  }
 }
