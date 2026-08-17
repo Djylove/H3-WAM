@@ -499,3 +499,25 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
 - **结论边界**：`EVIDENCE_READY / carrier赛道冠军`。它替换D0成为carrier fusion lineage父节点：
   `C58 carrier champion -> + temporal/context winner -> + consequence/ranking winner`。尚未完成后两赛道
   胜者融合、完整50-state descriptive benchmark和部署成本总决赛，因此不是最终全赛道“蛊王”。
+
+### C60/C61：FACT失败分支融合未晋级（2026-08-17）
+
+- **谱系与身份**：C60以C58 carrier为父节点加入FACT-style online future/action辅助和C60受控失败分支；
+  它是`backbone_port`研究候选，不是FACT官方模型复现。C60 checkpoint SHA256为
+  `d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36`，父C58 SHA256为
+  `2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541`。
+- **680对结果**：C60 `313/680=46.029%`，C58 `295/680=43.382%`，差`+2.647pp`；C60赢63对、输45对，
+  净胜18，one-sided exact McNemar `p=0.0507164`，paired-delta 95%区间为
+  `[-0.344pp,5.638pp]`。Spatial/Object/Goal/LIBERO-10分别为`98:92/139:131/44:44/32:28`。
+- **晋级判定**：suite安全通过，但`>=3pp`、净胜`>=20`、`p<=0.05`三项预注册主门均未通过。
+  状态固定为`FAIL_C60_FACT_EXPANDED_PAIRED / NOT_EVIDENCE_READY / KEEP_C58_PARENT`。C60是当前
+  最高完整点估计，但不能替换C58 carrier赛道冠军。
+- **证据身份**：`RESULTS.json` SHA256
+  `d9280c5ad4aeac231a8da793ac5f5d667f005dbc8c5cfe3657b93a4895483ec3`；`PAIR_EVIDENCE.jsonl`
+  SHA256 `b96421a1e5c6d6ff8fe729f5cf3128560a00e64eac3983d20ef505346f3e9b05`；`COMPLETED.json`
+  SHA256 `5eb9623c570c371062ed8d8b8262bec90eec3973c88f3feafe4c48904a3c349d`。独立只读重聚合逐字段一致。
+- **C61边界**：trial33固定canary为C61 `17/40`、C60 `20/40`、C58 `18/40`；C61相对C60
+  `-7.5pp`且0胜3负，判定`NO_GO_EXPANSION`。C61不进入扩展闭环，也不成为可融合候选。
+- **后续预算门**：C60 s1k..s10k固定balanced80曲线只用于判断新训练预算是否有依据，不能反向选择已看过
+  闭环的checkpoint。原s10k scheduler已降至LR=0；任何s20k必须另立dossier并预注册新scheduler、
+  160000总样本/effective epochs、每1k保存及新policy-seed闭环，且需先报告门禁再启动。

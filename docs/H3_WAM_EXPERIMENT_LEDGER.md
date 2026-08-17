@@ -1215,3 +1215,30 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   全赛道冠军。新的lineage固定为`C58 carrier -> + temporal/context winner -> + consequence/ranking
   winner`。完整trials0..49报告尚待补齐；其中0..32已被历史研发消费，只能作为descriptive benchmark，
   不允许重新用于confirmatory promotion。
+
+### 2026-08-17 — C60 FACT失败分支融合终局与C61停止扩展
+
+- C60将C58 carrier与C56b FACT online objective结合，固定四suite×10 tasks×trials33..49、
+  one-episode-per-process、wait30/replan8/horizon32/eval10，与C58做680对配对闭环。候选checkpoint
+  SHA256为`d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36`，固定C58父节点SHA256为
+  `2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541`。
+- C60为`313/680=46.029%`，C58为`295/680=43.382%`，点估计提升`2.647pp`；discordant pairs为
+  C60赢63、C58赢45，净胜18，exact one-sided McNemar `p=0.0507164`，paired-delta 95%区间
+  `[-0.344pp,5.638pp]`。suite为Spatial `98:92`、Object `139:131`、Goal `44:44`、LIBERO-10
+  `32:28`，suite安全门通过。
+- 预注册门要求overall至少`+3pp`、净胜至少20、one-sided `p<=0.05`且suite安全；前三项分别因
+  `2.647pp/18/0.0507164`全部失败。因此正式结论为`FAIL_C60_FACT_EXPANDED_PAIRED / NOT_EVIDENCE_READY /
+  KEEP_C58_PARENT`。`313/680`只能称为当前最高完整点估计，不能称为晋级或冠军。
+- 正式`RESULTS.json` SHA256为
+  `d9280c5ad4aeac231a8da793ac5f5d667f005dbc8c5cfe3657b93a4895483ec3`，`PAIR_EVIDENCE.jsonl`
+  SHA256为`b96421a1e5c6d6ff8fe729f5cf3128560a00e64eac3983d20ef505346f3e9b05`，`COMPLETED.json`
+  SHA256为`5eb9623c570c371062ed8d8b8262bec90eec3973c88f3feafe4c48904a3c349d`。从独立只读finalizer重新读取
+  640条新证据并桥接trial33，format/status/permission/effect、overall/per-suite/per-trial、gates与pair
+  outcomes逐字段一致。
+- C61额外失败分支版本仅做预注册trial33 canary：C61 `17/40`、C60 `20/40`、C58 `18/40`；相对C60为
+  `-7.5pp`且0胜3负，相对C58为`-2.5pp`。判定`NO_GO_EXPANSION`，不得扩大到trials34..49，也不得以
+  “更多负例”名义热插入C60或替代C58。
+- C60 s1k..s10k的固定balanced80离线曲线已在只读snapshot并行评测；该曲线只回答训练预算是否仍有
+  未兑现趋势，不用于从已看过闭环结果的十个checkpoint中择优。s10k时原cosine scheduler已到LR=0，
+  因此即使曲线通过，也只能先预注册新scheduler、新样本/effective epoch预算、每1k保存及新policy-seed
+  闭环合同，再决定是否启动s20k。
