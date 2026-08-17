@@ -103,8 +103,9 @@ head 就不能用于 BoN，继续训练或闭环尝试都没有依据。
 ### Mechanical gates
 
 1. 严格校验上面的 checkpoint、dataset、observations 和成功父 trajectory SHA；32/32 对必须完整。
-2. 每对的 branch onset 与成功父轨迹在 sim state、proprio、agentview、wristview 上逐字段完全相等；
-   不允许只按 task/trial 猜对齐。
+2. 每对的 branch onset 与成功父轨迹在 `sim_state`、`previous_action` 和 simulator step 上逐字段完全
+   相等；不允许只按 task/trial 猜对齐。每对两个候选统一使用 branch onset 的 RGB/proprio/text 作为
+   模型输入，所以进入 Stage-2 的当前观测逐字节相同。
 3. successful/failed action 都从真实 executed actions 重建为 32 step，再经过同一 gripper conversion、
    min-max normalization 和 padding round-trip；两候选必须确实不同。
 4. Stage-2 输入只含当前 observation/proprio/text、候选 action 和固定初始噪声；future state、outcome、
@@ -113,6 +114,12 @@ head 就不能用于 BoN，继续训练或闭环尝试都没有依据。
    交换评测顺序后 score 差异在容差内不变。
 6. 严格恢复完整 C60 s10k；action generator 参数和输出字节不修改。候选 action 改变时 value score
    必须产生有限且非零的变化，否则判定 head 未使用 action。
+
+预注册后、任何模型前向前的 mechanical audit 发现：C54 虽然 32/32 branch onset 与成功父轨迹的
+`sim_state`、`previous_action` 完全一致，但 state restore 后重新观测的 RGB 和 EEF 数值不是逐字节
+一致（EEF 最大差约 `6.3e-5..8.3e-4`）。因此上面的 gate 2 在读取任何 value score 前由“父/分支
+RGB/proprio 也相等”修正为“动作来源 simulator state 精确相等，且两候选统一复用 branch 当前模型
+输入”。32 对身份和全部统计门均未改变；评测结果中必须报告该 erratum，不能把它隐去。
 
 ### 冻结 offline gate
 
@@ -135,4 +142,3 @@ head 就不能用于 BoN，继续训练或闭环尝试都没有依据。
    matched closed-loop canary；唯一变量为“是否按内置 Stage-2 value 选候选”。
 4. 只有 matched canary 通过预注册成功率和 suite-safety 门，才考虑训练一个专门改善 value ranking
    的后继模型；C60 本身仍不回溯改名为成功。
-

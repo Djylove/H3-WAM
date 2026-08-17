@@ -25,7 +25,8 @@
   },
   "mechanical_gate_requirements": {
     "all_32_pairs_and_hashes_exact": "REQUIRED",
-    "branch_and_parent_current_state_and_images_exact": "REQUIRED",
+    "branch_and_parent_sim_state_previous_action_and_step_exact": "REQUIRED",
+    "same_branch_current_observation_proprio_text_for_both_candidates": "REQUIRED",
     "executed_action_roundtrip_exact": "REQUIRED",
     "no_future_or_outcome_label_model_input": "REQUIRED",
     "same_initial_noise_and_solver_within_pair": "REQUIRED",
@@ -43,5 +44,10 @@
   },
   "pass_permission": "GO_COLLECT_CROSS_SUITE_C63_CONFIRMATORY_PAIRS",
   "fail_permission": "NO_GO_C60_STAGE2_RANKING_KEEP_C58",
+  "pre_forward_erratum": {
+    "timing": "Recorded after CPU-only provenance audit and before any C60 Stage-2 value forward or score was observed.",
+    "finding": "All 32 branch/parent pairs have byte-exact sim_state and previous_action at the same simulator step, but restored RGB and EEF observations are not byte-exact because the state-restored environment was observed/rendered again.",
+    "protocol_correction": "Use the branch-onset RGB/proprio/text identically for both candidate actions and require byte-exact parent/branch sim_state, previous_action and step. Pair identities and all statistical gates are unchanged."
+  },
   "claim_boundary": "This is an offline, suite-imbalanced diagnostic of the integrated C60 value head. Passing cannot establish LIBERO success, four-suite generalization, or C60 promotion; failing forbids C60 best-of-N and 20k continuation under this hypothesis."
 }
