@@ -1,0 +1,71 @@
+{
+  "active_legacy_launchers": 2,
+  "claim_boundary": "Filesystem/process metadata only; no result JSON, trajectory, log, success, or score was read.",
+  "decision": {
+    "permission": "DO_NOT_LAUNCH_NODE_30137",
+    "proof": {
+      "direct_main_root": "Third worker creates a partial output directory; when a legacy worker reaches that ordinal it sees incomplete+existing and returns failure, terminating that worker.",
+      "staging_publish_after_legacy_mkdir": "No-replace publication must decline and gives no acceleration; replacement would corrupt an active output.",
+      "staging_publish_before_legacy_check": "Safe only if publication is already complete.",
+      "staging_publish_between_legacy_check_and_mkdir": "Unsafe TOCTOU: legacy already observed absence and mkdir -p does not establish ownership.",
+      "tail_timing": "Not a correctness proof: branch duration is outcome/state dependent and the eight legacy workers advance asynchronously.",
+      "third_only_lock": "Insufficient because the two active legacy launchers never acquire or inspect it."
+    },
+    "safe_transition_requires": [
+      "Every active worker must acquire the same atomic per-ordinal claim before testing/creating output.",
+      "Each job must write to owner-specific staging and publish complete output with atomic no-replace.",
+      "Migration of this live root requires coordinated quiescence/restart of legacy workers and updated marker accounting."
+    ],
+    "scope": "This blocks only live acceleration of the frozen C65 root. The idle node remains safe for a disjoint experiment/root.",
+    "status": "NO_GO_C65_THIRD_NODE_LIVE_ACCELERATION_LEGACY_UNCLAIMED_QUEUE"
+  },
+  "effect_status": "NOT_EVALUATED",
+  "format": "h3wam-c65-third-node-live-acceleration-audit-v1",
+  "identities": {
+    "jobs_sha256": "c9a13ede1ea111450ff4bd4f893fd729fc55190f92ce45e76e0240a9001b52cf",
+    "legacy_launcher_sha256": "8d36e2803e662e8af9a7abe37a99ba9229e17f891cf7a95ec21e0ebdee854970",
+    "prepared_sha256": "a883db2662acbb8a2bb31fa9ebbd7ff344ab01d1af5626d5d02def07a0e1158a"
+  },
+  "inventory_snapshot": {
+    "complete_by_suite": {
+      "libero_goal": 186,
+      "libero_spatial": 156
+    },
+    "complete_outputs": 342,
+    "created_by_suite": {
+      "libero_goal": 194,
+      "libero_spatial": 163
+    },
+    "created_output_dirs": 357,
+    "inflight_output_dirs": 15,
+    "logs_opened": 0,
+    "outcome_files_opened": 0,
+    "total_jobs": 3072,
+    "trajectory_files_opened": 0,
+    "uncreated_jobs": 2715,
+    "unknown_run_directories": []
+  },
+  "legacy_launcher_contract": {
+    "all_workers_honor_atomic_claim": false,
+    "check_then_mkdir_toctou": true,
+    "complete_skip_partial_refuse_then_mkdir": true,
+    "positions": {
+      "complete_skip": 3532,
+      "create": 3737,
+      "partial_refuse": 3648
+    },
+    "shared_claim_tokens_present": []
+  },
+  "markers": {
+    "data_gate_exists": false,
+    "n1_complete": false,
+    "n2_complete": false
+  },
+  "new_node": {
+    "gpus": "8x NVIDIA A800-SXM4-80GB",
+    "launches_started": 0,
+    "shared_mnt": true,
+    "ssh": "ssh -p 30137 dev@117.50.181.177"
+  },
+  "read_only": true
+}

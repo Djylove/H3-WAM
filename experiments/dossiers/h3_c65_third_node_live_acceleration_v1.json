@@ -1,0 +1,66 @@
+{
+  "format": "h3wam-experiment-dossier-v1",
+  "candidate": "C65_THIRD_NODE_LIVE_ACCELERATION_AUDIT",
+  "date": "2026-08-17",
+  "classification": "deployment_contract_controlled_ablation",
+  "status": "NO_GO_C65_THIRD_NODE_LIVE_ACCELERATION_LEGACY_UNCLAIMED_QUEUE",
+  "falsifiable_hypothesis": "A third 8xA800 node can accelerate the already-running frozen C65 collection without stopping n1/n2 only if every active launcher obtains the same atomic per-ordinal ownership claim before creating or publishing an output.",
+  "parent": "The immutable two-node C65 collection rooted at /mnt/h3-wam/eval/c65-c60-deployment-pair-collection-v1.",
+  "single_variable": "Add node 30137 as an additional executor; jobs, hashes, seeds, execution contract, outcomes, selection and gates remain unchanged.",
+  "identities": {
+    "prepared_sha256": "a883db2662acbb8a2bb31fa9ebbd7ff344ab01d1af5626d5d02def07a0e1158a",
+    "jobs_sha256": "c9a13ede1ea111450ff4bd4f893fd729fc55190f92ce45e76e0240a9001b52cf",
+    "legacy_launcher_sha256": "8d36e2803e662e8af9a7abe37a99ba9229e17f891cf7a95ec21e0ebdee854970",
+    "audit_evidence": "experiments/evidence/h3_c65_third_node_live_acceleration_audit_v1.json",
+    "audit_evidence_sha256": "dbe1eeb6bd4a4d55aedde016c0057e4c3b6bcc71e37659ce17f058551cb249a2"
+  },
+  "new_node": {
+    "ssh": "ssh -p 30137 dev@117.50.181.177",
+    "hardware": "8x NVIDIA A800-SXM4-80GB",
+    "shared_mnt": true,
+    "gpu_memory_used_at_audit": "0 MiB on all eight GPUs",
+    "c65_processes_started": 0
+  },
+  "outcome_blind_snapshot": {
+    "complete_outputs": 342,
+    "inflight_output_dirs": 15,
+    "uncreated_jobs": 2715,
+    "complete_by_suite": {
+      "libero_spatial": 156,
+      "libero_goal": 186
+    },
+    "n1_marker": false,
+    "n2_marker": false,
+    "data_gate": false,
+    "result_json_opened": 0,
+    "trajectory_opened": 0,
+    "logs_opened": 0
+  },
+  "source_contract_finding": {
+    "legacy_sequence": "complete output -> skip; incomplete existing output -> return failure; absent output -> mkdir -p and run",
+    "shared_claim": "ABSENT",
+    "toctou": "The absence check and mkdir are separate operations, and mkdir -p does not prove ownership.",
+    "active_legacy_launchers": 2
+  },
+  "rejected_live_options": {
+    "direct_main_root": "A third-node partial directory makes the legacy owner terminate when it reaches that ordinal.",
+    "third_only_claim_lock": "The active n1/n2 launchers never acquire or inspect it.",
+    "staging_then_publish": "Publication between the legacy absence check and mkdir still races; no-replace after legacy mkdir safely declines but yields no acceleration.",
+    "tail_slice": "It relies on a wall-clock lead, but job duration and eight worker cursors have no frozen hard lower bound; it is not a correctness guarantee."
+  },
+  "safe_future_contract": {
+    "claim": "All nodes atomically create the same claim/<ordinal> owner record before any output test/create.",
+    "execution": "The owner writes to node/PID-specific staging.",
+    "publish": "Validate result+trajectory first, then atomic renameat2(RENAME_NOREPLACE) into the canonical output.",
+    "recovery": "Only explicit stale-claim audit may reclaim; completion marker counts canonical published jobs, not attempted jobs.",
+    "live_migration": "Requires coordinated quiescence/restart of both legacy launchers and revised marker accounting, which is outside current authorization."
+  },
+  "permissions": {
+    "current": "DO_NOT_LAUNCH_NODE_30137_ON_C65_ROOT",
+    "existing_n1_n2": "KEEP_RUNNING_UNCHANGED",
+    "future_claim_aware_migration": "REQUIRES_USER_CONFIRMATION",
+    "disjoint_root_on_node_30137": "SEPARATE_REVIEW"
+  },
+  "effect_status": "NOT_EVIDENCE_READY",
+  "claim_boundary": "This is an outcome-blind concurrency-safety conclusion, not a C65 model/data result."
+}
