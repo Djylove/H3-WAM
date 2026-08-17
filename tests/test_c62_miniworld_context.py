@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+import importlib.util
 
 import pytest
 import torch
@@ -194,3 +195,37 @@ def test_rejects_non_aligned_action_history_and_context_args_when_disabled():
         state.append(_kv(1), torch.randn(1, 7, 2))
     with pytest.raises(ValueError, match="require context"):
         model(video_kv_cache=_kv(2), context_state=state, **_inputs())
+
+
+def test_real_c58_checkpoint_validator_uses_serialized_schema_fields():
+    path = ROOT / "scripts/h3wam/probe_c62_miniworld_context.py"
+    spec = importlib.util.spec_from_file_location("_c62_probe_test", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    layers = LAYERWISE_H3_50_TO_ACTION_30
+    payload = {
+        "schema_version": 1,
+        "completed_steps": 10_000,
+        "contract": {
+            "candidate": "C58B_FASTWAM_FULL30_H3_LAYERWISE",
+            "classification": "action-only-on-frozen-layerwise-h3-kv_backbone_port",
+            "fastwam_commit": module.EXPECTED_FASTWAM_COMMIT,
+            "fastwam_action_dit_sha256": module.EXPECTED_ACTION_DIT_SHA256,
+            "carrier_source_mode": "uniform_h3_50_to_action30",
+            "kv_layers": list(layers),
+            "action_block_to_h3_layer": list(layers),
+            "model_spec": {
+                "carrier_layers": layers,
+                "action_layers": 30,
+                "carrier_source_mode": "uniform_h3_50_to_action30",
+            },
+            "h3_execution": "online_frozen_int8_per_rank_v1",
+            "disk_kv_training_input": False,
+        },
+    }
+    assert all(module.validate_c58_parent_payload(payload).values())
+    payload["contract"]["kv_layers"] = list(layers[:-1])
+    with pytest.raises(ValueError, match="kv_layers"):
+        module.validate_c58_parent_payload(payload)

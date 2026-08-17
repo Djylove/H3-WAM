@@ -27,6 +27,10 @@ from fastwam.models.h3wam.fastwam_full_tower import (
 C58_CHECKPOINT_SHA256 = (
     "2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541"
 )
+EXPECTED_FASTWAM_COMMIT = "45d8e1458921d83f8ad6cf9ce993d371208dabd0"
+EXPECTED_ACTION_DIT_SHA256 = (
+    "1301d9224149de43bb701f620a5d41858ecc63c6b19a573ec32edd45a3bdb0a2"
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -42,6 +46,40 @@ def atomic_json(path: Path, payload: dict) -> None:
     temporary = path.with_name(f".{path.name}.partial")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     temporary.replace(path)
+
+
+def validate_c58_parent_payload(payload: dict) -> dict:
+    """Fail closed on the fields actually serialized by C58b schema v2."""
+
+    contract = payload.get("contract", {})
+    model_spec = contract.get("model_spec", {})
+    expected = LAYERWISE_H3_50_TO_ACTION_30
+    checks = {
+        "schema_version": payload.get("schema_version") == 1,
+        "completed_steps": int(payload.get("completed_steps", -1)) == 10_000,
+        "candidate": contract.get("candidate") == "C58B_FASTWAM_FULL30_H3_LAYERWISE",
+        "classification": contract.get("classification")
+        == "action-only-on-frozen-layerwise-h3-kv_backbone_port",
+        "fastwam_commit": contract.get("fastwam_commit") == EXPECTED_FASTWAM_COMMIT,
+        "action_dit_sha256": contract.get("fastwam_action_dit_sha256")
+        == EXPECTED_ACTION_DIT_SHA256,
+        "carrier_source_mode": contract.get("carrier_source_mode")
+        == "uniform_h3_50_to_action30",
+        "kv_layers": tuple(contract.get("kv_layers", ())) == expected,
+        "block_mapping": tuple(contract.get("action_block_to_h3_layer", ()))
+        == expected,
+        "model_spec_layers": tuple(model_spec.get("carrier_layers", ())) == expected,
+        "model_spec_depth": model_spec.get("action_layers") == 30,
+        "model_spec_mode": model_spec.get("carrier_source_mode")
+        == "uniform_h3_50_to_action30",
+        "online_frozen_h3": contract.get("h3_execution")
+        == "online_frozen_int8_per_rank_v1",
+        "no_disk_kv": contract.get("disk_kv_training_input") is False,
+    }
+    failed = [name for name, passed in checks.items() if not passed]
+    if failed:
+        raise ValueError(f"checkpoint is not the fixed C58 layer-wise champion parent: {failed}")
+    return checks
 
 
 def parser() -> argparse.ArgumentParser:
@@ -105,15 +143,7 @@ def main() -> None:
     if actual_sha256 != args.expected_checkpoint_sha256:
         raise RuntimeError(f"C58 checkpoint SHA256 mismatch: {actual_sha256}")
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
-    contract = payload.get("contract", {})
-    if (
-        int(payload.get("completed_steps", -1)) != 10_000
-        or tuple(contract.get("h3_carrier_layers", ()))
-        != LAYERWISE_H3_50_TO_ACTION_30
-        or contract.get("carrier_source_mode")
-        != "uniform_h3_50_to_action30"
-    ):
-        raise ValueError("checkpoint is not the fixed C58 layer-wise champion parent")
+    parent_identity_checks = validate_c58_parent_payload(payload)
 
     if not torch.cuda.is_available():
         raise RuntimeError("real C58 C62 probe requires CUDA")
@@ -274,6 +304,7 @@ def main() -> None:
         "c58_checkpoint_sha256": actual_sha256,
         "c58_completed_steps": 10_000,
         "parent_strict_restore": True,
+        "parent_identity_checks": parent_identity_checks,
         "default_off_parent_max_abs": disabled_max_abs,
         "empty_context_parent_max_abs": empty_context_max_abs,
         "history_changes_action_max_abs": history_delta,
