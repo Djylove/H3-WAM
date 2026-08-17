@@ -1,0 +1,42 @@
+{
+  "experiment_id": "h3_c58b_full50_descriptive_eval_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Under the unchanged fresh-process LIBERO contract, rerunning both fixed arms on trials0..32 completes a mechanically valid 50-state descriptive profile without altering the frozen confirmatory C58 carrier promotion.",
+  "single_variable": "Initial-state coverage expands from confirmatory trials33..49 to all trials0..49; checkpoints, task grid, action execution, simulator predicate and seed formula remain fixed.",
+  "parent_baseline": "Frozen confirmatory C58-vs-D0 trials33..49 result: 295/680 versus270/680, FINAL SHA256 53a06ac5c3c36298ed2ee397688eb03e6918219d32f469897e9139530d954f88.",
+  "references": [
+    {"kind": "paper", "title": "FastWAM", "locator": "https://arxiv.org/abs/2603.16666", "revision": "arXiv:2603.16666", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "YuanTianYuan01/FastWAM", "locator": "https://github.com/YuanTianYuan01/FastWAM", "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "H3 C58 full50 descriptive evaluator", "locator": "/home/ubuntu/fastwam_deploy", "revision": "current full50 implementation commit", "official": false, "clean": false}
+  ],
+  "alignment": {
+    "architecture": [{"field": "fixed arm identities", "paper": "Evaluate one frozen policy checkpoint.", "upstream_code": "Evaluator restores a fixed action model.", "local": "C58 SHA2e629471 and D0 SHA36c56157 are immutable; no training occurs.", "status": "EXACT", "evidence": ["PREPARED.checkpoints"]}],
+    "data": [{"field": "full LIBERO state coverage", "paper": "Report benchmark tasks over official initial states.", "upstream_code": "Trial index selects official task init state.", "local": "Four suites x ten tasks x trials0..32 are rerun for both arms; verified trials33..49 are appended.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/prepare_c58b_full50_descriptive_eval.py"], "rationale": "Trials0..32 were consumed during development, so the resulting full50 report is descriptive rather than a second confirmatory test."}],
+    "action": [{"field": "rollout action contract", "paper": "FastWAM executes receding-horizon 7D chunks.", "upstream_code": "Official evaluator fixes chunk execution and success predicate.", "local": "wait30/max400/replan8/horizon32/eval10, pre-clamp and binarized gripper match the promoted v4 run.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c58b_full50_descriptive_arm.sh"]}],
+    "objective": [{"field": "descriptive success endpoint", "paper": "Environment predicate determines task success.", "upstream_code": "LIBERO env.check_success scores rollout.", "local": "No loss or selection is active; success is read only after both 1320-episode arm markers exist.", "status": "EXACT", "evidence": ["scripts/h3wam/aggregate_c58b_full50_descriptive_eval.py"]}],
+    "optimization": [{"field": "fixed exhaustive evaluation budget", "paper": "Independent episodes can be parallelized.", "upstream_code": "Evaluation has no optimizer.", "local": "n0 runs 1320 C58 episodes and n3 runs1320 D0 episodes; eight GPU queues per node,165 fresh processes per GPU.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/prepare_c58b_full50_descriptive_eval.py"], "rationale": "Validator budget fields encode evaluation waves; no parameter update occurs."}],
+    "evaluation": [{"field": "claim boundary", "paper": "Held-out results support confirmation.", "upstream_code": "Benchmark aggregates all requested states.", "local": "Trials33..49 retain the sole confirmatory claim; full50 and trials0..32 metrics are explicitly DESCRIPTIVE_ONLY and cannot alter promotion.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/aggregate_c58b_full50_descriptive_eval.py"], "rationale": "Previously consumed states cannot be converted back into held-out confirmation by rerunning them."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["FastWAM45d8e145, C58/D0 checkpoints and composite runtime snapshot are pinned."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["C58 is already EVIDENCE_READY and both policy adapters restored in paired v4."]},
+    "data_contract": {"status": "PASS", "evidence": ["Exact trials0..32 x four suites x ten tasks x two arms grid contains2640 unique jobs."]},
+    "action_contract": {"status": "PASS", "evidence": ["Launcher pins the promoted wait30/replan8/horizon32/eval10 contract."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Only simulator predicate success enters the post-completion descriptive report."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Each node has eight fixed165-job queues; no intermediate stopping or selection."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Finalizer requires both1320 markers, exact initial states and exact2000 pair identities."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Inherited C58 30/30 finite-gradient evidence; evaluation itself has no gradient path."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Composite read-only runtime completed real C58 restore/H3 inference and680 paired v4 episodes."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["C58 restore max_abs0; D0 reproduced historical outcomes and actions under the same runtime."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["Confirmatory FINAL and PAIR_EVIDENCE independently rechecked byte-exact."]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["Frozen confirmatory C58 result is EVIDENCE_READY; not retested by descriptive states."]},
+    "closed_loop_canary": {"status": "PASS", "evidence": ["Promoted v4 completed680 exact fresh-process pairs."]}
+  },
+  "budget": {"global_batch": 16, "optimizer_steps": 165, "training_samples": 2640, "unique_windows": 2640, "effective_epochs": 1.0, "gpu_count": 16, "estimated_hours": 9.0},
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "All source, process, seed, checkpoint and descriptive-boundary gates pass. Running both arms in parallel completes the requested full50 profile without spending confirmatory evidence twice.",
+    "launch_command": "n0: C58_FULL50_ARM=candidate_c58b; n3: C58_FULL50_ARM=control_d0; both use immutable full50 snapshot and shared frozen manifest.",
+    "effect_status": "DESCRIPTIVE_ONLY"
+  }
+}

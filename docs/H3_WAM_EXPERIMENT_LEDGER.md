@@ -1195,3 +1195,23 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   finite首动作，trial35完整初态仍byte-exact；之后快照冻结为0个writable file，`SNAPSHOT.json` SHA256为
   `90dcd111b6e6ca8d30c141f77987b8d2f658d0b41468377517d5e304634e9cfb`。正式v4固定640个
   one-episode jobs，manifest SHA256 `ff5b57a374dc8b96343fdb359b7d7a7ca9e9ab33a73a0563c52ae660f188b7a6`。
+
+### 2026-08-17 — C58b 680对最终晋级与独立复核
+
+- v4全部640条candidate完成后与已验证trial33桥接合并为680对；C58b为`295/680=43.382%`，固定D0为
+  `270/680=39.706%`，绝对提升`3.676pp`。149个discordant pairs中C58赢87、D0赢62，净胜25；
+  exact one-sided McNemar `p=0.0244576`，paired delta 95%区间为`[0.166pp,7.186pp]`。
+- suite结果为Spatial `92:80`（`+7.059pp`）、Object `131:125`（`+3.529pp`）、Goal `44:40`
+  （`+2.353pp`）、LIBERO-10 `28:25`（`+1.765pp`）。overall gain至少3pp、净胜至少20、one-sided
+  `p<=0.05`、无suite低于`-3pp`四项promotion门全部PASS；完整680 pair、trial33 bridge、严格初态和
+  one-episode-per-process机械门也全部PASS。
+- 正式`FINAL.json` SHA256为
+  `53a06ac5c3c36298ed2ee397688eb03e6918219d32f469897e9139530d954f88`；正式
+  `PAIR_EVIDENCE.jsonl` SHA256为
+  `e44a32833c1d9f71485f3cca37785b5d813f59c7af4eea12311dfd1ed14f1e3c`。从只读snapshot在新目录独立
+  重跑全部checkpoint/source/result/trajectory hash与初态审计，PAIR_EVIDENCE逐字节相同，去掉独立输出
+  路径后的FINAL逐字段相同。
+- 结论更新为`EVIDENCE_READY / CARRIER_TRACK_CHAMPION`：C58替换D0成为后续融合父节点，但不是最终
+  全赛道冠军。新的lineage固定为`C58 carrier -> + temporal/context winner -> + consequence/ranking
+  winner`。完整trials0..49报告尚待补齐；其中0..32已被历史研发消费，只能作为descriptive benchmark，
+  不允许重新用于confirmatory promotion。

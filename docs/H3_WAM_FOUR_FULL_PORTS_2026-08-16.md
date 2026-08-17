@@ -142,3 +142,26 @@ normalization stats、checkpoint、评测轨迹和事故证据不属于可删缓
 所有中间趋势只用于诊断，不用于挑 checkpoint。C57 只允许预注册 s5000、C58b/C56/C61 只允许
 预注册 s10000 进入最终闭环；闭环报告未生成前，四条线的效果状态均为
 `NOT_EVIDENCE_READY`。
+
+## 2026-08-17 C58 最终闭环裁决
+
+C58b的trials33..49正式v4已完成680对fresh-process配对闭环。C58为
+`295/680=43.382%`，D0为`270/680=39.706%`，绝对提升`3.676pp`；C58 wins/D0 wins为
+`87/62`，净胜25，exact one-sided McNemar `p=0.02446`。四suite结果：
+
+| suite | C58 | D0 | 差值 |
+|---|---:|---:|---:|
+| Spatial | 92/170 | 80/170 | +7.059pp |
+| Object | 131/170 | 125/170 | +3.529pp |
+| Goal | 44/170 | 40/170 | +2.353pp |
+| LIBERO-10 | 28/170 | 25/170 | +1.765pp |
+
+预注册四门全部PASS：overall至少`+3pp`、净胜至少20、one-sided exact McNemar `p<=0.05`、无suite
+低于`-3pp`。独立重跑聚合器重新验证640条candidate/control source hash、完整初态、seed与trial33桥接；
+独立`PAIR_EVIDENCE.jsonl`与正式证据逐字节相同，SHA256均为
+`e44a32833c1d9f71485f3cca37785b5d813f59c7af4eea12311dfd1ed14f1e3c`。
+
+因此C58状态更新为`EVIDENCE_READY`并成为**carrier赛道冠军**。这不是四线总冠军：C56/C57/C61仍需按
+各自预注册闭环门收口，后续融合只能沿`C58 carrier -> +context winner -> +consequence winner`逐个增加
+已经独立晋级的机制。trials0..32后续会为完整50-state报告重新跑C58与D0，但这些状态已被历史研发消费，
+故全50结果只作descriptive benchmark，不回写本次confirmatory promotion。

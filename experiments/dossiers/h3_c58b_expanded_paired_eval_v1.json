@@ -111,7 +111,9 @@
         "status": "INTENTIONAL_DEVIATION",
         "evidence": [
           "scripts/h3wam/aggregate_c58b_expanded_paired_eval.py",
-          "tests/test_c58b_expanded_paired_eval.py"
+          "tests/test_c58b_expanded_paired_eval.py",
+          "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/expanded-paired-trials34-49-v4-isolated/FINAL.json SHA256 53a06ac5c3c36298ed2ee397688eb03e6918219d32f469897e9139530d954f88",
+          "/mnt/h3-wam/eval/c58b-v4-independent-recheck-v1/PAIR_EVIDENCE.jsonl SHA256 e44a32833c1d9f71485f3cca37785b5d813f59c7af4eea12311dfd1ed14f1e3c"
         ],
         "rationale": "The stricter project promotion gate prevents a favorable single-trial point estimate from being called generalized improvement."
       }
@@ -152,7 +154,7 @@
     },
     "smoke_finite": {
       "status": "PASS",
-      "evidence": ["Trial33 completed 80 episodes without non-finite actions; v2 expanded first object episode completed successfully with finite saved trajectory."
+      "evidence": ["Trial33 completed 80 episodes without non-finite actions; corrected v4 completed all 640 new one-episode-process candidate trajectories."
       ]
     },
     "checkpoint_restore": {
@@ -186,9 +188,9 @@
     "estimated_hours": 3.0
   },
   "decision": {
-    "status": "GO_LONG",
-    "rationale": "The v2 80-episode process batching is invalid for paired inference: 532/640 candidate initial states were not byte-exact with historical one-episode-process D0. The first v3 infrastructure attempt contained zero formal episodes and was invalidated because a git-archive-only snapshot omitted StarWAM vendor files. The full composite read-only v4 snapshot passed a real restore, H3 inference and exact trial35 mechanical smoke before launch.",
+    "status": "EVIDENCE_READY",
+    "rationale": "Corrected v4 completed 680 exact pairs: C58b 295 versus D0 270. Gain 3.676pp, net wins 25, one-sided exact McNemar p=0.02446 and all suite deltas above -3pp pass every preregistered promotion gate. This promotes C58 only as the carrier-track champion, not the final cross-track champion.",
     "launch_command": "C58B_EXPANDED_ROOT=/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/expanded-paired-trials34-49-v4-isolated bash /mnt/h3-wam/runtime-snapshots/project-eecfde3-c58isolated-full/scripts/h3wam/launch_c58b_expanded_isolated_candidate.sh",
-    "effect_status": "NOT_EVIDENCE_READY"
+    "effect_status": "EVIDENCE_READY"
   }
 }

@@ -1,6 +1,6 @@
 # H3-WAM 开源候选注册表与炼蛊谱系
 
-更新时间：2026-08-15（Asia/Shanghai）
+更新时间：2026-08-17（Asia/Shanghai）
 
 ## 目标与边界
 
@@ -8,8 +8,9 @@
 闭环协议后，至少一个候选会在保持视觉/语言条件依赖的同时产生固定 LIBERO 成功；不同赛道的胜者逐级
 融合后应相对直接父模型获得可归因的额外成功率。
 
-当前 `D0 sparse s963` 只是 **incumbent（当前擂主）**，不是 representation/carrier 冠军，更不是最终
-H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不得称为官方复现。
+当前完整证据支持 `C58b FastWAM full30 H3 layer-wise` 为 **representation/carrier 赛道冠军**；它不是
+temporal、consequence 或最终全赛道 H3-WAM 冠军。所有 H3 替换均标为 `backbone_port` 或
+`novel_composition`，不得称为官方复现。
 
 ## 统一实验合同
 
@@ -53,6 +54,7 @@ H3-WAM。所有 H3 替换均标为 `backbone_port` 或 `novel_composition`，不
 | C02 | carrier/spatial | D dense five-layer K/V | DreamWAM | D0-H32 matched training lineage | layer49 repeat → aligned layers 9/19/29/39/49 | s14000 Spatial5/20、Object3/8，均输父模型 | NO_GO；FAIL_PAIRED_GATE |
 | C03 | carrier/action | StarWAM dense full30 s100 anchor | StarWAM | historical v8 StarWAM s100 | v8 frame-indexed → common v7 valid-window split/cache | dossier pass；dual H3 cache running；historical s850/s913 condition collapse | GO_CANARY s100 only；NO_GO_LONG |
 | C04 | action/co-training | FastWAM-H3 | FastWAM | fixed FastWAM Wan baseline + C03 interface baseline | Wan video expert → H3 while preserving official action path | source pass；adapter incomplete | PROBE_ONLY |
+| C58 | carrier/action | FastWAM full30 H3 layer-wise s10000 | FastWAM | D0-H32-s14000/replan8 | 完整30层逐层H3 carrier替代repeat-layer49父结构 | 680对fresh-process闭环 `295:270`；四项promotion gate全过 | EVIDENCE_READY；carrier赛道冠军 |
 | C05 | carrier | ImageWAM-H3 target image | ImageWAM | carrier winner | video K/V → H3 target-image/edit representation | source pass；adapter incomplete | PROBE_ONLY |
 | C06 | carrier/action | DiT4DiT-H3 | DiT4DiT | carrier winner | selected intermediate H3 features + official ActionDiT | source pass；dirty vendor audit pending | PROBE_ONLY |
 | C07 | temporal/context | LingBot-H3 executed history16 | LingBot-VA | shared-H3 parent | explicit executed-action feedback；尚非 persistent observation KV | s2500 offline champion，但 fixed rollout `0/1` 且无接触 | NO_GO current port；persistent-KV 需新 dossier |
@@ -470,3 +472,30 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   action-only只证明联合辅助有效；只有同时不劣于原D0整体及per-suite安全门，才有资格登记新擂主。
 - **当前执行**：两个step1000部署导出已严格恢复并冻结哈希；trials33..36的480-episode机械canary已用
   32张A800启动。此阶段禁止查看/聚合成功率，通过初态与seed审计后才继续trials37..49。
+
+### C58：FastWAM full30 H3 layer-wise carrier 赛道冠军（2026-08-17）
+
+- **一句话可证伪假设**：相对固定D0 repeat-layer49父模型，把H3逐层carrier接入完整30层FastWAM
+  ActionDiT并按官方动作结构训练，会在同初态、同seed、同执行合同的多trial LIBERO闭环中提高成功率。
+- **来源与身份**：FastWAM官方commit `45d8e1458921d83f8ad6cf9ce993d371208dabd0`；本地为明确标注的
+  `backbone_port`，不是官方Wan2.2 checkpoint复现。C58 s10000 checkpoint SHA256为
+  `2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541`；D0父模型SHA256为
+  `36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3`。
+- **统一闭环合同**：四suite×10 tasks×trials33..49，共680对；每个candidate episode都使用全新
+  simulator+policy进程，与历史D0进程边界一致；wait30/max400/replan8/horizon32/eval10、默认task-specific
+  seed、normalized pre-clamp、binarized gripper均固定。v2因复用MuJoCo env导致532/640初态非bit-exact而
+  整批无效；v3因runtime snapshot漏StarWAM vendor且0 formal episode而归类infra；只有v4计入效果。
+- **闭环结果**：C58为`295/680=43.382%`，D0为`270/680=39.706%`，绝对提升`3.676pp`；discordant
+  pairs为C58赢87、D0赢62，exact one-sided McNemar `p=0.02446`。suite分别为Spatial `92:80`
+  （`+7.059pp`）、Object `131:125`（`+3.529pp`）、Goal `44:40`（`+2.353pp`）、LIBERO-10
+  `28:25`（`+1.765pp`），没有suite低于`-3pp`安全门。
+- **四个promotion门**：overall gain `>=3pp`、净胜`>=20`（实际25）、one-sided exact McNemar
+  `p<=0.05`、任一suite不低于D0超过3pp，全部PASS。680对完整性、trial33桥接、640条严格初态及
+  one-episode-per-process也全部PASS。
+- **独立复核**：正式`FINAL.json` SHA256为
+  `53a06ac5c3c36298ed2ee397688eb03e6918219d32f469897e9139530d954f88`，`PAIR_EVIDENCE.jsonl`
+  SHA256为`e44a32833c1d9f71485f3cca37785b5d813f59c7af4eea12311dfd1ed14f1e3c`。从只读snapshot重新运行
+  全部source/hash/initial-state审计后，独立evidence逐字节相同，除输出路径外的FINAL逐字段相同。
+- **结论边界**：`EVIDENCE_READY / carrier赛道冠军`。它替换D0成为carrier fusion lineage父节点：
+  `C58 carrier champion -> + temporal/context winner -> + consequence/ranking winner`。尚未完成后两赛道
+  胜者融合、完整50-state descriptive benchmark和部署成本总决赛，因此不是最终全赛道“蛊王”。
