@@ -8,7 +8,6 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import subprocess
 import time
 from typing import Any
 
@@ -80,25 +79,25 @@ def atomic_json(path: Path, payload: dict[str, Any]) -> None:
 
 def verify_lingbot_source(root: Path) -> dict[str, Any]:
     root = root.resolve()
-    commit = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    dirty = subprocess.run(
-        ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    hashes = {name: sha256_file(root / name) for name in LINGBOT_SOURCE_SHA256}
-    if commit != EXPECTED_LINGBOT_COMMIT or dirty or hashes != LINGBOT_SOURCE_SHA256:
-        raise RuntimeError(
-            f"LingBot source identity mismatch: commit={commit}, dirty={bool(dirty)}, "
-            f"hashes={hashes}"
-        )
-    return {"root": str(root), "commit": commit, "clean": True, "sha256": hashes}
+    hashes = {}
+    for name, expected in LINGBOT_SOURCE_SHA256.items():
+        path = root / name
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        digest = sha256_file(path)
+        if digest != expected:
+            raise RuntimeError(f"LingBot source hash mismatch for {name}: {digest}")
+        hashes[name] = digest
+    # Cloud runtime snapshots intentionally omit the outer repository metadata
+    # and may not install a git executable. The execution-bearing files are
+    # fail-closed by content hash; the corresponding official revision was
+    # established in the local source audit and is recorded here as provenance.
+    return {
+        "root": str(root),
+        "revision": EXPECTED_LINGBOT_COMMIT,
+        "identity": "execution_file_sha256",
+        "sha256": hashes,
+    }
 
 
 def validate_c58_parent_payload(payload: dict[str, Any]) -> dict[str, bool]:
