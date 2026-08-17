@@ -224,6 +224,26 @@ def main() -> None:
     expected_tokens = (len(state.entries) + 1) * 32
     if any(item["k"].shape[1] != expected_tokens for item in rolling.values()):
         raise RuntimeError("C62 rolling K/V token shape mismatch")
+    h3_source_inputs_require_grad = any(
+        tensor.requires_grad
+        for item in current.values()
+        for tensor in item.values()
+    ) or any(
+        tensor.requires_grad
+        for entry in state.entries
+        for item in entry.observation_kv.values()
+        for tensor in item.values()
+    )
+    bridge_outputs_require_grad = all(
+        tensor.requires_grad
+        for item in rolling.values()
+        for tensor in item.values()
+    )
+    if h3_source_inputs_require_grad or not bridge_outputs_require_grad:
+        raise RuntimeError(
+            "C62 gradient boundary failed: frozen H3 sources must be detached "
+            "and trainable bridge outputs must retain gradients"
+        )
 
     model.train()
     model.zero_grad(set_to_none=True)
@@ -315,11 +335,8 @@ def main() -> None:
         "bridge_shared_gradient_norm": shared_gradient,
         "bridge_layer_refiner_gradient_norms": refiner_gradients,
         "runtime_and_bridge_restore_max_abs": restore_max_abs,
-        "h3_world_inputs_require_grad": any(
-            tensor.requires_grad
-            for item in rolling.values()
-            for tensor in item.values()
-        ),
+        "h3_source_inputs_require_grad": h3_source_inputs_require_grad,
+        "bridge_outputs_require_grad": bridge_outputs_require_grad,
         "peak_allocated_gib": torch.cuda.max_memory_allocated(device) / 2**30,
         "peak_reserved_gib": torch.cuda.max_memory_reserved(device) / 2**30,
         "elapsed_seconds": time.perf_counter() - started,

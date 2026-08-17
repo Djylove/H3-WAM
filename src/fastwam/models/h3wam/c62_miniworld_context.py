@@ -178,11 +178,14 @@ class MiniWorldRollingContextState:
                 raise ValueError("MiniWorld alignment requires 4n executed actions")
         self.entries.append(
             MiniWorldContextEntry(
-                observation_kv=_clone_kv(observation_kv, detach=False),
+                # H3 is the frozen external world carrier for C62.  Make the
+                # boundary structural rather than relying on every caller to
+                # have wrapped H3 extraction in no_grad().
+                observation_kv=_clone_kv(observation_kv, detach=True),
                 actions_before_observation=(
                     None
                     if actions_before_observation is None
-                    else actions_before_observation.clone()
+                    else actions_before_observation.detach().clone()
                 ),
                 update_id=self.next_update_id,
             )
@@ -399,7 +402,8 @@ class C62MiniWorldRollingContextPolicy(nn.Module):
     ) -> dict[int, dict[str, torch.Tensor]]:
         if state.layers != self.carrier_layers:
             raise ValueError("rolling state layers differ from C58 parent")
-        current = _clone_kv(current_observation_kv, detach=False)
+        # The bridge may learn from action loss; the frozen H3 carrier may not.
+        current = _clone_kv(current_observation_kv, detach=True)
         result: dict[int, dict[str, torch.Tensor]] = {}
         for layer in self.carrier_layers:
             entries = [

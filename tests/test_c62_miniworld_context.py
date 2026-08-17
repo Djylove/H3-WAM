@@ -188,6 +188,43 @@ def test_context_shape_action_gradient_and_strict_model_restore():
     assert torch.equal(actual, expected)
 
 
+def test_frozen_h3_gradient_boundary_keeps_bridge_trainable():
+    model = C62MiniWorldRollingContextPolicy(
+        _parent(), context_enabled=True, max_cache_chunks=2
+    )
+    state = model.new_context_state("gradient-boundary")
+    history = _kv(31)
+    current = _kv(32)
+    for item in (*history.values(), *current.values()):
+        item["k"].requires_grad_(True)
+        item["v"].requires_grad_(True)
+    model.commit_real_observation(
+        state,
+        observation_kv=history,
+        actions_before_observation=torch.randn(1, 8, 2, requires_grad=True),
+    )
+    rolling = model._rolling_carrier(
+        state,
+        current,
+        torch.randn(1, 8, 2, requires_grad=True),
+    )
+    assert all(
+        not tensor.requires_grad
+        for entry in state.entries
+        for item in entry.observation_kv.values()
+        for tensor in item.values()
+    )
+    assert all(
+        tensor.requires_grad
+        for item in rolling.values()
+        for tensor in item.values()
+    )
+    sum(tensor.float().mean() for item in rolling.values() for tensor in item.values()).backward()
+    assert all(item["k"].grad is None and item["v"].grad is None for item in history.values())
+    assert all(item["k"].grad is None and item["v"].grad is None for item in current.values())
+    assert model.modulator.shared_modulation.weight.grad is not None
+
+
 def test_rejects_non_aligned_action_history_and_context_args_when_disabled():
     model = C62MiniWorldRollingContextPolicy(_parent(), context_enabled=False)
     state = model.new_context_state("ep")
