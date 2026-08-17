@@ -88,7 +88,11 @@ champion证据，不改变 `KEEP_C58_PARENT`，也不允许把旧 C60 680对失�
 - 训练 loss下降不是效果证据；预测能力上升但动作成功率未过门即判未解决；
 - 若 s20未过，结论只覆盖“当前 C58初始化、C60数据/目标和20k cosine合同”，不证明任何更长训练永远无效；
 - 本仓库不自动生成 `C67_RELEASE_FILE`。只有独立审查把 dossier、trainer、launcher、C58 READY、C58
-  checkpoint和 output root 的 hash/路径写入手工 release JSON 后，launcher才可能通过。
+  checkpoint和 output root 的 hash/路径写入手工 release JSON 后，launcher才可能通过。release格式已升级为
+  `h3wam-c67-budget-ablation-release-v2`：还必须逐字段绑定只读snapshot路径、`SOURCE_FREEZE.json` SHA、
+  superproject commit/tree、StarWAM/FastWAM/FACT固定commit/tree、完整diffusers_h3内容树和全部dynamic source
+  SHA，并原样写入下述七项历史数据SHA。launcher要求同时显式提供`C67_SOURCE_SNAPSHOT`与
+  `C67_SOURCE_FREEZE_SHA256`，训练前完成全树复核；不再接受旧的10文件`source_sha256`白名单。
 
 ## rollout/source freeze 执行阻断
 
@@ -98,8 +102,11 @@ champion证据，不改变 `KEEP_C58_PARENT`，也不允许把旧 C60 680对失�
 `prepare_c67_budget_rollout.py`才允许生成未签名的 `AUTHORIZATION.json`与固定1360-job manifest；本次代码
 提交不生成该artifact。
 
-正式执行只接受由一个干净commit导出的完整只读snapshot。`freeze_c67_rollout_source.py`同时冻结commit、
-git tree、所有tracked file SHA256，以及rollout/server/aggregator、FastWAM三项动态源和StarWAM两项动态源；
+训练与正式rollout都只接受由一个干净commit导出的同一完整只读snapshot。`freeze_c67_rollout_source.py`
+同时冻结superproject commit/tree及每个tracked file；固定并展开StarWAM gitlink `cd76d96f...e2356`、
+FastWAM `45d8e145...abd0`、FACT `618a6c16...00dd`的完整git object tree；另外复制并逐文件hash完整
+diffusers_h3源树。训练启动还会实际import `diffusers`、`before_denoise`和`encoders`，其`__file__`只要不在
+snapshot内就立即退出，禁止editable/.pth回落到共享可写目录。rollout/server/aggregator及训练动态源均显式列出；
 launcher和aggregator都会全树复核，并设置`PYTHONNOUSERSITE=1`、`PYTHONDONTWRITEBYTECODE=1`。snapshot
 任一文件可写、缺失、多出或hash漂移均拒绝执行。
 

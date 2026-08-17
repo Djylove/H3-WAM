@@ -242,10 +242,22 @@
     },
     "pass_boundary": "EVIDENCE_READY_BUDGET_ABLATION_ONLY; reused trials33..49 cannot promote C67 or rewrite historical C60."
   },
+  "training_source_release": {
+    "release_format": "h3wam-c67-budget-ablation-release-v2",
+    "source_freeze_format": "h3wam-c67-complete-readonly-source-freeze-v2",
+    "required_environment": [
+      "C67_SOURCE_SNAPSHOT",
+      "C67_SOURCE_FREEZE_SHA256",
+      "C67_RELEASE_FILE"
+    ],
+    "complete_source_contract": "Before any torchrun, the launcher verifies the recursively read-only snapshot and release-bound SOURCE_FREEZE manifest: complete superproject tree, pinned and expanded StarWAM cd76d96, FastWAM 45d8e145 and FACT 618a6c16 trees, complete copied diffusers_h3 content tree, and every declared dynamic execution SHA.",
+    "import_origin_contract": "diffusers, minimax_h3.before_denoise and minimax_h3.encoders must import from the frozen snapshot; editable/.pth fallback is forbidden.",
+    "training_data_contract": "The release and live files must both match all seven historical C60 SHA256 identities before output creation."
+  },
   "decision": {
     "status": "GO_LONG",
     "rationale": "This is a bounded diagnostic that reuses a proven topology and changes only the pre-registered optimization horizon/budget. It is methodologically launchable, but this repository intentionally creates no release marker and starts no GPU process in this change.",
-    "launch_command": "After independent review creates a hash-bound GO_C67_BUDGET_ABLATION_20K release JSON: C67_RELEASE_FILE=/path/to/manual-release.json bash scripts/h3wam/launch_c67_c60_budget_ablation_20k_8gpu.sh",
+    "launch_command": "After independent review creates a v2 release bound to the complete source freeze and seven data SHA identities: C67_SOURCE_SNAPSHOT=/readonly/snapshot C67_SOURCE_FREEZE_SHA256=<sha256> C67_RELEASE_FILE=/path/to/manual-release-v2.json bash /readonly/snapshot/scripts/h3wam/launch_c67_c60_budget_ablation_20k_8gpu.sh",
     "effect_status": "NOT_EVIDENCE_READY",
     "automatic_launch": false
   }

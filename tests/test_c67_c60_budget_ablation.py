@@ -170,7 +170,14 @@ def test_launcher_is_manual_release_locked_and_runs_fixed_20k_segments():
     ).read_text()
     assert "C67_RELEASE_FILE:?" in source
     assert "GO_C67_BUDGET_ABLATION_20K" in source
-    assert "source_sha256" in source
+    assert "C67_SOURCE_SNAPSHOT:?" in source
+    assert "C67_SOURCE_FREEZE_SHA256:?" in source
+    assert "--expected-manifest-sha256" in source
+    assert "release does not bind the complete source freeze" in source
+    assert "historical seven-data SHA fail-close" in source
+    assert "PASS_C67_FROZEN_DIFFUSERS_IMPORT_ORIGIN" in source
+    assert "diffusers_h3 import escaped frozen snapshot" in source
+    assert 'export PYTHONNOUSERSITE=1' in source
     assert "seq 1000 1000 20000" in source
     assert "--scheduler-horizon 20000" in source
     assert "--steps 1000" in source

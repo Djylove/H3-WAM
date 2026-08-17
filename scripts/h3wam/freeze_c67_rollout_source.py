@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import subprocess
 import tarfile
@@ -16,8 +17,25 @@ import tempfile
 from typing import Any
 
 
-FORMAT = "h3wam-c67-complete-readonly-source-freeze-v1"
+FORMAT = "h3wam-c67-complete-readonly-source-freeze-v2"
 MANIFEST_NAME = "SOURCE_FREEZE.json"
+PINNED_GIT_REPOSITORIES = {
+    "third_party/StarWAM": {
+        "commit": "cd76d96f273f81e228a05f40f9697fe2514e2356",
+        "source": "superproject_gitlink",
+    },
+    "third_party/FastWAM": {
+        "commit": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+        "source": "ignored_external_git_repository",
+    },
+    "third_party/FACT": {
+        "commit": "618a6c16868699b6d4138941de6a863589ac00dd",
+        "source": "ignored_external_git_repository",
+    },
+}
+PINNED_DIRECTORY_SOURCES = {
+    "third_party/diffusers_h3": "src/diffusers/__init__.py",
+}
 DYNAMIC_EXECUTION_FILES = (
     "scripts/h3wam/rollout_libero.py",
     "scripts/h3wam/serve_rollout_policy.py",
@@ -27,6 +45,14 @@ DYNAMIC_EXECUTION_FILES = (
     "scripts/h3wam/aggregate_c67_budget_paired680.py",
     "scripts/h3wam/aggregate_c58b_expanded_paired_eval.py",
     "scripts/h3wam/freeze_c67_rollout_source.py",
+    "scripts/h3wam/launch_c67_c60_budget_ablation_20k_8gpu.sh",
+    "scripts/h3wam/train_c56b_fact_online.py",
+    "scripts/h3wam/finalize_c67_c60_budget_ablation_20k.py",
+    "scripts/h3wam/probe_c56b_fact_online.py",
+    "scripts/h3wam/fit_c56b_fact_online_target_norm.py",
+    "src/fastwam/models/h3wam/fact_layerwise_tower.py",
+    "src/fastwam/models/h3wam/fact_online_data.py",
+    "src/fastwam/models/h3wam/c58_online_training.py",
     "src/fastwam/models/h3wam/fastwam_full_tower.py",
     "src/fastwam/models/h3wam/starwam_feature_action.py",
     "third_party/FastWAM/src/fastwam/models/wan22/helpers/gradient.py",
@@ -34,6 +60,10 @@ DYNAMIC_EXECUTION_FILES = (
     "third_party/FastWAM/src/fastwam/models/wan22/action_dit.py",
     "third_party/StarWAM/starwam/modules/action_dit.py",
     "third_party/StarWAM/starwam/modules/wan_block.py",
+    "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py",
+    "third_party/diffusers_h3/src/diffusers/__init__.py",
+    "third_party/diffusers_h3/src/diffusers/modular_pipelines/minimax_h3/before_denoise.py",
+    "third_party/diffusers_h3/src/diffusers/modular_pipelines/minimax_h3/encoders.py",
 )
 
 
@@ -66,8 +96,13 @@ def git_entries(project: Path, commit: str) -> list[dict[str, str]]:
         mode, kind, object_id = metadata.decode().split()
         path = encoded_path.decode("utf-8")
         pure = PurePosixPath(path)
-        if pure.is_absolute() or ".." in pure.parts or kind != "blob":
-            raise ValueError(f"unsafe/non-blob tracked entry: {record!r}")
+        if (
+            pure.is_absolute()
+            or ".." in pure.parts
+            or kind not in {"blob", "commit"}
+            or (kind == "commit" and mode != "160000")
+        ):
+            raise ValueError(f"unsafe tracked entry: {record!r}")
         entries.append({
             "path": path, "mode": mode, "git_type": kind,
             "git_object": object_id,
@@ -102,6 +137,57 @@ def _safe_extract(archive: Path, output: Path) -> None:
         stream.extractall(output, filter="data")
 
 
+def _archive_git_tree(repository: Path, commit: str, output: Path) -> None:
+    """Extract exactly one immutable git object tree, never worktree bytes."""
+
+    output.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix=".tar", dir=output.parent) as stream:
+        subprocess.run(
+            ("git", "-C", str(repository), "archive", "--format=tar", commit),
+            check=True, stdout=stream,
+        )
+        stream.flush()
+        _safe_extract(Path(stream.name), output)
+
+
+def _copy_directory_source(source: Path, output: Path) -> dict[str, dict[str, Any]]:
+    """Copy a non-git source tree while proving the source did not move."""
+
+    source = source.resolve()
+    if not source.is_dir():
+        raise ValueError(f"directory source is missing: {source}")
+    before: dict[str, dict[str, Any]] = {}
+    for path in sorted(source.rglob("*")):
+        relative = path.relative_to(source)
+        if ".git" in relative.parts or "__pycache__" in relative.parts:
+            continue
+        if (
+            (path.is_dir() and not path.is_symlink())
+            or path.name.endswith((".pyc", ".pyo"))
+        ):
+            continue
+        before[relative.as_posix()] = file_identity(path)
+    if not before:
+        raise ValueError(f"directory source is empty: {source}")
+    for name, identity in before.items():
+        source_path, target = source / name, output / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if identity["kind"] == "symlink":
+            target.symlink_to(identity["target"])
+        else:
+            shutil.copyfile(source_path, target, follow_symlinks=False)
+    after_source = {name: file_identity(source / name) for name in before}
+    copied = {name: file_identity(output / name) for name in before}
+    if before != after_source or before != copied:
+        raise ValueError(f"directory source changed during freeze: {source}")
+    return copied
+
+
+def _content_tree_sha256(files: dict[str, dict[str, Any]]) -> str:
+    payload = json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _make_read_only(root: Path) -> None:
     for path in sorted(root.rglob("*"), key=lambda item: len(item.parts), reverse=True):
         if path.is_symlink():
@@ -110,7 +196,14 @@ def _make_read_only(root: Path) -> None:
     root.chmod(0o555)
 
 
-def freeze(project: Path, expected_commit: str, expected_tree: str, output: Path) -> dict:
+def freeze(
+    project: Path,
+    expected_commit: str,
+    expected_tree: str,
+    output: Path,
+    *,
+    diffusers_h3_source: Path | None = None,
+) -> dict:
     project, output = project.resolve(), output.resolve()
     if output.exists():
         raise FileExistsError(output)
@@ -121,21 +214,90 @@ def freeze(project: Path, expected_commit: str, expected_tree: str, output: Path
     if commit != expected_commit or tree != expected_tree:
         raise ValueError(f"git identity mismatch: {commit}/{tree}")
     entries = git_entries(project, commit)
+    blobs = [row for row in entries if row["git_type"] == "blob"]
+    gitlinks = {
+        row["path"]: row for row in entries if row["git_type"] == "commit"
+    }
+    expected_gitlinks = {
+        name for name, fixed in PINNED_GIT_REPOSITORIES.items()
+        if fixed["source"] == "superproject_gitlink"
+    }
+    if set(gitlinks) != expected_gitlinks:
+        raise ValueError(
+            f"superproject gitlink set mismatch: {sorted(gitlinks)}"
+        )
+    for name, row in gitlinks.items():
+        if row["git_object"] != PINNED_GIT_REPOSITORIES[name]["commit"]:
+            raise ValueError(f"pinned gitlink commit mismatch: {name}")
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output.parent) as temporary:
-        archive = Path(temporary) / "tree.tar"
-        with archive.open("wb") as stream:
-            subprocess.run(
-                ("git", "-C", str(project), "archive", "--format=tar", commit),
-                check=True, stdout=stream,
-            )
         staging = Path(temporary) / "snapshot"
-        staging.mkdir()
-        _safe_extract(archive, staging)
-        files = {}
-        for row in entries:
+        _archive_git_tree(project, commit, staging)
+        files: dict[str, dict[str, Any]] = {}
+        for row in blobs:
             identity = file_identity(staging / row["path"])
-            files[row["path"]] = {**row, **identity}
+            files[row["path"]] = {
+                **row, **identity, "repository": "superproject",
+                "repository_relative_path": row["path"],
+            }
+        repositories = {}
+        for prefix, fixed in PINNED_GIT_REPOSITORIES.items():
+            repository = project / prefix
+            if not (repository / ".git").exists():
+                raise ValueError(f"pinned repository is unavailable: {repository}")
+            repository_head = run_git(repository, "rev-parse", "HEAD")
+            if repository_head != fixed["commit"]:
+                raise ValueError(f"pinned repository HEAD mismatch: {prefix}")
+            if fixed["source"] == "superproject_gitlink" and run_git(
+                repository, "status", "--porcelain", "--untracked-files=all"
+            ):
+                raise ValueError(f"pinned submodule worktree is dirty: {prefix}")
+            repository_tree = run_git(repository, "rev-parse", f"{fixed['commit']}^{{tree}}")
+            repository_entries = git_entries(repository, fixed["commit"])
+            if any(row["git_type"] != "blob" for row in repository_entries):
+                raise ValueError(f"nested gitlink is unsupported: {prefix}")
+            destination = staging / prefix
+            _archive_git_tree(repository, fixed["commit"], destination)
+            for row in repository_entries:
+                snapshot_name = f"{prefix}/{row['path']}"
+                if snapshot_name in files:
+                    raise ValueError(f"snapshot repository collision: {snapshot_name}")
+                files[snapshot_name] = {
+                    **row, **file_identity(staging / snapshot_name),
+                    "path": snapshot_name, "repository": prefix,
+                    "repository_relative_path": row["path"],
+                }
+            repositories[prefix] = {
+                "source": fixed["source"], "git_commit": fixed["commit"],
+                "git_tree": repository_tree,
+                "tracked_file_count": len(repository_entries),
+            }
+        directory_sources = {}
+        for prefix, required_relative in PINNED_DIRECTORY_SOURCES.items():
+            if prefix != "third_party/diffusers_h3":
+                raise ValueError(f"unsupported directory source: {prefix}")
+            source = (
+                diffusers_h3_source.resolve() if diffusers_h3_source is not None
+                else (project / prefix).resolve()
+            )
+            copied = _copy_directory_source(source, staging / prefix)
+            if required_relative not in copied:
+                raise ValueError(f"directory source contract file missing: {prefix}")
+            for relative, identity in copied.items():
+                snapshot_name = f"{prefix}/{relative}"
+                if snapshot_name in files:
+                    raise ValueError(f"snapshot directory collision: {snapshot_name}")
+                files[snapshot_name] = {
+                    **identity, "path": snapshot_name, "mode": "external",
+                    "git_type": "directory_source", "git_object": None,
+                    "repository": prefix, "repository_relative_path": relative,
+                }
+            directory_sources[prefix] = {
+                "source_path_at_freeze": str(source),
+                "required_contract_file": required_relative,
+                "file_count": len(copied),
+                "content_tree_sha256": _content_tree_sha256(copied),
+            }
         missing_dynamic = sorted(set(DYNAMIC_EXECUTION_FILES) - set(files))
         if missing_dynamic:
             raise ValueError(f"dynamic execution source missing: {missing_dynamic}")
@@ -145,6 +307,8 @@ def freeze(project: Path, expected_commit: str, expected_tree: str, output: Path
             "permission": "READ_ONLY_EXECUTION_SNAPSHOT_ONLY",
             "git_commit": commit,
             "git_tree": tree,
+            "repositories": repositories,
+            "directory_sources": directory_sources,
             "tracked_file_count": len(files),
             "tracked_files": files,
             "dynamic_execution_sha256": {
@@ -158,9 +322,10 @@ def freeze(project: Path, expected_commit: str, expected_tree: str, output: Path
                 ),
             },
             "claim_boundary": (
-                "Freezes every git-tracked source byte plus all known runtime/dynamic "
-                "import targets. Python wheels, model bytes, and datasets are separately "
-                "content-gated by the rollout authorization/launcher."
+                "Freezes every superproject byte, every tracked byte from pinned "
+                "StarWAM/FastWAM/FACT commits, the complete supplied diffusers_h3 "
+                "source tree, and all known runtime/dynamic import targets. Python "
+                "wheels, model bytes, and datasets are separately content-gated."
             ),
         }
         (staging / MANIFEST_NAME).write_text(
@@ -178,6 +343,8 @@ def verify(snapshot: Path, expected_manifest_sha256: str | None = None) -> dict:
         raise ValueError("source freeze manifest SHA256 mismatch")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     files = manifest.get("tracked_files", {})
+    repositories = manifest.get("repositories", {})
+    directory_sources = manifest.get("directory_sources", {})
     if (
         manifest.get("format") != FORMAT
         or manifest.get("status") != "PASS_COMPLETE_COMMIT_TREE_DYNAMIC_SOURCE_FREEZE"
@@ -186,8 +353,37 @@ def verify(snapshot: Path, expected_manifest_sha256: str | None = None) -> dict:
         or manifest.get("tracked_file_count") != len(files)
         or re.fullmatch(r"[0-9a-f]{40}", str(manifest.get("git_commit"))) is None
         or re.fullmatch(r"[0-9a-f]{40}", str(manifest.get("git_tree"))) is None
+        or set(repositories) != set(PINNED_GIT_REPOSITORIES)
+        or set(directory_sources) != set(PINNED_DIRECTORY_SOURCES)
     ):
         raise ValueError("source freeze manifest contract mismatch")
+    for name, fixed in PINNED_GIT_REPOSITORIES.items():
+        repository = repositories[name]
+        if (
+            repository.get("source") != fixed["source"]
+            or repository.get("git_commit") != fixed["commit"]
+            or re.fullmatch(r"[0-9a-f]{40}", str(repository.get("git_tree"))) is None
+            or repository.get("tracked_file_count") != sum(
+                row.get("repository") == name for row in files.values()
+            )
+        ):
+            raise ValueError(f"pinned repository manifest mismatch: {name}")
+    for name, required_relative in PINNED_DIRECTORY_SOURCES.items():
+        source = directory_sources[name]
+        selected = {
+            row["repository_relative_path"]: {
+                key: row[key] for key in ("kind", "target", "sha256", "size")
+                if key in row
+            }
+            for row in files.values() if row.get("repository") == name
+        }
+        if (
+            source.get("required_contract_file") != required_relative
+            or source.get("file_count") != len(selected)
+            or required_relative not in selected
+            or source.get("content_tree_sha256") != _content_tree_sha256(selected)
+        ):
+            raise ValueError(f"directory source manifest mismatch: {name}")
     actual_paths = {
         path.relative_to(snapshot).as_posix()
         for path in snapshot.rglob("*")
@@ -231,10 +427,14 @@ def main() -> None:
     parser.add_argument("--verify", action="store_true")
     parser.add_argument("--snapshot", type=Path)
     parser.add_argument("--expected-manifest-sha256")
+    parser.add_argument("--diffusers-h3-source", type=Path)
     args = parser.parse_args()
     if args.verify:
         if args.snapshot is None or any(
-            value is not None for value in (args.project, args.expected_commit, args.expected_tree, args.output)
+            value is not None for value in (
+                args.project, args.expected_commit, args.expected_tree, args.output,
+                args.diffusers_h3_source,
+            )
         ):
             parser.error("--verify requires only --snapshot and optional expected SHA")
         report = verify(args.snapshot, args.expected_manifest_sha256)
@@ -244,7 +444,8 @@ def main() -> None:
         )) or args.snapshot is not None or args.expected_manifest_sha256 is not None:
             parser.error("freeze requires project, expected commit/tree and output")
         report = freeze(
-            args.project, args.expected_commit, args.expected_tree, args.output
+            args.project, args.expected_commit, args.expected_tree, args.output,
+            diffusers_h3_source=args.diffusers_h3_source,
         )
     print(json.dumps({
         "status": report["status"], "git_commit": report["git_commit"],

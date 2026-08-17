@@ -142,6 +142,9 @@ def test_complete_commit_tree_snapshot_and_dynamic_source_are_read_only(
     project = tmp_path / "project"
     project.mkdir()
     (project / "runtime.py").write_text("VALUE = 1\n")
+    diffusers_source = tmp_path / "diffusers_h3"
+    (diffusers_source / "src/diffusers").mkdir(parents=True)
+    (diffusers_source / "src/diffusers/__init__.py").write_text("VERSION = 'frozen'\n")
     subprocess.run(("git", "init", "-q", str(project)), check=True)
     subprocess.run(("git", "-C", str(project), "config", "user.email", "test@example.com"), check=True)
     subprocess.run(("git", "-C", str(project), "config", "user.name", "test"), check=True)
@@ -149,19 +152,88 @@ def test_complete_commit_tree_snapshot_and_dynamic_source_are_read_only(
     subprocess.run(("git", "-C", str(project), "commit", "-qm", "freeze"), check=True)
     commit = FREEZE.run_git(project, "rev-parse", "HEAD")
     tree = FREEZE.run_git(project, "rev-parse", "HEAD^{tree}")
-    monkeypatch.setattr(FREEZE, "DYNAMIC_EXECUTION_FILES", ("runtime.py",))
+    monkeypatch.setattr(FREEZE, "DYNAMIC_EXECUTION_FILES", (
+        "runtime.py", "third_party/diffusers_h3/src/diffusers/__init__.py",
+    ))
+    monkeypatch.setattr(FREEZE, "PINNED_GIT_REPOSITORIES", {})
+    monkeypatch.setattr(FREEZE, "PINNED_DIRECTORY_SOURCES", {
+        "third_party/diffusers_h3": "src/diffusers/__init__.py",
+    })
     snapshot = tmp_path / "snapshot"
-    report = FREEZE.freeze(project, commit, tree, snapshot)
+    report = FREEZE.freeze(
+        project, commit, tree, snapshot, diffusers_h3_source=diffusers_source
+    )
     assert report["git_commit"] == commit and report["git_tree"] == tree
-    assert report["dynamic_execution_sha256"] == {
-        "runtime.py": FREEZE.sha256_file(snapshot / "runtime.py")
-    }
-    assert FREEZE.verify(snapshot)["tracked_file_count"] == 1
+    assert report["dynamic_execution_sha256"]["runtime.py"] == FREEZE.sha256_file(
+        snapshot / "runtime.py"
+    )
+    directory = report["directory_sources"]["third_party/diffusers_h3"]
+    assert directory["file_count"] == 1
+    assert len(directory["content_tree_sha256"]) == 64
+    assert FREEZE.verify(snapshot)["tracked_file_count"] == 2
     assert stat.S_IMODE((snapshot / "runtime.py").stat().st_mode) & 0o222 == 0
     (snapshot / "runtime.py").chmod(0o644)
     with pytest.raises(ValueError, match="writable"):
         FREEZE.verify(snapshot)
     (snapshot / "runtime.py").chmod(0o444)
+    snapshot.chmod(0o755)
+
+
+def test_real_git_submodule_tree_is_pinned_expanded_and_hash_checked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    upstream = tmp_path / "starwam-upstream"
+    upstream.mkdir()
+    subprocess.run(("git", "init", "-q", str(upstream)), check=True)
+    for key, value in (("user.email", "test@example.com"), ("user.name", "test")):
+        subprocess.run(("git", "-C", str(upstream), "config", key, value), check=True)
+    (upstream / "starwam/modules").mkdir(parents=True)
+    (upstream / "starwam/modules/action_dit.py").write_text("ACTION = 1\n")
+    (upstream / "starwam/modules/wan_block.py").write_text("BLOCK = 2\n")
+    (upstream / "README.md").write_text("real submodule fixture\n")
+    subprocess.run(("git", "-C", str(upstream), "add", "."), check=True)
+    subprocess.run(("git", "-C", str(upstream), "commit", "-qm", "upstream"), check=True)
+    upstream_commit = FREEZE.run_git(upstream, "rev-parse", "HEAD")
+
+    project = tmp_path / "project-with-submodule"
+    project.mkdir()
+    subprocess.run(("git", "init", "-q", str(project)), check=True)
+    for key, value in (("user.email", "test@example.com"), ("user.name", "test")):
+        subprocess.run(("git", "-C", str(project), "config", key, value), check=True)
+    (project / "runtime.py").write_text("VALUE = 1\n")
+    subprocess.run(
+        (
+            "git", "-c", "protocol.file.allow=always", "-C", str(project),
+            "submodule", "add", "-q", str(upstream), "third_party/StarWAM",
+        ),
+        check=True,
+    )
+    subprocess.run(("git", "-C", str(project), "add", "."), check=True)
+    subprocess.run(("git", "-C", str(project), "commit", "-qm", "superproject"), check=True)
+    commit = FREEZE.run_git(project, "rev-parse", "HEAD")
+    tree = FREEZE.run_git(project, "rev-parse", "HEAD^{tree}")
+    monkeypatch.setattr(FREEZE, "PINNED_GIT_REPOSITORIES", {
+        "third_party/StarWAM": {
+            "commit": upstream_commit, "source": "superproject_gitlink",
+        },
+    })
+    monkeypatch.setattr(FREEZE, "PINNED_DIRECTORY_SOURCES", {})
+    monkeypatch.setattr(FREEZE, "DYNAMIC_EXECUTION_FILES", (
+        "runtime.py", "third_party/StarWAM/starwam/modules/action_dit.py",
+    ))
+    snapshot = tmp_path / "submodule-snapshot"
+    report = FREEZE.freeze(project, commit, tree, snapshot)
+    repository = report["repositories"]["third_party/StarWAM"]
+    assert repository["git_commit"] == upstream_commit
+    assert repository["tracked_file_count"] == 3
+    assert (snapshot / "third_party/StarWAM/README.md").is_file()
+    assert FREEZE.verify(snapshot)["repositories"] == report["repositories"]
+    target = snapshot / "third_party/StarWAM/starwam/modules/action_dit.py"
+    target.chmod(0o644)
+    target.write_text("ACTION = 999\n")
+    target.chmod(0o444)
+    with pytest.raises(ValueError, match="identity mismatch"):
+        FREEZE.verify(snapshot)
     snapshot.chmod(0o755)
 
 
