@@ -551,3 +551,22 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   `86d795d010bdacd95fee660e46354314302d85678a5f475d0c508f3cc6cda3c6`。
 - **决定**：`FAIL_C62_CAUSAL_OPTIMIZER_CANARY / NO_GO_C62_TRAINING`。当前shared-mean bridge未利用正确
   action-observation配对；不长训、不rollout、不融合，n1已释放。
+
+### 2026-08-17 阶段审查新增来源与预算候选
+
+- 完整审查见 `docs/H3_WAM_PHASE_REVIEW_2026-08-17.md`。C67-s20 的 C67 增量 expert exposure 是
+  `0.398448`，但连同 C58 parent 后共享30层的累计 expert exposure 是 `0.796896`；新增 FACT heads
+  仍只得到前者。success/causal 小池在同一终点分别重复 `16.214/10.368` 次，因此不把直接100k/150k
+  记作合法的单纯 epoch 扩展。
+- 新登记 TRAINABLE 来源：Light-WAM `b2785f66e13fd9987e94ae1ecc1c441d5059c9ae`，候选机制为
+  all-layer adapted-state learned-query pooling + one-block action trunk；WLA
+  `155ac94eaca8b3d1ae0789ae298fc55e37936081`，候选机制为同100k预算的action/image-action配对；GAM
+  `18f5cf0932612af62f4c6c87d6532b90aae1f3eb`，候选机制为geometry foundation backbone上的causal
+  future predictor。三者已读实际config/launcher，不仅依据论文摘要。
+- 新登记 paper-only 来源：Faster-WAM/DoT `arXiv:2608.02365`（all-layer K/V、RoPE realignment、single-layer
+  action head）与 SelfWAM `arXiv:2608.00725`（clean-action future + robot self-mask）。作者训练代码未确认，
+  不能直接放行；DoT优先由Light-WAM可执行代码承载，self-mask若后续测试优先使用LIBERO simulator mask，
+  不启动SAM3D线。
+- 预注册下一候选只允许分开建立：C68 fresh30k same-mixture budget arm；C69与C67完全同数据/20k预算的
+  action-only attribution arm；C70同20k算力的sampler-coverage arm；以及独立的Light-WAM shallow
+  state-fusion H3 port。当前不改C67，不把上述候选混成一个新配置。
