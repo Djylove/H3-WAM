@@ -1320,3 +1320,13 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `FAIL_C67_BUDGET_BALANCED80_GATE / NO_C67_PAIRED_680_ROLLOUT`，不启动680对闭环。独立审计逐字段复算
   同一结果，`AUDIT.json` SHA256为
   `21a3c28567d04116770c01c2f092b15276b8bcc47b183da4a6a97c8bbe2a7b58`；C58继续作为carrier champion。
+- C70把C67唯一变量改为确定性两步周期sampler：每步平均6 expert、1 success、0.5 observational failure、
+  0.5 causal failure，保持C58 parent、30层joint tower、FACT `10:1:0.4:0.4`、GB8、seed、LR和20k
+  scheduler不变。首个非保留probe实际没有写checkpoint，但暴露训练器把缺失save path写成字符串`"None"`
+  的审计缺陷；提交`45ee644`修正为JSON null并在新目录完整重跑。probe2六项门全部PASS，PROBE.json
+  SHA256为`f07cd31de2a637361c5cdb1653325053afe198a6820212c3411ebb4ad8a61b36`。
+- C70真实8×A800十步canary全部有限、30/30 shared gradients持续为正、future leak为0；checkpoint
+  SHA256为`9bfd7ebed7069929b007336017fe2b87d6ef18a67aa822987cdcfc0a4b9b1ca1`且strict restore max-abs0。
+  `GO_LONG.json` SHA256为`6076d37050e0cd05f9a580b5b21bb5b3a86061cba4b1bf0f48748c0c084f70f3`，状态仅为
+  `GO_C70_LONG / MECHANICAL_PERMISSION_ONLY / NOT_EVIDENCE_READY`；长训固定每1k保存/恢复，最终离线只比较
+  C70-s20与C67-s20，未过门不得rollout。

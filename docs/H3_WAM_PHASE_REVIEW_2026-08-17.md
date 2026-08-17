@@ -1,5 +1,16 @@
 # H3-WAM 阶段性代码、来源与训练预算审查（2026-08-17）
 
+## 0. 晚间执行更新
+
+- C67 已完成 20k；固定 s10→s20 的 normalized/physical MSE 分别恶化 `1.526%/1.729%`，visual
+  response 只保留 `81.13%`，正式 `NO_C67_PAIRED_680_ROLLOUT`。因此 C68 同配方 30k 不再放行。
+- C69 同预算 action-only 归因线继续执行，已跨过 s5000；仍只允许最终 C69-s20 对 C67-s20 解释
+  auxiliary objective 的净作用，中间 preview 不用于选点。
+- C70 只改 sampler 为平均 `6/1/0.5/0.5`。非保留单步 probe 与真实 10 步 canary 均通过：30/30
+  shared gradients、future leak 0、所有 loss 有限、12GB checkpoint strict restore max-abs 0；机械状态
+  `GO_C70_LONG / NOT_EVIDENCE_READY`。20k 长训必须继续每1k原子保存和严格恢复，最终只比较预注册
+  C70-s20 与 C67-s20；离线门失败则不做 LIBERO。
+
 ## 1. 本轮唯一问题与结论
 
 **可证伪问题**：在保持 C58 parent、冻结 online INT8 H3、C67 的 FACT 结构、数据和评测合同不变时，
@@ -171,6 +182,7 @@ paired arm，否则即使长训成功，也无法区分更多 action optimizatio
 - 这样 C70 自身 expert `0.598`、共享塔累计约 `0.996`；success约8.1、observational约0.77、causal约5.18。
 - 与 C67-s20 是同算力的 sampler 单变量，回答“更多真实状态覆盖”是否优于反复小 failure pool。
 - 该 arm 必须独立 dossier；不能与 C68 结果拼成同一个候选。
+- 当前：probe 与 10-step checkpoint/restore canary 已通过，长训 dossier 通过 `--target long`；效果仍未知。
 
 ### P2-B：Light-WAM shallow state-fusion H3 port
 
@@ -181,12 +193,9 @@ paired arm，否则即使长训成功，也无法区分更多 action optimizatio
 
 ## 8. 决策门
 
-1. **现在**：C67继续，C58仍是唯一 champion。
-2. **C67 s10/s20 balanced80 后**：
-   - conditioning保持且 action/physical curve仍改善：放行 C68 30k budget arm；
-   - generic MSE改善但视觉/语言/gripper坍塌：停止同配方增步，优先 C69/action-only 与 Light-WAM
-     shallow fusion；
-   - C67优于C69：FACT auxiliary 才能进入融合池；否则保留 C58/action-only。
+1. **现在**：C58仍是唯一 champion；C67已失败，C68不启动，C69与C70保持独立单变量长线。
+2. **C69/C70 final 后**：C69回答 auxiliary attribution，C70回答 sampler coverage；二者都必须先过固定
+   balanced80，再决定是否进入 fresh paired LIBERO，不能用中间点或跨实验拼接胜者。
 3. **闭环**：任何 line 只有通过固定 held-out gate 才进 fresh LIBERO；train loss和future loss均不能晋级。
 4. **来源边界**：Faster-WAM/SelfWAM 在作者训练代码未确认前只能提出假设；实际实现优先 Light-WAM、
    DreamWAM、GAM、WLA 已公开执行代码。
