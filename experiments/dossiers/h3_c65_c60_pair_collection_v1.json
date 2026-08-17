@@ -41,5 +41,11 @@
     "n1_30907": "libero_spatial,libero_object",
     "n2_32409": "libero_goal,libero_10"
   },
+  "post_freeze_operational_erratum": {
+    "timing": "After this dossier and the complete-only finalizer were committed and pushed, during the first liveness check at 32/3072 completed results.",
+    "exposure": "A tail of two launcher logs inadvertently displayed terminal success_rate=0.0 for the first spatial branch and the first goal branch.",
+    "containment": "No score existed or was read; source/state/candidate inventories, all 3072 jobs, eligibility rule, source/group/candidate priority and data/score gates were already immutable. No job was stopped, added, removed, reprioritized or relaunched. Later progress checks are restricted to process/GPU/result-count metadata and never read branch logs or outcomes.",
+    "effect_status": "TWO_POST_FREEZE_OUTCOMES_SEEN_NO_PROTOCOL_CHANGE"
+  },
   "claim_boundary": "Collection outcomes establish pair eligibility only. They are not a policy comparison, model score, or best-of-N result."
 }
