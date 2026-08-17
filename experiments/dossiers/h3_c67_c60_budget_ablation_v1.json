@@ -1,0 +1,227 @@
+{
+  "experiment_id": "h3_c67_c60_budget_ablation_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Under one pre-registered 20000-step cosine trajectory initialized from the fixed C58 parent, the s20000 endpoint will improve both held-out action error and paired LIBERO success over its own s10000 checkpoint without losing gripper, language, visual, or suite safety; if it does not, insufficient optimizer steps are not a supported explanation for C60's failure under this tested contract.",
+  "single_variable": "Within the C67 trajectory, compare the frozen s10000 checkpoint with the frozen s20000 checkpoint; architecture, C58 initialization, frozen INT8 H3, FACT/FastWAM source, four data streams and hashes, 4/2/1/1 rank mixture, seed, losses, optimizer hyperparameters, 20000-step scheduler, checkpoint cadence, held-out samples, rollout states, action solver and deployment contract are identical. The only endpoint difference is 10000 additional optimizer steps and their deterministically sampled 80000 examples.",
+  "parent_baseline": "Both C67 endpoints descend from promoted C58B s10000 SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541. C67-s10000 is the sole matched budget control; historical C60-s10000 SHA256 d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36 is an external anchor only because it used a different 10000-step cosine trajectory ending at LR=0.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FACT: Failure-Aware Causal Training for World-Action Models",
+      "locator": "https://arxiv.org/abs/2608.10232",
+      "revision": "v1 (2026-08-10)",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Bariona/FACT official repository",
+      "locator": "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py and fact_datasets/samplers/episode_mixture_sampler.py",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "FastWAM official ActionDiT",
+      "locator": "third_party/FastWAM/src/fastwam/models/wan22/action_dit.py",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "C56b online frozen-H3 FACT port plus C67 budget-only execution contract",
+      "locator": "scripts/h3wam/train_c56b_fact_online.py, scripts/h3wam/launch_c67_c60_budget_ablation_20k_8gpu.sh and scripts/h3wam/finalize_c67_c60_budget_ablation_20k.py",
+      "revision": "content hashes frozen in the manually issued C67 release marker",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "frozen online H3 and thirty shared FACT action/consequence blocks",
+        "paper": "FACT trains action, future-image, future-state and value objectives through one causal video-transformer backbone.",
+        "upstream_code": "Official FACT executes the shared Wan causal transformer online and masks failed action imitation while retaining consequence supervision.",
+        "local": "C67 preserves C60 exactly: pinned INT8 H3 executes online without gradients and all thirty trainable ActionDiT/FACT blocks receive layer-aligned H3 K/V.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "experiments/dossiers/h3_c56b_fact_online_v1.json",
+          "scripts/h3wam/train_c56b_fact_online.py",
+          "FastWAM 45d8e145 and FACT 618a6c1"
+        ],
+        "rationale": "H3 replaces Wan and remains frozen INT8, so this is the already-audited H3 backbone port rather than a FACT reproduction; C67 changes no architecture relative to C60."
+      }
+    ],
+    "data": [
+      {
+        "field": "deterministic episode-then-frame 4/2/1/1 stream sampling",
+        "paper": "FACT mixes expert and failure episodes, with failure actions masked.",
+        "upstream_code": "EpisodeMixtureSampler selects dataset, episode and frame; training mixes expert, success and failure supervision.",
+        "local": "Every absolute step and rank deterministically select 4 expert, 2 success-rollout, 1 observational-failure and 1 causal-failure row using the unchanged seed and immutable C60 hashes. C67-s20 contains the exact C67-s10 sample prefix plus 80000 later samples.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "scripts/h3wam/train_c56b_fact_online.py:MixedPools.item",
+          "experiments/dossiers/h3_c56b_fact_online_v1.json",
+          "docs/H3_C60_TERMINAL_AND_MILESTONE_BUDGET_AUDIT_2026-08-17.md"
+        ],
+        "rationale": "The LIBERO stream implementation differs from RoboTwin storage, but the official episode-mixture and failure-mask semantics are retained and C67 introduces no data change."
+      }
+    ],
+    "action": [
+      {
+        "field": "LIBERO absolute 7D horizon32 shifted-flow action contract",
+        "paper": "World-action training must preserve the deployed action representation and exclude failure actions from imitation.",
+        "upstream_code": "FACT uses an explicit action mask; FastWAM generates action chunks with shifted flow matching.",
+        "local": "Both endpoints use the same audited horizon32 absolute 7D targets, proprio8, shift5, target normalization, failure masks, ten-step solver, gripper conversion and replan8 deployment.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "src/fastwam/models/h3wam/fact_online_data.py",
+          "scripts/h3wam/evaluate_c56b_fact_online_paired.py",
+          "tests/test_h3_fact_online_data.py"
+        ],
+        "rationale": "LIBERO absolute 7D horizon32 replaces RoboTwin delta14 horizon48 while preserving the fixed deployed C58/C60 action contract."
+      }
+    ],
+    "objective": [
+      {
+        "field": "shared 10:1:0.4:0.4 FACT objectives",
+        "paper": "Action, future image, future state and value flow objectives jointly train the world-action backbone.",
+        "upstream_code": "wa_casual_trainer.py applies the four objectives and the failure action mask.",
+        "local": "Both endpoints use identical action/future-H3/future-state/value weights, masks and train-only 7168D future-H3 whitening; no future target enters action inference.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "src/fastwam/models/h3wam/fact_layerwise_tower.py",
+          "scripts/h3wam/train_c56b_fact_online.py",
+          "experiments/dossiers/h3_c56b_fact_online_v1.json"
+        ],
+        "rationale": "Frozen H3 K/V replaces Wan VAE targets and uses an empirically frozen train-only normalization; C67 retains the already-audited port without an objective patch."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "single 20000-step trajectory with an internal s10000 control",
+        "paper": "Long distributed training uses separate parameter groups and a declared schedule.",
+        "upstream_code": "FACT uses distributed optimization and separate backbone/action parameter groups.",
+        "local": "Fresh initialization from the same fixed C58 parent, eight A800 ranks, global batch8, AdamW base/action LR 2e-5/2e-4, warmup500 and cosine horizon20000 are fixed from step0. Every 1000-step segment is saved and independently restored; s10000 is not selected post hoc and s20000 is the sole treatment endpoint.",
+        "status": "EQUIVALENT",
+        "evidence": [
+          "scripts/h3wam/launch_c67_c60_budget_ablation_20k_8gpu.sh",
+          "scripts/h3wam/finalize_c67_c60_budget_ablation_20k.py",
+          "C56b ten-step optimizer and strict-restore canary in experiments/dossiers/h3_c56b_fact_online_v1.json"
+        ],
+        "rationale": "Exact numeric LR and horizon are H3/LIBERO port hyperparameters. Starting a fresh 20k schedule avoids pretending the historical C60 LR=0 checkpoint can be resumed under an unchanged contract."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "pre-registered offline bridge and paired closed-loop budget effect",
+        "paper": "Closed-loop task success is decisive; training loss alone cannot establish effectiveness.",
+        "upstream_code": "Action generation is evaluated independently of consequence/value training loss.",
+        "local": "All 20 milestones receive fixed balanced80 diagnostics. Only pre-registered s10000 and s20000 may enter a paired 680-state LIBERO comparison, with identical fresh-process and initial-state rules. Historical C60 is an external anchor and never substitutes for the internal control.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": [
+          "docs/C67_C60_BUDGET_ABLATION_2026-08-17.md",
+          "docs/H3_C60_TERMINAL_AND_MILESTONE_BUDGET_AUDIT_2026-08-17.md",
+          "scripts/h3wam/aggregate_c56b_fact_expanded_paired_eval.py"
+        ],
+        "rationale": "LIBERO replaces RoboTwin; matched endpoints and effect thresholds are frozen before any C67 checkpoint exists. Reused historical states make this a budget diagnostic, not a fresh benchmark promotion."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS",
+      "evidence": ["FACT 618a6c16868699b6d4138941de6a863589ac00dd and FastWAM 45d8e1458921d83f8ad6cf9ce993d371208dabd0 are fixed; the launcher additionally requires execution-file hashes in a manual release marker."]
+    },
+    "architecture_contract": {
+      "status": "PASS",
+      "evidence": ["C67 reuses the audited C60 architecture unchanged; the real eight-rank canary executed frozen online INT8 H3 and all thirty shared blocks."]
+    },
+    "data_contract": {
+      "status": "PASS",
+      "evidence": ["The 218125-window four-stream C60 dataset identity, episode-then-frame sampler and seed20260816 are frozen; no H3 K/V cache is a dataset field."]
+    },
+    "action_contract": {
+      "status": "PASS",
+      "evidence": ["Horizon32 absolute7D, proprio8, shift5, masks, normalization and deploy conversion are unchanged and round-trip tested."]
+    },
+    "objective_contract": {
+      "status": "PASS",
+      "evidence": ["The audited 10:1:0.4:0.4 FACT objective, train-only target normalization and zero future-target-to-action leakage are unchanged."]
+    },
+    "optimization_contract": {
+      "status": "PASS",
+      "evidence": ["The existing trainer accepts scheduler_horizon=20000 as a checkpoint identity field; C67 launches a fresh trajectory, fixes 20 milestones and refuses any pre-existing output."]
+    },
+    "evaluation_contract": {
+      "status": "PASS",
+      "evidence": ["s10000 control, s20000 treatment, balanced80 bridge metrics, paired 680-state thresholds and claim boundary are pre-registered in docs/C67_C60_BUDGET_ABLATION_2026-08-17.md."]
+    },
+    "gradient_path": {
+      "status": "PASS",
+      "evidence": ["C60's real canary recorded positive finite gradients in all thirty shared blocks at every step and no gradient into frozen H3; C67 changes only schedule length."]
+    },
+    "smoke_finite": {
+      "status": "PASS",
+      "evidence": ["The identical C60 model/data/objective topology completed the real 10-step eight-A800 canary and 10000-step trajectory with finite losses."]
+    },
+    "checkpoint_restore": {
+      "status": "PASS",
+      "evidence": ["The existing 12.2GB full-state checkpoint restored model, optimizer and scheduler with prediction max_abs=0; C67 repeats this gate every 1000 steps."]
+    },
+    "parent_baseline": {
+      "status": "PASS",
+      "evidence": ["The sole initialization is C58B s10000 SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541; launcher release must bind the same READY and bytes."]
+    },
+    "mechanism_signal": {
+      "status": "FAIL",
+      "evidence": ["Historical C60 balanced80 was mixed and failed its continuation gate; C67 s10/s20 evidence does not exist yet."]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL",
+      "evidence": ["No C67 checkpoint or rollout exists; no effectiveness claim is permitted."]
+    }
+  },
+  "budget": {
+    "global_batch": 8,
+    "rank_mixture": "4 expert_demo + 2 success_rollout + 1 observational_failure + 1 causal_failure per optimizer step",
+    "optimizer_steps": 20000,
+    "training_samples": 160000,
+    "unique_windows": 218125,
+    "unique_windows_by_stream": {
+      "expert_demo": 200779,
+      "success_rollout": 2467,
+      "observational_failure": 12950,
+      "causal_failure": 1929
+    },
+    "effective_epochs": 0.733522,
+    "effective_window_epochs_by_stream_at_s10000": {
+      "expert_demo": 0.199224,
+      "success_rollout": 8.107013,
+      "observational_failure": 0.772201,
+      "causal_failure": 5.184033
+    },
+    "effective_window_epochs_by_stream_at_s20000": {
+      "expert_demo": 0.398448,
+      "success_rollout": 16.214026,
+      "observational_failure": 1.544402,
+      "causal_failure": 10.368066
+    },
+    "gpu_count": 8,
+    "estimated_hours": 8.82,
+    "estimated_hours_note": "Linear steady-optimizer estimate from measured C60 4.41h/10000 only; checkpoint I/O and evaluation are additional, and ETA must be re-estimated after s1000.",
+    "checkpoint_interval": 1000,
+    "checkpoint_count": 20,
+    "projected_checkpoint_storage_bytes": 244038964980,
+    "minimum_free_bytes_before_launch": 322122547200
+  },
+  "decision": {
+    "status": "GO_LONG",
+    "rationale": "This is a bounded diagnostic that reuses a proven topology and changes only the pre-registered optimization horizon/budget. It is methodologically launchable, but this repository intentionally creates no release marker and starts no GPU process in this change.",
+    "launch_command": "After independent review creates a hash-bound GO_C67_BUDGET_ABLATION_20K release JSON: C67_RELEASE_FILE=/path/to/manual-release.json bash scripts/h3wam/launch_c67_c60_budget_ablation_20k_8gpu.sh",
+    "effect_status": "NOT_EVIDENCE_READY",
+    "automatic_launch": false
+  }
+}
