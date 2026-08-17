@@ -92,6 +92,10 @@ def test_launcher_pins_fresh_process_and_action_contract():
     assert "--environment-seed" not in source
     assert "--policy-noise-seed-base" not in source
     assert "for gpu in 0 1 2 3 4 5 6 7" in source
+    assert 'resume="${C58_FULL50_RESUME:-0}"' in source
+    assert '[[ "${resume}" == 1 && -s "${output}/results.json" ]]' in source
+    assert 'max_attempts="${C58_FULL50_MAX_ATTEMPTS:-3}"' in source
+    assert 'mv "${output}" "${retry_quarantine}"' in source
 
 
 def test_aggregator_hard_codes_descriptive_boundary_and_2000_pairs():

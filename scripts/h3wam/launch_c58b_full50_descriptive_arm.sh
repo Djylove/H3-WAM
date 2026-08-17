@@ -16,6 +16,13 @@ h3_model="${workspace}/models/MiniMax-H3"
 source_manifest="${workspace}/data/v7_multisuite_dense_candidate/manifest_all.jsonl"
 cache_root="${workspace}/data/v7_dense_h3_cache"
 source_root="${H3WAM_FASTWAM_SOURCE_ROOT:-${workspace}/upstream-readonly/FastWAM-45d8e145/wan22}"
+resume="${C58_FULL50_RESUME:-0}"
+max_attempts="${C58_FULL50_MAX_ATTEMPTS:-3}"
+
+case "${resume}" in 0|1) ;; *) echo "C58_FULL50_RESUME must be 0 or 1" >&2; exit 2;; esac
+[[ "${max_attempts}" =~ ^[1-9][0-9]*$ ]] || {
+  echo "C58_FULL50_MAX_ATTEMPTS must be a positive integer" >&2; exit 2;
+}
 
 for path in "${prepared}" "${manifest}" "${policy_python}" "${sim_python}" \
   "${gate}" "${h3_checkpoint}" "${h3_model}" "${source_manifest}" \
@@ -44,29 +51,45 @@ export H3WAM_FASTWAM_SOURCE_ROOT="${source_root}"
 mkdir -p "${root}/logs/${arm}"
 
 run_worker() {
-  local gpu="$1" row ordinal assigned_gpu suite task trial policy checkpoint output log
+  local gpu="$1" row ordinal assigned_gpu suite task trial policy checkpoint output
+  local log attempt retry_quarantine
   while IFS=$'\t' read -r ordinal assigned_gpu suite task trial policy checkpoint output; do
     [[ "${assigned_gpu}" == "${gpu}" ]] || continue
+    if [[ "${resume}" == 1 && -s "${output}/results.json" ]]; then
+      continue
+    fi
     [[ ! -e "${output}" ]] || {
       echo "refusing partial/reused full50 output: ${output}" >&2; return 1;
     }
-    mkdir -p "${output}"
-    log="${root}/logs/${arm}/job$(printf '%04d' "${ordinal}")_${suite}_task${task}_trial${trial}.log"
-    extra=()
-    [[ "${arm}" != candidate_c58b ]] || extra+=(--c58b-balanced80-ready "${gate}")
-    CUDA_VISIBLE_DEVICES="${gpu}" PYTHON_BIN="${sim_python}" \
-    SIM_SITE_PACKAGES="/tmp/h3-wam-libero-site" \
-    bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
-      "${sim_python}" "${project}/scripts/h3wam/rollout_libero.py" \
-      --policy "${policy}" --policy-python "${policy_python}" \
-      --checkpoint "${checkpoint}" "${extra[@]}" --cache-root "${cache_root}" \
-      --h3-checkpoint "${h3_checkpoint}" --h3-model "${h3_model}" \
-      --dreamwam-source-manifest "${source_manifest}" --device cuda:0 \
-      --suite "${suite}" --task-ids "${task}" --trial-indices "${trial}" \
-      --max-steps 400 --wait-steps 30 --replan-steps 8 --action-horizon 32 \
-      --h3-feature-audio-horizon 32 --target-latent-frames 12 \
-      --model-evaluations 10 --seed 42 --normalized-action-pre-clamp \
-      --save-trajectories --output-dir "${output}" >"${log}" 2>&1
+    for ((attempt=1; attempt<=max_attempts; attempt++)); do
+      mkdir -p "${output}"
+      log="${root}/logs/${arm}/job$(printf '%04d' "${ordinal}")_${suite}_task${task}_trial${trial}_attempt${attempt}.log"
+      extra=()
+      [[ "${arm}" != candidate_c58b ]] || extra+=(--c58b-balanced80-ready "${gate}")
+      if CUDA_VISIBLE_DEVICES="${gpu}" PYTHON_BIN="${sim_python}" \
+        SIM_SITE_PACKAGES="/tmp/h3-wam-libero-site" \
+        bash "${project}/scripts/h3wam/run_cloud_libero.sh" \
+          "${sim_python}" "${project}/scripts/h3wam/rollout_libero.py" \
+          --policy "${policy}" --policy-python "${policy_python}" \
+          --checkpoint "${checkpoint}" "${extra[@]}" --cache-root "${cache_root}" \
+          --h3-checkpoint "${h3_checkpoint}" --h3-model "${h3_model}" \
+          --dreamwam-source-manifest "${source_manifest}" --device cuda:0 \
+          --suite "${suite}" --task-ids "${task}" --trial-indices "${trial}" \
+          --max-steps 400 --wait-steps 30 --replan-steps 8 --action-horizon 32 \
+          --h3-feature-audio-horizon 32 --target-latent-frames 12 \
+          --model-evaluations 10 --seed 42 --normalized-action-pre-clamp \
+          --save-trajectories --output-dir "${output}" >"${log}" 2>&1; then
+        break
+      fi
+      if (( attempt == max_attempts )); then
+        echo "full50 job failed after ${max_attempts} attempts: ${output}" >&2
+        return 1
+      fi
+      retry_quarantine="${root}/quarantine/${arm}/job$(printf '%04d' "${ordinal}")_attempt${attempt}_pid$$"
+      mkdir -p "$(dirname "${retry_quarantine}")"
+      mv "${output}" "${retry_quarantine}"
+      sleep 2
+    done
   done < <("${sim_python}" - "${manifest}" "${arm}" <<'PY'
 import json,sys
 for line in open(sys.argv[1]):
