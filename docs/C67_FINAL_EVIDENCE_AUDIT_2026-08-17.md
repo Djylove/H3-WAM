@@ -28,3 +28,15 @@ fail closed；失败输出不能作为新一次审计复用。
 成功状态固定为`PASS_C67_FINAL_EVIDENCE_INDEPENDENTLY_REPRODUCED`，权限固定为
 `READ_ONLY_AUDIT_COMPLETE_NO_ROLLOUT_AUTHORIZATION`。即使正式`RESULTS`自身通过offline门，本审计也不代替
 独立的rollout authorization，更不会自动启动rollout。
+
+## 已部署 watcher
+
+- 只读源码快照：`/mnt/h3-wam/code-snapshots/h3-wam-1561552-c67-final-audit-v1`
+- git commit/tree：`15615527b5dcfd2ee0f4e2fa4347b5beefa25447` / `0c9dfdf45bb3691bc4a2432a66f2a631dc19e298`
+- `SOURCE_FREEZE.json` SHA256：`7eaa799f3124fb7253cd9ae96f55e15126b6bb5ee5eb5d47c6f9d48ee2ff7fad`
+- 全树验证：`PASS_COMPLETE_COMMIT_TREE_DYNAMIC_SOURCE_FREEZE`，`5478`个文件。
+- watcher PID/log：`686587` / `/mnt/h3-wam/logs/c67-final-evidence-audit-1561552-watcher.log`
+- 新输出根：`/mnt/h3-wam/outputs/c67-final-evidence-audit-1561552-v1`
+
+部署后已复核watcher存活且全树验证通过；在正式三个marker到齐前输出根不存在，说明它仍处于纯等待状态，
+没有提前写入审计结论。

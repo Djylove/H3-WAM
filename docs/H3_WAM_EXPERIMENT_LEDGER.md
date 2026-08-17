@@ -1308,3 +1308,8 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   strict-restore三件套消费，不调用trainer、不早停、不选点。首个s1000机械与conditioning门通过：
   normalized/physical MSE `0.0587997/0.0256934`、gripper macro-F1 `0.939408`；同一步C67为
   `0.0583450/0.0253304/0.940178`。单点仅证明评测链与动作专用合同可用，不构成FACT方向结论。
+- C67最终证据另部署独立只读复核watcher：snapshot commit/tree为`15615527b5dcfd2ee0f4e2fa4347b5beefa25447`/
+  `0c9dfdf45bb3691bc4a2432a66f2a631dc19e298`，SOURCE_FREEZE SHA256为
+  `7eaa799f3124fb7253cd9ae96f55e15126b6bb5ee5eb5d47c6f9d48ee2ff7fad`，全树`5478`文件验证通过。它只在
+  C67 `TRAINING_COMPLETE`、20点preview seal和固定aggregate三者齐备后复算证据，不训练、不重评模型、
+  不选择checkpoint且不自动rollout；部署时C67已进入固定`s19000→s20000`最后一段，输出根尚未创建。
