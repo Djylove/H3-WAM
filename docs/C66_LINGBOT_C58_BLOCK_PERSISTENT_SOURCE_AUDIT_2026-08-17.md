@@ -90,7 +90,7 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
 
 - 实现：`src/fastwam/models/h3wam/c66_lingbot_fastwam_persistent.py`；无新 learned parameter；生命周期在
   C58 30 个 attention blocks 内。
-- 测试：C66/C64/C57 共 `17 passed`，覆盖 state-key/parity、H3 reindex、no-duplicate、30/30 gradient、
+- 测试：C66/C64/C57 共 `19 passed`，覆盖 state-key/parity、H3 reindex、no-duplicate、30/30 gradient、
   FIFO/restore。
 - GPU：2026-08-17 检查时 n0 在跑 C58 full50 eval，n1/n2 在跑 C65，n3 也有既有任务。C66 不抢卡；
   真实 probe 保持 `PENDING_RESOURCE`，不会因此越门直接训练。
@@ -117,3 +117,9 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
 - C66 修复放在 runtime API 内而非 probe 外：保持 continuous timestep 为 FP32，只在调用官方
   `pre_dit` 的线性算子边界建立与 C58 训练相同的 BF16/FP16 autocast。CPU BF16 完整 feedback commit
   回归覆盖 observation append、30-block clean action K/V 与 state coordinates。
+- `mechanical-v5` 与 `mechanical-v6` 均在启动脚本的 `64x64` BF16/FP16 GEMM 门禁处以
+  `CUBLAS_STATUS_INVALID_VALUE` 退出；相同环境交互运行该小矩阵偶尔成功，而 `256x256` 两种 dtype
+  连续稳定成功，且 v4 已进入真实 H3 forward。因此 v5/v6 永久记为 `INFRA_PREFLIGHT_FAIL`，没有
+  report、optimizer step 或模型 verdict，不能用作 C66 机制反证。
+- 门禁现改为 `256x256` BF16/FP16 tensor-core GEMM，以规避该 A800 runtime 对 tiny-GEMM 算法选择的
+  假阴性；模型、数据、seed、阈值与 probe 均未改变。下一次只能使用全新输出目录重跑。

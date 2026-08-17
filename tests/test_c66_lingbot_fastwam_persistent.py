@@ -195,6 +195,8 @@ def test_cloud_launcher_exposes_pinned_h3_diffusers_layout_source():
     assert "export PYTHONPATH=" in launcher
     assert "/usr/local/nvidia/lib:/usr/local/nvidia/lib64" in launcher
     assert "torch.bfloat16,torch.float16" in launcher
+    assert "torch.randn(256,256" in launcher
+    assert "torch.randn(64,64" not in launcher
     assert "C66_CUDA_DIFFUSERS_PREFLIGHT_PASS" in launcher
     assert '--diffusers-h3-source "${diffusers_h3_root}"' in launcher
 
