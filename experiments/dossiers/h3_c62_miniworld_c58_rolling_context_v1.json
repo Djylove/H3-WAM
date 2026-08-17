@@ -99,18 +99,19 @@
     "data_contract": {"status": "PASS", "evidence": ["Frozen manifest faf5ff7c contains 800 train rows from 800 episodes; heldout 8242c16a contains 64 rows from 32 episodes; four suites are balanced 200/16 and episode intersection is zero."]},
     "action_contract": {"status": "FAIL", "evidence": ["The real LIBERO runner has not yet emitted a C62 reset/predict/execute/observe/commit trace."]},
     "objective_contract": {"status": "PASS", "evidence": ["Real C58 mechanical action loss reaches all 30 parent blocks, shared modulation and all 30 refiners; the causal canary freezes C58 and optimizes only the bridge."]},
-    "optimization_contract": {"status": "RUNNING", "evidence": ["Pre-registered 8-rank bridge-only canary is fixed at 100 steps, global batch 8, 800 unique samples and one effective epoch, followed by delta-checkpoint optimizer/scheduler strict restore."]},
-    "evaluation_contract": {"status": "RUNNING", "evidence": ["Sixty-four episode-disjoint heldout rows compare clean versus cyclically mismatched executed-action chunks and context-off under identical model/noise/target; fresh paired LIBERO remains absent."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Pre-registered 8-rank bridge-only canary completed 100 steps, global batch 8, 800 unique samples and one effective epoch in 189.98 seconds; delta checkpoint strict restore max_abs is zero."]},
+    "evaluation_contract": {"status": "FAIL", "evidence": ["On 64 rows from 32 heldout episodes, clean MSE 0.0705387413 does not beat shuffled 0.0705377535 and is 3.378% worse than context-off 0.0682336408; no LIBERO rollout is authorized."]},
     "gradient_path": {"status": "PASS", "evidence": ["n1 report 0adfbf47 shows finite positive action-loss gradients in 30/30 C58 blocks, shared modulation and 30/30 layer refiners."]},
     "smoke_finite": {"status": "PASS", "evidence": ["Corrected n1 mechanical report 0adfbf47 completed in 34.06 seconds with 8.056 GiB peak allocated and finite action output/loss."]},
     "checkpoint_restore": {"status": "PASS", "evidence": ["Real C58 strict restore passed and bridge/runtime prediction restore max_abs is exactly zero in report 0adfbf47; optimizer/scheduler delta restore remains part of the running canary."]},
     "parent_baseline": {"status": "PASS", "evidence": ["C58 s10000 identity and 680-pair promotion result are frozen in the candidate registry."]},
-    "mechanism_signal": {"status": "RUNNING", "evidence": ["Mechanical history sensitivity max_abs is 0.375; preregistered heldout clean-vs-shuffle requires at least 1% loss improvement before bounded ablation."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Shuffle changes predictions by at least 0.0078125, but clean-vs-shuffle relative MSE improvement is -0.001400%, far below the preregistered +1% gate."]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["No C62 rollout exists."]}
   },
   "decision": {
-    "status": "NO_GO_LONG",
+    "status": "FAIL_C62_CAUSAL_OPTIMIZER_CANARY",
+    "permission": "NO_GO_C62_TRAINING",
     "effect_status": "NOT_EVIDENCE_READY",
-    "rationale": "Official source, corrected real-C58 mechanical gate and causal sequence contract pass. The bridge-only 100-step causal/optimizer canary is running; no long training or effectiveness claim is allowed before its clean-vs-shuffle, safety and restore gates pass. MiniWorld is never treated as an action policy."
+    "rationale": "Official source, corrected real-C58 mechanical, causal sequence, optimization and restore gates pass, but the fixed 100-step heldout mechanism gate fails: correct action-observation pairing is indistinguishable from shuffled pairing in MSE and context is worse than the frozen C58 off path. Stop this shared-mean bridge; no long training, rollout or fusion. MiniWorld is never treated as an action policy."
   }
 }

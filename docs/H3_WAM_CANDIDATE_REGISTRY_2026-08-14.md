@@ -544,6 +544,10 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   `0adfbf47a821606cab8be8d416bcb975918701cc8706fdb4fb46d6d86412a54b`；真实C58 strict
   restore、default-off/empty-context exact、冻结H3边界、30/30 bridge梯度及runtime restore全部PASS。
 - **短canary**：固定C58/H3，仅训练context bridge；800 train rows来自800 episodes，64 heldout来自32
-  episodes，交集0；8卡×100步×global batch8=800 unique samples/1.0 epoch。clean-vs-shuffle、context-off
-  safety与delta-checkpoint restore共同决定是否只放行bounded ablation。当前仍`NO_GO_LONG /
-  NOT_EVIDENCE_READY`。
+  episodes，交集0；8卡×100步×global batch8=800 unique samples/1.0 epoch，189.98秒完成。30/30 gradient、
+  parent freeze、default-off和restore均过；但clean/shuffle MSE为`0.0705387413/0.0705377535`，相对改善
+  `-0.001400%`，失败`>=1%`门，且clean比context-off `0.0682336408`差3.378%。report SHA256为
+  `ab289a4f34794f024f03dabd67f1f5c44e852c8a7279bcdf47b0d34740078084`，delta checkpoint SHA256为
+  `86d795d010bdacd95fee660e46354314302d85678a5f475d0c508f3cc6cda3c6`。
+- **决定**：`FAIL_C62_CAUSAL_OPTIMIZER_CANARY / NO_GO_C62_TRAINING`。当前shared-mean bridge未利用正确
+  action-observation配对；不长训、不rollout、不融合，n1已释放。

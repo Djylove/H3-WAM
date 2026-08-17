@@ -1,6 +1,6 @@
 # C62 MiniWorld → C58 rolling-context source audit and mechanical gate
 
-状态：`SOURCE_READY / N1_MECHANICAL_PASS / CAUSAL_CANARY_RUNNING / NO_GO_LONG`
+状态：`SOURCE_READY / N1_MECHANICAL_PASS / CAUSAL_CANARY_FAIL / NO_GO_C62_TRAINING`
 
 ## 结论先行
 
@@ -105,3 +105,15 @@ bounded ablation，不放行长训或效果声明。
 `/mnt/h3-wam/outputs/c62-miniworld-c58-rolling-context/causal-canary100-be5b8dd`。此前两个0-step
 失败root保留：一个缺失StarWAM pinned source，另一个在真实action shape门发现`[8,7]`未batch成
 `[1,8,7]`；二者均未产生optimizer step或候选checkpoint。
+
+最终短canary报告为
+`/mnt/h3-wam/outputs/c62-miniworld-c58-rolling-context/causal-canary100-be5b8dd/report.json`，SHA256
+`ab289a4f34794f024f03dabd67f1f5c44e852c8a7279bcdf47b0d34740078084`。100步、800 unique
+samples、1.0 epoch在189.98秒完成，峰值allocated/reserved为24.20/25.33 GiB。30/30 refiner
+gradient、父模型冻结、default-off精确、delta checkpoint restore和shuffle prediction effect均PASS；但
+clean MSE `0.0705387413`，shuffled MSE `0.0705377535`，clean-vs-shuffle相对改善仅
+`-0.001400%`，失败预注册`>=1%`门。context-off MSE为`0.0682336408`，clean context反而差
+`3.378%`。因此当前shared-mean action-to-K/V bridge只能改变输出，没有证明利用正确action-observation
+配对，正式判定`FAIL_C62_CAUSAL_OPTIMIZER_CANARY / NO_GO_C62_TRAINING`；不长训、不rollout、
+不把5.34 MB delta checkpoint带入融合。checkpoint SHA256为
+`86d795d010bdacd95fee660e46354314302d85678a5f475d0c508f3cc6cda3c6`。

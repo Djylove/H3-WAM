@@ -1,6 +1,6 @@
 # H3-WAM 实验资产账本
 
-更新时间：2026-08-14（Asia/Shanghai）
+更新时间：2026-08-17（Asia/Shanghai）
 
 本文档保存 H3-WAM 已完成和正在运行的关键尝试，避免云资源结束后只剩模型文件而无法解释。
 历史 `M*` 名称曾被复用，因此这里增加稳定的 `E*` 编号。所有成功率均指真实 LIBERO
@@ -1245,3 +1245,21 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `2008293c4cc11ccfb333c67aaf72dd888920b59c1e1ebeb2ddb343a8268e325e`，独立JSON重算与正式结果一致。
   s10k scheduler已到LR=0，故不创建新s20k dossier、不启动长训，n2八卡释放；该诊断也不改变
   `KEEP_C58_PARENT`。
+
+### 2026-08-17 — C57收口与C62 MiniWorld/C58 context route
+
+- C57完整跑完5000步/400000样本，对200779个windows为`1.9922398249` effective epochs，最终strict
+  restore checkpoint SHA256为`4df57b0cd4f053f4cba064ad5a34adb3ec9ce26b3ffb3071885bb0423066ac58`。
+  固定80样本最终C57/D0 MSE为`0.07717749/0.07628779`，相对改善`-1.166%`、win rate43.75%，失败
+  +3%/55%双门；正式`C57_FINAL_OFFLINE_NO_GO`，不做LIBERO或追加步数。
+- C62从官方MiniWorld `e484206`只移植real-observation sink+FIFO和4-action alignment，以已晋级C58
+  s10000为冻结父策略。纠正H3 gradient boundary后，真实机械报告SHA256
+  `0adfbf47a821606cab8be8d416bcb975918701cc8706fdb4fb46d6d86412a54b`：父strict restore、
+  default-off exact、30/30梯度和runtime restore均PASS。
+- C62短canary固定8卡100步、global batch8、800 unique train samples/800 episodes/1.0 epoch，64
+  heldout来自32个episode，耗时189.98秒。所有optimizer/restore/safety机械门通过，但clean/shuffle MSE为
+  `0.0705387413/0.0705377535`，相对改善`-0.001400%`，且clean比context-off差3.378%。正式判定
+  `FAIL_C62_CAUSAL_OPTIMIZER_CANARY / NO_GO_C62_TRAINING`。report SHA256
+  `ab289a4f34794f024f03dabd67f1f5c44e852c8a7279bcdf47b0d34740078084`，delta checkpoint SHA256
+  `86d795d010bdacd95fee660e46354314302d85678a5f475d0c508f3cc6cda3c6`；仅审计保留，不长训、不rollout、
+  不融合，n1释放。
