@@ -1,0 +1,65 @@
+{
+  "experiment_id": "h3_c66_k1_bounded_mechanism_v1",
+  "classification": "fresh_parent_fixed_k1_single_variable_mechanism_canary",
+  "hypothesis": "C66's full-history regression is caused primarily by committing seven chunks at once; training the identical C66 mechanism from the same fresh C58 parent while committing only the latest complete chunk should retain clean-over-shuffle sensitivity without exceeding the 5% clean-versus-off regression gate.",
+  "parent_baseline": "C58B s10000 SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541 with frozen INT8 H3 SHA256 e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a.",
+  "references": [
+    {
+      "kind": "failed_predecessor",
+      "title": "C66 full-history s100 paired canary",
+      "locator": "/mnt/h3-wam/outputs/c66-lingbot-c58-block-persistent/paired-canary-s100-conda-v3/report.json",
+      "revision": "SHA256 55abab8d6f4e71d52941f84eea7725a4f83615a7a56c890446ba50439fc88c34",
+      "official": false,
+      "clean": true
+    },
+    {
+      "kind": "diagnostic",
+      "title": "C66 context-length diagnostic",
+      "locator": "/mnt/h3-wam/outputs/c66-lingbot-c58-block-persistent/context-length-diagnostic-v1/RESULTS.json",
+      "revision": "SHA256 50a726dd6bc69fa185c9c9bf17cac9ed138d9d8ef6a229b886d44af76c241237; trained best context window k1",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "single_variable": {
+    "parent": "C58B_FASTWAM_FULL30_H3_LAYERWISE_FRESH",
+    "change": "Commit only the latest complete history chunk (2 observations, 8 executed actions) instead of all seven; preserve absolute frame/action/update coordinates.",
+    "invariants": [
+      "same frozen plan/train800/heldout64 and seed 66017",
+      "same C58 fresh parent and frozen INT8 H3",
+      "same C66 model code, flow objective, AdamW optimizer and 100-step eight-rank budget",
+      "same full seven-chunk H3 materialization before bounded commit"
+    ],
+    "falsification": "Fail if clean-k1 does not beat distinct previous-chunk action shuffle by 1%, clean-k1 regresses more than 5% versus context-off, restore is not exact, or any source/data/gradient identity gate fails."
+  },
+  "gates": {
+    "source_data_evidence": {
+      "status": "PENDING_REMOTE_AUDIT",
+      "evidence": [
+        "Fail-closed auditor pins reviewed C66 source, frozen data, fresh parent, INT8 H3, failed C66 report/checkpoint and k1-selecting diagnostic."
+      ]
+    },
+    "unit_contract": {
+      "status": "PASS_LOCAL",
+      "evidence": [
+        "Focused tests cover one-chunk reduction, distinct shuffle donor, absolute 15/56/14 post-commit coordinates, artifact contract and fail-closed permission."
+      ]
+    },
+    "mechanism_signal": {
+      "status": "PENDING",
+      "evidence": []
+    },
+    "paired_libero": {
+      "status": "NOT_AUTHORIZED",
+      "evidence": [
+        "This experiment does not run or authorize rollout."
+      ]
+    }
+  },
+  "decision": {
+    "status": "GO_BOUNDED_CANARY_ONLY",
+    "permission": "GO_FRESH_C58_S100_K1_MECHANISM_ONLY",
+    "effect_status": "NOT_LIBERO_EVIDENCE",
+    "rationale": "The failed full-history run and paired context-length diagnostic justify exactly one k1 mechanism canary. No result from this dossier grants long training or rollout."
+  }
+}
