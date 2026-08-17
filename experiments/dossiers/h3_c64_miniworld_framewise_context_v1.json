@@ -1,0 +1,142 @@
+{
+  "experiment_id": "h3_c64_miniworld_framewise_context_v1",
+  "classification": "source_faithful_temporal_contract_composition",
+  "hypothesis": "The C62 causal failure is caused by temporal-contract erasure: averaging two four-action latent groups and concatenating H3 keys at a shared temporal RoPE coordinate. Restoring one four-action group per real observation and exact H3 temporal key reindex should make correct action-observation order mechanically identifiable before any optimizer experiment.",
+  "parent_baseline": "C58 s10000 SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541; frozen H3 INT8 SHA256 e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a.",
+  "references": [
+    {
+      "kind": "upstream_code",
+      "title": "zhao-yian/MiniWorld official repository",
+      "locator": "third_party/MiniWorld",
+      "revision": "e484206bbd4360ae56ed8abad51c83f2457ac092",
+      "official": true,
+      "clean": true,
+      "openness": "TRAINABLE_WORLD_MODEL_ONLY_NO_LICENSE_FILE"
+    },
+    {
+      "kind": "parent_checkpoint",
+      "title": "C58 FastWAM full30 H3 layerwise carrier champion",
+      "locator": "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt",
+      "revision": "SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "staged_single_variable_hypotheses": [
+    {
+      "candidate": "C64A_FRAMEWISE",
+      "parent": "C62 bridge contract",
+      "single_variable": "Mechanical source-contract replacement: replace 8-action two-group shared mean with exactly one four-action group per real observation and route the true sink through a learned null; do not add temporal reindex in this ablation.",
+      "falsification": "After swapping complete post-sink observation-action pairs and undoing only the chunk permutation, K and V must be bit-exact."
+    },
+    {
+      "candidate": "C64B_TEMPORAL_REINDEX",
+      "parent": "C64A_FRAMEWISE",
+      "single_variable": "Apply exact H3 temporal RoPE delta rotation to already-rotated pooled K at each contiguous logical frame position; V and all spatial/tail dimensions remain unchanged.",
+      "falsification": "After the same pair swap and chunk realignment, K must differ because the same raw frame occupies another logical position, while V remains bit-exact."
+    }
+  ],
+  "alignment": {
+    "data": [
+      {
+        "field": "action-to-latent alignment",
+        "upstream_code": "conditioning/actions.py:22-36 preserves each group of four raw actions as one latent-frame slot and prepends one seed slot.",
+        "local": "C64 accepts exactly [B,4,A] for each observation and never averages temporal groups.",
+        "status": "SOURCE_EQUIVALENT"
+      },
+      {
+        "field": "null action",
+        "upstream_code": "miniworld.py:798-815 uses a learned null only at true global frame zero.",
+        "local": "The persistent sink uses a learned four-action null; later observations require their real executed actions.",
+        "status": "SOURCE_EQUIVALENT"
+      }
+    ],
+    "architecture": [
+      {
+        "field": "temporal position",
+        "upstream_code": "miniworld.py:301-361 and denoiser.py:546-593 keep per-layer keys at contiguous temporal RoPE positions after FIFO eviction.",
+        "local": "Raw frozen-H3 K/V is retained; only temporal H3 key pairs are rerotated into a contiguous rolling view, with the C58-trained base phase preserved.",
+        "status": "H3_EQUIVALENT_REINDEX"
+      },
+      {
+        "field": "action injection and KV production",
+        "upstream_code": "miniworld.py:404-432,472-556 applies 6D action AdaLN before attention/MLP and creates per-block KV from updated video hidden states.",
+        "local": "C64 uses shared plus per-layer low-rank heads but directly shifts/scales already-produced H3 K/V.",
+        "status": "INTENTIONAL_DEVIATION",
+        "boundary": "Do not claim a MiniWorld VideoDiT reproduction."
+      }
+    ],
+    "action": [
+      {
+        "field": "action generator",
+        "upstream_code": "MiniWorld has no action output head.",
+        "local": "The frozen promoted C58 parent remains the sole 32x7 flow action generator.",
+        "status": "EXACT_PARENT_INVARIANT"
+      }
+    ],
+    "objective": [
+      {
+        "field": "mechanical gradient",
+        "upstream_code": "MiniWorld optimizes video velocity.",
+        "local": "The no-optimizer probe backpropagates the unchanged C58 action loss only to prove bridge reachability while C58/H3 remain frozen.",
+        "status": "INTENTIONAL_DEVIATION"
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "effect claim",
+        "upstream_code": "MiniWorld evaluates video generation and throughput, not robot action success.",
+        "local": "Mechanical gates cannot authorize an effect claim; later promotion requires clean-vs-shuffle and paired LIBERO against fixed C58.",
+        "status": "INTENTIONAL_DEVIATION"
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {
+      "status": "PASS_LOCAL",
+      "evidence": ["MiniWorld vendor checkout resolves cleanly to e484206bbd4360ae56ed8abad51c83f2457ac092; execution files are SHA-pinned by the existing verifier."]
+    },
+    "source_diff_audit": {
+      "status": "PASS",
+      "evidence": ["docs/C64_MINIWORLD_FRAMEWISE_CONTEXT_SOURCE_AUDIT_2026-08-17.md explicitly distinguishes exact, equivalent and intentionally deviating paths."]
+    },
+    "unit_contract": {
+      "status": "PASS",
+      "evidence": ["13 focused C64 plus C62 regression tests pass locally."]
+    },
+    "real_checkpoint_mechanical": {
+      "status": "PASS",
+      "evidence": ["n1 report /mnt/h3-wam/outputs/c64-miniworld-framewise-context/mechanical-v2/report.json SHA256 f460a1c8443b32beee6fd68e34c446fde73e347541225c661de64cce5f7dcaf9: strict C58/H3/source identity, parent parity, frame shape, 30/30 bridge gradient, sink/FIFO and restore all pass with zero optimizer steps."]
+    },
+    "temporal_reindex_falsification": {
+      "status": "PASS",
+      "evidence": ["C64A pair-swap chunk-aligned K/V max_abs is 0/0; adding only temporal RoPE reindex gives C64B aligned K/V max_abs 3.4609375/0."]
+    },
+    "effect_single_variable": {
+      "status": "FAIL_NOT_SEPARATED",
+      "evidence": ["Relative to C62, C64A changes both cadence/mean and learned-null semantics. The latter is inert at zero-init but can matter after optimizer updates; cadence-only, +null and +RoPE must be explicit separate arms before effect training."]
+    },
+    "data_contract": {
+      "status": "FAIL_NOT_AUTHORIZED",
+      "evidence": ["No C64 sequence manifest has been frozen; do not reuse the C62 eight-action cadence manifest."]
+    },
+    "optimizer_contract": {
+      "status": "FAIL_NOT_AUTHORIZED",
+      "evidence": ["No optimizer step is allowed before the real mechanical report passes."]
+    },
+    "mechanism_signal": {
+      "status": "FAIL_NOT_MEASURED",
+      "evidence": ["No heldout clean-vs-shuffle comparison exists for C64A or C64B."]
+    },
+    "closed_loop_canary": {
+      "status": "FAIL_NOT_AUTHORIZED",
+      "evidence": ["No C64 LIBERO rollout exists."]
+    }
+  },
+  "decision": {
+    "status": "PASS_REAL_MECHANICAL_NO_GO_OPTIMIZER",
+    "permission": "NO_GO_OPTIMIZER",
+    "effect_status": "NOT_EVIDENCE_READY",
+    "rationale": "The real C58/H3 mechanical gate passes and the implementation is materially more faithful than C62 on the upstream temporal contract. It still intentionally differs from MiniWorld's internal VideoDiT modulation/KV update, and cadence versus learned-null is not yet an element-level effect ablation. Do not optimize, roll out or fuse this bridge until three explicit cadence/null/RoPE arms exist; alternatively stop the external bridge and port internal pre-QKV 6D modulation."
+  }
+}
