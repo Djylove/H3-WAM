@@ -197,3 +197,39 @@ def test_cloud_launcher_exposes_pinned_h3_diffusers_layout_source():
     assert "torch.bfloat16,torch.float16" in launcher
     assert "C66_CUDA_DIFFUSERS_PREFLIGHT_PASS" in launcher
     assert '--diffusers-h3-source "${diffusers_h3_root}"' in launcher
+
+
+def test_bf16_feedback_commit_keeps_fp32_timestep_but_matches_linear_dtype():
+    model = H3FastWAMLingBotPersistentPolicy(
+        persistent_enabled=True,
+        persistent_window_frames=2,
+        observation_tokens_per_frame=3,
+        action_tokens_per_frame=4,
+        **_arguments(),
+    ).to(dtype=torch.bfloat16)
+    state = model.new_persistent_state("bf16-feedback")
+    values = {
+        name: value.to(dtype=torch.bfloat16) if value.is_floating_point() else value
+        for name, value in _inputs().items()
+    }
+    observation = {
+        layer: {
+            name: value.to(dtype=torch.bfloat16)
+            for name, value in item.items()
+        }
+        for layer, item in _kv(91).items()
+    }
+    model.commit_executed_feedback(
+        state,
+        observation_kv=observation,
+        observed_frame_count=1,
+        executed_actions=torch.randn(1, 4, 2, dtype=torch.bfloat16),
+        text_context=values["text_context"],
+        proprio=values["proprio"],
+        text_mask=values["text_mask"],
+    )
+    assert state.frame_st_id == 1
+    assert state.action_st_id == 4
+    assert all(
+        entry["tokens"] == 7 for entry in state.audit()["layers"].values()
+    )

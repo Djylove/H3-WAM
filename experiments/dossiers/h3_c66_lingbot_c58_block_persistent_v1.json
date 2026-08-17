@@ -75,7 +75,9 @@
       "evidence": [
         "mechanical-v1 is a permanent INFRA_FAIL: the lean cloud launcher omitted third_party/diffusers_h3/src and exited at the first online-H3 layout import with ModuleNotFoundError before producing a report or model verdict.",
         "mechanical-v2 repeated the old d2 snapshot missing-diffusers failure; mechanical-v3 reached the first H3 linear under h3-int8-native but lacked the cloud NVIDIA library path and exited with CUBLAS_STATUS_NOT_INITIALIZED. Neither produced a report or verdict.",
-        "The launcher now pins the H3 diffusers before_denoise.py SHA256 530b007c, defaults to h3-int8-native, exports /usr/local/nvidia/lib and lib64, and requires a CUDA BF16/FP16 matmul preflight. A clean new directory must rerun every gate; v1/v2/v3 cannot be reused."
+        "mechanical-v4 passed the infrastructure preflight and is a permanent MECHANICAL_FAIL: real clean-action feedback at FP32 timestep zero reached a BF16 ActionDiT Linear without autocast and failed mat1 Float versus mat2 BF16 before report generation.",
+        "The minimal model fix preserves the FP32 continuous timestep and establishes the same BF16/FP16 autocast boundary used by C58 training inside the public feedback API; a CPU BF16 full feedback-commit regression test covers the repaired path.",
+        "The launcher now pins the H3 diffusers before_denoise.py SHA256 530b007c, defaults to h3-int8-native, exports /usr/local/nvidia/lib and lib64, and requires a CUDA BF16/FP16 matmul preflight. A clean new directory must rerun every gate; v1/v2/v3/v4 cannot be reused."
       ]
     },
     "optimizer_contract": {

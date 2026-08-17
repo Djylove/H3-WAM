@@ -170,12 +170,30 @@ class H3FastWAMLingBotPersistentPolicy(H3FastWAMFullTowerPolicy):
             ),
             dim=1,
         )
-        return self.action_expert.pre_dit(
-            action_tokens=actions,
-            timestep=timestep,
-            context=context,
-            context_mask=context_mask,
+        # FastWAM deliberately keeps continuous timesteps in FP32 so values
+        # near 1000 are not rounded to the zero-weight endpoint.  Its released
+        # ``pre_dit`` produces the sinusoidal embedding in that dtype and
+        # relies on the training autocast boundary for the following BF16/FP16
+        # Linear.  Feedback commit is a public runtime API and may be called
+        # outside such a boundary, so establish the same mixed-precision
+        # contract locally without downcasting ``timestep`` itself.
+        parameter_dtype = self.action_expert.time_embedding[0].weight.dtype
+        device_type = actions.device.type
+        autocast_enabled = parameter_dtype in (torch.bfloat16, torch.float16) and (
+            device_type == "cuda"
+            or (device_type == "cpu" and parameter_dtype == torch.bfloat16)
         )
+        with torch.autocast(
+            device_type=device_type,
+            dtype=parameter_dtype,
+            enabled=autocast_enabled,
+        ):
+            return self.action_expert.pre_dit(
+                action_tokens=actions,
+                timestep=timestep,
+                context=context,
+                context_mask=context_mask,
+            )
 
     def _absolute_action_freqs(
         self, *, action_start: int, action_count: int, device: torch.device

@@ -111,3 +111,9 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
 - 正式重跑前 launcher 现在强制：`h3-int8-native`、pinned `before_denoise.py` SHA256
   `530b007c1d689c3ee1fc1690527f5253522d2da6b44dd326bec99faaf9f72fff`、CUDA library path，以及
   BF16/FP16 matmul preflight。前三个目录永不晋升为证据。
+- `mechanical-v4` 已越过上述 infra preflight，但在真实 feedback clean-action `t=0` 重编码时，官方
+  ActionDiT 的 FP32 sinusoidal embedding 直接进入 BF16 Linear，报 `mat1 Float / mat2 BF16`。这是
+  `MECHANICAL_FAIL`，不是 infra，也没有 report/模型效果 verdict。
+- C66 修复放在 runtime API 内而非 probe 外：保持 continuous timestep 为 FP32，只在调用官方
+  `pre_dit` 的线性算子边界建立与 C58 训练相同的 BF16/FP16 autocast。CPU BF16 完整 feedback commit
+  回归覆盖 observation append、30-block clean action K/V 与 state coordinates。
