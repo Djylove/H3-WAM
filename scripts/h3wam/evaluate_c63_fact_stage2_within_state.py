@@ -233,10 +233,14 @@ def main() -> None:
         text_mask = torch.ones((1, context.shape[1]), device=device, dtype=torch.bool)
         proprio = item["proprio"].unsqueeze(0).to(device=device, dtype=dtype)
         current_latents = TRAIN.encode(item, "current_h3_input", vae, device)
-        with torch.inference_mode():
-            current_kv = TRAIN.C58_ONLINE.materialize_kv_for_autograd_consumer(
-                provider(current_latents, context.float(), tags)
-            )
+        # The frozen provider owns its inference-mode boundary.  Clone only
+        # after it returns, matching C56b training, so the consequence tower
+        # receives ordinary tensors rather than inference tensors.
+        inference_kv = provider(current_latents, context.float(), tags)
+        current_kv = TRAIN.C58_ONLINE.materialize_kv_for_autograd_consumer(
+            inference_kv
+        )
+        del inference_kv
         del current_latents
         generator = torch.Generator(device=device).manual_seed(
             args.seed + int(pair["pair_index"]) * 1_000_003
