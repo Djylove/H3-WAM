@@ -2,6 +2,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
 import torch
 from torch import nn
 
@@ -12,6 +13,16 @@ ROOT = Path(__file__).resolve().parents[1]
 def load_trainer():
     path = ROOT / "scripts/h3wam/train_c56b_fact_online.py"
     spec = importlib.util.spec_from_file_location("_test_c69_action_only", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_c69_finalizer():
+    path = ROOT / "scripts/h3wam/finalize_c69_matched_action_only_20k.py"
+    spec = importlib.util.spec_from_file_location("_test_c69_finalizer", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -154,3 +165,66 @@ def test_c69_freezes_only_auxiliary_heads_and_excludes_them_from_adamw():
     groups = trainer.optimizer_groups(model, base_lr=2e-5, action_lr=2e-4, wd=1e-4)
     optimized = {id(parameter) for group in groups for parameter in group["params"]}
     assert optimized == {id(parameter) for parameter in model.tower.parameters()}
+
+
+def test_c69_finalizer_rejects_joint_loss_or_incomplete_auxiliary_freeze():
+    finalizer = load_c69_finalizer()
+    contract = {
+        "format": finalizer.FORMAT,
+        "classification": "FACT_full_backbone_port_online_frozen_int8_h3",
+        "objective_mode": "action_only",
+        "rank_categories": [
+            "expert_demo", "expert_demo", "expert_demo", "expert_demo",
+            "success_rollout", "success_rollout", "observational_failure",
+            "causal_failure",
+        ],
+        "loss_weights": [10.0, 0.0, 0.0, 0.0],
+        "target_norm_sha256": finalizer.TARGET_NORM_SHA256,
+        "h3_sha256": finalizer.H3_SHA256,
+        "d0_sha256": finalizer.D0_SHA256,
+        "c58_parent_sha256": finalizer.C58_SHA256,
+        "causal_failure_dataset_sha256": finalizer.C60_DATASET_SHA256,
+        "causal_failure_observations_sha256": finalizer.C60_OBSERVATIONS_SHA256,
+        "base_lr": 2e-5, "action_lr": 2e-4, "warmup_steps": 500,
+        "scheduler_horizon": 20_000, "weight_decay": 1e-4,
+        "max_grad_norm": 1.0, "seed": 20260816,
+        "gradient_checkpointing": True, "action_horizon": 32,
+        "action_shift": 5.0, "h3_carrier_layers": list(finalizer.LAYERS),
+        "h3_execution": "online_frozen_int8_per_rank_v1", "no_kv_cache": True,
+        "initialization": {
+            "initialization_contract": "strict_online_c58b_parent_v1",
+            "c58_completed_steps": 10_000,
+        },
+        "frozen_auxiliary_parameters": [
+            prefix + "0.weight" for prefix in finalizer.AUXILIARY_PREFIXES
+        ],
+    }
+    for name in (
+        "demo_manifest_sha256", "source_manifest_sha256", "demo_stats_sha256",
+        "c48_dataset_sha256", "c48_observations_sha256",
+        "c59_completed_sha256", "c59_sample_labels_sha256",
+    ):
+        contract[name] = "a" * 64
+    finalizer.require_contract(contract)
+    joint = dict(contract, loss_weights=[10.0, 1.0, 0.4, 0.4])
+    with pytest.raises(ValueError, match="fixed contract"):
+        finalizer.require_contract(joint)
+    incomplete = dict(
+        contract,
+        frozen_auxiliary_parameters=contract["frozen_auxiliary_parameters"][:-1],
+    )
+    with pytest.raises(ValueError, match="auxiliary freeze"):
+        finalizer.require_contract(incomplete)
+
+
+def test_c69_long_launcher_keeps_the_c67_sample_and_schedule_contract():
+    source = (
+        ROOT / "scripts/h3wam/launch_c69_matched_action_only_20k_8gpu.sh"
+    ).read_text()
+    assert "--objective-mode action_only" in source
+    assert "--scheduler-horizon 20000" in source
+    assert "seq 1000 1000 20000" in source
+    assert "--nproc-per-node 8" in source
+    assert "restore-check-only" in source
+    assert "C69_CANARY_GO_LONG" in source
+    assert "source_freeze_sha256" in source

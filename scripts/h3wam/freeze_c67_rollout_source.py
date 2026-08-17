@@ -47,6 +47,8 @@ DYNAMIC_EXECUTION_FILES = (
     "scripts/h3wam/freeze_c67_rollout_source.py",
     "scripts/h3wam/launch_c67_c60_budget_ablation_20k_8gpu.sh",
     "scripts/h3wam/launch_c69_matched_action_only_canary_8gpu.sh",
+    "scripts/h3wam/launch_c69_matched_action_only_20k_8gpu.sh",
+    "scripts/h3wam/finalize_c69_matched_action_only_20k.py",
     "scripts/h3wam/train_c56b_fact_online.py",
     "scripts/h3wam/finalize_c67_c60_budget_ablation_20k.py",
     "scripts/h3wam/prepare_c67_milestone_preview_audit.py",
