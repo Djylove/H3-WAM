@@ -64,3 +64,8 @@ C69不是新的“动作补丁”，而是C67必须具备的严格同预算对�
 s10000的normalized/physical/macro-F1为`0.059716/0.025007/0.934451`，s16000为
 `0.060807/0.025483/0.931187`。这些preview按预注册只用于缩短最终等待，不得提前停训或挑s4k；它们
 说明C68 30k不能因“卡空闲”自动放行，必须等待固定s20000终点和C69归因结果。
+
+最终零重评rebind与固定C67-s20000/C69-s20000归因合同见
+`docs/C67_C69_FIXED_S20_ATTRIBUTION_GATE_2026-08-17.md`。该链路只允许预注册的objective、loss和六类
+auxiliary freeze差异；离线输出不得选点或声明winner，双方20/20 conditioning安全后才可放行独立paired
+LIBERO归因评测。
