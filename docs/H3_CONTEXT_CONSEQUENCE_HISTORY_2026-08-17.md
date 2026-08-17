@@ -180,3 +180,24 @@
 - full shared FACT：C60 `NOT_EVIDENCE_READY / KEEP_C58_PARENT`；C61 `NO_GO_EXPANSION`。
 - Stage-2 selector：C63 FAIL；C65因四suitefresh数据缺口而`NO_SCORE`。
 - 唯一已晋级父节点仍为 C58 `EVIDENCE_READY / CARRIER_TRACK_CHAMPION`。
+
+## 9. 2026-08-17 追加执行状态：C66 否证、C67 长预算与下一诊断
+
+- C66 以 C58 s10000 为唯一父模型，把 LingBot committed observation/action K/V 放入同一 30 层
+  ActionDiT。固定 8 卡、100 steps、global batch 8、800 unique samples、1.0 epoch；heldout 为四套件
+  64 条，墙钟 891.502 秒。clean/shuffle/context-off MSE 分别为
+  `0.10568063/0.11943121/0.07991016`：正确历史相对乱序改善 `11.513%`，证明历史内容进入模型；但
+  clean 相对 context-off 退化 `32.249%`，正式结论为
+  `FAIL_C66_PAIRED_CANARY / NO_GO_C66_LONG_TRAINING / NOT_LIBERO_EVIDENCE`。因此不得通过追加 steps
+  掩盖结构/优化干扰。
+- C66 的 `runtime_restore_exact=false` 与主要 effect 失败分开处理。候选原因是同一 BF16
+  FlashAttention forward 重算的非确定性使 bit-exact 门过严；即使后续证实，也不改变 clean 比
+  context-off 退化 32.249% 的停止结论。
+- 新增 analysis-only 的 `evaluate_c66_context_length_diagnostic.py`：在完全相同 heldout/noise 上比较
+  C58 parent 与 C66 s100，并各测 context-off、最近 1/3/7 个 committed chunks。假设是该配对能分离
+  structural-prefix harm、100-step optimization harm 与 excessive-history harm。该脚本 optimizer steps=0，
+  只能选择下一次 bounded mechanism candidate，不能授权长训、rollout 或晋级。
+- C67 是 C60 的唯一变量训练预算消融：保持 C58 parent、FACT objective、数据、global batch 8 与
+  20k cosine trajectory 不变，从 fresh trajectory 训练到 20000 steps（160000 samples，aggregate
+  effective epoch `0.733522`），每 1000 步 checkpoint+strict restore。只有固定 balanced80 里程碑门通过
+  才允许 680-pair rollout；训练进行中始终为 `NOT_EVIDENCE_READY`，C58 仍是 carrier champion。
