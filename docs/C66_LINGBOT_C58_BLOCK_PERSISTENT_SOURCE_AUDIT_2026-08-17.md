@@ -149,3 +149,9 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
   prediction delta `>=1e-5`；clean 相对 shuffle MSE 至少改善 1%；clean 相对 context-off 退化不超过 5%。
 - 为完整 7-chunk 反传加入 C66 block 内 non-reentrant activation checkpointing；它只重算 block，既不
   detach committed K/V，也不缩短历史。未通过上述门只保存分析 checkpoint，禁止追加 steps 或融合。
+- 首次八卡启动目录 `paired-canary-s100` 永久记为 `INFRA_RUNTIME_FAIL`：8 个 rank 均在首个真实 H3
+  `video_patch_proj` 以 CUDA-13 PyTorch 2.10 runtime 的 `CUBLAS_STATUS_NOT_INITIALIZED` 退出，发生在
+  step1/loss/optimizer 之前，未生成 checkpoint/report，不能作为模型判定。单卡 v7 能运行不代表该
+  runtime 的多进程 cuBLAS 合同成立。重跑切换到节点已实测稳定的 PyTorch 2.8 + CUDA 12.8
+  `conda-py311`，并只从项目 `.venv` 补充 transformers/huggingface 等 Python 依赖；模型、数据、seed、
+  100-step 预算和三臂阈值均不改变，写入全新输出目录。

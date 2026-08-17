@@ -3,7 +3,8 @@ set -euo pipefail
 
 workspace=${H3_WORKSPACE:-/mnt/h3-wam}
 project_root=${PROJECT_ROOT:-${workspace}/project}
-python_bin=${PYTHON_BIN:-${workspace}/runtime/h3-int8-native/bin/python}
+python_bin=${PYTHON_BIN:-${workspace}/runtime/conda-py311/bin/python}
+supplemental_site=${SUPPLEMENTAL_SITE_PACKAGES:-${workspace}/.venv/lib/python3.11/site-packages}
 output_root=${C66_OUTPUT_ROOT:-${workspace}/outputs/c66-lingbot-c58-block-persistent/paired-canary-s100}
 plan_root=${C66_PLAN_ROOT:-${workspace}/data/c66-lingbot-c58-canary-v1}
 
@@ -16,7 +17,7 @@ source=${SOURCE_MANIFEST:-${workspace}/data/v7_multisuite_dense_candidate/manife
 cache=${CACHE_ROOT:-${workspace}/data/v7_dense_h3_cache}
 diffusers_h3_root=${DIFFUSERS_H3_ROOT:-${project_root}/third_party/diffusers_h3}
 
-for path in "${python_bin}" "${parent}" "${h3}" "${mechanical}" "${sequence}" "${dense}" "${source}" "${cache}/stats.pt" "${diffusers_h3_root}/src/diffusers/modular_pipelines/minimax_h3/before_denoise.py"; do
+for path in "${python_bin}" "${supplemental_site}" "${parent}" "${h3}" "${mechanical}" "${sequence}" "${dense}" "${source}" "${cache}/stats.pt" "${diffusers_h3_root}/src/diffusers/modular_pipelines/minimax_h3/before_denoise.py"; do
   if [[ ! -e "${path}" ]]; then
     echo "required C66 canary path is missing: ${path}" >&2
     exit 1
@@ -32,7 +33,7 @@ fi
 
 mkdir -p "${output_root}"
 cd "${project_root}"
-export PYTHONPATH="${project_root}/src:${diffusers_h3_root}/src:${PYTHONPATH:-}"
+export PYTHONPATH="${project_root}/src:${diffusers_h3_root}/src:${supplemental_site}:${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-8}
 
