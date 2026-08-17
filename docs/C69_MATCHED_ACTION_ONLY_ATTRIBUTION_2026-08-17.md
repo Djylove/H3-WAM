@@ -45,7 +45,22 @@ C69不是新的“动作补丁”，而是C67必须具备的严格同预算对�
 4. C67胜出才说明FACT后果监督在当前H3合同下有增量价值；C69持平或胜出则停止该world objective，
    保留动作优先路线。两者都不能仅凭离线MSE替代C58。
 
-截至C67-s16000的异步preview，16/16 conditioning gates均通过，但曲线并未支持“训练越久越好”：
+## 异步里程碑评测
+
+- 只读评测实现已固定在commit `55b622fec64cf3fac7ddd9a41524f4ed72490865`，快照为
+  `/mnt/h3-wam/code-snapshots/h3-wam-55b622f-c69-preview-v1`，SOURCE_FREEZE SHA256为
+  `9e6cae8f01af159b9214428815ca4e226272044f2c739594916b9a26fb24ca78`。它不包含trainer调用，
+  只在checkpoint、train report和strict restore三者齐备后读取；20个点全部完成前不聚合、不选点。
+- C69-s1000 checkpoint SHA256为
+  `7dd5ddcd6d755fff5ce24d266b52868c66994344e9e1afafd5c675079ce9922f`，机械审计和固定balanced80
+  conditioning四门全部PASS。normalized/physical MSE为`0.058800/0.025693`，gripper macro-F1
+  `0.939408`，prediction std `0.477610`，language delta `0.224368`，visual-shuffle MSE
+  `0.034714`。同一步C67为`0.058345/0.025330/0.940178`；这只是第一点描述，不能据此判定FACT增益、
+  提前停止C69或选择任一checkpoint。
+- 评测队列在30907上运行，后续每个1000步点自动使用同一80 IDs、seed42、10-step solver和在线冻结
+  INT8 H3；报告权限保持`PREVIEW_ONLY_PENDING_TRAINING_COMPLETE_REBIND`。
+
+截至C67-s17000的异步preview，17/17 conditioning gates均通过，但曲线并未支持“训练越久越好”：
 s10000的normalized/physical/macro-F1为`0.059716/0.025007/0.934451`，s16000为
 `0.060807/0.025483/0.931187`。这些preview按预注册只用于缩短最终等待，不得提前停训或挑s4k；它们
 说明C68 30k不能因“卡空闲”自动放行，必须等待固定s20000终点和C69归因结果。

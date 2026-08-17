@@ -1292,3 +1292,8 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - C69正式20k从只读commit `a60b056`与SOURCE_FREEZE SHA256
   `a9197001d9b545ba7542dccc864c104ac2ee99a6defbd4c50bb9acab9ef66d68`启动，固定每1000步保存并严格恢复；
   最终只允许C69-s20与C67-s20做同预算归因，C58在fresh闭环被击败前仍是carrier champion。
+- C69只读异步balanced80评测队列固定在commit `55b622f`和SOURCE_FREEZE SHA256
+  `9e6cae8f01af159b9214428815ca4e226272044f2c739594916b9a26fb24ca78`，在30907按checkpoint/report/
+  strict-restore三件套消费，不调用trainer、不早停、不选点。首个s1000机械与conditioning门通过：
+  normalized/physical MSE `0.0587997/0.0256934`、gripper macro-F1 `0.939408`；同一步C67为
+  `0.0583450/0.0253304/0.940178`。单点仅证明评测链与动作专用合同可用，不构成FACT方向结论。
