@@ -1340,3 +1340,27 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `56cc29a1c3da55f61bee64451297758b903354bba413fed697843ee2a25788e9`。watcher只在20个preview和
   `TRAINING_COMPLETE`齐备后做零模型forward的重绑定，再按预注册八门比较固定C70-s20/C67-s20；不自动
   启动LIBERO，避免offline门失败仍越级消费闭环预算。
+
+### 2026-08-17 — C69/C70 长线运行检查点（23:22 CST）
+
+- C69动作专用同预算对照运行到约`s7917/20000`，已原子生成并异步评测`s1k..s7k`七个预注册里程碑；
+  七点strict restore及prediction/gripper/language/visual四个conditioning gate全部PASS。其
+  normalized/physical MSE在`s1k..s7k`依次为`0.058800/0.025693`、`0.062500/0.026422`、
+  `0.063105/0.026201`、`0.059873/0.024875`、`0.065754/0.026547`、`0.067132/0.027459`、
+  `0.058213/0.024634`，gripper macro-F1依次为`0.939408/0.931968/0.929235/0.933211/0.921429/`
+  `0.922724/0.937251`。曲线非单调且尚未到固定终点；全部报告仍为
+  `PREVIEW_NOT_EVIDENCE_NOT_FOR_EARLY_STOPPING`，不得据此选`s7k`或停止20k。
+- C70 sampler-coverage运行到约`s2029/20000`，`s1000` checkpoint、训练报告和独立strict restore三件套
+  已被只读队列审计并完成fixed balanced80。结果为normalized MSE `0.0628116`、physical MSE
+  `0.0272833`、gripper macro-F1 `0.933863`、end-to-end language relative delta `0.896045`、visual
+  shuffle delta MSE `0.0314490`；四个conditioning gate全部PASS。状态保持
+  `PREVIEW_ONLY_PENDING_TRAINING_COMPLETE_REBIND / NOT_EVIDENCE_READY`，不能与固定C67终点做跨步效果结论。
+- C70 `s2000`随后也完成fixed balanced80：normalized/physical MSE为`0.0597471/0.0252303`、gripper
+  macro-F1 `0.934842`、language relative delta `0.889947`、visual shuffle delta MSE `0.0331694`，四个
+  conditioning gate继续全部PASS。相对自身`s1000`，两类MSE分别改善约`4.88%/7.52%`，但这只是候选内
+  学习曲线，不是相对C67父对照的机制归因。checkpoint SHA256为
+  `30ae03e3bddf865832db38d0186ccdd86c579e3ae88d1050e115a059d19e2955`，正式preview report SHA256为
+  `9b460779a2ae06b9dd13a3c0477d1b3ac57632bb2c274dcb220bd40ddef57804`。
+- 两条训练每步future-to-action leak继续为0；C70八卡显存约前六卡45.8GB、后两卡55.7GB，GPU均有计算
+  活动。共享存储剩余约24TB，五个节点分别承担C69训练、C69 preview/终点归因、C70训练、C70 preview和
+  C70最终封印，没有空闲节点或重复训练进程。
