@@ -30,7 +30,10 @@ done
 
 mkdir -p "${output_root}"
 cd "${project_root}"
-export PYTHONPATH="${project_root}/src:${PYTHONPATH:-}"
+# H3's released packed-sequence/layout implementation lives in the pinned
+# vendored diffusers fork.  The lean training runtime intentionally does not
+# install a site-package copy, so both source roots are execution-critical.
+export PYTHONPATH="${project_root}/src:${project_root}/third_party/diffusers_h3/src:${PYTHONPATH:-}"
 exec "${python_bin}" scripts/h3wam/probe_c66_lingbot_c58_persistent.py \
   --checkpoint "${checkpoint}" \
   --h3-checkpoint "${h3_checkpoint}" \

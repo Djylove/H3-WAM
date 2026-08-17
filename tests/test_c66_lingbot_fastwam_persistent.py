@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 
 from fastwam.models.h3wam.c66_lingbot_fastwam_persistent import (
@@ -181,3 +183,12 @@ def test_runtime_strict_restore_and_fifo_are_shared_with_c57_state_contract():
         expected = model(video_kv_cache=_kv(30), persistent_state=state, **values)
         actual = clone(video_kv_cache=_kv(31), persistent_state=restored, **values)
     assert torch.equal(actual, expected)
+
+
+def test_cloud_launcher_exposes_pinned_h3_diffusers_layout_source():
+    launcher = (
+        Path(__file__).resolve().parents[1]
+        / "scripts/h3wam/launch_c66_lingbot_c58_mechanical.sh"
+    ).read_text(encoding="utf-8")
+    assert "${project_root}/third_party/diffusers_h3/src" in launcher
+    assert "export PYTHONPATH=" in launcher

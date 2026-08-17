@@ -94,3 +94,13 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
   FIFO/restore。
 - GPU：2026-08-17 检查时 n0 在跑 C58 full50 eval，n1/n2 在跑 C65，n3 也有既有任务。C66 不抢卡；
   真实 probe 保持 `PENDING_RESOURCE`，不会因此越门直接训练。
+
+## 真实 probe 运行记录
+
+- `mechanical-v1` 永久标记为 `INFRA_FAIL`：新节点使用 lean `conda-py311`，launcher 只导出了
+  `${project_root}/src`，在第一次 online H3 forward 前因找不到
+  `diffusers.modular_pipelines.minimax_h3` 退出。没有 report、optimizer step 或模型判定。
+- 修复只改变执行环境：launcher 显式加入固定 vendored
+  `${project_root}/third_party/diffusers_h3/src`；新增测试防止再次遗漏。模型、数据、seed 和全部阈值不变。
+- `mechanical-v1` 不得改写或复用；后续必须写入全新 `mechanical-v2` 目录，并重新完成所有身份、数据、
+  real H3、C58 block 和 restore gates。
