@@ -1,6 +1,6 @@
 # C62 MiniWorld → C58 rolling-context source audit and mechanical gate
 
-状态：`SOURCE_READY / LOCAL_MECHANICAL_PASS / NO_GO_LONG`
+状态：`SOURCE_READY / N1_MECHANICAL_PASS / CAUSAL_CANARY_RUNNING / NO_GO_LONG`
 
 ## 结论先行
 
@@ -59,8 +59,9 @@ Object/Spatial 任一 suite 相对 C58 不退化超过3pp。
   - one-chunk sink + FIFO eviction，不保留predicted/future entry；
   - shared action modulation + 30个layer-local low-rank refinement；
   - runtime state可独立snapshot/strict restore。
-- `tests/test_c62_miniworld_context.py`：5项本地测试通过，覆盖source、parity、eviction、shape、action-loss
-  gradient与model/runtime restore。
+- `tests/test_c62_miniworld_context.py` 与
+  `tests/test_c62_miniworld_sequence_manifest.py`：共9项本地测试通过，覆盖source、parity、eviction、
+  shape、冻结H3边界、action-loss gradient、model/runtime restore和episode-disjoint sequence冻结。
 - `scripts/h3wam/probe_c62_miniworld_context.py`：只加载真实C58 s10000，验证30层gradient和严格恢复，
   写report但不写candidate checkpoint。
 
@@ -80,3 +81,27 @@ Object/Spatial 任一 suite 相对 C58 不退化超过3pp。
 后续训练也不得一次放到长训：先固定 C58 为 parent 跑等预算 context-off/context-on 两臂，短→长上下文
 阶段只改变历史长度；每个里程碑先做 held-out action-shuffle 因果门，再做新trial paired LIBERO。世界预测
 或离线MSE改善不能替代动作成功率门。
+
+## n1真实机械结果与短canary
+
+最终有效机械报告为
+`/mnt/h3-wam/outputs/c62-miniworld-c58-rolling-context/mechanical-11a50bf/report.json`，SHA256
+`0adfbf47a821606cab8be8d416bcb975918701cc8706fdb4fb46d6d86412a54b`。它严格恢复真实C58
+s10000；disabled与empty context均`max_abs=0`；冻结H3 source `requires_grad=false`而bridge输出
+`requires_grad=true`；action loss到达30/30父blocks和30/30 refiners；bridge/runtime restore
+`max_abs=0`。峰值allocated/reserved为8.056/8.305 GiB。较早的`mechanical-ec9ed82`报告因把
+bridge输出误标为H3输入而被审计废止，不能作为PASS证据。
+
+短canary固定为bridge-only：C58与INT8 H3均冻结，只更新shared action modulation和30个layer-local
+refiners。冻结数据为800条训练sequence/800个episode和64条heldout/32个episode，四suite分别为
+200/16，train/heldout episode交集为0；8卡、global batch8、100步、恰好800 unique samples，即1.0
+effective epoch。heldout同一模型、噪声、target和真实观测不变，只循环错配历史executed-action chunks；
+clean必须比shuffle至少好1%，相对context-off退化不超过5%，且shuffle必须产生非零预测差异。通过也只放行
+bounded ablation，不放行长训或效果声明。
+
+当前有效启动代码commit为`be5b8dd33052295b00f0ee9d0c5ad83f8be3333d`，只读snapshot为
+`/mnt/h3-wam/code-snapshots/h3-wam-be5b8dd-c62-canary-miniworld-e484-fastwam45d-starwamcd76`。
+运行root为
+`/mnt/h3-wam/outputs/c62-miniworld-c58-rolling-context/causal-canary100-be5b8dd`。此前两个0-step
+失败root保留：一个缺失StarWAM pinned source，另一个在真实action shape门发现`[8,7]`未batch成
+`[1,8,7]`；二者均未产生optimizer step或候选checkpoint。

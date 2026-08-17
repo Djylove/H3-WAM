@@ -95,22 +95,22 @@
   },
   "gates": {
     "source_identity": {"status": "PASS", "evidence": ["Official remote HEAD and clean local checkout both resolve to e484206bbd4360ae56ed8abad51c83f2457ac092; six execution files are byte-pinned."]},
-    "architecture_contract": {"status": "PASS", "evidence": ["Local 5-test mechanical suite passes default-off parity, sink/FIFO, action grouping, shape and restore."]},
-    "data_contract": {"status": "FAIL", "evidence": ["An episode-disjoint C58 sequence manifest with exact executed-action-before-observation references has not yet been frozen."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Nine focused tests pass source, default-off parity, sink/FIFO, action grouping, frozen-H3 boundary, shape, restore and deterministic sequence freezing."]},
+    "data_contract": {"status": "PASS", "evidence": ["Frozen manifest faf5ff7c contains 800 train rows from 800 episodes; heldout 8242c16a contains 64 rows from 32 episodes; four suites are balanced 200/16 and episode intersection is zero."]},
     "action_contract": {"status": "FAIL", "evidence": ["The real LIBERO runner has not yet emitted a C62 reset/predict/execute/observe/commit trace."]},
-    "objective_contract": {"status": "PASS", "evidence": ["Synthetic action loss reaches the shared action modulation, active layer refiners and C58 parent blocks."]},
-    "optimization_contract": {"status": "FAIL", "evidence": ["Real C58-parent optimizer-step and optimizer/scheduler strict restore canary is pending."]},
-    "evaluation_contract": {"status": "FAIL", "evidence": ["No held-out action-shuffle mechanism result or fresh paired LIBERO result exists."]},
-    "gradient_path": {"status": "PENDING_N1", "evidence": ["n1 must show action loss reaches 30/30 C58 blocks and 30/30 layer-local refiners on the real s10000 parent."]},
-    "smoke_finite": {"status": "PENDING_N1", "evidence": ["Real BF16 C58-parent probe is pending."]},
-    "checkpoint_restore": {"status": "PENDING_N1", "evidence": ["Real C58 strict restore plus bridge/runtime max_abs=0 is pending."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Real C58 mechanical action loss reaches all 30 parent blocks, shared modulation and all 30 refiners; the causal canary freezes C58 and optimizes only the bridge."]},
+    "optimization_contract": {"status": "RUNNING", "evidence": ["Pre-registered 8-rank bridge-only canary is fixed at 100 steps, global batch 8, 800 unique samples and one effective epoch, followed by delta-checkpoint optimizer/scheduler strict restore."]},
+    "evaluation_contract": {"status": "RUNNING", "evidence": ["Sixty-four episode-disjoint heldout rows compare clean versus cyclically mismatched executed-action chunks and context-off under identical model/noise/target; fresh paired LIBERO remains absent."]},
+    "gradient_path": {"status": "PASS", "evidence": ["n1 report 0adfbf47 shows finite positive action-loss gradients in 30/30 C58 blocks, shared modulation and 30/30 layer refiners."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Corrected n1 mechanical report 0adfbf47 completed in 34.06 seconds with 8.056 GiB peak allocated and finite action output/loss."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Real C58 strict restore passed and bridge/runtime prediction restore max_abs is exactly zero in report 0adfbf47; optimizer/scheduler delta restore remains part of the running canary."]},
     "parent_baseline": {"status": "PASS", "evidence": ["C58 s10000 identity and 680-pair promotion result are frozen in the candidate registry."]},
-    "mechanism_signal": {"status": "FAIL", "evidence": ["Mechanical sensitivity is not a held-out causal mechanism result."]},
+    "mechanism_signal": {"status": "RUNNING", "evidence": ["Mechanical history sensitivity max_abs is 0.375; preregistered heldout clean-vs-shuffle requires at least 1% loss improvement before bounded ablation."]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["No C62 rollout exists."]}
   },
   "decision": {
     "status": "NO_GO_LONG",
     "effect_status": "NOT_EVIDENCE_READY",
-    "rationale": "The official source and local lifecycle implementation are ready, but real C58 mechanical, causal data, optimizer restore, mechanism and rollout gates remain. MiniWorld is never treated as an action policy."
+    "rationale": "Official source, corrected real-C58 mechanical gate and causal sequence contract pass. The bridge-only 100-step causal/optimizer canary is running; no long training or effectiveness claim is allowed before its clean-vs-shuffle, safety and restore gates pass. MiniWorld is never treated as an action policy."
   }
 }
