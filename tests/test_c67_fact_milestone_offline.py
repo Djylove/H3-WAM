@@ -16,6 +16,14 @@ assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+SEAL_SCRIPT = ROOT / "scripts/h3wam/seal_c67_milestone_previews.py"
+SEAL_SPEC = importlib.util.spec_from_file_location(
+    "_c67_preview_seal_test", SEAL_SCRIPT
+)
+assert SEAL_SPEC is not None and SEAL_SPEC.loader is not None
+SEAL = importlib.util.module_from_spec(SEAL_SPEC)
+sys.modules[SEAL_SPEC.name] = SEAL
+SEAL_SPEC.loader.exec_module(SEAL)
 
 
 def sha(path: Path) -> str:
@@ -133,6 +141,54 @@ def make_fixture(tmp_path: Path) -> tuple[Path, Path]:
     return root, complete
 
 
+def make_preview_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
+    final_root, complete_path = make_fixture(tmp_path)
+    train_root = tmp_path / "train"
+    preview_root = tmp_path / "preview"
+    (train_root / "checkpoints").mkdir(parents=True)
+    (train_root / "milestone-audit").mkdir()
+    (preview_root / "preview-audit").mkdir(parents=True)
+    (preview_root / "reports").mkdir()
+    complete = json.loads(complete_path.read_text())
+    audits = {int(row["milestone"]): row for row in complete["milestone_audits"]}
+    for step in MODULE.MILESTONES:
+        checkpoint = train_root / f"checkpoints/c67_online_s{step}.pt"
+        checkpoint.write_bytes(f"fixed-checkpoint-{step}".encode())
+        checkpoint_sha = sha(checkpoint)
+        audit = audits[step]
+        audit["checkpoint"] = str(checkpoint.resolve())
+        audit["checkpoint_size_bytes"] = checkpoint.stat().st_size
+        audit["restore_max_abs"] = 0.0
+        (train_root / f"milestone-audit/s{step}.json").write_text(json.dumps(audit))
+        preview_audit_path = preview_root / f"preview-audit/s{step}.json"
+        preview_audit = {
+            "format": SEAL.PREVIEW_AUDIT_FORMAT,
+            "status": "PASS_C67_MILESTONE_PREVIEW_AUDIT",
+            "permission": "PREVIEW_EVALUATION_ONLY",
+            "effect_status": "NOT_EVIDENCE_READY",
+            "milestone": step,
+            "checkpoint": str(checkpoint.resolve()),
+            "checkpoint_sha256": checkpoint_sha,
+            "training_contract_sha256": "c" * 64,
+            "milestone_audit": audit,
+        }
+        preview_audit_path.write_text(json.dumps(preview_audit))
+        report = json.loads((final_root / f"reports/s{step}.json").read_text())
+        report.update({
+            "permission": "PREVIEW_ONLY_PENDING_TRAINING_COMPLETE_REBIND",
+            "effect_status": "PREVIEW_NOT_EVIDENCE_NOT_FOR_EARLY_STOPPING",
+            "checkpoint": str(checkpoint.resolve()),
+            "checkpoint_sha256": checkpoint_sha,
+            "restore_audit": str(preview_audit_path.resolve()),
+            "restore_audit_sha256": sha(preview_audit_path),
+            "training_complete": None,
+            "training_complete_sha256": None,
+        })
+        (preview_root / f"reports/s{step}.json").write_text(json.dumps(report))
+    complete_path.write_text(json.dumps(complete))
+    return preview_root, train_root, complete_path
+
+
 def test_aggregate_releases_only_fixed_s10_s20_budget_effect(tmp_path: Path):
     root, complete = make_fixture(tmp_path)
     result = MODULE.aggregate(root, complete)
@@ -197,6 +253,29 @@ def test_ties_remain_in_the_preregistered_80_sample_win_rate_denominator(tmp_pat
     assert result["gates"]["s20_normalized_error_win_rate_at_least_55pct"] is False
 
 
+def test_previews_rebind_without_model_reevaluation_and_aggregate(tmp_path: Path):
+    preview, train, complete = make_preview_fixture(tmp_path)
+    sealed = tmp_path / "sealed"
+    manifest = SEAL.seal(preview, train, complete, sealed)
+    assert manifest["status"] == "PASS_C67_PREVIEWS_REBOUND_TO_TRAINING_COMPLETE"
+    assert manifest["model_reevaluations_during_seal"] == 0
+    report = json.loads((sealed / "reports/s10000.json").read_text())
+    assert report["permission"] == "DIAGNOSTIC_ONLY_PENDING_FIXED_AGGREGATION"
+    assert report["preview_provenance"]["rebound_without_model_reevaluation"] is True
+    result = MODULE.aggregate(sealed, complete)
+    assert result["status"] == "PASS_C67_BUDGET_BALANCED80_GATE"
+
+
+def test_preview_seal_rejects_audit_drift(tmp_path: Path):
+    preview, train, complete = make_preview_fixture(tmp_path)
+    path = preview / "preview-audit/s7000.json"
+    audit = json.loads(path.read_text())
+    audit["milestone_audit"]["gate"]["strict_restore"] = False
+    path.write_text(json.dumps(audit))
+    with pytest.raises(ValueError, match="preview/final audit mismatch"):
+        SEAL.seal(preview, train, complete, tmp_path / "sealed")
+
+
 def test_evaluator_and_queue_freeze_c67_contract_without_rollout():
     evaluator = (
         ROOT / "scripts/h3wam/evaluate_c67_fact_milestone_balanced80.py"
@@ -217,3 +296,24 @@ def test_evaluator_and_queue_freeze_c67_contract_without_rollout():
     assert "TRAINING_COMPLETE.json" in queue
     assert "rollout_libero" not in queue
     assert "RESULTS.json" in queue
+
+
+def test_preview_queue_cannot_change_training_or_skip_final_rebinding():
+    evaluator = (
+        ROOT / "scripts/h3wam/evaluate_c67_fact_milestone_balanced80.py"
+    ).read_text()
+    queue = (
+        ROOT / "scripts/h3wam/launch_c67_fact_milestone_preview_queue.sh"
+    ).read_text()
+    sealer = (ROOT / "scripts/h3wam/seal_c67_milestone_previews.py").read_text()
+    assert "--preview-audit" in evaluator
+    assert "PREVIEW_NOT_EVIDENCE_NOT_FOR_EARLY_STOPPING" in evaluator
+    assert "seq 1000 1000 20000" in queue
+    assert "for gpu in 0 1 2 3 4 5 6 7" in queue
+    assert "while [[ ! -s \"${training_complete}\" ]]" in queue
+    assert "seal_c67_milestone_previews.py" in queue
+    assert "aggregate_c67_fact_milestone_balanced80.py" in queue
+    assert "torch.distributed.run" not in queue
+    assert "train_c56b_fact_online.py" not in queue
+    assert "rollout_libero" not in queue
+    assert "rebound_without_model_reevaluation" in sealer

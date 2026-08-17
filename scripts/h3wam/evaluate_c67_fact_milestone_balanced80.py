@@ -62,8 +62,6 @@ FIXED_SHARED_DATA_SHA256 = {
 @dataclass(frozen=True)
 class Config:
     checkpoint: Path
-    restore_audit: Path
-    training_complete: Path
     milestone: int
     h3_checkpoint: Path
     source_manifest: Path
@@ -71,6 +69,9 @@ class Config:
     val_manifest: Path
     cache_root: Path
     output: Path
+    restore_audit: Path | None = None
+    training_complete: Path | None = None
+    preview_audit: Path | None = None
     device: str = "cuda:0"
     seed: int = 42
     inference_steps: int = 10
@@ -138,36 +139,73 @@ def require_c67_contract(contract: dict[str, Any]) -> None:
         raise ValueError("C67 fixed C58 initialization mismatch")
 
 
-def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, str]:
+def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]]:
     if config.milestone not in MILESTONES:
         raise ValueError("milestone must be one of s1000..s20000")
     checkpoint = config.checkpoint.resolve()
-    restore_path = config.restore_audit.resolve()
-    complete_path = config.training_complete.resolve()
     checkpoint_sha = sha256_file(checkpoint)
-    complete_sha = sha256_file(complete_path)
-    complete = load_json(complete_path)
-    audits = complete.get("milestone_audits", [])
-    by_milestone = {
-        int(audit.get("milestone", -1)): audit
-        for audit in audits if isinstance(audit, dict)
-    }
-    if (
-        complete.get("format") != TRAINING_COMPLETE_FORMAT
-        or complete.get("status") != "PASS_C67_BUDGET_TRAINING_COMPLETE"
-        or complete.get("permission") != "READY_FOR_PREREGISTERED_OFFLINE_ONLY"
-        or complete.get("effect_status") != "NOT_EVIDENCE_READY"
-        or complete.get("completed_steps") != 20_000
-        or complete.get("global_batch") != 8
-        or complete.get("training_samples") != 160_000
-        or set(by_milestone) != set(MILESTONES)
-    ):
-        raise ValueError("C67 training-complete gate failed")
-
-    restore = load_json(restore_path)
-    embedded = by_milestone[config.milestone]
-    if restore != embedded:
-        raise ValueError("C67 restore audit differs from training-complete evidence")
+    final_mode = config.training_complete is not None
+    preview_mode = config.preview_audit is not None
+    if final_mode == preview_mode:
+        raise ValueError("select exactly one C67 final or preview binding")
+    if final_mode:
+        if config.restore_audit is None:
+            raise ValueError("final C67 evaluation requires --restore-audit")
+        restore_path = config.restore_audit.resolve()
+        complete_path = config.training_complete.resolve()
+        complete_sha = sha256_file(complete_path)
+        complete = load_json(complete_path)
+        audits = complete.get("milestone_audits", [])
+        by_milestone = {
+            int(audit.get("milestone", -1)): audit
+            for audit in audits if isinstance(audit, dict)
+        }
+        if (
+            complete.get("format") != TRAINING_COMPLETE_FORMAT
+            or complete.get("status") != "PASS_C67_BUDGET_TRAINING_COMPLETE"
+            or complete.get("permission") != "READY_FOR_PREREGISTERED_OFFLINE_ONLY"
+            or complete.get("effect_status") != "NOT_EVIDENCE_READY"
+            or complete.get("completed_steps") != 20_000
+            or complete.get("global_batch") != 8
+            or complete.get("training_samples") != 160_000
+            or set(by_milestone) != set(MILESTONES)
+        ):
+            raise ValueError("C67 training-complete gate failed")
+        restore = load_json(restore_path)
+        embedded = by_milestone[config.milestone]
+        if restore != embedded:
+            raise ValueError("C67 restore audit differs from training-complete evidence")
+        binding = {
+            "mode": "final",
+            "restore_audit": str(restore_path),
+            "restore_audit_sha256": sha256_file(restore_path),
+            "training_complete": str(complete_path),
+            "training_complete_sha256": complete_sha,
+            "training_contract_sha256": complete.get("contract_sha256"),
+        }
+    else:
+        preview_path = config.preview_audit.resolve()
+        preview = load_json(preview_path)
+        restore = preview.get("milestone_audit", {})
+        if (
+            preview.get("format") != "h3wam-c67-milestone-preview-audit-v1"
+            or preview.get("status") != "PASS_C67_MILESTONE_PREVIEW_AUDIT"
+            or preview.get("permission") != "PREVIEW_EVALUATION_ONLY"
+            or preview.get("effect_status") != "NOT_EVIDENCE_READY"
+            or preview.get("milestone") != config.milestone
+            or preview.get("checkpoint_sha256") != checkpoint_sha
+            or not isinstance(restore, dict)
+        ):
+            raise ValueError("C67 preview audit binding failed")
+        restore_path = preview_path
+        binding = {
+            "mode": "preview",
+            "restore_audit": str(preview_path),
+            "restore_audit_sha256": sha256_file(preview_path),
+            "training_complete": None,
+            "training_complete_sha256": None,
+            "training_contract_sha256": preview.get("training_contract_sha256"),
+        }
     if (
         restore.get("format") != RESTORE_FORMAT
         or restore.get("status") != "PASS_C67_BUDGET_MILESTONE_STRICT_RESTORE"
@@ -197,29 +235,30 @@ def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, str]:
         raise ValueError("C67 milestone checkpoint schema/step mismatch")
     contract = payload.get("contract", {})
     require_c67_contract(contract)
-    if contract_sha256(contract) != complete.get("contract_sha256"):
-        raise ValueError("C67 checkpoint contract differs from training-complete evidence")
-    endpoint = "matched_control" if config.milestone == 10_000 else (
-        "treatment" if config.milestone == 20_000 else None
-    )
-    if endpoint is not None:
-        endpoint_evidence = complete.get(endpoint, {})
-        if (
-            endpoint_evidence.get("milestone") != config.milestone
-            or endpoint_evidence.get("training_samples") != config.milestone * 8
-            or Path(endpoint_evidence.get("checkpoint", "")).resolve() != checkpoint
-            or endpoint_evidence.get("checkpoint_sha256") != checkpoint_sha
-        ):
-            raise ValueError(
-                f"C67 {endpoint} checkpoint differs from training-complete evidence"
-            )
-    return payload, checkpoint_sha, complete_sha
+    if contract_sha256(contract) != binding["training_contract_sha256"]:
+        raise ValueError("C67 checkpoint contract differs from its evaluation binding")
+    if final_mode:
+        endpoint = "matched_control" if config.milestone == 10_000 else (
+            "treatment" if config.milestone == 20_000 else None
+        )
+        if endpoint is not None:
+            endpoint_evidence = complete.get(endpoint, {})
+            if (
+                endpoint_evidence.get("milestone") != config.milestone
+                or endpoint_evidence.get("training_samples") != config.milestone * 8
+                or Path(endpoint_evidence.get("checkpoint", "")).resolve() != checkpoint
+                or endpoint_evidence.get("checkpoint_sha256") != checkpoint_sha
+            ):
+                raise ValueError(
+                    f"C67 {endpoint} checkpoint differs from training-complete evidence"
+                )
+    return payload, checkpoint_sha, binding
 
 
 def run(config: Config) -> dict[str, Any]:
     if config.seed != 42 or config.inference_steps != 10:
         raise ValueError("C67 balanced80 seed/solver is fixed")
-    payload, checkpoint_sha, complete_sha = load_checkpoint(config)
+    payload, checkpoint_sha, binding = load_checkpoint(config)
     source_rows = PROTOCOL.read_jsonl(config.source_manifest.resolve())
     train_rows = PROTOCOL.read_jsonl(config.train_manifest.resolve())
     val_rows = PROTOCOL.read_jsonl(config.val_manifest.resolve())
@@ -270,15 +309,23 @@ def run(config: Config) -> dict[str, Any]:
     report = {
         "format": FORMAT,
         "status": "PASS_FIXED_BALANCED80" if all(gates.values()) else "FAIL_CONDITIONING_COLLAPSE",
-        "permission": "DIAGNOSTIC_ONLY_PENDING_FIXED_AGGREGATION",
-        "effect_status": "DIAGNOSTIC_NOT_CHECKPOINT_SELECTION",
+        "permission": (
+            "DIAGNOSTIC_ONLY_PENDING_FIXED_AGGREGATION"
+            if binding["mode"] == "final"
+            else "PREVIEW_ONLY_PENDING_TRAINING_COMPLETE_REBIND"
+        ),
+        "effect_status": (
+            "DIAGNOSTIC_NOT_CHECKPOINT_SELECTION"
+            if binding["mode"] == "final"
+            else "PREVIEW_NOT_EVIDENCE_NOT_FOR_EARLY_STOPPING"
+        ),
         "milestone": config.milestone,
         "checkpoint": str(config.checkpoint.resolve()),
         "checkpoint_sha256": checkpoint_sha,
-        "restore_audit": str(config.restore_audit.resolve()),
-        "restore_audit_sha256": sha256_file(config.restore_audit.resolve()),
-        "training_complete": str(config.training_complete.resolve()),
-        "training_complete_sha256": complete_sha,
+        "restore_audit": binding["restore_audit"],
+        "restore_audit_sha256": binding["restore_audit_sha256"],
+        "training_complete": binding["training_complete"],
+        "training_complete_sha256": binding["training_complete_sha256"],
         "training_contract_sha256": contract_sha256(contract),
         "data": {
             **actual_data,
@@ -304,7 +351,8 @@ def run(config: Config) -> dict[str, Any]:
         "timing": {"elapsed_seconds": time.perf_counter() - started},
         "claim_boundary": (
             "One fixed offline C67 milestone only. This report cannot select a "
-            "checkpoint or authorize LIBERO without the preregistered 20-point aggregate."
+            "checkpoint, alter the fixed 20k trajectory, or authorize LIBERO without "
+            "training-complete rebinding and the preregistered 20-point aggregate."
         ),
     }
     output = config.output.resolve()
@@ -320,8 +368,10 @@ def run(config: Config) -> dict[str, Any]:
 def parse_args() -> Config:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--restore-audit", type=Path, required=True)
-    parser.add_argument("--training-complete", type=Path, required=True)
+    parser.add_argument("--restore-audit", type=Path)
+    binding = parser.add_mutually_exclusive_group(required=True)
+    binding.add_argument("--training-complete", type=Path)
+    binding.add_argument("--preview-audit", type=Path)
     parser.add_argument("--milestone", type=int, required=True)
     parser.add_argument("--h3-checkpoint", type=Path, required=True)
     parser.add_argument("--source-manifest", type=Path, required=True)

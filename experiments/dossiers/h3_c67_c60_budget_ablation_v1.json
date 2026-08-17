@@ -254,6 +254,16 @@
     "import_origin_contract": "diffusers, minimax_h3.before_denoise and minimax_h3.encoders must import from the frozen snapshot; editable/.pth fallback is forbidden.",
     "training_data_contract": "The release and live files must both match all seven historical C60 SHA256 identities before output creation."
   },
+  "asynchronous_evaluation": {
+    "hypothesis": "Evaluating each already-completed fixed milestone on the preregistered balanced80 split while the immutable 20k trajectory continues can remove terminal evaluation latency without changing checkpoint selection, optimizer execution, or effect gates.",
+    "classification": "evaluation_scheduling_only",
+    "permission": "GO_FIXED_PREVIEW_EVALUATION_NO_EARLY_STOPPING",
+    "effect_status": "NOT_EVIDENCE_READY",
+    "execution_contract": "Each checkpoint must first pass the same per-milestone training/restore validator used by the finalizer. Preview metrics are written to an isolated root and cannot alter or stop training. After TRAINING_COMPLETE exists, every preview audit must equal the corresponding embedded final audit and checkpoint SHA256; only then are reports rebound to the final marker and passed unchanged to the preregistered 20-point aggregator.",
+    "resources": "One eight-A800 evaluation node, one milestone per assigned GPU, 80 fixed heldout samples per checkpoint, 20 checkpoints and 1600 model-sample evaluations total. Optimizer steps=0; model checkpoint writes=0; H3 executes online INT8 and no disk feature cache is created.",
+    "source_identity": "FACT 618a6c16868699b6d4138941de6a863589ac00dd, FastWAM 45d8e1458921d83f8ad6cf9ce993d371208dabd0 and the C67 training checkpoints remain unchanged. Preview auditor/evaluator/sealer/queue are separately frozen in a new read-only snapshot.",
+    "stop_condition": "Any checkpoint/audit/contract/data/evaluator identity mismatch fails closed. Preview metrics never authorize rollout; only the unchanged final aggregate may produce GO_C67_PAIRED_680_ROLLOUT."
+  },
   "decision": {
     "status": "GO_LONG",
     "rationale": "This is a bounded diagnostic that reuses a proven topology and changes only the pre-registered optimization horizon/budget. It is methodologically launchable, but this repository intentionally creates no release marker and starts no GPU process in this change.",

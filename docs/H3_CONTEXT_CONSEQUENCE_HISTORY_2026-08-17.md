@@ -201,3 +201,8 @@
   20k cosine trajectory 不变，从 fresh trajectory 训练到 20000 steps（160000 samples，aggregate
   effective epoch `0.733522`），每 1000 步 checkpoint+strict restore。只有固定 balanced80 里程碑门通过
   才允许 680-pair rollout；训练进行中始终为 `NOT_EVIDENCE_READY`，C58 仍是 carrier champion。
+- C67 里程碑评测改为异步但不自适应：每个已完成 checkpoint 先复用 finalizer 的同一训练/restore 审计，
+  然后在固定 balanced80 上产生隔离的 preview report；preview 明确禁止 early stopping、checkpoint
+  selection 与 rollout。20k 完成后，sealer 逐 checkpoint SHA256 比较 preview audit 与
+  `TRAINING_COMPLETE.json` 内最终 audit，完全一致才无模型重算地绑定最终证据并交给原20点聚合器。
+  该调度只减少训练结束后的评测等待，不改变模型、数据、160000 samples 或任何效果阈值。
