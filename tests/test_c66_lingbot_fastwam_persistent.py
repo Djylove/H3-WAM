@@ -267,4 +267,6 @@ def test_c66_canary_keeps_full_lingbot_history_and_three_paired_arms():
     assert 'dba327cd41f26596cec23228eb5d4be67ff2fa6a4c354b198271ef48cd87468e' in launcher
     assert '${workspace}/runtime/conda-py311/bin/python' in launcher
     assert '${workspace}/.venv/lib/python3.11/site-packages' in launcher
+    assert '${workspace}/runtime/c66-conda-deps' in launcher
+    assert 'm.version("comfy-kitchen")=="0.2.26"' in launcher
     assert '--nproc_per_node=8' in launcher

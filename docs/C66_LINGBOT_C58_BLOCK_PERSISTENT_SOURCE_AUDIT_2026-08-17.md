@@ -155,3 +155,9 @@ context-off 与 history-shuffle；没有 clean-over-shuffle 机制信号就停�
   runtime 的多进程 cuBLAS 合同成立。重跑切换到节点已实测稳定的 PyTorch 2.8 + CUDA 12.8
   `conda-py311`，并只从项目 `.venv` 补充 transformers/huggingface 等 Python 依赖；模型、数据、seed、
   100-step 预算和三臂阈值均不改变，写入全新输出目录。
+- `paired-canary-s100-conda-v2` 进一步在首个真实 H3 ConvRot INT8 block 前发现 conda 环境缺少
+  `comfy_kitchen`；同样发生在 step1/loss/optimizer 之前，无 report/checkpoint，永久记
+  `INFRA_DEPENDENCY_FAIL`。修复不是恢复 ComfyUI 链路，而是把 standalone `comfy-kitchen==0.2.26`
+  包隔离复制到 `/mnt/h3-wam/runtime/c66-conda-deps`，由 conda PyTorch 2.8 加载；CUDA extension import
+  与 backend registry 已实测通过。launcher 现在 fail-closed 校验 torch 2.8 和 comfy-kitchen 0.2.26，
+  不把 h3-int8-native 整个 site-packages 放进路径，避免把 PyTorch 2.10 混回来。

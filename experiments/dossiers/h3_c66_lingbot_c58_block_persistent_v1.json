@@ -87,7 +87,8 @@
       "evidence": [
         "The audited mechanical/data pass authorizes only a preregistered small-budget episode-disjoint paired canary. It does not authorize long training or fusion.",
         "The implemented canary fixes 8 ranks x 100 steps x microbatch1 = 800 unique train episodes plus 64 heldout episodes, balanced across all four LIBERO suites. Every row retains all seven history chunks, fifteen observations and fifty-six executed actions; no history is truncated or detached. Heldout arms are clean context, action-pair shuffle and context-off under identical model/noise/target.",
-        "The first paired-canary-s100 launch is a permanent INFRA_RUNTIME_FAIL: all eight ranks exited at the first real H3 video_patch_proj with PyTorch 2.10 CUDA-13 CUBLAS_STATUS_NOT_INITIALIZED before step1/loss/optimizer and produced no report/checkpoint. The clean retry uses the node's independently verified PyTorch 2.8 CUDA-12.8 conda runtime plus supplemental Python-only dependencies; every scientific variable remains frozen."
+        "The first paired-canary-s100 launch is a permanent INFRA_RUNTIME_FAIL: all eight ranks exited at the first real H3 video_patch_proj with PyTorch 2.10 CUDA-13 CUBLAS_STATUS_NOT_INITIALIZED before step1/loss/optimizer and produced no report/checkpoint. The clean retry uses the node's independently verified PyTorch 2.8 CUDA-12.8 conda runtime plus supplemental Python-only dependencies; every scientific variable remains frozen.",
+        "paired-canary-s100-conda-v2 is a permanent INFRA_DEPENDENCY_FAIL before step1/loss/optimizer: the stable conda runtime lacked standalone comfy-kitchen required by ConvRot INT8. Retry v3 adds only isolated comfy-kitchen 0.2.26 (not the ComfyUI execution chain and not the PyTorch-2.10 site-packages); launcher fail-closes on torch/comfy-kitchen versions."
       ]
     },
     "mechanism_signal": {
