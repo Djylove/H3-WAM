@@ -8,7 +8,7 @@
   auxiliary objective 的净作用，中间 preview 不用于选点。
 - C70 只改 sampler 为平均 `6/1/0.5/0.5`。非保留单步 probe 与真实 10 步 canary 均通过：30/30
   shared gradients、future leak 0、所有 loss 有限、12GB checkpoint strict restore max-abs 0；机械状态
-  `GO_C70_LONG / NOT_EVIDENCE_READY`。20k 长训必须继续每1k原子保存和严格恢复，最终只比较预注册
+  `GO_C70_LONG / NOT_EVIDENCE_READY`。20k 长训已按该合同启动并每1k原子保存和严格恢复，最终只比较预注册
   C70-s20 与 C67-s20；离线门失败则不做 LIBERO。
 
 ## 1. 本轮唯一问题与结论

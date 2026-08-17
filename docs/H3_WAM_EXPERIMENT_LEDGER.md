@@ -1330,3 +1330,13 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `GO_LONG.json` SHA256为`6076d37050e0cd05f9a580b5b21bb5b3a86061cba4b1bf0f48748c0c084f70f3`，状态仅为
   `GO_C70_LONG / MECHANICAL_PERMISSION_ONLY / NOT_EVIDENCE_READY`；长训固定每1k保存/恢复，最终离线只比较
   C70-s20与C67-s20，未过门不得rollout。
+- C70长训已从只读commit `7323607`、tree `804d4d8a`、完整SOURCE_FREEZE SHA256
+  `dcb14f9737b81c79f7d6e63ffe68f371761b12b8c3ccb337af1f0cc4d71422c4`启动；manual release SHA256为
+  `3984770c55b1bd5e6823239281f656ea134b1b366028510680c30e4a20d851e3`。固定20k/GB8/每1k原子
+  checkpoint+strict restore，首段运行时确认`--rank-schedule c70_6_1_half_half`和joint objective均生效。
+- C70异步只读preview队列固定commit `be5867a`、SOURCE_FREEZE SHA256
+  `49e449f31542aab5221bc67290b15888db459db51c9891c66a47e21c7e72f476`；最终sealing/offline watcher固定
+  commit `34b81b8`、SOURCE_FREEZE SHA256
+  `56cc29a1c3da55f61bee64451297758b903354bba413fed697843ee2a25788e9`。watcher只在20个preview和
+  `TRAINING_COMPLETE`齐备后做零模型forward的重绑定，再按预注册八门比较固定C70-s20/C67-s20；不自动
+  启动LIBERO，避免offline门失败仍越级消费闭环预算。
