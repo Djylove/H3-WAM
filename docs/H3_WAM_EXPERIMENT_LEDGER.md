@@ -1398,3 +1398,19 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - C71 Light-WAM三层state-fusion的首个A800启动在模型加载前fail-close：只读snapshot验证通过，但launcher
   对无`.git`元数据的正常archive仍调用云端缺失的`git`命令。GPU、optimizer、checkpoint均未产生；修复后必须
   从新commit和新只读snapshot重跑，不能改旧snapshot。
+- C71随后从新commit `88ad6a9`和新只读snapshot完成一个真实registered-sample、32 valid steps的online H3
+  forward/backward机械probe。报告
+  `/mnt/h3-wam/outputs/c71-lightwam-state-fusion-v1/probe-one-batch-88ad6a9-v2/report.json` SHA256为
+  `dce218d67876bfa758979829f06fe46c07990cf84d40becba5dbfc17168d27d7`；六组新head参数梯度均为正，直接动作
+  loss为`0.4858572`，H3+head峰值allocated/reserved为`24.579/25.264 GiB`。该结果仅为
+  `PASS_C71_LIGHTWAM_ONE_BATCH_PROBE / PROBE_ONLY / NOT_EVIDENCE_READY`，没有optimizer step、checkpoint、
+  训练样本或effective epoch，只放行trainer/checkpoint/evaluator实现。
+- 固定C67/C69闭环归因使用commit `8518821`、tree `ec3614912`、完整SOURCE_FREEZE SHA256
+  `5f580d76066f0a53963a16d8c6e3f02fb1073a80a6eaba0c0f7704a52480fcba`；授权根为
+  `/mnt/h3-wam/eval/c67-vs-c69-fixed-s20-paired680-trials33-49-8518821-v1`，AUTHORIZATION SHA256
+  `9241a9d394857f39dc3f024b594010aa3c567b578db660e2635fbb21013ae9cb`，manifest SHA256
+  `409d5d2d9395ad163069a95b8701ecfa1003ae2c1e8cfc213d7a80e5a8b307ae`。五个pair-id shard已分别在
+  A800节点32611/30907/32409/30234/30137启动，共40个GPU worker；每个arm固定s20000 endpoint，每个
+  episode新simulator+policy进程，不提前停止或读取胜负。后台收口器只等待5个shard marker齐备后才生成
+  `COMPLETED.json`并运行预注册paired aggregator。在`RESULTS.json`完整发布前，本轮状态仅为
+  `RUNNING_ATTRIBUTION_ONLY`，C58继续保持唯一champion。
