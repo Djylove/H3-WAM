@@ -110,9 +110,9 @@
     "objective_contract": {"status": "PASS", "evidence": ["Unchanged C69 [10,0,0,0] objective and auxiliary freeze."]},
     "optimization_contract": {"status": "PASS", "evidence": ["130585 steps/horizon, 1000-step cadence plus exact final endpoint, sample exposures, wall clock and storage are preregistered."]},
     "evaluation_contract": {"status": "PASS", "evidence": ["Internal C73-s30195 control is separated from external C72/C69 anchors and final champion promotion."]},
-    "gradient_path": {"status": "PASS", "evidence": ["C72 established the identical frozen-H3/action-only graph with finite positive gradients in all 30 shared blocks; C73 canary must separately validate the longer scheduler horizon before GO_LONG."]},
-    "smoke_finite": {"status": "FAIL", "evidence": ["C73 real eight-rank canary has not run yet."]},
-    "checkpoint_restore": {"status": "FAIL", "evidence": ["C73 scheduler-horizon=130585 canary checkpoint has not been restored yet."]},
+    "gradient_path": {"status": "PASS", "evidence": ["The real C73 eight-rank canary had finite positive gradients in all 30 shared blocks for all ten steps; minimum mean-across-ranks block norm was 0.18857289850711823."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Ten real eight-rank steps under scheduler_horizon=130585 were finite; training wall_seconds=38.6579677676782, peak reserved bytes=57426313216 and future-target leak=0."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["C73 canary checkpoint SHA256 fc62aaef1662bba67838965dfec3203cf29f36bfe518b88d762a1164955e0abc restored in a fresh eight-rank invocation with max_abs=0; GO_LONG marker SHA256 85b471eb84683d1a268b3e85e15c27f36635e4d0685540d420e84cfbf5bf7697."]},
     "parent_baseline": {"status": "PASS", "evidence": ["Fixed C58b s10000 SHA256 and READY marker; promoted C69 direct paired680 evidence frozen."]},
     "mechanism_signal": {"status": "FAIL", "evidence": ["Training not started; budget effect unproven."]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["Training not started; no C73 rollout claim."]}
@@ -156,9 +156,9 @@
     ]
   },
   "decision": {
-    "status": "GO_CANARY",
+    "status": "GO_LONG",
     "effect_status": "NOT_EVIDENCE_READY",
-    "rationale": "Source/data/action/objective/optimization/evaluation contracts are fixed. Only a ten-step real eight-rank C73 canary is released; GO_LONG requires finite gradients, zero future leak and exact restore under scheduler_horizon=130585.",
-    "launch_command": "C73_SOURCE_SNAPSHOT=<readonly_canary_snapshot> C73_SOURCE_FREEZE_SHA256=<sha256> bash scripts/h3wam/launch_c73_action_only_three_expert_epoch_canary_8gpu.sh"
+    "rationale": "The real eight-rank C73 canary passed finite-gradient, all-30-block, zero-leak and exact-restore gates. GO_LONG permits the fixed 130585-step trajectory, but the current server deadline is expected to leave it partial; only completed strict-restored milestones may be retained and no partial endpoint establishes three-epoch effectiveness.",
+    "launch_command": "C73_SOURCE_SNAPSHOT=<readonly_long_snapshot> C73_SOURCE_FREEZE_SHA256=<sha256> C73_RELEASE_FILE=<hash-bound-release.json> C73_CANARY_GO_LONG=/mnt/h3-wam/outputs/c73-action-only-three-expert-epoch-v1/canary10-v1/GO_LONG.json bash scripts/h3wam/launch_c73_action_only_three_expert_epoch_130585_8gpu.sh"
   }
 }

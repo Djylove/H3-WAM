@@ -1,0 +1,19 @@
+{
+  "format": "h3wam-c73-action-only-three-expert-epoch-canary-local-summary-v1",
+  "status": "GO_C73_LONG",
+  "permission": "MECHANICAL_PERMISSION_ONLY",
+  "effect_status": "NOT_EVIDENCE_READY",
+  "source_commit": "0a0f0013cbfadbff3720ccbdc028c64028effa78",
+  "source_tree": "7f16daa89619fc4cbcf75c152b1c1de4d0eccb34",
+  "source_freeze_sha256": "130cd1192a922a366a0e1a6251a5856f9d9890e43036def227d8d1fedb3d32af",
+  "checkpoint": "/mnt/h3-wam/outputs/c73-action-only-three-expert-epoch-v1/canary10-v1/c73_action_only_s10.pt",
+  "checkpoint_sha256": "fc62aaef1662bba67838965dfec3203cf29f36bfe518b88d762a1164955e0abc",
+  "go_long_sha256": "85b471eb84683d1a268b3e85e15c27f36635e4d0685540d420e84cfbf5bf7697",
+  "completed_steps": 10,
+  "wall_seconds": 38.6579677676782,
+  "peak_reserved_bytes": 57426313216,
+  "minimum_mean_across_ranks_block_gradient": 0.18857289850711823,
+  "future_target_leak_max_abs": 0.0,
+  "strict_restore_max_abs": 0.0,
+  "claim_boundary": "Mechanical permission for the single-node long trajectory only; no action metric or LIBERO effect claim."
+}
