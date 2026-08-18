@@ -88,6 +88,8 @@ C71 直接借鉴 Light-WAM 的三层 state fusion：H3 相对深度 14/27/41、l
 
 `/mnt/h3-wam/research-archive-2026-08-18/checkpoints/`
 
+归档建立后又按 manifest 对 7 个文件逐字节重算 SHA256，状态为 `PASS_ALL_7_SIZE_AND_SHA256`；这不是只检查文件名或大小。
+
 优先级如下：
 
 1. P0：C58b s10000——唯一正式冠军，必须优先带走。

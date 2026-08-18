@@ -220,7 +220,13 @@
       "sha256": "77dbcf02818154a1c99c0af5e9f9ae586b10cad3a2dcd22334711cc6446d7580",
       "content": "Complete immutable C71 execution snapshot including superproject, pinned vendor trees, external diffusers H3 source and SOURCE_FREEZE.json."
     },
-    "full_c67_c69_local_evidence": "/home/ubuntu/h3-wam-critical-backup-20260818/eval-summary"
+    "full_c67_c69_local_evidence": "/home/ubuntu/h3-wam-critical-backup-20260818/eval-summary",
+    "checkpoint_verification": {
+      "checked_at": "2026-08-18T15:34:00+08:00",
+      "status": "PASS_ALL_7_SIZE_AND_SHA256",
+      "command": "python verify_shutdown_archive.py --manifest h3_wam_shutdown_manifest_2026-08-18.json --checkpoint-root /mnt/h3-wam/research-archive-2026-08-18/checkpoints --require-checkpoints",
+      "checked_artifacts": 7
+    }
   },
   "transfer_status": {
     "large_checkpoint_copy": "INCOMPLETE_DUE_TO_OBSERVED_20_TO_80_KIB_PER_SECOND_SSH_BANDWIDTH",
