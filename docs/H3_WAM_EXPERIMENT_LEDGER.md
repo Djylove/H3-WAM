@@ -1456,3 +1456,27 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `PAIR_EVIDENCE_DIRECT.jsonl` SHA256 为
   `2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2`；本地冻结副本位于
   `experiments/evidence/c69_vs_c58b_direct_paired680_20260818/`。
+
+### 2026-08-18 — C72 action-only one-expert-epoch预算消融启动
+
+- 可证伪问题固定为：在C58b-s10000父模型、C69 action-only数据/目标/seed/优化器和部署合同不变时，
+  fresh `30195-step` cosine轨迹的`s30195`是否相对同轨迹`s20000`改善conditioning-safe动作指标，并在
+  后续固定paired LIBERO中超过当前C69-s20000冠军。现有C69-s20000因scheduler horizon为20000，只用于
+  外部冠军晋级，不冒充C72内部预算因果对照。
+- 预算为8×A800、global batch8、30195 optimizer steps、241560 samples、combined effective epoch
+  `1.107438`。C72新增120780个expert samples；连同C58b父模型的80000个expert samples，累计
+  `200780/200779=1.000005` expert-window epoch。31个里程碑为`s1000..s30000`和精确`s30195`，预计
+  checkpoint约352.3GiB，共享盘启动前仍余约23TB。
+- 真实8-rank十步canary从只读commit `0327459`、SOURCE_FREEZE SHA256
+  `15dba625c1d22b22bf783eb9a9227976415bbf007fbbaecb2dffb4a35fb551d2`执行。十步全部有限，30个shared
+  block最小mean-across-ranks梯度`0.1885728985`，future leak为0，独立restore max-abs0；checkpoint
+  SHA256为`b43f1122678b895f30cf4862de538df09e2f5cadd0b83868b6c35d224a112357`。本地证据在
+  `experiments/evidence/c72_action_only_one_expert_epoch_canary_20260818/`。
+- 正式长训从只读commit `03bf18f`、tree `c44f70b2`、SOURCE_FREEZE SHA256
+  `2e3643534ecdac4558d75e0f12d2950a0177017ff2ed5766aef2410559ffb39a`启动；manual release SHA256为
+  `52b78bc47320af7f31aa667d8fb00f79dd6b6888ce3357e7361d51daf5a7a846`，训练节点32611 PID `786544`。
+  当前许可仅`GO_LONG / NOT_EVIDENCE_READY`。
+- 异步balanced80队列固定commit `5595d55`、SOURCE_FREEZE SHA256
+  `0bc03a2d8442e9f70ae058271dce830fc08b45c7be554a07f91a992a3d1a2546`，评测节点30907 PID `27724`。
+  八个worker只读消费31个里程碑，报告physical/normalized、gripper、visual shuffle和language sensitivity；
+  preview不得选择checkpoint、提前停止训练或授权LIBERO。

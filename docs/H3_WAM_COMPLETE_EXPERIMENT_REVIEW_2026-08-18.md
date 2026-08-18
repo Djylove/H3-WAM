@@ -34,7 +34,6 @@
 - 视频/未来预测指标提高会自动带来动作提高；
 - 当前 FACT consequence auxiliary objective 能增益动作；
 - MiniWorld/LingBot context 已经形成可融合的上下文冠军；
-- C69 已于 2026-08-18 完成同授权、同初态的 680 对直接复跑，并按冠军晋级协议正式替代 C58b；
 - 当前模型已达到 FastWAM 官方数据曝光和训练预算。
 
 当前证据分层如下：
@@ -48,21 +47,16 @@
 | 下一代架构种子 | C71 Light-WAM state fusion | 视觉依赖和 normalized MSE 强，physical/语言门失败，未做 rollout |
 | 历史父模型 | D0 H32 | `270/680`，构成 C58b 的正式父基线 |
 
-因此当前正式 fusion lineage 只有：
+因此当前正式 action/carrier lineage 为：
 
 ```text
 MiniMax-H3 INT8 frozen
         |
 D0 H32 five-block action parent            270/680
         |
-C58b FastWAM full30 layer-wise carrier     295/680  ← promoted
-```
-
-C69应当写在谱系旁边，而不是直接覆盖谱系：
-
-```text
-C58b ── continue 20k matched action-only ── C69   338/680
-                                                └─ top promotion candidate
+C58b FastWAM full30 layer-wise carrier     295/680
+        |
+C69 matched action-only s20000             338/680  ← current champion
 ```
 
 ## 2. 项目最初的问题
@@ -276,7 +270,8 @@ C71证明轻量动作专家能有效吸收H3视觉表示，但没有守住物理
 | C58b | full30 + layer-wise H3 | 10k / 80k samples | balanced80通过 | 295/680 | promoted carrier |
 | C60 | C58b + FACT joint | 10k | 最高早期信号 | 313/680 | failed promotion |
 | C67 | FACT joint长预算 | 20k / 160k | conditioning-safe | 324/680 | attribution treatment |
-| C69 | matched action-only | 20k / 160k | attribution gate通过 | 338/680 | top candidate/control |
+| C69 | matched action-only | 20k / 160k | attribution和直接晋级门通过 | 338/680 | current champion |
+| C72 | C69合同fresh one-expert-epoch预算 | 30,195 / 241,560 | canary全门通过，长训/异步31点评测运行中 | 未跑 | budget ablation |
 | C70 | sampler coverage | 20k / 160k | terminal gate失败 | 未跑 | eliminated ablation |
 | C71 | Light-WAM shallow fusion | 9918 / 79344 | 视觉强、物理/语言失败 | 未跑 | architecture seed |
 | C57 | LingBot persistent KV | 5k / 400k samples | fixed80低于D0 | 未跑 | context no-go |
@@ -292,10 +287,11 @@ C71证明轻量动作专家能有效吸收H3视觉表示，但没有守住物理
 
 > H3是可用的世界/视觉基础模型；机器人能力上限目前主要受动作专家、动作数据曝光和部署合同限制。
 
-### 7.2 C69是否可能已经强于C58b
+### 7.2 C69是否已经强于C58b
 
-很可能，但尚未完成严格晋级证明。表面差值为 `338-295=43` 次成功，即 `+6.324pp`，足以成为最高优先验证对象。缺失的是同一
-authorization下的 C69/C58b 680对初态、suite safety、net wins和McNemar报告。
+是。同一authorization、同初态的680对直接复跑中，C69为338/680、C58b为295/680，差值`+6.3235pp`；
+discordant为79:36，单侧exact McNemar `p=3.758229e-5`，四个suite均守住-3pp安全线。该结论只晋级当前
+action/carrier endpoint，不把C69称为context或consequence冠军。
 
 ### 7.3 更多训练是否可能继续提高
 
@@ -354,7 +350,7 @@ H3主体保持冻结，adapter学习动作相关视觉增量；动作专家使�
 
 ## 10. 下一阶段实验计划
 
-### P0：先确认C69是否为新冠军
+### P0：确认C69是否为新冠军（已完成）
 
 不训练新模型，直接执行 C69-s20000 vs C58b-s10000 的680对完全相同初态闭环：
 
@@ -363,15 +359,15 @@ H3主体保持冻结，adapter学习动作相关视觉增量；动作专家使�
 - 使用C58b既有3pp/净20/p值/suite safety门；
 - 不用历史C58结果与新C69结果做非配对拼接。
 
-若通过，fusion parent更新为C69；若不通过，保留C58b并把C69定义为长预算诊断。
+结果已通过全部晋级门，当前parent endpoint更新为C69；C58b继续作为C72固定初始化父模型和历史对照。
 
 ### P1：action-only长预算学习曲线
 
-父模型固定为C58b；保持C69 action-only合同，训练到30,195、80,390，并在资源允许时到230,974增量steps。建议：
+父模型固定为C58b；保持C69 action-only合同。C72已从父模型fresh启动30,195-step完整cosine轨迹；80,390及
+230,974只有在C72内部s20k→s30,195安全改善后才另建候选。当前合同：
 
-- 每5k或10k保存一次完整checkpoint；
-- 每个阶段保存训练曲线和strict restore，但不保存全部1k大权重；
-- balanced80异步评测固定milestone；
+- 按用户要求每1k保存完整checkpoint并strict restore，额外保存精确s30,195终点；
+- 第二台A800节点异步评测全部31个固定milestone，不按preview早停或选点；
 - 30k、80k和最终点才进入闭环，禁止事后挑最佳点；
 - 统计expert、success、observational failure、causal failure四流各自exposure。
 
