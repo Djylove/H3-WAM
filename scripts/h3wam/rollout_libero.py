@@ -162,6 +162,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Required offline-gated s10/s20 authorization for C67 rollout.",
     )
+    parser.add_argument(
+        "--c67-c69-attribution-authorization",
+        type=Path,
+        help="Required fixed-s20 joint/action-only attribution authorization.",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--target-latent-frames", type=int, default=12)
     parser.add_argument("--h3-feature-audio-horizon", type=int)
@@ -387,21 +392,28 @@ def policy_command(args: argparse.Namespace, port: int, ready_file: Path) -> lis
                 gates = (
                     args.c56b_paired_ready,
                     args.c67_budget_rollout_authorization,
+                    args.c67_c69_attribution_authorization,
                 )
                 if sum(value is not None for value in gates) != 1:
                     raise ValueError(
                         "h3_fact_online_int8 requires exactly one "
-                        "--c56b-paired-ready or --c67-budget-rollout-authorization"
+                        "--c56b-paired-ready, --c67-budget-rollout-authorization, "
+                        "or --c67-c69-attribution-authorization"
                     )
                 if args.c56b_paired_ready is not None:
                     command.extend((
                         "--c56b-paired-ready",
                         str(args.c56b_paired_ready.resolve()),
                     ))
-                else:
+                elif args.c67_budget_rollout_authorization is not None:
                     command.extend((
                         "--c67-budget-rollout-authorization",
                         str(args.c67_budget_rollout_authorization.resolve()),
+                    ))
+                else:
+                    command.extend((
+                        "--c67-c69-attribution-authorization",
+                        str(args.c67_c69_attribution_authorization.resolve()),
                     ))
             if args.progress_probe is not None:
                 if args.policy != "h3_dreamwam_kv_int8":
@@ -1119,6 +1131,18 @@ def main() -> None:
             if args.c67_budget_rollout_authorization is None
             else hashlib.sha256(
                 args.c67_budget_rollout_authorization.resolve().read_bytes()
+            ).hexdigest()
+        ),
+        "c67_c69_attribution_authorization": (
+            None
+            if args.c67_c69_attribution_authorization is None
+            else str(args.c67_c69_attribution_authorization.resolve())
+        ),
+        "c67_c69_attribution_authorization_sha256": (
+            None
+            if args.c67_c69_attribution_authorization is None
+            else hashlib.sha256(
+                args.c67_c69_attribution_authorization.resolve().read_bytes()
             ).hexdigest()
         ),
         "suite": args.suite,

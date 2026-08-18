@@ -103,6 +103,11 @@ def parse_args() -> argparse.Namespace:
         help="Required offline-gated s10/s20 authorization for C67 rollout.",
     )
     parser.add_argument(
+        "--c67-c69-attribution-authorization",
+        type=Path,
+        help="Required fixed-s20 joint/action-only attribution authorization.",
+    )
+    parser.add_argument(
         "--progress-probe",
         type=Path,
         help="Validated frozen H3 progress ridge for shadow diagnostics only.",
@@ -2516,19 +2521,71 @@ def _validate_c67_budget_rollout_authorization(
     return arm, expected[arm], _C67_HISTORICAL_DATA_SHA256
 
 
+def _validate_c67_c69_attribution_authorization(
+    authorization: dict, checkpoint_sha256: str
+) -> tuple[str, int, dict]:
+    endpoints = authorization.get("endpoints", {})
+    matches = [
+        (name, row) for name, row in endpoints.items()
+        if isinstance(row, dict) and row.get("checkpoint_sha256") == checkpoint_sha256
+    ]
+    if len(matches) != 1:
+        raise ValueError("C67/C69 authorization does not identify exactly one endpoint")
+    arm, endpoint = matches[0]
+    expected = {"c67_fact_joint": 20_000, "c69_action_only": 20_000}
+    source = authorization.get("source_freeze", {})
+    offline = authorization.get("offline_attribution", {})
+    if (
+        authorization.get("format")
+        != "h3wam-c67-c69-paired-rollout-authorization-v1"
+        or authorization.get("status")
+        != "AUTHORIZED_C67_C69_FIXED_S20_PAIRED_680"
+        or authorization.get("permission")
+        != "GO_C67_C69_1360_FRESH_PROCESSES_NO_INTERMEDIATE_STOP"
+        or authorization.get("effect_status") != "NOT_EVIDENCE_READY"
+        or authorization.get("release_signed") is not False
+        or set(endpoints) != set(expected)
+        or arm not in expected
+        or endpoint.get("milestone") != expected[arm]
+        or authorization.get("jobs") != 1_360
+        or authorization.get("pairs") != 680
+        or authorization.get("episodes_per_arm") != 680
+        or authorization.get("one_episode_per_process") is not True
+        or authorization.get("historical_c60_data_sha256")
+        != _C67_HISTORICAL_DATA_SHA256
+        or offline.get("status") != "PASS_C67_C69_FIXED_S20_ATTRIBUTION_CHAIN"
+        or offline.get("permission")
+        != "GO_C67_VS_C69_FIXED_S20_PAIRED_LIBERO_ATTRIBUTION"
+        or source.get("git_commit") is None
+        or source.get("git_tree") is None
+        or not isinstance(source.get("snapshot"), str)
+        or not isinstance(source.get("sha256"), str)
+        or len(source["sha256"]) != 64
+        or not isinstance(source.get("dynamic_execution_sha256"), dict)
+        or not source["dynamic_execution_sha256"]
+    ):
+        raise ValueError("C67/C69 attribution authorization contract failed")
+    return arm, expected[arm], _C67_HISTORICAL_DATA_SHA256
+
+
 class H3FACTOnlineInt8Policy(H3DreamWAMKVInt8Policy):
     """Strict no-cache LIBERO adapter for the two matched C56b endpoints."""
 
     def __init__(self, args: argparse.Namespace) -> None:
         if args.h3_checkpoint is None or args.h3_model is None:
             raise ValueError("h3_fact_online_int8 requires H3 checkpoint/model")
-        gates = (args.c56b_paired_ready, args.c67_budget_rollout_authorization)
+        gates = (
+            args.c56b_paired_ready,
+            args.c67_budget_rollout_authorization,
+            args.c67_c69_attribution_authorization,
+        )
         if args.dreamwam_source_manifest is None or sum(
             value is not None for value in gates
         ) != 1:
             raise ValueError(
                 "h3_fact_online_int8 requires source manifest and exactly one "
-                "--c56b-paired-ready or --c67-budget-rollout-authorization"
+                "--c56b-paired-ready, --c67-budget-rollout-authorization, or "
+                "--c67-c69-attribution-authorization"
             )
         if (
             args.context_mode != "cached"
@@ -2578,17 +2635,22 @@ class H3FACTOnlineInt8Policy(H3DreamWAMKVInt8Policy):
         checkpoint = args.checkpoint.resolve()
         checkpoint_sha256 = _sha256_file(checkpoint)
         paired_path = (
-            args.c56b_paired_ready or args.c67_budget_rollout_authorization
+            args.c56b_paired_ready
+            or args.c67_budget_rollout_authorization
+            or args.c67_c69_attribution_authorization
         ).resolve()
         paired = json.loads(paired_path.read_text(encoding="utf-8"))
-        if args.c67_budget_rollout_authorization is None:
+        if (
+            args.c67_budget_rollout_authorization is None
+            and args.c67_c69_attribution_authorization is None
+        ):
             arm, causal_contract = _validate_c56b_paired_ready(
                 paired, checkpoint_sha256
             )
             completed_steps = 10_000
             scheduler_horizon = 10_000
             historical_data = None
-        else:
+        elif args.c67_budget_rollout_authorization is not None:
             arm, completed_steps, historical_data = (
                 _validate_c67_budget_rollout_authorization(
                     paired, checkpoint_sha256
@@ -2608,6 +2670,37 @@ class H3FACTOnlineInt8Policy(H3DreamWAMKVInt8Policy):
                 != _sha256_file(REPO_ROOT / serve_name)
             ):
                 raise ValueError("C67 server is not executing its authorized snapshot")
+            scheduler_horizon = 20_000
+            causal_contract = {
+                "causal_failure_dataset_sha256": (
+                    "1abeee1ef4e5e71f66b656c9920124086046c3e7d3b3a22b769449b72b1fc1d4"
+                ),
+                "causal_failure_observations_sha256": (
+                    "b9a812afe034f236181a6915369535545a997688a9dac8c351df3f51c0357a55"
+                ),
+            }
+        else:
+            arm, completed_steps, historical_data = (
+                _validate_c67_c69_attribution_authorization(
+                    paired, checkpoint_sha256
+                )
+            )
+            frozen = paired["source_freeze"]
+            snapshot = Path(frozen.get("snapshot", "")).resolve()
+            freeze_manifest = snapshot / "SOURCE_FREEZE.json"
+            dynamic = frozen["dynamic_execution_sha256"]
+            serve_name = "scripts/h3wam/serve_rollout_policy.py"
+            if (
+                snapshot != REPO_ROOT.resolve()
+                or not freeze_manifest.is_file()
+                or _sha256_file(freeze_manifest) != frozen.get("sha256")
+                or snapshot.stat().st_mode & 0o222
+                or dynamic.get(serve_name)
+                != _sha256_file(REPO_ROOT / serve_name)
+            ):
+                raise ValueError(
+                    "C67/C69 server is not executing its authorized snapshot"
+                )
             scheduler_horizon = 20_000
             causal_contract = {
                 "causal_failure_dataset_sha256": (
@@ -2730,13 +2823,17 @@ class H3FACTOnlineInt8Policy(H3DreamWAMKVInt8Policy):
         self.history_action_steps = 0
         self.h3_checkpoint_sha256 = actual_h3_sha256
         self.fastwam_online = True
-        self.candidate = (
-            f"C56B_FACT_{arm}"
-            if args.c67_budget_rollout_authorization is None
-            else f"C67_BUDGET_{arm.upper()}"
-        )
+        if args.c67_c69_attribution_authorization is not None:
+            self.candidate = f"C67_C69_ATTRIBUTION_{arm.upper()}"
+        elif args.c67_budget_rollout_authorization is not None:
+            self.candidate = f"C67_BUDGET_{arm.upper()}"
+        else:
+            self.candidate = f"C56B_FACT_{arm}"
         self.paired_ready_sha256 = _sha256_file(paired_path)
         self.c67_budget_rollout = args.c67_budget_rollout_authorization is not None
+        self.c67_c69_attribution_rollout = (
+            args.c67_c69_attribution_authorization is not None
+        )
 
     def predict(self, request: dict) -> tuple[np.ndarray, dict]:
         actions, metadata = super().predict(request)
@@ -2744,6 +2841,9 @@ class H3FACTOnlineInt8Policy(H3DreamWAMKVInt8Policy):
         metadata["paired_heldout_ready_sha256"] = self.paired_ready_sha256
         metadata["c67_budget_rollout_authorization_sha256"] = (
             self.paired_ready_sha256 if self.c67_budget_rollout else None
+        )
+        metadata["c67_c69_attribution_authorization_sha256"] = (
+            self.paired_ready_sha256 if self.c67_c69_attribution_rollout else None
         )
         metadata["disk_kv_read"] = False
         metadata["disk_kv_write"] = False

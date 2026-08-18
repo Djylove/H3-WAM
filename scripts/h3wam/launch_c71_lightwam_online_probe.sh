@@ -49,13 +49,14 @@ diffusers_root, lightwam_root = map(lambda value: Path(value).resolve(), sys.arg
 module = importlib.import_module("diffusers")
 if not Path(module.__file__).resolve().is_relative_to(diffusers_root):
     raise SystemExit(f"C71 diffusers import escaped snapshot: {module.__file__}")
-head = subprocess.run(
-    ("git", "-C", str(lightwam_root), "rev-parse", "HEAD"),
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-)
 # A frozen archive intentionally has no .git; SOURCE_FREEZE already binds it.
-if head.returncode == 0 and head.stdout.strip() != "b2785f66e13fd9987e94ae1ecc1c441d5059c9ae":
-    raise SystemExit("C71 Light-WAM source revision mismatch")
+if (lightwam_root / ".git").exists():
+    head = subprocess.run(
+        ("git", "-C", str(lightwam_root), "rev-parse", "HEAD"),
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    if head.stdout.strip() != "b2785f66e13fd9987e94ae1ecc1c441d5059c9ae":
+        raise SystemExit("C71 Light-WAM source revision mismatch")
 print("PASS_C71_FROZEN_IMPORT_ORIGINS")
 PY
 

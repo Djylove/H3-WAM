@@ -94,11 +94,11 @@
     "objective_contract": {"status": "PASS", "evidence": ["CPU unit test proves exact equality to 10x C67 globally normalized action component and detached auxiliary diagnostics."]},
     "optimization_contract": {"status": "PASS", "evidence": ["C67-matched 20k schedule preregistered; canary required before long launch."]},
     "evaluation_contract": {"status": "PASS", "evidence": ["C67-s20 is the sole matched treatment; fixed balanced80 precedes any rollout."]},
-    "gradient_path": {"status": "FAIL", "evidence": ["Real eight-rank C69 all-30 global-gradient evidence does not exist before canary."]},
-    "smoke_finite": {"status": "FAIL", "evidence": ["Real ten-step C69 finite smoke not yet run."]},
-    "checkpoint_restore": {"status": "FAIL", "evidence": ["C69 strict restore not yet run."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Real eight-rank canary and all 20000 optimizer steps retained positive shared action gradients with zero future-target leak."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Canary and all 20 one-thousand-step segments completed with finite losses."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["All 20 milestones strict-restored; final checkpoint SHA256 20914729d340b05768ec99e152cc026313d5a0dab064c963df90ac8184d8a12a."]},
     "parent_baseline": {"status": "PASS", "evidence": ["Fixed promoted C58B s10000 SHA256 and READY required by launcher."]},
-    "mechanism_signal": {"status": "FAIL", "evidence": ["No C69 held-out result yet."]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["Fixed C67/C69 offline attribution chain passed all identity and conditioning gates and authorizes fresh paired LIBERO; RESULTS SHA256 12fb56ed96da82fdb232e7184648b2a7dd454eddd6344024a7e96f493ede12f9."]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["No C69 rollout exists."]}
   },
   "budget": {
@@ -106,7 +106,9 @@
     "global_batch": 8,
     "optimizer_steps": 20000,
     "training_samples": 160000,
+    "effective_epochs": 0.733522,
     "checkpoint_interval": 1000,
+    "actual_training_invocation_wall_seconds": 25102.055020342115,
     "estimated_hours": 8.82,
     "projected_checkpoint_storage_bytes": 244038964980
   },
@@ -122,8 +124,8 @@
     "interpretation": "C67 passing proves incremental value of consequence supervision under this contract. C69 tying or winning rejects that value and favors action-only continuation. Either outcome leaves C58 champion until a candidate separately beats it in fresh closed loop."
   },
   "decision": {
-    "status": "GO_CANARY",
-    "rationale": "Source, contracts and CPU equivalence tests pass; real eight-rank gradients, finite optimizer steps and strict restore remain mandatory before long training.",
-    "launch_command": "Run scripts/h3wam/launch_c69_matched_action_only_canary_8gpu.sh from a complete read-only snapshot; issue long-run release only if GO_LONG.json says GO_C69_LONG."
+    "status": "GO_PAIRED_ATTRIBUTION_ROLLOUT",
+    "rationale": "C69 completed 20000 steps/160000 samples with 20 strict restores. Fixed-s20 offline attribution retained conditioning and found no endpoint collapse; it authorizes only fresh C67-joint versus C69-action-only paired LIBERO attribution, not promotion.",
+    "launch_command": "Prepare trials50..66 with scripts/h3wam/prepare_c67_c69_attribution_rollout.py from a new immutable snapshot, then launch disjoint pair-id shards with scripts/h3wam/launch_c67_c69_attribution_paired680_shard.sh."
   }
 }

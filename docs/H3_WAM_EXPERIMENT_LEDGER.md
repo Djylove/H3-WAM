@@ -1370,3 +1370,28 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `3.78%/3.84%`，normalized/physical逐样本胜率`57.5%/55.0%`，gripper提升`0.00486`，language/visual
   response分别保留`101.16%/99.94%`。这种跨里程碑反转只支持继续完整学习曲线；不允许选择`s2k`、提前
   宣称sampler有效或启动闭环，最终仍固定比较C70-s20与C67-s20。
+
+### 2026-08-18 — C69/C70 固定终点与新闭环归因放行
+
+- C69和C70均完成`20000 steps / global batch 8 / 160000 samples / 0.733522 effective epoch`，20个
+  1000-step checkpoint、训练报告和strict restore全部齐备。仅计20段trainer invocation的实测墙钟分别为
+  C69 `25102.06s (6.973h)`、C70 `24550.71s (6.820h)`；preview/seal另计且不包含模型训练。
+- C70固定s20相对C67-s20的normalized/physical均值分别为`0.0601827/0.0250890`对
+  `0.0606277/0.0254389`，但逐样本胜率仅`47.5%/52.5%`；normalized均值改善门也失败。gripper、language、
+  visual安全门通过仍不能替代动作门，正式状态为`FAIL_C70_SAMPLER_BALANCED80_GATE / NO_C70_VS_C67_PAIRED_680_ROLLOUT`。
+  C70停止，不选中间checkpoint、不加步数。最终`RESULTS.json`记录于
+  `/mnt/h3-wam/outputs/c70-sampler-coverage-v1/fixed-s20-offline-34b81b8-v1/RESULTS.json`。
+- C69的零重评封存因首次远程后台会话在哈希第14个大checkpoint后退出，未发布结果；保留partial故障证据后，
+  从同一只读`e1872dc`源码重新执行完整20点SHA绑定。恢复结果
+  `/mnt/h3-wam/eval/c67-vs-c69-fixed-s20-attribution-reseal-e1872dc-v3/RESULTS.json` SHA256为
+  `12fb56ed96da82fdb232e7184648b2a7dd454eddd6344024a7e96f493ede12f9`，十项身份/完整性/conditioning门全部PASS。
+- 固定s20离线端点非常接近：C67-joint与C69-action-only normalized MSE为`0.0606277/0.0606874`，physical
+  MSE为`0.0254389/0.0254129`；C69逐样本赢`44/80` normalized和`45/80` physical。离线结果不宣布赢家，
+  只放行`GO_C67_VS_C69_FIXED_S20_PAIRED_LIBERO_ATTRIBUTION`。
+- 新闭环协议固定两臂s20000、四suite×10 tasks×新trial `50..66`，共680初始状态配对/1360个隔离进程；
+  每对同环境seed、同policy noise、wait30、max400、replan8、horizon32、10次模型求解。可按pair-id在多A800节点
+  分片，但任何shard不读取成功率；全部完成后一次性聚合。该结果只归因FACT consequence objective的增量价值，
+  无论支持C67、支持C69或不显著，C58在单独被击败前仍是唯一carrier champion。
+- C71 Light-WAM三层state-fusion的首个A800启动在模型加载前fail-close：只读snapshot验证通过，但launcher
+  对无`.git`元数据的正常archive仍调用云端缺失的`git`命令。GPU、optimizer、checkpoint均未产生；修复后必须
+  从新commit和新只读snapshot重跑，不能改旧snapshot。

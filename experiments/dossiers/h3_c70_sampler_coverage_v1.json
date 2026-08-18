@@ -29,7 +29,7 @@
     "smoke_finite": {"status": "PASS", "evidence": ["All ten real eight-rank C70 canary steps had finite joint/action/future/state/value losses and positive gradients in all 30 shared blocks; train.json SHA256 168337b4ec2e772c29df9b3aaac969a58880d3f1edd727be0cff2e32bdc4ea82."]},
     "checkpoint_restore": {"status": "PASS", "evidence": ["The 12GB s10 canary checkpoint SHA256 9bfd7ebed7069929b007336017fe2b87d6ef18a67aa822987cdcfc0a4b9b1ca1 restored with max-abs zero; restore.json SHA256 af5772606387844050a7b0821d44973a998b9533c6c004e45b7d51fe57378874."]},
     "parent_baseline": {"status": "PASS", "evidence": ["Fixed promoted C58B parent and matched C67 control."]},
-    "mechanism_signal": {"status": "FAIL", "evidence": ["No C70 held-out result."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Fixed-s20000 C70 failed the preregistered balanced80 gate: normalized/physical paired win rates were 47.5%/52.5% and neither reached 55%; RESULTS SHA256 f34cf3a9da45c747e7b70ef24b8f178ec704166caaa2beb26de2dbcff99381b9."]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["No C70 rollout."]}
   },
   "probe_evidence": {
@@ -54,12 +54,12 @@
     "source_freeze_sha256": "dcfe89fa61e9a4a2058485a52e11dabf188c1e2cb35523fff35dd7a328f0dd61",
     "claim_boundary": "Mechanical ten-step sampler/DDP/checkpoint/strict-restore evidence only; no held-out or rollout effect claim."
   },
-  "budget": {"world_size": 8, "gpu_count": 8, "global_batch": 8, "unique_windows": 222929, "optimizer_steps": 20000, "training_samples": 160000, "effective_epochs": 0.733522, "checkpoint_interval": 1000, "estimated_hours": 8.82, "projected_checkpoint_storage_bytes": 244038964980},
+  "budget": {"world_size": 8, "gpu_count": 8, "global_batch": 8, "unique_windows": 222929, "optimizer_steps": 20000, "training_samples": 160000, "effective_epochs": 0.733522, "checkpoint_interval": 1000, "actual_training_invocation_wall_seconds": 24550.714035534766, "estimated_hours": 8.82, "projected_checkpoint_storage_bytes": 244038964980},
   "effect_preregistration": {
     "primary_comparison": "C70 sampler s20000 minus C67 sampler s20000",
     "offline_gate": "Both endpoints strict-restore; C70 must improve normalized and physical means by at least 1%, win at least 55% of samples in both domains, preserve gripper within 0.005 and at least 90% of C67 language/visual response.",
     "stop": "Any conditioning collapse or failure to improve both action domains keeps C70 out of rollout; no longer budget or checkpoint substitution.",
     "interpretation": "A pass supports expert state coverage as the sampler bottleneck under the fixed FACT objective; it does not prove FACT auxiliary targets are useful, which remains C69's separate attribution question."
   },
-  "decision": {"status": "GO_LONG", "rationale": "The non-retained probe and checkpoint-producing ten-step canary passed all finite-loss, all-30-gradient, zero-leak, exact sampler, frozen-H3 and strict-restore gates. This authorizes only the fixed 20k diagnostic trajectory with 1k atomic checkpoints and restores; effectiveness remains NOT_EVIDENCE_READY until the preregistered C70-s20 versus C67-s20 offline gate.", "launch_command": "C70_SOURCE_SNAPSHOT=<complete immutable GO_LONG snapshot> C70_SOURCE_FREEZE_SHA256=<reviewed manifest SHA256> C70_RELEASE_FILE=<hash-bound release JSON> C70_CANARY_GO_LONG=/mnt/h3-wam/outputs/c70-sampler-coverage-v1/canary10-v1/GO_LONG.json bash scripts/h3wam/launch_c70_sampler_coverage_20k_8gpu.sh"}
+  "decision": {"status": "STOP_NO_ROLLOUT", "rationale": "The complete fixed 20000-step endpoint remained conditioning-safe but failed both preregistered paired action-win gates and its normalized mean improvement stayed below the preregistered 1% threshold. Sampler coverage is therefore eliminated without checkpoint substitution or longer training.", "launch_command": null}
 }
