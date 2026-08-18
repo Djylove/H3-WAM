@@ -65,3 +65,8 @@ def test_milestone_config_rejects_unregistered_step() -> None:
     )
     with pytest.raises(ValueError, match="protocol is fixed"):
         module.run_evaluation(config)
+
+
+def test_numerical_terminal_milestone_is_registered() -> None:
+    module = _module()
+    assert 9918 in module.EVALUATION_MILESTONES

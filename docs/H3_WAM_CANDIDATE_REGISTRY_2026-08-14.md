@@ -605,3 +605,8 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   `0.398448` effective epoch；每1000步保存，在s5000/s10000执行独立strict restore与相同balanced80。
   新快照只负责编排和里程碑评测，实际trainer仍从产生s1000的`ccf1e43`不可变快照执行，避免把源码
   freeze SHA变化伪装成合法续训。闭环前状态保持`NOT_EVIDENCE_READY`。
+- **数值终点修正（2026-08-18）**：原s9000→s10000段在完成s9918后，下一步LR约`2.10e-8`，
+  BF16 output-head更新量化为精确0并触发逐步更新断言，因此没有生成伪s10000。随后从不可变s9000父点
+  以完全相同源码、optimizer、scheduler和样本区间重放918步，合法保存`s9918`；累计79344样本、
+  `0.395181` effective epoch，独立恢复`max_abs=0`。该点记为`INFRA_NUMERICAL_ENDPOINT`，不是改过
+  min-LR的第二配置，也不得称为s10000；fixed balanced80终点评测只新增允许该精确step身份。

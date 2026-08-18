@@ -50,7 +50,7 @@ for step in 5000 10000; do
 import hashlib, json, sys
 from pathlib import Path
 p = Path(sys.argv[1]); report = json.loads(p.read_text())
-assert report["status"] == "PASS_C71_LIGHTWAM_BALANCED80"
+assert report["status"] == "completed_offline_not_closed_loop_evidence"
 assert report["checkpoint"]["fresh_evaluator_restore_max_abs"] == 0.0
 print(json.dumps({
     "step": report["checkpoint"]["completed_steps"],
