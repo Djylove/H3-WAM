@@ -26,6 +26,7 @@ evaluate_results/
 *.tif
 *.tar
 *.tar.gz
+*.zst
 *.gz
 *.pkl
 *.pt

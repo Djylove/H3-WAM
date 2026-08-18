@@ -1,0 +1,262 @@
+{
+  "format": "h3-wam-shutdown-archive-v1",
+  "created_at": "2026-08-18T15:32:34+08:00",
+  "project": {
+    "repository": "https://github.com/Djylove/H3-WAM.git",
+    "branch": "main",
+    "head_before_archive": "3472fc4",
+    "purpose": "Preserve methods, evidence, identities, and the minimum useful checkpoint lineage before cloud shutdown."
+  },
+  "claim_boundary": {
+    "promoted_model": "C58b FastWAM full30 H3 layer-wise s10000",
+    "promoted_scope": "carrier-track champion only",
+    "fusion_lineage": [
+      "C58b carrier champion"
+    ],
+    "not_promoted": [
+      "C60 FACT s10000",
+      "C67 FACT joint s20000",
+      "C69 action-only s20000",
+      "C70 sampler s20000",
+      "C71 Light-WAM visual candidate s9918"
+    ],
+    "project_decision": "Keep MiniMax-H3 INT8 frozen and optimize the action expert; do not resume full-H3/BF16 fine-tuning from this archive."
+  },
+  "base_model": {
+    "name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+    "size_bytes": 20970379616,
+    "sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+    "local_path": "/home/ubuntu/wan2_2/ComfyUI/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+    "cloud_path": "/mnt/h3-wam/int8-action/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+    "local_status": "COMPLETE_SHA256_VERIFIED",
+    "runtime_boundary": "The file may live under a historical ComfyUI model directory, but training and evaluation use native Python/diffusers code and do not require ComfyUI."
+  },
+  "checkpoints": [
+    {
+      "id": "D0-H32-s14000",
+      "role": "historical_parent",
+      "status": "BASELINE_270_OF_680",
+      "size_bytes": 2104221576,
+      "sha256": "36c5615746fcd57f834db4cdbedd7a124174fca634786e1353871ded6b6e6de3",
+      "original_path": "/mnt/h3-wam/outputs/dense-carrier-d0-h32-s20000-v1/checkpoints/d0_h32_s14000.pt",
+      "archive_path": "/mnt/h3-wam/research-archive-2026-08-18/checkpoints/d0_h32_parent_s14000.pt",
+      "retention": "KEEP_PARENT_IF_POSSIBLE",
+      "reason": "Required to reproduce the promoted C58b versus D0 comparison and historical 270/680 baseline."
+    },
+    {
+      "id": "C58b-s10000",
+      "role": "promoted_carrier_champion",
+      "parent": "D0-H32-s14000",
+      "status": "EVIDENCE_READY_CARRIER_TRACK_CHAMPION",
+      "size_bytes": 12183309492,
+      "sha256": "2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541",
+      "original_path": "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt",
+      "archive_path": "/mnt/h3-wam/research-archive-2026-08-18/checkpoints/c58b_carrier_champion_s10000.pt",
+      "local_partial_path": "/home/ubuntu/h3-wam-critical-backup-20260818/checkpoints/c58b_online_s10000.pt",
+      "local_status": "INCOMPLETE_TRANSFER_NOT_RESTORABLE_UNTIL_SIZE_AND_SHA_MATCH",
+      "retention": "P0_KEEP",
+      "reason": "Only checkpoint that passed the preregistered 680-pair promotion gate."
+    },
+    {
+      "id": "C60-s10000",
+      "role": "fact_candidate_highest_historical_point_estimate",
+      "parent": "C58b-s10000",
+      "status": "FAIL_PROMOTION_KEEP_C58_PARENT",
+      "size_bytes": 12201959595,
+      "sha256": "d6659c6b387f062a99f670a1d902b56df71a6bf1472aa4e46e56c9213ba75a36",
+      "original_path": "/mnt/h3-wam/outputs/c56b-fact-online-v1/online-long10000-v1/checkpoints/c56b_online_s10000.pt",
+      "archive_path": "/mnt/h3-wam/research-archive-2026-08-18/checkpoints/c60_fact_candidate_s10000.pt",
+      "retention": "P1_METHOD_REFERENCE",
+      "reason": "313/680 is informative, but +2.647pp, net18, p=0.050716 missed all promotion thresholds. Preserve to study Stage-2/value ranking, not as champion."
+    },
+    {
+      "id": "C67-s20000",
+      "role": "fact_joint_attribution_treatment",
+      "parent": "C58b-s10000",
+      "status": "NO_DETECTABLE_INCREMENTAL_CONSEQUENCE_EFFECT",
+      "size_bytes": 12201952671,
+      "sha256": "9ae1929e7b6ebba303e547727f58e3fd35578b17aa7d4a98da76d0b29ac1272e",
+      "original_path": "/mnt/h3-wam/outputs/c67-c60-budget-ablation-v1/online-long20000-v1/checkpoints/c67_online_s20000.pt",
+      "archive_path": "/mnt/h3-wam/research-archive-2026-08-18/checkpoints/c67_fact_joint_s20000.pt",
+      "retention": "P1_ATTRIBUTION_PAIR",
+      "reason": "Must be interpreted only together with C69; 324/680 versus C69 338/680 rejected incremental benefit of the current consequence objective."
+    },
+    {
+      "id": "C69-s20000",
+      "role": "matched_action_only_attribution_control",
+      "parent": "C58b-s10000",
+      "status": "CONTROL_NOT_CHAMPION",
+      "size_bytes": 12187463751,
+      "sha256": "20914729d340b05768ec99e152cc026313d5a0dab064c963df90ac8184d8a12a",
+      "original_path": "/mnt/h3-wam/outputs/c69-matched-action-only-v1/online-long20000-v1/checkpoints/c69_action_only_s20000.pt",
+      "archive_path": "/mnt/h3-wam/research-archive-2026-08-18/checkpoints/c69_action_only_s20000.pt",
+      "retention": "P1_ATTRIBUTION_PAIR",
+      "reason": "Matched negative-control endpoint. Its 338/680 cannot be called a promoted champion because it did not independently pass the frozen C58 promotion protocol."
+    },
+    {
+      "id": "C70-s20000",
+      "role": "sampler_coverage_ablation",
+      "parent": "C58b-s10000",
+      "status": "FAIL_BALANCED80_NO_ROLLOUT",
+      "size_bytes": 12201959979,
+      "sha256": "adafb7a78841028c9df4c08b15d6d47e7e0482779644ef1c23b97e02e88d8bfb",
+      "original_path": "/mnt/h3-wam/outputs/c70-sampler-coverage-v1/online-long20000-v1/checkpoints/c70_sampler_s20000.pt",
+      "archive_path": "/mnt/h3-wam/research-archive-2026-08-18/checkpoints/c70_sampler_s20000.pt",
+      "retention": "P2_OPTIONAL",
+      "reason": "Useful negative sampler control; failed the terminal offline gate and never entered rollout. Method and report are more valuable than the weight."
+    },
+    {
+      "id": "C71-s9918",
+      "role": "lightwam_visual_direct_action_candidate",
+      "parent": "fresh_head_compared_to_C58b",
+      "status": "FAIL_PAIRED_GATE_STOP_BEFORE_ROLLOUT",
+      "size_bytes": 6109004549,
+      "sha256": "851f679bf79e5d3e77f93f1c9b0f3fde6f232eac0628ccb5d4425b1dbbec0198",
+      "original_path": "/mnt/h3-wam/outputs/c71-lightwam-state-fusion-v1/online-long10000-8ffe95f-v1/checkpoints/c71_online_s9918.pt",
+      "archive_path": "/mnt/h3-wam/research-archive-2026-08-18/checkpoints/c71_lightwam_visual_candidate_s9918.pt",
+      "retention": "P1_ARCHITECTURE_SEED",
+      "reason": "Strong visual dependence and better normalized MSE/gripper, but physical MSE and language conditioning failed. Best seed for a future constrained Light-WAM action expert, not deployable evidence."
+    }
+  ],
+  "results": {
+    "c58b_vs_d0": {
+      "pairs": 680,
+      "candidate_successes": 295,
+      "parent_successes": 270,
+      "gain_pp": 3.676,
+      "discordant_candidate_wins": 87,
+      "discordant_parent_wins": 62,
+      "one_sided_mcnemar_p": 0.02446,
+      "decision": "PASS_ALL_PROMOTION_GATES"
+    },
+    "c60_vs_c58b": {
+      "pairs": 680,
+      "candidate_successes": 313,
+      "parent_successes": 295,
+      "gain_pp": 2.647,
+      "discordant_candidate_wins": 63,
+      "discordant_parent_wins": 45,
+      "one_sided_mcnemar_p": 0.0507164,
+      "decision": "FAIL_PROMOTION_KEEP_C58_PARENT"
+    },
+    "c67_vs_c69": {
+      "pairs": 680,
+      "fact_joint_successes": 324,
+      "action_only_successes": 338,
+      "fact_joint_wins": 23,
+      "action_only_wins": 37,
+      "two_sided_mcnemar_p": 0.09246098107292373,
+      "results_sha256": "473a499435a473068c489f41587d89c44be996eefa9a17e58eaea8af0a47527a",
+      "local_evidence_root": "/home/ubuntu/h3-wam-critical-backup-20260818/eval-summary",
+      "local_evidence_status": "1360_RESULT_JSON_AND_680_PAIR_SHA_RECOMPUTED_PASS",
+      "decision": "NO_DETECTABLE_INCREMENTAL_CONSEQUENCE_EFFECT"
+    },
+    "c71_vs_c58b_offline": {
+      "normalized_mse": 0.05654567994403286,
+      "physical_mse": 0.02837369755491019,
+      "gripper_macro_f1": 0.9410135968422233,
+      "language_relative_l2": 0.0641339677539223,
+      "visual_shuffle_delta_mse": 0.19392213146260734,
+      "normalized_mse_improvement_percent": 4.695345279912544,
+      "physical_mse_regression_percent": 11.48902539384049,
+      "decision": "FAIL_PHYSICAL_AND_LANGUAGE_GATE_NO_ROLLOUT"
+    }
+  },
+  "method_families": [
+    {
+      "name": "D0 frozen-H3 DreamWAM-style K/V carrier",
+      "source": ["DreamWAM@6e989facc0c452fd3488d75f60bc36411005558c"],
+      "code": ["scripts/h3wam/train_h3_int8_dreamwam_kv_carrier.py", "scripts/h3wam/launch_dense_d0_horizon_long.sh", "src/fastwam/models/h3wam/dreamwam_kv_carrier.py"],
+      "lesson": "Dense LIBERO coverage and horizon32 established the viable frozen-H3 action-expert baseline."
+    },
+    {
+      "name": "C58b FastWAM full30 layer-wise carrier",
+      "source": ["FastWAM@45d8e1458921d83f8ad6cf9ce993d371208dabd0"],
+      "code": ["scripts/h3wam/train_h3_fastwam_full_tower.py", "scripts/h3wam/launch_c58b_online_long10000.sh", "src/fastwam/models/h3wam/fastwam_full_tower.py", "src/fastwam/models/h3wam/c58_online_training.py"],
+      "lesson": "The successful change was a full-capacity action tower with depth-aligned frozen H3 K/V, validated in 680 paired rollouts."
+    },
+    {
+      "name": "C60/C67/C69 FACT joint consequence and matched action-only",
+      "source": ["FACT@618a6c16868699b6d4138941de6a863589ac00dd", "FastWAM@45d8e1458921d83f8ad6cf9ce993d371208dabd0"],
+      "code": ["scripts/h3wam/train_c56b_fact_online.py", "scripts/h3wam/launch_c56b_fact_online_long10000_8gpu.sh", "scripts/h3wam/launch_c67_c60_budget_ablation_20k_8gpu.sh", "scripts/h3wam/launch_c69_matched_action_only_20k_8gpu.sh", "src/fastwam/models/h3wam/fact_layerwise_tower.py", "src/fastwam/models/h3wam/fact_online_data.py"],
+      "lesson": "The current pooled future-H3/state/value auxiliary objective did not add measurable closed-loop value over the matched action-only arm. FACT Stage-2/value ranking remains a separate unproven inference idea."
+    },
+    {
+      "name": "C57/C62/C64/C66 context",
+      "source": ["MiniWorld@e484206bbd4360ae56ed8abad51c83f2457ac092", "LingBot source pin recorded in dossiers"],
+      "code": ["src/fastwam/models/h3wam/lingbot_persistent_kv.py", "src/fastwam/models/h3wam/c62_miniworld_context.py", "src/fastwam/models/h3wam/c64_miniworld_framewise_context.py", "src/fastwam/models/h3wam/c66_lingbot_fastwam_persistent.py"],
+      "lesson": "Persistent context mechanisms were mechanically valid but did not produce a promoted context winner; no context component enters fusion lineage."
+    },
+    {
+      "name": "C71 Light-WAM shallow state fusion",
+      "source": ["Light-WAM@b2785f66e13fd9987e94ae1ecc1c441d5059c9ae"],
+      "code": ["scripts/h3wam/train_c71_lightwam_online.py", "scripts/h3wam/launch_c71_lightwam_online_long10000.sh", "scripts/h3wam/evaluate_c71_lightwam_balanced80.py", "src/fastwam/models/h3wam/lightwam_state_fusion.py"],
+      "lesson": "Three H3 depths plus learned-query pooling and a shallow action trunk learn strong visual direct-action features efficiently, but future work must explicitly preserve language and physical action calibration."
+    }
+  ],
+  "upstream_pins": {
+    "FastWAM": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+    "DreamWAM": "6e989facc0c452fd3488d75f60bc36411005558c",
+    "FACT": "618a6c16868699b6d4138941de6a863589ac00dd",
+    "Light-WAM": "b2785f66e13fd9987e94ae1ecc1c441d5059c9ae",
+    "MiniWorld": "e484206bbd4360ae56ed8abad51c83f2457ac092",
+    "StarWAM": "cd76d96f273f81e228a05f40f9697fe2514e2356"
+  },
+  "archives": {
+    "cloud_root": "/mnt/h3-wam/research-archive-2026-08-18",
+    "checkpoint_archive_type": "HARDLINKS_ON_SHARED_FILESYSTEM_ZERO_EXTRA_BYTES",
+    "checkpoint_archive_warning": "Hardlinks survive deletion of the original output names but do not survive deletion of the shared filesystem itself.",
+    "core_results_bundle": {
+      "cloud_path": "/mnt/h3-wam/research-archive-2026-08-18/bundles/core_results_json_2026-08-18.tar.zst",
+      "local_path": "artifacts/core_results_json_2026-08-18.tar.zst",
+      "size_bytes": 59073846,
+      "sha256": "0a6def714180b191c48e4b3fbb78006029668c90b32d827f915bc07da1780ef9",
+      "content": "Core JSON/JSONL reports from D0, C58, C60, C67, C69, C70, C71 and key paired evaluations; excludes NPZ, PT and trajectory tensors."
+    },
+    "execution_source_bundle": {
+      "cloud_path": "/mnt/h3-wam/research-archive-2026-08-18/bundles/execution_source_0cc9d9e.tar.zst",
+      "local_path": "artifacts/execution_source_0cc9d9e.tar.zst",
+      "size_bytes": 17049838,
+      "sha256": "77dbcf02818154a1c99c0af5e9f9ae586b10cad3a2dcd22334711cc6446d7580",
+      "content": "Complete immutable C71 execution snapshot including superproject, pinned vendor trees, external diffusers H3 source and SOURCE_FREEZE.json."
+    },
+    "full_c67_c69_local_evidence": "/home/ubuntu/h3-wam-critical-backup-20260818/eval-summary"
+  },
+  "transfer_status": {
+    "large_checkpoint_copy": "INCOMPLETE_DUE_TO_OBSERVED_20_TO_80_KIB_PER_SECOND_SSH_BANDWIDTH",
+    "object_store_copy": "NOT_ATTEMPTED_BECAUSE_CLUSTER_HAS_NO_CONFIGURED_RCLONE_OR_DECLARED_DESTINATION; CREDENTIALS_AND_REMOTE_PATH_WERE_NOT_GUESSED",
+    "priority_order_if_manual_high_speed_transfer_becomes_available": [
+      "C58b-s10000",
+      "D0-H32-s14000",
+      "C71-s9918",
+      "C60-s10000",
+      "C67-s20000 and C69-s20000 together",
+      "C70-s20000"
+    ]
+  },
+  "cluster_shutdown_audit": {
+    "checked_at": "2026-08-18T15:32:08+08:00",
+    "nodes": [
+      "117.50.181.177:32611",
+      "117.50.181.177:30907",
+      "117.50.181.177:32409",
+      "117.50.181.177:30234",
+      "117.50.181.177:30137"
+    ],
+    "gpu_count_per_node": 8,
+    "gpu_memory_mib_per_device": 81920,
+    "active_compute_processes": 0,
+    "note": "All five nodes saw the same shared /mnt/h3-wam outputs and had zero active GPU compute processes; no unfinished optimizer run was omitted from the archive."
+  },
+  "authoritative_documents": [
+    "docs/H3_WAM_SHUTDOWN_HANDOFF_2026-08-18.md",
+    "docs/H3_WAM_EXPERIMENT_LEDGER.md",
+    "docs/H3_WAM_CANDIDATE_REGISTRY_2026-08-14.md",
+    "docs/H3_WAM_PHASE_REVIEW_2026-08-17.md",
+    "docs/C67_C69_PAIRED_ATTRIBUTION_RESULT_2026-08-18.md",
+    "docs/H3_C60_FAILURE_CAUSAL_DIAGNOSIS_2026-08-17.md",
+    "experiments/dossiers/h3_c58b_expanded_paired_eval_v1.json",
+    "experiments/dossiers/h3_c69_matched_action_only_v1.json",
+    "experiments/dossiers/h3_c71_lightwam_state_fusion_v1.json"
+  ]
+}
