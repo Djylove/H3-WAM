@@ -62,3 +62,27 @@ def test_c72_dossier_budget_arithmetic_and_control_are_explicit():
     )
     assert "C72-s30195 minus C72-s20000" in dossier["effect_preregistration"]["primary_comparison"]
     assert dossier["decision"]["status"] == "GO_LONG"
+
+
+def test_c72_preview_queue_is_read_only_and_covers_the_exact_trajectory():
+    queue = (
+        ROOT / "scripts/h3wam/launch_c72_action_only_milestone_preview_queue.sh"
+    ).read_text()
+    evaluator = (
+        ROOT / "scripts/h3wam/evaluate_c67_fact_milestone_balanced80.py"
+    ).read_text()
+    auditor = (
+        ROOT / "scripts/h3wam/prepare_c72_milestone_preview_audit.py"
+    ).read_text()
+    assert "milestones=($(seq 1000 1000 30000) 30195)" in queue
+    assert "--variant c72" in queue
+    assert "c72_action_only_s${milestone}.pt" in queue
+    assert "for gpu in 0 1 2 3 4 5 6 7" in queue
+    assert "torch.distributed.run" not in queue
+    assert "train_c56b_fact_online.py" not in queue
+    assert "rollout_libero" not in queue
+    assert 'C72_MILESTONES = tuple(range(1_000, 30_001, 1_000)) + (30_195,)' in evaluator
+    assert '"c72": "h3wam-c72-action-only-milestone-balanced80-v1"' in evaluator
+    assert '"PASS_C72_MILESTONE_STRICT_RESTORE"' in evaluator
+    assert "FINAL.validate_milestone" in auditor
+    assert "PREVIEW_EVALUATION_ONLY" in auditor

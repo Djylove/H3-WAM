@@ -285,7 +285,7 @@ def test_evaluator_and_queue_freeze_c67_contract_without_rollout():
     ).read_text()
     for frozen in (
         'MILESTONES = tuple(range(1_000, 20_001, 1_000))',
-        '"scheduler_horizon": 20_000',
+        '30_195 if variant == "c72" else 20_000',
         'RESTORE_FORMAT = "h3wam-c67-budget-milestone-restore-audit-v1"',
         '"demo_manifest_sha256": "b0d611c2',
         '"source_manifest_sha256": "cab8876f',
