@@ -61,4 +61,4 @@ def test_c73_dossier_budget_arithmetic_and_control_are_explicit():
         rel_tol=1e-6,
     )
     assert "C73-s130585 minus C73-s30195" in dossier["effect_preregistration"]["primary_comparison"]
-    assert dossier["decision"]["status"] == "GO_CANARY"
+    assert dossier["decision"]["status"] == "GO_LONG"
