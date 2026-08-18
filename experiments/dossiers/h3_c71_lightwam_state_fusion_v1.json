@@ -1,0 +1,36 @@
+{
+  "experiment_id": "h3_c71_lightwam_state_fusion_v1",
+  "classification": "backbone_port",
+  "hypothesis": "At equal dense expert exposure, the official Light-WAM three-state learned-query direct-action expert over frozen H3 layers 14/27/41 will improve fixed balanced80 normalized and physical action error over the C58 full30 ActionDiT parent without losing language, visual, proprio or gripper response.",
+  "single_variable": "Replace C58's initialized full30 flow ActionDiT with a fresh byte-pinned Light-WAM three-state direct-regression expert. Frozen online INT8 H3, dense data, action normalization, horizon32 and later evaluation stay fixed.",
+  "parent_baseline": "C58 is the evaluation parent and current promoted carrier; C71 does not inherit C58 action weights because the head topology and objective differ.",
+  "references": [
+    {"kind": "upstream_code", "title": "L1ziang/Light-WAM state-fusion action expert", "locator": "third_party/Light-WAM/src/lightwam/models/wan22/state_fusion_action_expert.py", "revision": "b2785f66e13fd9987e94ae1ecc1c441d5059c9ae", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "C58 frozen online INT8 H3 boundary", "locator": "src/fastwam/models/h3wam/c58_online_training.py", "revision": "current immutable source snapshot", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "three state taps and shallow action head", "paper": "Use selected intermediate video states for action decoding.", "upstream_code": "Wan blocks 8/16/24, learned-query pooling, one residual trunk block.", "local": "H3 relative-depth layers 14/27/41, V states, same upstream class.", "status": "INTENTIONAL_DEVIATION", "evidence": ["src/fastwam/models/h3wam/lightwam_state_fusion.py"], "rationale": "H3 is the requested backbone and exposes K/V rather than Light-WAM adapter hidden states."}],
+    "data": [{"field": "dense LIBERO windows", "paper": "LeRobot demonstrations paired with video states.", "upstream_code": "Dense action chunks with video inputs.", "local": "C58 v7 episode-uniform train manifest, online H3, no disk K/V input.", "status": "EQUIVALENT", "evidence": ["src/fastwam/models/h3wam/c58_online_training.py"], "rationale": "Reuses the audited dense data boundary."}],
+    "action": [{"field": "direct horizon32 absolute 7D regression", "paper": "Direct action prediction.", "upstream_code": "StateFusionActionExpert emits one action per horizon position.", "local": "Masked MSE on normalized 7D horizon32 chunks.", "status": "EQUIVALENT", "evidence": ["scripts/h3wam/probe_c71_lightwam_online.py"], "rationale": "No diffusion timestep or noisy action is consumed."}],
+    "objective": [{"field": "full-horizon masked action MSE", "paper": "Action decoding from video representations.", "upstream_code": "Launcher also applies an early-step weighting outside the expert.", "local": "Full32 uniform weight for the first parent comparison.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/probe_c71_lightwam_online.py"], "rationale": "Prefix weighting is held for a later single-variable ablation."}],
+    "optimization": [{"field": "current release", "paper": "Long multi-GPU training.", "upstream_code": "150k steps, default 4x16 global batch.", "local": "Only one real batch forward/backward, zero optimizer steps and no checkpoint until measured feasibility passes.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/launch_c71_lightwam_online_probe.sh"], "rationale": "This release is mechanical only."}],
+    "evaluation": [{"field": "promotion path", "paper": "Policy effectiveness requires task execution.", "upstream_code": "Held-out and simulator evaluation.", "local": "Future fixed balanced80 against C58, then fresh paired LIBERO only after offline gates.", "status": "EQUIVALENT", "evidence": ["docs/H3_WAM_PHASE_REVIEW_2026-08-17.md"], "rationale": "No training loss selects a winner."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Light-WAM commit and source-file SHA are byte-pinned; immutable snapshot required."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["CPU tests cover mapping, direct regression, sensitivity, gradients, anti-alias and strict restore."]},
+    "data_contract": {"status": "PASS", "evidence": ["C58 online dataset contract reused unchanged."]},
+    "action_contract": {"status": "PASS", "evidence": ["Masked normalized 7D horizon32 regression is explicit."]},
+    "objective_contract": {"status": "PASS", "evidence": ["No future input and no diffusion target."]},
+    "optimization_contract": {"status": "FAIL", "evidence": ["No optimizer canary or long-run budget is released."]},
+    "evaluation_contract": {"status": "FAIL", "evidence": ["Trainer and fixed balanced80 adapter do not exist yet."]},
+    "gradient_path": {"status": "FAIL", "evidence": ["Pending real A800 probe."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["Pending real A800 probe."]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["Probe intentionally writes no checkpoint."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C58 is the fixed comparison parent."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["No held-out result."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["No rollout."]}
+  },
+  "budget": {"gpu_count": 1, "global_batch": 1, "optimizer_steps": 0, "training_samples": 0, "effective_epochs": 0.0, "checkpoint_interval": null, "estimated_hours": null, "projected_checkpoint_storage_bytes": 0},
+  "decision": {"status": "GO_PROBE_ONLY", "rationale": "The source and CPU architecture contracts pass. Run exactly one non-retained real A800 forward/backward to measure feasibility; do not release training from this dossier.", "launch_command": "C71_SOURCE_SNAPSHOT=<immutable snapshot> C71_SOURCE_FREEZE_SHA256=<reviewed SHA> bash scripts/h3wam/launch_c71_lightwam_online_probe.sh"}
+}

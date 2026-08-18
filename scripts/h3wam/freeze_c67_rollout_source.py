@@ -32,6 +32,10 @@ PINNED_GIT_REPOSITORIES = {
         "commit": "618a6c16868699b6d4138941de6a863589ac00dd",
         "source": "ignored_external_git_repository",
     },
+    "third_party/Light-WAM": {
+        "commit": "b2785f66e13fd9987e94ae1ecc1c441d5059c9ae",
+        "source": "ignored_external_git_repository",
+    },
 }
 PINNED_DIRECTORY_SOURCES = {
     "third_party/diffusers_h3": "src/diffusers/__init__.py",
@@ -73,18 +77,22 @@ DYNAMIC_EXECUTION_FILES = (
     "scripts/h3wam/audit_c67_final_evidence.py",
     "scripts/h3wam/watch_c67_final_evidence_audit.sh",
     "scripts/h3wam/probe_c56b_fact_online.py",
+    "scripts/h3wam/probe_c71_lightwam_online.py",
+    "scripts/h3wam/launch_c71_lightwam_online_probe.sh",
     "scripts/h3wam/fit_c56b_fact_online_target_norm.py",
     "src/fastwam/models/h3wam/fact_layerwise_tower.py",
     "src/fastwam/models/h3wam/fact_online_data.py",
     "src/fastwam/models/h3wam/c58_online_training.py",
     "src/fastwam/models/h3wam/fastwam_full_tower.py",
     "src/fastwam/models/h3wam/starwam_feature_action.py",
+    "src/fastwam/models/h3wam/lightwam_state_fusion.py",
     "third_party/FastWAM/src/fastwam/models/wan22/helpers/gradient.py",
     "third_party/FastWAM/src/fastwam/models/wan22/wan_video_dit.py",
     "third_party/FastWAM/src/fastwam/models/wan22/action_dit.py",
     "third_party/StarWAM/starwam/modules/action_dit.py",
     "third_party/StarWAM/starwam/modules/wan_block.py",
     "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py",
+    "third_party/Light-WAM/src/lightwam/models/wan22/state_fusion_action_expert.py",
     "third_party/diffusers_h3/src/diffusers/__init__.py",
     "third_party/diffusers_h3/src/diffusers/modular_pipelines/minimax_h3/before_denoise.py",
     "third_party/diffusers_h3/src/diffusers/modular_pipelines/minimax_h3/encoders.py",
@@ -344,12 +352,16 @@ def freeze(
                 "fastwam_source_root": (
                     "third_party/FastWAM/src/fastwam/models/wan22"
                 ),
+                "lightwam_source_root": (
+                    "third_party/Light-WAM/src/lightwam/models/wan22"
+                ),
             },
             "claim_boundary": (
                 "Freezes every superproject byte, every tracked byte from pinned "
-                "StarWAM/FastWAM/FACT commits, the complete supplied diffusers_h3 "
-                "source tree, and all known runtime/dynamic import targets. Python "
-                "wheels, model bytes, and datasets are separately content-gated."
+                "StarWAM/FastWAM/FACT/Light-WAM commits, the complete supplied "
+                "diffusers_h3 source tree, and all known runtime/dynamic import "
+                "targets. Python wheels, model bytes, and datasets are separately "
+                "content-gated."
             ),
         }
         (staging / MANIFEST_NAME).write_text(

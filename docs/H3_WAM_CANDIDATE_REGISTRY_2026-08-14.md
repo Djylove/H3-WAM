@@ -590,4 +590,5 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
 - **当前机械证据**：源码pin/default-off、direct-regression noise/timestep invariance、三层visual与proprio
   sensitivity、query/proprio/output梯度、cache anti-alias和strict restore共`6/6` CPU测试PASS。训练吞吐、
   显存和真实GB仍为`UNKNOWN`，因此当前仅完成`SOURCE_GATE/MECHANICAL_MODULE_GATE`，效果状态
-  `NOT_EVIDENCE_READY`；未创建训练checkpoint，也未启动云端canary。
+  `NOT_EVIDENCE_READY`；新增真实A800单批次探针与dossier，但探针严格为零optimizer step、零checkpoint，
+  只有真实报告通过后才补trainer/checkpoint/evaluator合同。
