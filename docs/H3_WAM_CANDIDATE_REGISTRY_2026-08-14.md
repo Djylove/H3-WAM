@@ -588,7 +588,10 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   首个端口保留全32步监督，后续若需要逐项建立父对照。C71不继承C58动作权重，C58只作为统一数据/eval
   baseline。
 - **当前机械证据**：源码pin/default-off、direct-regression noise/timestep invariance、三层visual与proprio
-  sensitivity、query/proprio/output梯度、cache anti-alias和strict restore共`6/6` CPU测试PASS。训练吞吐、
-  显存和真实GB仍为`UNKNOWN`，因此当前仅完成`SOURCE_GATE/MECHANICAL_MODULE_GATE`，效果状态
-  `NOT_EVIDENCE_READY`；新增真实A800单批次探针与dossier，但探针严格为零optimizer step、零checkpoint，
-  只有真实报告通过后才补trainer/checkpoint/evaluator合同。
+  sensitivity、query/proprio/output梯度、cache anti-alias和strict restore共`6/6` CPU测试PASS。真实A800探针
+  又在注册dense样本上通过全部9项门：冻结INT8 H3、精确`14/27/41`三层、finite/nonconstant output、六组
+  gradient path为正且无future input。可训练head为`1,017,633,335`参数，峰值allocated/reserved为
+  `24.58/25.26 GiB`，H3在线抽取`7.882s`、head前反向`0.234s`。报告SHA256为
+  `dce218d67876bfa758979829f06fe46c07990cf84d40becba5dbfc17168d27d7`。
+- 探针仍严格为`0 optimizer steps / 0 training samples / 0 checkpoint / PROBE_ONLY`；因此只放行trainer、
+  strict checkpoint和fixed balanced80 evaluator的实现审计，不放行长训，不改变`NOT_EVIDENCE_READY`。
