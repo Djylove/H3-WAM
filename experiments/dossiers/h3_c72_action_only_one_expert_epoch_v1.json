@@ -110,9 +110,9 @@
     "objective_contract": {"status": "PASS", "evidence": ["Unchanged C69 [10,0,0,0] objective and auxiliary freeze."]},
     "optimization_contract": {"status": "PASS", "evidence": ["30195 steps/horizon, 1000-step cadence plus exact final endpoint, sample exposures, wall clock and storage are preregistered."]},
     "evaluation_contract": {"status": "PASS", "evidence": ["Internal C72-s20k control is separated from external C69 champion promotion."]},
-    "gradient_path": {"status": "PASS", "evidence": ["C72 uses the byte-identical C69 action-only forward/loss/parameter graph; C69 retained finite positive gradients in all 30 shared blocks for all 20000 optimizer steps. The changed scheduler horizon cannot alter graph reachability; the C72 canary must reconfirm finite nonzero gradients under the new resolved schedule before long release."]},
-    "smoke_finite": {"status": "FAIL", "evidence": ["Pending real ten-step C72 canary."]},
-    "checkpoint_restore": {"status": "FAIL", "evidence": ["Pending independent C72 canary restore."]},
+    "gradient_path": {"status": "PASS", "evidence": ["The real eight-rank C72 canary retained finite positive gradients in all 30 shared blocks for all ten steps; minimum mean-across-ranks block norm was 0.1885728985. C69 additionally established the identical graph over 20000 optimizer steps."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Ten real eight-rank optimizer steps were finite under scheduler_horizon=30195; wall_seconds=40.9675, peak reserved bytes=57426313216, zero future-target leak."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Independent fresh-process restore of canary checkpoint SHA256 b43f1122678b895f30cf4862de538df09e2f5cadd0b83868b6c35d224a112357 had restore_max_abs=0."]},
     "parent_baseline": {"status": "PASS", "evidence": ["Fixed C58b s10000 SHA256 and READY marker; promoted C69 direct paired680 evidence frozen."]},
     "mechanism_signal": {"status": "FAIL", "evidence": ["Training not started; budget effect unproven."]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["Training not started; no C72 rollout claim."]}
@@ -156,9 +156,9 @@
     ]
   },
   "decision": {
-    "status": "GO_CANARY",
+    "status": "GO_LONG",
     "effect_status": "NOT_EVIDENCE_READY",
-    "rationale": "All source/data/action/objective/optimization/evaluation contracts are fixed. A real eight-rank ten-step run must still prove the changed scheduler horizon, finite gradients and strict restore before long training is released.",
-    "launch_command": "C72_SOURCE_SNAPSHOT=<readonly_snapshot> C72_SOURCE_FREEZE_SHA256=<sha256> bash scripts/h3wam/launch_c72_action_only_one_expert_epoch_canary_8gpu.sh"
+    "rationale": "All source/data/action/objective/optimization/evaluation contracts are fixed and the real eight-rank C72 canary passed every mechanical, gradient, no-leak and exact-restore gate. This releases only the preregistered 30195-step training budget; no action or LIBERO effect is yet established.",
+    "launch_command": "C72_SOURCE_SNAPSHOT=<readonly_long_snapshot> C72_SOURCE_FREEZE_SHA256=<sha256> C72_RELEASE_FILE=<hash_bound_release.json> C72_CANARY_GO_LONG=/mnt/h3-wam/outputs/c72-action-only-one-expert-epoch-v1/canary10-v1/GO_LONG.json bash scripts/h3wam/launch_c72_action_only_one_expert_epoch_30195_8gpu.sh"
   }
 }

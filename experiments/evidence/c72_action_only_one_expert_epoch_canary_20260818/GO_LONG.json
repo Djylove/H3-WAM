@@ -1,0 +1,21 @@
+{
+  "format": "h3wam-c72-action-only-one-expert-epoch-canary-v1",
+  "status": "GO_C72_LONG",
+  "permission": "MECHANICAL_PERMISSION_ONLY",
+  "effect_status": "NOT_EVIDENCE_READY",
+  "gate": {
+    "ten_finite_steps": true,
+    "one_expert_epoch_schedule": true,
+    "matched_rank_mixture": true,
+    "action_only_objective": true,
+    "auxiliary_heads_frozen": true,
+    "all_30_global_shared_gradients": true,
+    "future_no_leak": true,
+    "strict_restore": true,
+    "frozen_online_h3": true
+  },
+  "checkpoint": "/mnt/h3-wam/outputs/c72-action-only-one-expert-epoch-v1/canary10-v1/c72_action_only_s10.pt",
+  "checkpoint_sha256": "b43f1122678b895f30cf4862de538df09e2f5cadd0b83868b6c35d224a112357",
+  "source_freeze_sha256": "15dba625c1d22b22bf783eb9a9227976415bbf007fbbaecb2dffb4a35fb551d2",
+  "claim_boundary": "Optimizer/DDP/schedule/freeze/restore proof only; no action or LIBERO effect claim."
+}

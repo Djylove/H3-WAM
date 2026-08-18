@@ -1,0 +1,26 @@
+{
+  "format": "h3wam-c72-canary-evidence-manifest-v1",
+  "status": "PASS_C72_REAL_EIGHT_RANK_CANARY",
+  "permission": "GO_LONG_TRAINING_ONLY",
+  "effect_status": "NOT_EVIDENCE_READY",
+  "source_commit": "03274595efdb43078d330458c138db1ceb34274c",
+  "source_freeze_sha256": "15dba625c1d22b22bf783eb9a9227976415bbf007fbbaecb2dffb4a35fb551d2",
+  "checkpoint_sha256": "b43f1122678b895f30cf4862de538df09e2f5cadd0b83868b6c35d224a112357",
+  "files": {
+    "GO_LONG.json": "57d49f5d073e5d20cab9fd51de6e719fcf09d99b46b06dcbc7d2d75f618ecf76",
+    "launcher.log": "e052bf2dda282f44c094cf308a5e04525ebe50306cc2024e2959368171b7841c",
+    "restore.json": "e80dfd977f6504e38a0b5b9c02f6718df70e97310e7652305a3bb71a1e164982",
+    "train.json": "c90d5a2182731b8ef91838abe6ba171c3065cf89ba1130ce42cfe29407f6b43d"
+  },
+  "metrics": {
+    "completed_steps": 10,
+    "world_size": 8,
+    "scheduler_horizon": 30195,
+    "wall_seconds": 40.967533859889954,
+    "max_peak_reserved_bytes": 57426313216,
+    "minimum_block_gradient": 0.18857289850711823,
+    "restore_max_abs": 0.0,
+    "future_target_leak_abs": 0.0
+  },
+  "claim_boundary": "This is mechanical permission for the preregistered long run, not evidence that C72 improves actions or LIBERO success."
+}

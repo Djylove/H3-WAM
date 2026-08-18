@@ -1,0 +1,8 @@
+{
+  "format": "h3wam-c56b-fact-online-training-v1",
+  "status": "PASS_C56B_STRICT_RESTORE",
+  "restore_max_abs": 0.0,
+  "checkpoint": "/mnt/h3-wam/outputs/c72-action-only-one-expert-epoch-v1/canary10-v1/c72_action_only_s10.pt",
+  "loaded_checkpoint": "/mnt/h3-wam/outputs/c72-action-only-one-expert-epoch-v1/canary10-v1/c72_action_only_s10.pt",
+  "effect_status": "NOT_EVIDENCE_READY"
+}
