@@ -1480,3 +1480,23 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `0bc03a2d8442e9f70ae058271dce830fc08b45c7be554a07f91a992a3d1a2546`，评测节点30907 PID `27724`。
   八个worker只读消费31个里程碑，报告physical/normalized、gripper、visual shuffle和language sensitivity；
   preview不得选择checkpoint、提前停止训练或授权LIBERO。
+
+### 2026-08-18 — C72 s1000 控制完整性与 C73 三个 expert epoch 预注册
+
+- C72 已完成 s1000 checkpoint、train report 和独立 strict restore；checkpoint SHA256 为
+  `219621556623c6af059384ab19748122372860cae8f720b1dadd568df540d542`，restore max-abs 为0，训练中
+  30个共享块梯度均为正，future-target leak为0。固定 balanced80 的 normalized/physical MSE 为
+  `0.05884736/0.02572284`，gripper macro-F1为`0.93940781`，四项conditioning gate全过。
+- 相同s1000的历史C69为`0.058800/0.025693/0.939408`。两条fresh轨迹在首个里程碑几乎一致，支持
+  数据、初始化、动作合同和评测协议对齐；它只证明控制完整性，不证明延长预算有效，C72仍为
+  `GO_LONG / NOT_EVIDENCE_READY`。
+- 用户要求争取训练3个epoch。为避免修改正在运行的C72 scheduler，新增C73 fresh预算消融，并把epoch
+  明确定义为与动作能力直接相关的累计expert-window覆盖：C58b父模型已有80000 expert samples，C73按
+  每步4个expert样本训练130585步，新增522340个，累计`602340/200779=3.000015`个expert epoch。
+- C73固定8×A800、global batch8、130585 optimizer steps、1044680混合样本；相对218125个混合池唯一
+  window为`4.789364` effective epochs。里程碑为每1000步、精确s30195和s130585，共132个checkpoint，
+  预计约1.463TiB；按C72实测训练与每点strict restore外推约58小时。内部预算归因固定比较同一轨迹的
+  s30195与s130585；C72/C69仅作外部锚点，不能替代该内部对照。
+- 当前C73仅`GO_CANARY / NOT_EVIDENCE_READY`。只有真实8-rank十步在scheduler horizon 130585下通过
+  finite gradient、30层梯度、零泄漏和exact restore，才更新为`GO_LONG`并在空闲节点启动；终点仍需
+  conditioning-safe balanced80与固定paired LIBERO才能声明有效。
