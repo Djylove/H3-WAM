@@ -132,6 +132,8 @@
     "result": "experiments/evidence/c69_vs_c58b_direct_paired680_20260818/RESULTS_DIRECT.json",
     "result_sha256": "ab78350825ff9de66e46154b6a6853695dd15bf0c4ebe5353041ef6ed79bf0f8",
     "pair_evidence": "experiments/evidence/c69_vs_c58b_direct_paired680_20260818/PAIR_EVIDENCE_DIRECT.jsonl",
-    "pair_evidence_sha256": "2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2"
+    "pair_evidence_sha256": "2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2",
+    "actual_environment_steps": 377965,
+    "actual_model_forwards": 475190
   }
 }

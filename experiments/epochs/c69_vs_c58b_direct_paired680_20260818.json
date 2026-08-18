@@ -78,7 +78,9 @@
       "artifact_manifest_sha256": "2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2",
       "self_score_ignored": true,
       "verified_outcome": "success",
-      "metric": 0.4338235294117647
+      "metric": 0.4338235294117647,
+      "actual_environment_steps": 194678,
+      "actual_model_forwards": 244580
     },
     {
       "candidate_id": "c69-action-only-s20000",
@@ -87,7 +89,9 @@
       "artifact_manifest_sha256": "2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2",
       "self_score_ignored": true,
       "verified_outcome": "success",
-      "metric": 0.4970588235294118
+      "metric": 0.4970588235294118,
+      "actual_environment_steps": 183287,
+      "actual_model_forwards": 230610
     }
   ],
   "selection": [

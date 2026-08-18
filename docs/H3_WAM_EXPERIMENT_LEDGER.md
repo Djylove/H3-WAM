@@ -1442,6 +1442,9 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `optimizer_steps/training_samples/effective_epochs=0`，不改权重。
 - 五个 shard 完成 `1360/1360` 结果和轨迹并各自写入完成标记；watcher 随后核验 checkpoint、授权、
   结果合同、680 对首状态摘要和对象关节一致性，发布 `PASS_DIRECT_PAIRED_680_EVIDENCE / PROMOTE_C69`。
+- 实际执行共 `377965` 个环境 step、`47519` 次 replan、`475190` 次模型 forward；其中 C69 为
+  `183287` step/`230610` forward，C58b 为 `194678` step/`244580` forward。预注册的 `680000`
+  forward 是 max400/replan8/10-eval 的资源上限，不冒充实际消耗。
 - C69 为 `338/680=49.706%`，C58b 为 `295/680=43.382%`，绝对提升 `6.3235pp`，95% 配对差区间
   `[3.2671pp, 9.3799pp]`；discordant 为 C69 胜79、C58b胜36，单侧 exact McNemar
   `p=3.758229e-5`。suite 差分别为 Spatial `+12.941pp`、Object `+10.588pp`、Goal `-2.353pp`、
