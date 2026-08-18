@@ -153,22 +153,33 @@ def args() -> argparse.Namespace:
 def rank_category(schedule_name: str, rank: int, absolute_step: int) -> str:
     """Resolve one auditable stream identity for a rank and absolute step."""
 
-    if rank not in range(8) or absolute_step <= 0:
-        raise ValueError("rank schedule requires rank 0..7 and positive absolute step")
+    if rank < 0 or absolute_step <= 0:
+        raise ValueError("rank schedule requires nonnegative rank and positive absolute step")
+    group_rank = rank % len(RANK_CATEGORIES)
     if schedule_name == DEFAULT_RANK_SCHEDULE:
-        return RANK_CATEGORIES[rank]
+        return RANK_CATEGORIES[group_rank]
     if schedule_name == C70_RANK_SCHEDULE:
-        if rank < 6:
+        if group_rank < 6:
             return "expert_demo"
-        if rank == 6:
+        if group_rank == 6:
             return "success_rollout"
         return "observational_failure" if absolute_step % 2 else "causal_failure"
     raise ValueError(f"unknown rank schedule: {schedule_name}")
 
 
-def rank_schedule_contract(schedule_name: str) -> dict[str, Any]:
+def rank_schedule_contract(schedule_name: str, world_size: int = 8) -> dict[str, Any]:
+    if world_size <= 0 or world_size % len(RANK_CATEGORIES):
+        raise ValueError("world size must be a positive multiple of the eight-rank schedule")
+    repetitions = world_size // len(RANK_CATEGORIES)
     if schedule_name == DEFAULT_RANK_SCHEDULE:
-        return {"rank_categories": list(RANK_CATEGORIES)}
+        contract = {"rank_categories": list(RANK_CATEGORIES) * repetitions}
+        if repetitions > 1:
+            contract["rank_schedule"] = {
+                "name": DEFAULT_RANK_SCHEDULE,
+                "group_size": len(RANK_CATEGORIES),
+                "group_repetitions": repetitions,
+            }
+        return contract
     if schedule_name != C70_RANK_SCHEDULE:
         raise ValueError(f"unknown rank schedule: {schedule_name}")
     return {
@@ -176,9 +187,11 @@ def rank_schedule_contract(schedule_name: str) -> dict[str, Any]:
             "expert_demo", "expert_demo", "expert_demo", "expert_demo",
             "expert_demo", "expert_demo", "success_rollout",
             "alternating_observational_failure_causal_failure",
-        ],
+        ] * repetitions,
         "rank_schedule": {
             "name": C70_RANK_SCHEDULE,
+            "group_size": len(RANK_CATEGORIES),
+            "group_repetitions": repetitions,
             "period_steps": 2,
             "odd_step_rank7": "observational_failure",
             "even_step_rank7": "causal_failure",
@@ -439,8 +452,8 @@ def main() -> None:
     a = args()
     rank, world = int(os.environ.get("RANK", 0)), int(os.environ.get("WORLD_SIZE", 1))
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    if world != 8 or not torch.cuda.is_available():
-        raise RuntimeError("C56b training requires exactly eight CUDA ranks")
+    if world <= 0 or world % 8 or not torch.cuda.is_available():
+        raise RuntimeError("C56b training requires a positive multiple of eight CUDA ranks")
     if a.restore_check_only and a.load_checkpoint is None:
         raise ValueError("restore-check-only requires load-checkpoint")
     if min(a.steps, a.base_lr, a.action_lr, a.max_grad_norm) <= 0:
@@ -525,7 +538,7 @@ def main() -> None:
     contract = {
         "format": FORMAT, "classification": "FACT_full_backbone_port_online_frozen_int8_h3",
         "objective_mode": a.objective_mode,
-        **rank_schedule_contract(a.rank_schedule),
+        **rank_schedule_contract(a.rank_schedule, world),
         "loss_weights": (
             [10.0, 1.0, 0.4, 0.4]
             if a.objective_mode == "fact_joint"

@@ -1,0 +1,164 @@
+{
+  "experiment_id": "h3_c74_action_only_multinode_three_expert_epoch_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Under the time-constrained 32-GPU batch-scaling recipe, a fresh action-only trajectory from fixed C58b will improve conditioning-safe action metrics from its own cumulative-one-expert-epoch checkpoint s7549 to the cumulative-three-expert-epoch endpoint s32647, then exceed C69-s20000 in fixed paired LIBERO; otherwise this scaled recipe does not convert three expert-window exposures into policy gain.",
+  "single_variable": "C74 is a time-constrained distributed optimization recipe: four identical 4/2/1/1 rank groups form global batch32, steps fall to32647, LR is linearly scaled4x and warmup steps divide4 to preserve warmup samples. These linked changes are an intentional batch-scaling deviation, not an exact causal continuation of C72. The internal budget comparison is C74-s7549 versus C74-s32647 under one fixed recipe.",
+  "parent_baseline": "Fixed promoted C58B s10000 checkpoint SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541. C69-s20000 SHA256 20914729d340b05768ec99e152cc026313d5a0dab064c963df90ac8184d8a12a is the current champion for final promotion only.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FACT: Failure-Aware Causal Training for World-Action Models",
+      "locator": "https://arxiv.org/abs/2608.10232",
+      "revision": "arXiv:2608.10232",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "FastWAM official repository",
+      "locator": "https://github.com/yuantianyuan01/FastWAM",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "Bariona/FACT official repository",
+      "locator": "https://github.com/Bariona/FACT",
+      "revision": "618a6c16868699b6d4138941de6a863589ac00dd",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "WLA paired action and image-action recipes",
+      "locator": "https://github.com/SJTU-DENG-Lab/WLA",
+      "revision": "155ac94eaca8b3d1ae0789ae298fc55e37936081",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3-WAM C69 promoted champion and C74 budget ablation",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "Resolved by SOURCE_FREEZE.git_commit at launch",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [{
+      "field": "frozen INT8 H3 layerwise carrier plus full 30-layer action tower",
+      "paper": "World/action systems may freeze or train the visual world carrier, but policy attribution requires an unchanged carrier within the comparison.",
+      "upstream_code": "FastWAM uses the full ActionDiT tower; FACT shares action and consequence tracks.",
+      "local": "C74 reuses train_c56b_fact_online.py, H3FACTLayerwiseTowerPolicy, all 30 selected H3 carrier layers and online frozen INT8 H3 exactly as C69.",
+      "status": "EXACT",
+      "evidence": ["scripts/h3wam/train_c56b_fact_online.py", "scripts/h3wam/launch_c74_action_only_multinode_three_expert_epoch_32647_32gpu.sh"],
+      "rationale": "No architecture, trainable-parameter or H3 execution change is allowed."
+    }],
+    "data": [{
+      "field": "dense multisuite windows and deterministic 4/2/1/1 rank schedule",
+      "paper": "Budget comparisons require the same sample distribution and sufficient contact-state coverage.",
+      "upstream_code": "FACT mixes expert/success/failure episodes and masks failed action imitation.",
+      "local": "C74 keeps all C69 manifests, hashes, seed, per-absolute-step selection, expert/success/failure pools and failure action masks unchanged.",
+      "status": "INTENTIONAL_DEVIATION",
+      "evidence": ["scripts/h3wam/train_c56b_fact_online.py:MixedPools.item", "docs/H3_WAM_COMPLETE_EXPERIMENT_REVIEW_2026-08-18.md"],
+      "rationale": "Each eight-rank group preserves the exact stream ratio, while four groups change global batch and absolute rank identities; this is audited as batch scaling, not an identical sample order."
+    }],
+    "action": [{
+      "field": "absolute 7D horizon32 shifted-flow contract",
+      "paper": "Training and deployment action contracts must match.",
+      "upstream_code": "FastWAM uses shifted flow action chunks.",
+      "local": "C74 reuses C69 target normalization, absolute7D semantics, padding, shift5, horizon32, gripper decode and rollout evaluator.",
+      "status": "EXACT",
+      "evidence": ["src/fastwam/models/h3wam/fact_online_data.py", "scripts/h3wam/train_c56b_fact_online.py"],
+      "rationale": "No deployment-contract variable is introduced."
+    }],
+    "objective": [{
+      "field": "action-only objective and frozen consequence-only heads",
+      "paper": "An action-only control isolates action optimization from future-state/value supervision.",
+      "upstream_code": "WLA supplies paired action/image-action recipes; FACT supplies the consequence objectives already rejected by C67/C69 attribution.",
+      "local": "Weight vector [10,0,0,0], global action normalization, joint forward topology and six frozen consequence encoder/decoder modules remain identical to C69.",
+      "status": "EXACT",
+      "evidence": ["tests/test_c56b_fact_online_trainer.py", "experiments/dossiers/h3_c69_matched_action_only_v1.json"],
+      "rationale": "No new loss or head is added."
+    }],
+    "optimization": [{
+      "field": "fresh multinode-three-expert-epoch budget trajectory",
+      "paper": "Learning curves and completed exposure, rather than an arbitrary short step count, should resolve undertraining.",
+      "upstream_code": "FastWAM and WLA official launchers train full distributed schedules rather than treating smoke budgets as effect evidence.",
+      "local": "Four nodes and 32 A800 ranks repeat the 4/2/1/1 schedule four times. Global batch is32; base/action LR are8e-5/8e-4 by linear scaling; warmup125 preserves 4000 warmup samples; horizon is32647; AdamW and seed stay fixed.",
+      "status": "INTENTIONAL_DEVIATION",
+      "evidence": ["scripts/h3wam/launch_c72_action_only_one_expert_epoch_30195_8gpu.sh", "scripts/h3wam/launch_c74_action_only_multinode_three_expert_epoch_32647_32gpu.sh"],
+      "rationale": "32647 steps at16 expert ranks add522352 expert samples; with the C58b parent's80000 this reaches602352/200779=3.000075 expert-window epochs. Linear LR scaling is an explicit approximation whose effect must be measured."
+    }],
+    "evaluation": [{
+      "field": "internal learning curve then fixed paired champion rollout",
+      "paper": "Closed-loop task success decides whether additional optimization improves a robot policy.",
+      "upstream_code": "Official WAM projects report simulator rollout rather than train loss alone.",
+      "local": "C74-s7549 and C74-s32647 first receive identical episode-disjoint conditioning diagnostics. Only a safe improving endpoint proceeds to the same paired LIBERO contract used to promote C69.",
+      "status": "EQUIVALENT",
+      "evidence": ["docs/C69_C58B_DIRECT_PROMOTION_RECHECK_2026-08-18.md", "experiments/dossiers/h3_c69_vs_c58b_direct_paired680_v1.json"],
+      "rationale": "C72/C69 are external anchors only; they do not substitute for C74-s7549 because batch and scheduler contracts differ."
+    }]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Pinned FastWAM 45d8e145, FACT 618a6c16, frozen C58b/C69 SHA256 identities; C74 execution requires a complete read-only commit snapshot."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Unchanged C69 trainer/model path; static tests preregister exact action-only topology."]},
+    "data_contract": {"status": "PASS", "evidence": ["Existing C69 dense manifests and all data hashes are bound by the long-run release."]},
+    "action_contract": {"status": "PASS", "evidence": ["Unchanged absolute7D horizon32 shift5 normalization and rollout path."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Unchanged C69 [10,0,0,0] objective and auxiliary freeze."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["32647 steps/horizon, 1000-step cadence plus exact final endpoint, sample exposures, wall clock and storage are preregistered."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Internal C74-s7549 control is separated from external C72/C69 anchors and final champion promotion."]},
+    "gradient_path": {"status": "PASS", "evidence": ["C72 established the identical frozen-H3/action-only graph with finite positive gradients in all 30 shared blocks; C74 canary must separately validate the longer scheduler horizon before GO_LONG."]},
+    "smoke_finite": {"status": "FAIL", "evidence": ["C74 real 32-rank/four-node canary has not run yet."]},
+    "checkpoint_restore": {"status": "FAIL", "evidence": ["C74 four-node scheduler-horizon=32647 canary checkpoint has not been restored yet."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["Fixed C58b s10000 SHA256 and READY marker; promoted C69 direct paired680 evidence frozen."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Training not started; budget effect unproven."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Training not started; no C74 rollout claim."]}
+  },
+  "budget": {
+    "mode": "training",
+    "world_size": 32,
+    "global_batch": 32,
+    "optimizer_steps": 32647,
+    "training_samples": 1044704,
+    "unique_windows": 218125,
+    "effective_epochs": 4.789474,
+    "expert_unique_windows": 200779,
+    "expert_training_samples": 522352,
+    "incremental_expert_effective_epochs": 2.601627,
+    "cumulative_expert_effective_epochs_with_c58_parent": 3.000075,
+    "success_training_samples": 261176,
+    "observational_failure_training_samples": 130588,
+    "causal_failure_training_samples": 130588,
+    "gpu_count": 32,
+    "checkpoint_interval": 1000,
+    "checkpoint_count": 34,
+    "projected_checkpoint_storage_bytes": 414373653498,
+    "estimated_training_invocation_hours": 13.0,
+    "estimated_hours": 15.5
+  },
+  "effect_preregistration": {
+    "primary_comparison": "C74-s32647 minus C74-s7549 under the same fresh 32-GPU batch-scaling schedule",
+    "offline_gate": "No physical-action, gripper macro-F1, visual shuffle sensitivity or wrong-language sensitivity regression beyond the fixed C69 safety tolerance; at least one preregistered action metric must improve without conditioning collapse.",
+    "promotion_comparison": "If the internal gate passes, compare the selected fixed C74 endpoint directly against promoted C69-s20000 using fresh paired LIBERO initial states and the unchanged evaluator.",
+    "rollout_gate": {
+      "absolute_gain": 0.03,
+      "net_wins": 20,
+      "one_sided_exact_mcnemar_p": 0.05,
+      "suite_regression_floor": -0.03
+    },
+    "stop_conditions": [
+      "Any NaN/nonfinite gradient, restore mismatch, source/data hash drift or action-contract drift.",
+      "Conditioning-collapse gate fails at the internal s7549 or s32647 endpoint.",
+      "After completed s32647 evaluation, the internal learning curve is saturated or worse; do not extend merely because more steps are available."
+    ]
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "effect_status": "NOT_EVIDENCE_READY",
+    "rationale": "Source/data/action/objective and the explicit batch-scaling optimization contract are fixed. Only a ten-step real 32-rank/four-node canary is released; GO_LONG additionally requires finite gradients, zero future leak, exact restore and measured throughput compatible with the remaining 16-hour window.",
+    "launch_command": "C74_SOURCE_SNAPSHOT=<readonly_canary_snapshot> C74_SOURCE_FREEZE_SHA256=<sha256> C74_NNODES=4 C74_NODE_RANK=<0..3> C74_MASTER_ADDR=<internal-ip> C74_MASTER_PORT=29574 bash scripts/h3wam/launch_c74_action_only_multinode_three_expert_epoch_canary_32gpu.sh"
+  }
+}
