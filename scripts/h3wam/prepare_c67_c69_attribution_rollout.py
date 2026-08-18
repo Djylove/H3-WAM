@@ -30,7 +30,10 @@ BASE = load_sibling("_c67_c69_rollout_base", "prepare_c67_budget_rollout.py")
 SOURCE = load_sibling("_c67_c69_rollout_source", "freeze_c67_rollout_source.py")
 FORMAT = "h3wam-c67-c69-paired-rollout-authorization-v1"
 SUITES = BASE.SUITES
-TRIALS = tuple(range(50, 67))
+# LIBERO exposes exactly fifty initial states per task.  Trials 33..49 were
+# preregistered for C67's budget rollout but never executed because its offline
+# gate failed, so they remain the only audited fresh 17-trial block.
+TRIALS = tuple(range(33, 50))
 HISTORICAL_C60_DATA_SHA256 = BASE.HISTORICAL_C60_DATA_SHA256
 DATA_ARGUMENTS = BASE.DATA_ARGUMENTS
 CAUSAL_DATA_SHA256 = BASE.CAUSAL_DATA_SHA256

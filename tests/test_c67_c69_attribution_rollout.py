@@ -84,7 +84,7 @@ def test_grid_is_full_fresh_680_pair_benchmark(tmp_path: Path):
     assert len(jobs) == 1_360
     assert len({row["pair_id"] for row in jobs}) == 680
     assert {row["arm"] for row in jobs} == {"c67_fact_joint", "c69_action_only"}
-    assert {row["trials"][0] for row in jobs} == set(range(50, 67))
+    assert {row["trials"][0] for row in jobs} == set(range(33, 50))
     assert {row["suite"] for row in jobs} == set(PREPARE.SUITES)
     assert all(row["milestone"] == 20_000 for row in jobs)
 

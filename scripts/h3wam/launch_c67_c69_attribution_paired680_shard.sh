@@ -84,7 +84,7 @@ if sha(h3.resolve())!="e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615
     raise SystemExit("C67/C69 H3 checkpoint SHA mismatch")
 if sha(manifest_path.resolve())!=auth.get("manifest_sha256") or len(jobs)!=1360:
     raise SystemExit("C67/C69 job manifest mismatch")
-expected={(a,s,t,r) for r in range(50,67) for s in
+expected={(a,s,t,r) for r in range(33,50) for s in
  ("libero_spatial","libero_object","libero_goal","libero_10") for t in range(10)
  for a in ("c67_fact_joint","c69_action_only")}
 actual={(j.get("arm"),j.get("suite"),j.get("tasks",[None])[0],j.get("trials",[None])[0])

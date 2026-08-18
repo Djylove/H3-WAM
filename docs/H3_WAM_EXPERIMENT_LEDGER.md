@@ -1388,7 +1388,10 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 固定s20离线端点非常接近：C67-joint与C69-action-only normalized MSE为`0.0606277/0.0606874`，physical
   MSE为`0.0254389/0.0254129`；C69逐样本赢`44/80` normalized和`45/80` physical。离线结果不宣布赢家，
   只放行`GO_C67_VS_C69_FIXED_S20_PAIRED_LIBERO_ATTRIBUTION`。
-- 新闭环协议固定两臂s20000、四suite×10 tasks×新trial `50..66`，共680初始状态配对/1360个隔离进程；
+- 新闭环协议固定两臂s20000、四suite×10 tasks×仍未实际执行的合法trial `33..49`，共680初始状态配对/
+  1360个隔离进程；LIBERO每任务只有trial `0..49`，因此首次预注册的`50..66`在环境检查阶段fail-close，
+  没有加载策略、产生动作或episode结果；该无效授权独立封存，不复用其空目录。正式协议改用曾为C67预算
+  评测预留、但因C67离线门失败而从未启动的`33..49`。
   每对同环境seed、同policy noise、wait30、max400、replan8、horizon32、10次模型求解。可按pair-id在多A800节点
   分片，但任何shard不读取成功率；全部完成后一次性聚合。该结果只归因FACT consequence objective的增量价值，
   无论支持C67、支持C69或不显著，C58在单独被击败前仍是唯一carrier champion。

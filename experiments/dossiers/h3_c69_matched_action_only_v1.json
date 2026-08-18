@@ -126,6 +126,6 @@
   "decision": {
     "status": "GO_PAIRED_ATTRIBUTION_ROLLOUT",
     "rationale": "C69 completed 20000 steps/160000 samples with 20 strict restores. Fixed-s20 offline attribution retained conditioning and found no endpoint collapse; it authorizes only fresh C67-joint versus C69-action-only paired LIBERO attribution, not promotion.",
-    "launch_command": "Prepare trials50..66 with scripts/h3wam/prepare_c67_c69_attribution_rollout.py from a new immutable snapshot, then launch disjoint pair-id shards with scripts/h3wam/launch_c67_c69_attribution_paired680_shard.sh."
+    "launch_command": "Prepare the still-unexecuted valid LIBERO trials33..49 with scripts/h3wam/prepare_c67_c69_attribution_rollout.py from a new immutable snapshot, then launch disjoint pair-id shards with scripts/h3wam/launch_c67_c69_attribution_paired680_shard.sh."
   }
 }
