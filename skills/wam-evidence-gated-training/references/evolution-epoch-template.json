@@ -1,0 +1,64 @@
+{
+  "format": "wam-evolution-epoch-v1",
+  "epoch_id": "EPOCH_ID",
+  "status": "LOCKED",
+  "hypothesis": "One falsifiable question shared by this cohort.",
+  "classification": "controlled_ablation",
+  "kernel_lock": {
+    "objective_sha256": "REPLACE_64_HEX",
+    "source_tree_sha256": "REPLACE_64_HEX",
+    "data_manifest_sha256": "REPLACE_64_HEX",
+    "action_contract_sha256": "REPLACE_64_HEX",
+    "evaluator_sha256": "REPLACE_64_HEX",
+    "runtime_sha256": "REPLACE_64_HEX",
+    "tool_manifest_sha256": "REPLACE_64_HEX"
+  },
+  "benchmark": {
+    "primary_metric": "paired_closed_loop_success_delta",
+    "direction": "higher",
+    "score_formula": "Deterministic formula or script identity.",
+    "automatic_failures": ["identity drift", "action contract mismatch"],
+    "tie_break": "Pre-registered deterministic tie break.",
+    "self_score_ignored": true
+  },
+  "boundaries": {
+    "kernel_not_candidate_writable": true,
+    "execution_source_immutable": true,
+    "grade_frozen_evidence_only": true,
+    "mutation_after_grade_only": true
+  },
+  "cohort": [
+    {
+      "candidate_id": "parent-control",
+      "parent_candidate_id": null,
+      "genome_signature": "REPLACE_64_HEX",
+      "sole_mutation": "none_control",
+      "dossier": "path/to/control-dossier.json",
+      "budget": {
+        "global_batch": 1,
+        "optimizer_steps": 1,
+        "training_samples": 1,
+        "unique_windows": 1,
+        "effective_epochs": 1.0,
+        "estimated_hours": 1.0
+      }
+    },
+    {
+      "candidate_id": "candidate-a",
+      "parent_candidate_id": "parent-control",
+      "genome_signature": "REPLACE_DIFFERENT_64_HEX",
+      "sole_mutation": "one declared mechanism",
+      "dossier": "path/to/candidate-dossier.json",
+      "budget": {
+        "global_batch": 1,
+        "optimizer_steps": 1,
+        "training_samples": 1,
+        "unique_windows": 1,
+        "effective_epochs": 1.0,
+        "estimated_hours": 1.0
+      }
+    }
+  ],
+  "evidence": [],
+  "selection": []
+}

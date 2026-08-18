@@ -1,4 +1,4 @@
 interface:
   display_name: "WAM 练蛊与证据门禁"
-  short_description: "用开源代码组织淘汰、融合、并行训练并验证 WAM 候选机制"
-  default_prompt: "使用 $wam-evidence-gated-training 组织 WAM 开源方法淘汰赛，审计证据、并行训练并融合胜出机制。"
+  short_description: "用研究 epoch 组织 WAM 淘汰、遗传、融合和闭环验证"
+  default_prompt: "使用 $wam-evidence-gated-training 锁定研究 epoch，组织 WAM 候选淘汰、证据遗传和胜者融合。"

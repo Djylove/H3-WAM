@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate evidence gates before allocating GPU time to a WAM experiment."""
+"""Validate evidence and gates before allocating GPU time to a WAM experiment."""
 
 from __future__ import annotations
 
@@ -10,21 +10,44 @@ from pathlib import Path
 
 
 ALIGNMENT_SECTIONS = (
-    "architecture", "data", "action", "objective", "optimization", "evaluation"
+    "architecture",
+    "data",
+    "action",
+    "objective",
+    "optimization",
+    "evaluation",
 )
 ALIGNMENT_STATUSES = {
-    "EXACT", "EQUIVALENT", "INTENTIONAL_DEVIATION", "MISMATCH", "UNKNOWN"
+    "EXACT",
+    "EQUIVALENT",
+    "INTENTIONAL_DEVIATION",
+    "MISMATCH",
+    "UNKNOWN",
 }
 CANARY_GATES = (
-    "source_identity", "architecture_contract", "data_contract", "action_contract",
-    "objective_contract", "optimization_contract", "evaluation_contract", "gradient_path",
+    "source_identity",
+    "architecture_contract",
+    "data_contract",
+    "action_contract",
+    "objective_contract",
+    "optimization_contract",
+    "evaluation_contract",
+    "gradient_path",
 )
 LONG_GATES = CANARY_GATES + (
-    "smoke_finite", "checkpoint_restore", "parent_baseline",
+    "smoke_finite",
+    "checkpoint_restore",
+    "parent_baseline",
 )
-CLAIM_GATES = LONG_GATES + ("mechanism_signal", "closed_loop_canary")
+CLAIM_GATES = LONG_GATES + (
+    "mechanism_signal",
+    "closed_loop_canary",
+)
 CLASSIFICATIONS = {
-    "reproduction", "backbone_port", "controlled_ablation", "novel_composition"
+    "reproduction",
+    "backbone_port",
+    "controlled_ablation",
+    "novel_composition",
 }
 
 
@@ -38,7 +61,8 @@ def validate(payload: dict, target: str) -> list[str]:
         if not nonempty_text(payload.get(key)):
             errors.append(f"missing non-empty {key}")
 
-    if payload.get("classification") not in CLASSIFICATIONS:
+    classification = payload.get("classification")
+    if classification not in CLASSIFICATIONS:
         errors.append(f"classification must be one of {sorted(CLASSIFICATIONS)}")
 
     references = payload.get("references")
@@ -56,20 +80,22 @@ def validate(payload: dict, target: str) -> list[str]:
         for key in ("kind", "title", "locator", "revision"):
             if not nonempty_text(item.get(key)):
                 errors.append(f"references[{index}] missing {key}")
-    if target == "long" and not any(
-        isinstance(item, dict)
-        and item.get("kind") == "upstream_code"
-        and item.get("official") is True
-        and item.get("revision") != "PAPER_ONLY"
-        for item in references
-    ):
-        errors.append("GO_LONG requires official code at a fixed revision")
+    if target == "claim" and classification == "reproduction":
+        code_backed = any(
+            isinstance(item, dict)
+            and item.get("kind") == "upstream_code"
+            and item.get("official") is True
+            and item.get("revision") != "PAPER_ONLY"
+            for item in references
+        )
+        if not code_backed:
+            errors.append("EVIDENCE_READY reproduction requires official code at a fixed revision")
 
     alignment = payload.get("alignment")
     if not isinstance(alignment, dict):
         errors.append("alignment must be an object")
         alignment = {}
-    high_risk: list[str] = []
+    high_risk = []
     for section in ALIGNMENT_SECTIONS:
         rows = alignment.get(section)
         if not isinstance(rows, list) or not rows:
@@ -112,35 +138,44 @@ def validate(payload: dict, target: str) -> list[str]:
         evidence = gate.get("evidence")
         if not isinstance(evidence, list) or not any(nonempty_text(x) for x in evidence):
             errors.append(f"gate {name} needs evidence")
+
     if high_risk:
         errors.append("unresolved high-risk alignment: " + ", ".join(high_risk))
 
     budget = payload.get("budget")
-    budget_keys = (
-        "global_batch", "optimizer_steps", "training_samples", "unique_windows",
-        "effective_epochs", "gpu_count", "estimated_hours",
-    )
     if not isinstance(budget, dict):
         errors.append("budget must be an object")
     else:
-        for key in budget_keys:
+        mode = budget.get("mode", "training")
+        if mode not in {"training", "evaluation_only"}:
+            errors.append("budget.mode must be training or evaluation_only")
+        for key in ("global_batch", "unique_windows", "gpu_count", "estimated_hours"):
             value = budget.get(key)
-            if (
-                not isinstance(value, (int, float))
-                or isinstance(value, bool)
-                or not math.isfinite(float(value))
-                or float(value) <= 0
-            ):
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value)) or float(value) <= 0:
                 errors.append(f"budget.{key} must be finite and > 0")
-        if all(isinstance(budget.get(key), (int, float)) for key in (
-            "global_batch", "optimizer_steps", "training_samples"
-        )):
+        zeroable = ("optimizer_steps", "training_samples", "effective_epochs")
+        for key in zeroable:
+            value = budget.get(key)
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value)):
+                errors.append(f"budget.{key} must be finite")
+            elif mode == "training" and float(value) <= 0:
+                errors.append(f"budget.{key} must be > 0 for training")
+            elif mode == "evaluation_only" and float(value) != 0:
+                errors.append(f"budget.{key} must be 0 for evaluation_only")
+        if mode == "evaluation_only":
+            model_forwards = budget.get("model_forwards")
+            if (
+                not isinstance(model_forwards, (int, float))
+                or isinstance(model_forwards, bool)
+                or not math.isfinite(float(model_forwards))
+                or float(model_forwards) <= 0
+            ):
+                errors.append("budget.model_forwards must be finite and > 0 for evaluation_only")
+        if mode == "training" and all(isinstance(budget.get(k), (int, float)) for k in ("global_batch", "optimizer_steps", "training_samples")):
             expected = float(budget["global_batch"]) * float(budget["optimizer_steps"])
             actual = float(budget["training_samples"])
             if abs(expected - actual) > max(1.0, expected * 1e-6):
-                errors.append(
-                    f"training_samples={actual:g} but global_batch*optimizer_steps={expected:g}"
-                )
+                errors.append(f"training_samples={actual:g} but global_batch*optimizer_steps={expected:g}")
 
     decision = payload.get("decision")
     expected_decision = {
@@ -152,9 +187,7 @@ def validate(payload: dict, target: str) -> list[str]:
         errors.append("decision must be an object")
     else:
         if decision.get("status") != expected_decision:
-            errors.append(
-                f"decision.status must be {expected_decision} for --target {target}"
-            )
+            errors.append(f"decision.status must be {expected_decision} for --target {target}")
         if not nonempty_text(decision.get("rationale")):
             errors.append("decision.rationale is required")
         if not nonempty_text(decision.get("launch_command")):
@@ -176,25 +209,44 @@ def self_test() -> None:
             {"kind": "local_implementation", "title": "l", "locator": "/x", "revision": "def"},
         ],
         "alignment": {name: [dict(row)] for name in ALIGNMENT_SECTIONS},
-        "gates": {name: {"status": "PASS", "evidence": ["artifact"]} for name in LONG_GATES},
-        "budget": {"global_batch": 8, "optimizer_steps": 10, "training_samples": 80,
-                   "unique_windows": 80, "effective_epochs": 1, "gpu_count": 8,
-                   "estimated_hours": 1},
-        "decision": {"status": "GO_LONG", "rationale": "all pass", "launch_command": "true"},
+        "gates": {name: {"status": "PASS", "evidence": ["artifact"]} for name in CLAIM_GATES},
+        "budget": {"mode": "training", "global_batch": 8, "optimizer_steps": 10, "training_samples": 80,
+                   "unique_windows": 80, "effective_epochs": 1, "gpu_count": 8, "estimated_hours": 1},
+        "decision": {"status": "EVIDENCE_READY", "rationale": "all pass", "launch_command": "true"},
     }
-    errors = validate(payload, "long")
+    errors = validate(payload, "claim")
     if errors:
         raise AssertionError(errors)
-    payload["gates"]["mechanism_signal"] = {
-        "status": "FAIL", "evidence": ["diagnostic target"]
+
+    # Diagnostic long runs are allowed before a mechanism or closed-loop win.
+    payload["decision"] = {
+        "status": "GO_LONG",
+        "rationale": "bounded diagnostic run with dense checkpoints",
+        "launch_command": "true",
     }
-    payload["gates"]["closed_loop_canary"] = {
-        "status": "FAIL", "evidence": ["not yet evaluated"]
+    payload["gates"]["mechanism_signal"]["status"] = "FAIL"
+    payload["gates"]["closed_loop_canary"]["status"] = "FAIL"
+    errors = validate(payload, "long")
+    if errors:
+        raise AssertionError(f"diagnostic long run was incorrectly blocked: {errors}")
+
+    # Frozen scoring is a GPU experiment but must not invent optimizer samples/epochs.
+    payload["decision"] = {
+        "status": "GO_CANARY",
+        "rationale": "read-only paired score",
+        "launch_command": "true",
     }
-    if validate(payload, "long"):
-        raise AssertionError("effectiveness gates incorrectly blocked diagnostic long run")
+    payload["budget"] = {
+        "mode": "evaluation_only", "global_batch": 2, "optimizer_steps": 0,
+        "training_samples": 0, "unique_windows": 80, "effective_epochs": 0,
+        "gpu_count": 8, "estimated_hours": 0.5, "model_forwards": 320,
+    }
+    errors = validate(payload, "canary")
+    if errors:
+        raise AssertionError(f"evaluation-only canary was incorrectly blocked: {errors}")
+
     payload["alignment"]["data"][0]["status"] = "UNKNOWN"
-    if not validate(payload, "long"):
+    if not validate(payload, "claim"):
         raise AssertionError("UNKNOWN alignment was not rejected")
     print("self-test: PASS")
 
@@ -202,9 +254,7 @@ def self_test() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("dossier", nargs="?", type=Path)
-    parser.add_argument(
-        "--target", choices=("canary", "long", "claim"), default="canary"
-    )
+    parser.add_argument("--target", choices=("canary", "long", "claim"), default="canary")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -214,7 +264,8 @@ def main() -> None:
         parser.error("dossier is required unless --self-test is used")
     payload = json.loads(args.dossier.read_text())
     errors = validate(payload, args.target)
-    print(json.dumps({"valid": not errors, "target": args.target, "errors": errors}, indent=2, ensure_ascii=False))
+    report = {"valid": not errors, "target": args.target, "errors": errors}
+    print(json.dumps(report, indent=2, ensure_ascii=False))
     raise SystemExit(1 if errors else 0)
 
 

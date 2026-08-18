@@ -5,17 +5,98 @@
   "single_variable": "The only intended change from parent baseline.",
   "parent_baseline": "checkpoint + resolved config + metrics",
   "references": [
-    {"kind": "paper", "title": "paper", "locator": "https://arxiv.org/abs/...", "revision": "v1", "official": true, "clean": true},
-    {"kind": "upstream_code", "title": "author repository", "locator": "https://github.com/owner/repo", "revision": "fixed commit", "official": true, "clean": true},
-    {"kind": "local_implementation", "title": "local project", "locator": "/absolute/path", "revision": "commit + diff", "official": false, "clean": false}
+    {
+      "kind": "paper",
+      "title": "paper title",
+      "locator": "https://arxiv.org/abs/...",
+      "revision": "v1",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "author repository",
+      "locator": "https://github.com/owner/repo",
+      "revision": "commit hash or PAPER_ONLY",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "local project",
+      "locator": "/absolute/path",
+      "revision": "commit hash + dirty diff artifact",
+      "official": false,
+      "clean": false
+    }
   ],
   "alignment": {
-    "architecture": [{"field": "backbone and docking", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["file:line"], "rationale": "pending"}],
-    "data": [{"field": "window sampling", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["audit"], "rationale": "pending"}],
-    "action": [{"field": "action contract", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["replay"], "rationale": "pending"}],
-    "objective": [{"field": "loss and gradient", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["gradient report"], "rationale": "pending"}],
-    "optimization": [{"field": "budget", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["resolved config"], "rationale": "pending"}],
-    "evaluation": [{"field": "closed-loop protocol", "paper": "expected", "upstream_code": "actual", "local": "actual", "status": "UNKNOWN", "evidence": ["eval config"], "rationale": "pending"}]
+    "architecture": [
+      {
+        "field": "backbone and docking interface",
+        "paper": "expected",
+        "upstream_code": "actual upstream",
+        "local": "actual local",
+        "status": "UNKNOWN",
+        "evidence": ["file:line or URL"],
+        "rationale": "why"
+      }
+    ],
+    "data": [
+      {
+        "field": "window/frame/action sampling",
+        "paper": "expected",
+        "upstream_code": "actual upstream",
+        "local": "actual local",
+        "status": "UNKNOWN",
+        "evidence": ["file:line or generated audit"],
+        "rationale": "why"
+      }
+    ],
+    "action": [
+      {
+        "field": "action representation and normalization",
+        "paper": "expected",
+        "upstream_code": "actual upstream",
+        "local": "actual local",
+        "status": "UNKNOWN",
+        "evidence": ["file:line or replay report"],
+        "rationale": "why"
+      }
+    ],
+    "objective": [
+      {
+        "field": "loss and gradient path",
+        "paper": "expected",
+        "upstream_code": "actual upstream",
+        "local": "actual local",
+        "status": "UNKNOWN",
+        "evidence": ["file:line or gradient report"],
+        "rationale": "why"
+      }
+    ],
+    "optimization": [
+      {
+        "field": "global batch, samples, effective epochs, optimizer and LR",
+        "paper": "expected",
+        "upstream_code": "actual upstream",
+        "local": "actual local",
+        "status": "UNKNOWN",
+        "evidence": ["resolved config and calculation"],
+        "rationale": "why"
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "closed-loop protocol",
+        "paper": "expected",
+        "upstream_code": "actual upstream",
+        "local": "actual local",
+        "status": "UNKNOWN",
+        "evidence": ["file:line and baseline results"],
+        "rationale": "why"
+      }
+    ]
   },
   "gates": {
     "source_identity": {"status": "FAIL", "evidence": ["pending"]},
@@ -32,6 +113,19 @@
     "mechanism_signal": {"status": "FAIL", "evidence": ["pending"]},
     "closed_loop_canary": {"status": "FAIL", "evidence": ["pending"]}
   },
-  "budget": {"global_batch": 0, "optimizer_steps": 0, "training_samples": 0, "unique_windows": 0, "effective_epochs": 0.0, "gpu_count": 0, "estimated_hours": 0.0},
-  "decision": {"status": "NO_GO", "rationale": "Unresolved template; do not launch.", "launch_command": null}
+  "budget": {
+    "mode": "training",
+    "global_batch": 0,
+    "optimizer_steps": 0,
+    "training_samples": 0,
+    "unique_windows": 0,
+    "effective_epochs": 0.0,
+    "gpu_count": 0,
+    "estimated_hours": 0.0
+  },
+  "decision": {
+    "status": "NO_GO",
+    "rationale": "Unresolved template; do not launch.",
+    "launch_command": null
+  }
 }

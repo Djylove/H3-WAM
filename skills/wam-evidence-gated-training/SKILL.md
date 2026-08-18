@@ -1,6 +1,6 @@
 ---
 name: wam-evidence-gated-training
-description: 审计并演化 World Action Model 研究：对齐作者官方代码、固定 commit、数据/动作合同、训练预算与评测，组织多开源方法的单变量淘汰赛和胜者融合，分级放行昂贵 GPU 训练。用户提到 WAM/H3/FastWAM/StarWAM/DreamWAM/MiniWorld/FACT、论文或开源实现对齐、模型替换、并行试验、方法融合、“练蛊/蛊王”、效果退化或准备启动新实验时使用。
+description: 审计并演化 World Action Model 研究：对齐作者官方代码、固定 commit、数据/动作合同、训练预算与评测，用可恢复研究 epoch 组织多开源方法的单变量淘汰、经验遗传和胜者融合，分级放行昂贵 GPU 训练。用户提到 WAM/H3/FastWAM/StarWAM/DreamWAM/MiniWorld/FACT、论文或开源实现对齐、模型替换、并行试验、持续研发/自动接力、实验记忆、方法融合、“练蛊/蛊王”、效果退化或准备启动新实验时使用。
 ---
 
 # WAM evidence-gated training
@@ -24,6 +24,36 @@ description: 审计并演化 World Action Model 研究：对齐作者官方代�
 - `novel_composition`：组合多个项目思想。
 
 模型替换不得称为“官方复现”或“完全对齐”。给每个实验指定一个不变父基线和唯一主变量。
+
+#### 建立研究内核与候选边界
+
+多候选、跨服务器或持续接力研发时，把研究系统分成两层：
+
+- **固定研究内核**拥有目标、benchmark、评分公式、数据/动作合同、资源限制、调度、证据冻结、晋级规则和
+  lineage；候选训练代码不能修改这些内容，也不能给自己评分；
+- **可演化候选**只包含模型/方法代码、resolved config、父 checkpoint、唯一机制变更和依赖。候选只在本轮
+  评分完成后提出下一轮变更，不能追溯修改已经产生结果的版本。
+
+在 epoch 启动前冻结 `objective/source/data/action/evaluator/runtime/tool-manifest` 的 SHA256。任何锁定项改变都
+必须创建新 epoch 或新实验谱系，不能静默覆盖旧结果。把候选身份定义为完整内容签名，而不只是实验名：
+
+```text
+genome_signature = SHA256(source_tree + resolved_config + parent_checkpoint_sha
+                          + data_manifest_sha + action_contract_sha
+                          + evaluator_sha + runtime_sha)
+```
+
+同一 epoch 拒绝重复签名。详细的 KADATH 代码依据、可迁移边界和 WAM 映射见
+[references/kadath-research-kernel.md](references/kadath-research-kernel.md)。多候选 epoch 从
+[references/evolution-epoch-template.json](references/evolution-epoch-template.json) 建立控制文件并运行：
+
+```bash
+python scripts/validate_evolution_epoch.py EPOCH.json --target lock
+python scripts/validate_evolution_epoch.py EPOCH.json --target grade
+python scripts/validate_evolution_epoch.py EPOCH.json --target select
+```
+
+epoch bundle 是多个 dossier 的控制面，不能替代每个候选自己的训练/评测 dossier。
 
 ### 2. 组织开源方法淘汰赛
 
@@ -188,6 +218,12 @@ forward/backward、显存/吞吐探针或最多一个不保留权重的 optimize
 产生候选 checkpoint 或作效果结论。validator 因 `UNKNOWN` 拒绝 canary 时，可用 `PROBE_ONLY`
 补证据，但不能绕过 validator 启动探索训练。
 
+冻结 checkpoint 的正式 paired score 或只读 evaluator 不是训练，但仍需 dossier 和效果边界。此类实验将
+`budget.mode` 写为 `evaluation_only`，`optimizer_steps/training_samples/effective_epochs` 必须真实写0，
+同时报告正的 `global_batch/unique_windows/gpu_count/estimated_hours/model_forwards`；不得为了通过 validator
+虚构训练 samples 或 epoch。训练候选使用默认 `budget.mode=training`，仍要求正的三项训练预算及
+`training_samples=global_batch*optimizer_steps`。
+
 - `GO_CANARY`：允许完成机械 smoke 和最小可解释训练。`100 step` 只能是常用 smoke 尺度，绝不是
   上限或统一停止条件；如果一个 epoch、调度 warmup 或信号出现本来就需要更多 step，应按样本数、
   effective epoch 和墙钟预注册实际预算，并密集保存 checkpoint。
@@ -257,6 +293,42 @@ global batch、采样器合同和总见样本数并明确记录差异。
 占满 GPU 时，继续完成其他候选的 SOURCE/MECHANICAL gate、registry 和 adapter 测试；资源释放后按
 预注册优先级启动，而不是临时选择最容易运行的变体。
 
+#### 用研究 epoch 持续进化
+
+把一次多线探索组织为以下可恢复状态机，不用聊天上下文充当调度数据库：
+
+```text
+DRAFT -> LOCKED -> EXECUTING -> EVIDENCE_FROZEN -> GRADED -> SELECTED
+```
+
+1. `LOCKED` 前由用户批准唯一假设、固定父基线、候选 cohort、资源上限和评分门；
+2. `EXECUTING` 中每个候选独立失败，infra 失败不污染其他候选，也不计作 policy 分数；
+3. 训练停止后先冻结 artifact manifest、日志、checkpoint、resolved command 和评测输入，再进入评分；
+4. `GRADED` 只读冻结证据；用内核固定公式计算指标，忽略训练进程自报的“最好结果”；
+5. `SELECTED` 把 cohort 分为 `elite/middle/culled`：elite 原样保留；middle 只允许一个证据驱动变更；
+   culled 保留失败知识和可复现身份，不继承未验证机制；
+6. 下一 epoch 从已评分父候选建立新内容签名。一次只变一个主变量；若要组合，走既有 fusion lineage。
+
+不要机械照搬固定淘汰比例。WAM 训练昂贵且不同赛道成本不一，应按预注册门、置信区间、信息增益和剩余
+GPU 时间决定 cohort 宽度；所有候选失败时停止本谱系，不从未验证结果繁殖。
+
+#### 建立可遗传实验记忆
+
+每条记忆保存 `claim/observation/action/outcome/evidence_refs/source_genome/epoch/visibility`，按内容 hash 去重，
+分为 `own/inherited/population` 三个范围。检索排序优先：与当前问题相关、带原始证据、来源在产生该记忆的
+epoch 中通过验证、被后续复现实验确认。负结果同样遗传，但必须携带适用的数据、预算和失败类型。
+
+经验不能直接改变 benchmark 或晋级门；它只能提出下一候选的单变量假设。跨 epoch 继承引用和 provenance，
+不复制失去来源的摘要，也不把当前高分候选的未经配对解释自动提升为“规律”。
+
+#### Immutable execution-source gate
+
+训练、checkpoint 评测、终点 watcher、自动接力和独立 restore 审计都必须从固定 commit 的只读源码
+快照或内容寻址镜像启动；记录实际脚本 SHA、resolved command 和进程 cmdline。共享 live worktree 只用于
+开发，不能作为长进程的执行源，因为等待期间的 pull、rsync、原子替换或热更新会使同一实验跨版本运行。
+新增 auditor/finalizer 后单独生成新快照，不改正在训练的快照；精确终止旧 PID，验证没有重复 watcher，
+再从新快照恢复等待。若热更新导致启动失败，归类为 infra、保留失败目录并从原门槛重启，不能混入正式 trial。
+
 ### 9. 回写经验并进化 skill
 
 每轮结束先把原始命令、commit、manifest/checkpoint hash、指标和失败分类写进项目 dossier；只有满足
@@ -270,6 +342,10 @@ global batch、采样器合同和总见样本数并明确记录差异。
 不要把单任务分数、偶然阈值或某次 GPU 性能写成通用规则。更新后运行 skill validator；若改动会
 改变实验放行行为，用没有结论提示的原始 artifact 做一次独立 forward-test。
 
+多候选 epoch 结束时同时回写：epoch bundle、所有候选 dossier、冻结 evidence manifest、评分表、选择结果、
+lineage edge 和 canonical memory records。评分中断只恢复评分，不重跑已经冻结的训练；选择中断从选择前
+快照恢复，不生成半套 lineage。
+
 持续保留这些已验证反模式：
 
 - `detach()` 不会打断 storage alias；缓存中间层时必须 clone 并验证层间不相同；
@@ -277,6 +353,8 @@ global batch、采样器合同和总见样本数并明确记录差异。
 - 训练集 loss/机械 restore 不等于 episode-disjoint 泛化，更不等于闭环；
 - evaluator 与 rollout 的 normalization、pre-clamp、gripper 和 horizon 必须逐项相同或做 A/B；
 - 依赖、PythonPath、device-current 等启动失败单列 infra，不计作 policy trial；
+- 共享 live project 中“等待到条件满足再启动”会引入源码漂移；训练、watcher、finalizer 和 auditor 均绑定
+  只读 immutable snapshot，并核验脚本 SHA 与唯一 PID；
 - failure-aware 训练必须保存可复现的失败 observation/action/predicate/onset，不能只用 mp4 或把失败动作当 expert imitation。
 - “每 episode 五个均匀 start”可用于载体消融，不等于接触策略的 dense 训练；总样本数和 episode 数都
   不能替代 per-episode state/contact coverage 审计。
@@ -294,6 +372,7 @@ global batch、采样器合同和总见样本数并明确记录差异。
    `NOT_EVIDENCE_READY`；
 7. 当前擂主、赛道冠军与 fusion lineage 的区别；
 8. 真实启动命令或明确说明尚未放行。
+9. 若属于多线/持续研发，给出 epoch 状态、锁定项摘要、候选内容签名、冻结证据和下一代 lineage 决策。
 
 若用户尚未提供数据规模、microbatch 或吞吐，相关字段写 `UNKNOWN`，同时给计算公式和取得真实值的
 探针；禁止为了满足输出格式编造数字。trial 数、置信区间和晋级阈值按 benchmark、基线方差和预算
