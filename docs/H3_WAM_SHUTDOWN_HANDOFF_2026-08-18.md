@@ -104,6 +104,7 @@ C71 直接借鉴 Light-WAM 的三层 state fusion：H3 相对深度 14/27/41、l
 
 ## 已保留的非权重资产
 
+- 系统性完整复盘：`docs/H3_WAM_COMPLETE_EXPERIMENT_REVIEW_2026-08-18.md`，从本地5090、全量微调退化到C58/C69/C71和下一轮路线连续整理。
 - Git 中已有 51 份研发文档、61 份 experiment dossier、379 个 H3-WAM 脚本和 38 个 H3-WAM 核心模型文件。
 - 完整实验账本：`docs/H3_WAM_EXPERIMENT_LEDGER.md`。
 - 当前候选注册表：`docs/H3_WAM_CANDIDATE_REGISTRY_2026-08-14.md`。
