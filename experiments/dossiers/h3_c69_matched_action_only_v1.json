@@ -6,6 +6,14 @@
   "parent_baseline": "Both arms initialize from promoted C58B s10000 SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541. C67-s20000 is the sole matched joint-objective treatment; historical C60/C55/D0 results are context only.",
   "references": [
     {
+      "kind": "paper",
+      "title": "FACT: Failure-Aware Causal Training for World-Action Models",
+      "locator": "https://arxiv.org/abs/2608.10232",
+      "revision": "arXiv:2608.10232",
+      "official": true,
+      "clean": true
+    },
+    {
       "kind": "upstream_code",
       "title": "Bariona/FACT official repository",
       "locator": "third_party/FACT/world_action_model/trainer/wa_casual_trainer.py and fact_datasets/samplers/episode_mixture_sampler.py",
@@ -27,6 +35,14 @@
       "locator": "source review recorded in docs/H3_WAM_PHASE_REVIEW_2026-08-17.md",
       "revision": "155ac94e",
       "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3-WAM fixed C67/C69 paired attribution implementation",
+      "locator": "/home/ubuntu/fastwam_deploy",
+      "revision": "851882139cc676776a7b21d1ed6d354b0995150d",
+      "official": false,
       "clean": true
     }
   ],
@@ -99,14 +115,16 @@
     "checkpoint_restore": {"status": "PASS", "evidence": ["All 20 milestones strict-restored; final checkpoint SHA256 20914729d340b05768ec99e152cc026313d5a0dab064c963df90ac8184d8a12a."]},
     "parent_baseline": {"status": "PASS", "evidence": ["Fixed promoted C58B s10000 SHA256 and READY required by launcher."]},
     "mechanism_signal": {"status": "PASS", "evidence": ["Fixed C67/C69 offline attribution chain passed all identity and conditioning gates and authorizes fresh paired LIBERO; RESULTS SHA256 12fb56ed96da82fdb232e7184648b2a7dd454eddd6344024a7e96f493ede12f9."]},
-    "closed_loop_canary": {"status": "FAIL", "evidence": ["No C69 rollout exists."]}
+    "closed_loop_canary": {"status": "PASS", "evidence": ["Fixed s20000 paired LIBERO completed all 680 exact initial-state pairs: C67 324/680, C69 338/680, RESULTS SHA256 473a499435a473068c489f41587d89c44be996eefa9a17e58eaea8af0a47527a."]}
   },
   "budget": {
     "world_size": 8,
     "global_batch": 8,
     "optimizer_steps": 20000,
     "training_samples": 160000,
+    "unique_windows": 218125,
     "effective_epochs": 0.733522,
+    "gpu_count": 8,
     "checkpoint_interval": 1000,
     "actual_training_invocation_wall_seconds": 25102.055020342115,
     "estimated_hours": 8.82,
@@ -123,9 +141,25 @@
     },
     "interpretation": "C67 passing proves incremental value of consequence supervision under this contract. C69 tying or winning rejects that value and favors action-only continuation. Either outcome leaves C58 champion until a candidate separately beats it in fresh closed loop."
   },
+  "final_attribution": {
+    "status": "PASS_C67_C69_PAIRED_680_ATTRIBUTION_EVIDENCE",
+    "effect_status": "EVIDENCE_READY_ATTRIBUTION_ONLY",
+    "decision": "NO_DETECTABLE_INCREMENTAL_CONSEQUENCE_EFFECT",
+    "pairs": 680,
+    "c67_successes": 324,
+    "c69_successes": 338,
+    "c67_minus_c69_pp": -2.0588235294117645,
+    "c67_wins": 23,
+    "c69_wins": 37,
+    "two_sided_exact_mcnemar_p": 0.09246098107292373,
+    "results": "/mnt/h3-wam/eval/c67-vs-c69-fixed-s20-paired680-trials33-49-8518821-v1/RESULTS.json",
+    "results_sha256": "473a499435a473068c489f41587d89c44be996eefa9a17e58eaea8af0a47527a",
+    "claim_boundary": "The unchanged FACT consequence objective is not released for further training or fusion. C69 is an attribution control, not a promoted champion; C58 remains champion."
+  },
   "decision": {
-    "status": "GO_PAIRED_ATTRIBUTION_ROLLOUT",
-    "rationale": "C69 completed 20000 steps/160000 samples with 20 strict restores. Fixed-s20 offline attribution retained conditioning and found no endpoint collapse; it authorizes only fresh C67-joint versus C69-action-only paired LIBERO attribution, not promotion.",
-    "launch_command": "Prepare the still-unexecuted valid LIBERO trials33..49 with scripts/h3wam/prepare_c67_c69_attribution_rollout.py from a new immutable snapshot, then launch disjoint pair-id shards with scripts/h3wam/launch_c67_c69_attribution_paired680_shard.sh."
+    "status": "EVIDENCE_READY",
+    "effect_status": "EVIDENCE_READY_ATTRIBUTION_ONLY",
+    "rationale": "The complete fixed-s20000 680-pair closed loop found C67 324 successes versus C69 338, but neither direction passed all preregistered 3pp, net-20, one-sided-p and no-suite-regression gates. This rejects detectable incremental value from the unchanged consequence objective without promoting C69 over C58.",
+    "launch_command": "PROJECT_ROOT=/mnt/h3-wam/code-snapshots/h3-wam-8518821-rollout-v1 C67_C69_ROLLOUT_ROOT=/mnt/h3-wam/eval/c67-vs-c69-fixed-s20-paired680-trials33-49-8518821-v1 ROLLOUT_SHARD_INDEX=<0..4> ROLLOUT_NUM_SHARDS=5 bash scripts/h3wam/launch_c67_c69_attribution_paired680_shard.sh"
   }
 }

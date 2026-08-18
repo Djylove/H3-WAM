@@ -1414,3 +1414,18 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   episode新simulator+policy进程，不提前停止或读取胜负。后台收口器只等待5个shard marker齐备后才生成
   `COMPLETED.json`并运行预注册paired aggregator。在`RESULTS.json`完整发布前，本轮状态仅为
   `RUNNING_ATTRIBUTION_ONLY`，C58继续保持唯一champion。
+
+### 2026-08-18 — C67/C69 680 对固定终点归因完成
+
+- 五个shard完成全部`1360/1360`隔离进程和`680/680` exact initial-state pairs；从授权到最终RESULTS实际
+  墙钟`7506s=2.085h`，合计371027个环境动作、46664次replan和466640次action-denoiser forward。全部
+  identity gate通过，未选择中间checkpoint。
+- C67 FACT joint为`324/680=47.647%`，C69 action-only为`338/680=49.706%`，C67-C69为`-2.059pp`；
+  discordant为C67胜23、C69胜37，two-sided exact McNemar `p=0.092461`。C67四项方向门全失败；C69方向
+  虽通过单侧p和suite安全门，但没有达到`3pp`绝对提升与净胜20对。
+- 最终判定为`NO_DETECTABLE_INCREMENTAL_CONSEQUENCE_EFFECT / EVIDENCE_READY_ATTRIBUTION_ONLY`。这否定
+  当前FACT future/state/value辅助目标的可检测增量价值，不否定冻结H3 carrier；禁止在相同假设下仅靠加步数
+  继续C67。C69是归因control而非新champion，C58b仍是唯一project/carrier champion。
+- RESULTS SHA256为`473a499435a473068c489f41587d89c44be996eefa9a17e58eaea8af0a47527a`；完整结论和
+  suite分解见`docs/C67_C69_PAIRED_ATTRIBUTION_RESULT_2026-08-18.md`。关键JSON已以相同SHA转存到本地
+  `/home/ubuntu/h3-wam-critical-backup-20260818/eval-summary/`，大checkpoint和轨迹继续断点传输。
