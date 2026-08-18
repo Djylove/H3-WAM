@@ -1500,3 +1500,21 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 当前C73仅`GO_CANARY / NOT_EVIDENCE_READY`。只有真实8-rank十步在scheduler horizon 130585下通过
   finite gradient、30层梯度、零泄漏和exact restore，才更新为`GO_LONG`并在空闲节点启动；终点仍需
   conditioning-safe balanced80与固定paired LIBERO才能声明有效。
+
+### 2026-08-18 — 16小时截止下回退为单机尽量训练
+
+- 单机C73完整三个expert epoch预计约58小时，无法在剩余最多16小时内完成。曾实现并机械启动C74四节点
+  大batch canary以尝试压缩墙钟，但该路线改变global batch和优化近似；用户明确要求停止跨机方案。C74在
+  正式checkpoint产生前已终止，32个rank全部释放，归类为`ABORTED_BY_USER_BEFORE_CANARY / INFRA_ONLY`，
+  不计作policy trial，也不再继续。
+- C72保持原单机30195步轨迹，节点32611继续运行，每1000步checkpoint+strict restore，30907的只读
+  balanced80队列恢复运行。C72仍承担严格一遍expert-window预算对照。
+- C73单机真实十步canary从commit `0a0f001`执行：十步finite、30个共享块最小mean-across-ranks梯度
+  `0.18857289850711823`、future leak 0、restore max-abs 0；checkpoint SHA256为
+  `fc62aaef1662bba67838965dfec3203cf29f36bfe518b88d762a1164955e0abc`，训练wall为38.658秒，放行
+  `GO_LONG / NOT_EVIDENCE_READY`。
+- C73单机长周期从只读commit `7ddb793`、tree `49d4a7b8`、SOURCE_FREEZE SHA256
+  `2f97ba6ad936dd75e9349af24081ee512ce22625c47ded25d88da12b2e7fe6b7`启动；release SHA256为
+  `e7a5ac0193148d1a514c5dd3eb5a968d56c36d0adfd9055368ee7cd034be2459`，节点32409根PID `70710`，
+  输出为`/mnt/h3-wam/outputs/c73-action-only-three-expert-epoch-v1/online-long130585-v1`。服务器截止时只保留
+  已完成strict restore的最高每千步里程碑；未到s130585不得声称完成三个epoch或据此判定预算效果。
