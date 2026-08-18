@@ -610,3 +610,11 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   以完全相同源码、optimizer、scheduler和样本区间重放918步，合法保存`s9918`；累计79344样本、
   `0.395181` effective epoch，独立恢复`max_abs=0`。该点记为`INFRA_NUMERICAL_ENDPOINT`，不是改过
   min-LR的第二配置，也不得称为s10000；fixed balanced80终点评测只新增允许该精确step身份。
+- **s9918终点评测**：报告SHA256为`2e96de4e...bffcb`，checkpoint SHA256为
+  `851f679b...c0198`，fresh与independent restore均为`max_abs=0`。相同balanced80上normalized MSE
+  `0.056546`，比C58的`0.059331`好`4.70%`；gripper macro-F1 `0.941014`，比C58的`0.936444`
+  好`0.49%`；但physical MSE `0.028374`比C58的`0.025450`差`11.49%`，language relative-L2仅
+  `0.064134`，远低于C58的`0.894055`。visual-shuffle delta MSE为`+0.193922`，证明三层视觉路径
+  强烈参与动作生成，但不能抵消物理误差和语言条件退化。结论为
+  `FAIL_C71_PAIRED_HELDOUT_GATE / STOP_BEFORE_ROLLOUT / NOT_EVIDENCE_READY`；C58仍为promoted carrier，
+  C71只保留为visual direct-action表示/动作目标候选，不做本轮LIBERO闭环。
