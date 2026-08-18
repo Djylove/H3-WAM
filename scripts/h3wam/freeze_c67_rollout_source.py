@@ -83,6 +83,8 @@ DYNAMIC_EXECUTION_FILES = (
     "scripts/h3wam/probe_c56b_fact_online.py",
     "scripts/h3wam/probe_c71_lightwam_online.py",
     "scripts/h3wam/launch_c71_lightwam_online_probe.sh",
+    "scripts/h3wam/train_c71_lightwam_online.py",
+    "scripts/h3wam/launch_c71_lightwam_online_canary.sh",
     "scripts/h3wam/fit_c56b_fact_online_target_norm.py",
     "src/fastwam/models/h3wam/fact_layerwise_tower.py",
     "src/fastwam/models/h3wam/fact_online_data.py",
