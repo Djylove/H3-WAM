@@ -1429,3 +1429,7 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - RESULTS SHA256为`473a499435a473068c489f41587d89c44be996eefa9a17e58eaea8af0a47527a`；完整结论和
   suite分解见`docs/C67_C69_PAIRED_ATTRIBUTION_RESULT_2026-08-18.md`。关键JSON已以相同SHA转存到本地
   `/home/ubuntu/h3-wam-critical-backup-20260818/eval-summary/`，大checkpoint和轨迹继续断点传输。
+- 本地随后补齐`1360/1360`逐episode result与policy log，并离线复算出共同成功301、共同失败319、C67独胜23、
+  C69独胜37；PAIR_EVIDENCE中的1360个result SHA逐个匹配本地文件，状态
+  `PASS_LOCAL_1360_RESULT_AND_680_PAIR_SHA_RECOMPUTE`。trajectory尚未全部回传，因此该备份证明结果身份与
+  统计可重算，不冒充完整仿真轨迹bundle。

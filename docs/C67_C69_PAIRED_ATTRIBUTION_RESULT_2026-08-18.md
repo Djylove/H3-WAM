@@ -80,3 +80,9 @@ consequence objective 的增量价值”。
 原始结果位于
 `/mnt/h3-wam/eval/c67-vs-c69-fixed-s20-paired680-trials33-49-8518821-v1/RESULTS.json`；关键 JSON 已按
 相同 SHA256 转存到 `/home/ubuntu/h3-wam-critical-backup-20260818/eval-summary/`。
+
+云端收口后，本地转存已包含`1360/1360`个逐episode `results.json`、`1360/1360`个policy log、完整
+`jobs.jsonl`和680行`PAIR_EVIDENCE.jsonl`。只读取本地副本重新得到C67成功324、C69成功338、共同成功301、
+共同失败319、C67独胜23和C69独胜37；随后逐对重算两臂result SHA并与pair evidence中的1360个SHA全部一致，
+状态为`PASS_LOCAL_1360_RESULT_AND_680_PAIR_SHA_RECOMPUTE`。大体积trajectory和三个训练checkpoint仍为
+可续传的次级备份，不能把当前本地副本表述为完整trajectory restore bundle。
