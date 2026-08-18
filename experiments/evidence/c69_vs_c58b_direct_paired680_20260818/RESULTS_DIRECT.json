@@ -1,0 +1,155 @@
+{
+  "format": "h3wam-c69-c58b-direct-paired680-result-v1",
+  "status": "PASS_DIRECT_PAIRED_680_EVIDENCE",
+  "decision": "PROMOTE_C69",
+  "candidate": "C69_ACTION_ONLY_S20000",
+  "control": "C58B_FASTWAM_S10000",
+  "overall": {
+    "pairs": 680,
+    "candidate_successes": 338,
+    "control_successes": 295,
+    "candidate_rate": 0.4970588235294118,
+    "control_rate": 0.4338235294117647,
+    "candidate_rate_wilson95": [
+      0.4596010989111836,
+      0.534549592088309
+    ],
+    "control_rate_wilson95": [
+      0.3970482019297295,
+      0.47134234555885396
+    ],
+    "success_rate_delta": 0.06323529411764706,
+    "paired_delta_normal95": [
+      0.03267119102035684,
+      0.09379939721493727
+    ],
+    "ties": 565,
+    "discordant_pairs": 115,
+    "candidate_wins": 79,
+    "control_wins": 36,
+    "one_sided_p_candidate_better": 3.758229483222293e-05,
+    "two_sided_p": 7.516458966444587e-05,
+    "method": "exact_binomial_mcnemar_p0_5"
+  },
+  "per_suite": {
+    "libero_spatial": {
+      "pairs": 170,
+      "candidate_successes": 114,
+      "control_successes": 92,
+      "candidate_rate": 0.6705882352941176,
+      "control_rate": 0.5411764705882353,
+      "candidate_rate_wilson95": [
+        0.5968505561509875,
+        0.7367867729042358
+      ],
+      "control_rate_wilson95": [
+        0.46618734269154644,
+        0.6143458057010937
+      ],
+      "success_rate_delta": 0.12941176470588237,
+      "paired_delta_normal95": [
+        0.053451673300627126,
+        0.20537185611113762
+      ],
+      "ties": 124,
+      "discordant_pairs": 46,
+      "candidate_wins": 34,
+      "control_wins": 12,
+      "one_sided_p_candidate_better": 0.0008207456704241167,
+      "two_sided_p": 0.0016414913408482334,
+      "method": "exact_binomial_mcnemar_p0_5"
+    },
+    "libero_object": {
+      "pairs": 170,
+      "candidate_successes": 149,
+      "control_successes": 131,
+      "candidate_rate": 0.8764705882352941,
+      "control_rate": 0.7705882352941177,
+      "candidate_rate_wilson95": [
+        0.8185360246701139,
+        0.9177670463483101
+      ],
+      "control_rate_wilson95": [
+        0.7018220561193571,
+        0.8273957761751352
+      ],
+      "success_rate_delta": 0.10588235294117647,
+      "paired_delta_normal95": [
+        0.04244850084635868,
+        0.16931620503599426
+      ],
+      "ties": 138,
+      "discordant_pairs": 32,
+      "candidate_wins": 25,
+      "control_wins": 7,
+      "one_sided_p_candidate_better": 0.0010512007866054773,
+      "two_sided_p": 0.0021024015732109547,
+      "method": "exact_binomial_mcnemar_p0_5"
+    },
+    "libero_goal": {
+      "pairs": 170,
+      "candidate_successes": 40,
+      "control_successes": 44,
+      "candidate_rate": 0.23529411764705882,
+      "control_rate": 0.25882352941176473,
+      "candidate_rate_wilson95": [
+        0.1778170546135733,
+        0.3044698485765972
+      ],
+      "control_rate_wilson95": [
+        0.1988272067140892,
+        0.32947863841473285
+      ],
+      "success_rate_delta": -0.023529411764705882,
+      "paired_delta_normal95": [
+        -0.06964621140094243,
+        0.022587387871530674
+      ],
+      "ties": 154,
+      "discordant_pairs": 16,
+      "candidate_wins": 6,
+      "control_wins": 10,
+      "one_sided_p_candidate_better": 0.8949432373046875,
+      "two_sided_p": 0.454498291015625,
+      "method": "exact_binomial_mcnemar_p0_5"
+    },
+    "libero_10": {
+      "pairs": 170,
+      "candidate_successes": 35,
+      "control_successes": 28,
+      "candidate_rate": 0.20588235294117646,
+      "control_rate": 0.16470588235294117,
+      "candidate_rate_wilson95": [
+        0.151924485190557,
+        0.2728387405762991
+      ],
+      "control_rate_wilson95": [
+        0.11648213463811549,
+        0.22774794273610047
+      ],
+      "success_rate_delta": 0.041176470588235294,
+      "paired_delta_normal95": [
+        -0.0114481320884234,
+        0.09380107326489398
+      ],
+      "ties": 149,
+      "discordant_pairs": 21,
+      "candidate_wins": 14,
+      "control_wins": 7,
+      "one_sided_p_candidate_better": 0.09462356567382812,
+      "two_sided_p": 0.18924713134765625,
+      "method": "exact_binomial_mcnemar_p0_5"
+    }
+  },
+  "directional_gates": {
+    "overall_delta_at_least_3pp": true,
+    "net_wins_at_least_20": true,
+    "one_sided_p_at_most_0_05": true,
+    "suite_floor_at_least_minus_3pp": true
+  },
+  "authorization": "/mnt/h3-wam/eval/c69-vs-c58b-direct-paired680-trials33-49-d8e1bdb-v1/AUTHORIZATION.json",
+  "authorization_sha256": "59a3f079e971af642b67e665f2bf01f9c8abca7216cbf700f2a435e57f7d3e31",
+  "pair_evidence": "/mnt/h3-wam/eval/c69-vs-c58b-direct-paired680-trials33-49-d8e1bdb-v1/PAIR_EVIDENCE_DIRECT.jsonl",
+  "pair_evidence_sha256": "2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2",
+  "claim_boundary": "Confirmation rerun on previously used LIBERO trial indices 33..49; direct paired evidence, not unseen-state generalization."
+}

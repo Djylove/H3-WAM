@@ -35,6 +35,7 @@
       "sole_mutation": "none_control",
       "dossier": "path/to/control-dossier.json",
       "budget": {
+        "mode": "training",
         "global_batch": 1,
         "optimizer_steps": 1,
         "training_samples": 1,
@@ -50,6 +51,7 @@
       "sole_mutation": "one declared mechanism",
       "dossier": "path/to/candidate-dossier.json",
       "budget": {
+        "mode": "training",
         "global_batch": 1,
         "optimizer_steps": 1,
         "training_samples": 1,

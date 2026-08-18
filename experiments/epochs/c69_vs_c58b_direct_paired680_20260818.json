@@ -1,0 +1,106 @@
+{
+  "format": "wam-evolution-epoch-v1",
+  "epoch_id": "c69-vs-c58b-direct-paired680-20260818",
+  "status": "SELECTED",
+  "hypothesis": "C69 action-only s20000 beats C58b FastWAM s10000 by at least 3 percentage points on the identical 680-state paired LIBERO grid, with at least 20 net wins, one-sided exact McNemar p at most 0.05, and no suite below -3 percentage points.",
+  "classification": "novel_composition",
+  "kernel_lock": {
+    "objective_sha256": "59a3f079e971af642b67e665f2bf01f9c8abca7216cbf700f2a435e57f7d3e31",
+    "source_tree_sha256": "5f580d76066f0a53963a16d8c6e3f02fb1073a80a6eaba0c0f7704a52480fcba",
+    "data_manifest_sha256": "9de464a6eea4d17cfd66c159137f1fa36a6afc33fbd73d1737f1201f40f2d1f7",
+    "action_contract_sha256": "a960f30b09c575186926aa68628ec011a6d55dd845ac1675fc919a7448dd1aac",
+    "evaluator_sha256": "74c6907005d9abeb02a12aff25f29c0f8363bab6e7c10f2230b909c0c9b5326b",
+    "runtime_sha256": "f95bbecba67975d3f8ef22e91549021d444509dabda3fb42bbb8d907970ed47e",
+    "tool_manifest_sha256": "22836ffd5752c4e83eadabac80ab87fc723e5eaaf9cadce116054bc02da35fce"
+  },
+  "benchmark": {
+    "primary_metric": "paired_closed_loop_success_delta",
+    "direction": "higher",
+    "score_formula": "scripts/h3wam/aggregate_c69_c58b_direct_paired680.py SHA256 74c6907005d9abeb02a12aff25f29c0f8363bab6e7c10f2230b909c0c9b5326b; all four preregistered directional gates must pass",
+    "automatic_failures": [
+      "missing one of 1360 isolated results",
+      "paired initial-state or object-joint mismatch",
+      "checkpoint, authorization, source or action-contract identity drift",
+      "any directional promotion gate failure"
+    ],
+    "tie_break": "Keep the C58b control when any gate fails; no post-hoc checkpoint substitution.",
+    "self_score_ignored": true
+  },
+  "boundaries": {
+    "kernel_not_candidate_writable": true,
+    "execution_source_immutable": true,
+    "grade_frozen_evidence_only": true,
+    "mutation_after_grade_only": true
+  },
+  "cohort": [
+    {
+      "candidate_id": "c58b-fastwam-s10000-control",
+      "parent_candidate_id": null,
+      "genome_signature": "907024bd8053dcef5312fdfe614ac051167b5cdbe2a076c3aa55f27b8b607d97",
+      "sole_mutation": "none_control",
+      "dossier": "experiments/dossiers/h3_c69_vs_c58b_direct_paired680_v1.json",
+      "budget": {
+        "mode": "evaluation_only",
+        "global_batch": 20,
+        "optimizer_steps": 0,
+        "training_samples": 0,
+        "unique_windows": 680,
+        "effective_epochs": 0,
+        "gpu_count": 40,
+        "estimated_hours": 1.75,
+        "model_forwards": 340000
+      }
+    },
+    {
+      "candidate_id": "c69-action-only-s20000",
+      "parent_candidate_id": "c58b-fastwam-s10000-control",
+      "genome_signature": "5af342c0b0ee1735d6949985286cf12e6fecfd4d71e07bd65175f7baaec59e73",
+      "sole_mutation": "Bundled C69 action-only continuation endpoint; ranks the complete endpoint and is not a mechanism ablation.",
+      "dossier": "experiments/dossiers/h3_c69_vs_c58b_direct_paired680_v1.json",
+      "budget": {
+        "mode": "evaluation_only",
+        "global_batch": 20,
+        "optimizer_steps": 0,
+        "training_samples": 0,
+        "unique_windows": 680,
+        "effective_epochs": 0,
+        "gpu_count": 40,
+        "estimated_hours": 1.75,
+        "model_forwards": 340000
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "candidate_id": "c58b-fastwam-s10000-control",
+      "execution_stopped": true,
+      "frozen_read_only": true,
+      "artifact_manifest_sha256": "2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2",
+      "self_score_ignored": true,
+      "verified_outcome": "success",
+      "metric": 0.4338235294117647
+    },
+    {
+      "candidate_id": "c69-action-only-s20000",
+      "execution_stopped": true,
+      "frozen_read_only": true,
+      "artifact_manifest_sha256": "2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2",
+      "self_score_ignored": true,
+      "verified_outcome": "success",
+      "metric": 0.4970588235294118
+    }
+  ],
+  "selection": [
+    {
+      "candidate_id": "c58b-fastwam-s10000-control",
+      "disposition": "culled",
+      "reason": "Removed from the champion role after losing the complete direct promotion comparison; retained as the immutable parent and control.",
+      "memory_record": "docs/C69_C58B_DIRECT_PROMOTION_RECHECK_2026-08-18.md"
+    },
+    {
+      "candidate_id": "c69-action-only-s20000",
+      "disposition": "elite",
+      "reason": "Passed all four preregistered direct paired promotion gates and becomes the current closed-loop action/carrier endpoint parent."
+    }
+  ]
+}

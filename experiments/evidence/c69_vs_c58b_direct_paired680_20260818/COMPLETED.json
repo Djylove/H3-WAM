@@ -1,0 +1,8 @@
+{
+  "format": "h3wam-c69-c58b-direct-paired680-complete-v1",
+  "status": "COMPLETE",
+  "jobs": 1360,
+  "pairs": 680,
+  "results": "/mnt/h3-wam/eval/c69-vs-c58b-direct-paired680-trials33-49-d8e1bdb-v1/RESULTS_DIRECT.json",
+  "results_sha256": "ab78350825ff9de66e46154b6a6853695dd15bf0c4ebe5353041ef6ed79bf0f8"
+}

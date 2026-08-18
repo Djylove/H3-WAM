@@ -1,6 +1,6 @@
 # H3-WAM 开源候选注册表与炼蛊谱系
 
-更新时间：2026-08-17（Asia/Shanghai）
+更新时间：2026-08-18（Asia/Shanghai）
 
 ## 目标与边界
 
@@ -8,9 +8,11 @@
 闭环协议后，至少一个候选会在保持视觉/语言条件依赖的同时产生固定 LIBERO 成功；不同赛道的胜者逐级
 融合后应相对直接父模型获得可归因的额外成功率。
 
-当前完整证据支持 `C58b FastWAM full30 H3 layer-wise` 为 **representation/carrier 赛道冠军**；它不是
-temporal、consequence 或最终全赛道 H3-WAM 冠军。所有 H3 替换均标为 `backbone_port` 或
-`novel_composition`，不得称为官方复现。
+当前完整证据支持 `C69 action-only s20000` 为 **项目闭环 action/carrier endpoint 擂主**：在同授权
+680 对直接复跑中为 `338/680`，相对 C58b 的 `295/680` 提升 `6.3235pp`，79:36、单侧
+McNemar `p=3.758e-5`，四项晋级门全部通过。C58b 保留为 representation/carrier 父基线；C69 不是
+temporal、consequence 或最终全赛道 H3-WAM 冠军，也不能据此宣称未见状态泛化。所有 H3 替换均标为
+`backbone_port` 或 `novel_composition`，不得称为官方复现。
 
 ## 统一实验合同
 

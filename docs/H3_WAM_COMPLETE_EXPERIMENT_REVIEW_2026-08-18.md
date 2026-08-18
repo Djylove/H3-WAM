@@ -34,15 +34,15 @@
 - 视频/未来预测指标提高会自动带来动作提高；
 - 当前 FACT consequence auxiliary objective 能增益动作；
 - MiniWorld/LingBot context 已经形成可融合的上下文冠军；
-- C69 已经按冠军晋级协议正式替代 C58b；
+- C69 已于 2026-08-18 完成同授权、同初态的 680 对直接复跑，并按冠军晋级协议正式替代 C58b；
 - 当前模型已达到 FastWAM 官方数据曝光和训练预算。
 
 当前证据分层如下：
 
 | 身份 | 模型 | 证据 |
 |---|---|---|
-| 正式晋级 carrier | C58b FastWAM full30 + H3 layer-wise | `295/680`，相对 D0 `+3.676pp`，通过全部预注册门 |
-| 最高点估计、待直接确认 | C69 matched action-only | `338/680`；尚未与 C58b 在同一授权中做直接配对晋级 |
+| 当前闭环 action/carrier endpoint 擂主 | C69 matched action-only s20000 | `338/680`；直接对 C58b `+6.3235pp`、79:36、单侧 p=`3.758e-5`，四门全过 |
+| 已被替代的 carrier 父擂主 | C58b FastWAM full30 + H3 layer-wise | `295/680`，相对 D0 `+3.676pp`；仍是 C69 的固定父模型和直接对照 |
 | consequence 归因处理臂 | C67 FACT joint | `324/680`，没有胜过同预算 C69 |
 | 高分但未晋级 | C60 FACT | `313/680`，相对 C58b 的增益、净胜和显著性均略低于门槛 |
 | 下一代架构种子 | C71 Light-WAM state fusion | 视觉依赖和 normalized MSE 强，physical/语言门失败，未做 rollout |
@@ -234,8 +234,9 @@ action-conditioned consequence/value 做 best-of-N，而本地 C60 rollout仍是
 
 因此只能得出：当前 consequence auxiliary objective 没有产生可检测的增量价值。两臂都使用 H3，不能把该结果解释为“H3世界特征无效”。
 
-C69虽然有当前最高点估计，但本轮预注册问题是 C67 对 C69 的机制归因，不是 C69 对 C58b 的冠军晋级；C58b没有在这一授权中
-与 C69重新逐对运行。因此 C69是 `TOP_PROMOTION_CANDIDATE`，不是已经完成统计晋级的冠军。
+C69/C58b 后续直接晋级复核已经补齐同一授权下的 680 对 fresh-process 逐对运行：C69 338、C58b 295，
+79:36、单侧 p=`3.758e-5`，所有 suite 均高于 -3pp 安全线。因此 C69 已由 `TOP_PROMOTION_CANDIDATE`
+更新为当前闭环 action/carrier endpoint 擂主；这仍不把 C67/C69 的 FACT 归因结果改写成 consequence 机制成功。
 
 ### 阶段 F：context / persistent KV
 
@@ -428,7 +429,7 @@ H3 feasibility                 PASS
 Native INT8 H3 without ComfyUI PASS
 Dense unified LIBERO policy    PASS
 C58b carrier promotion         PASS / EVIDENCE_READY
-C69 direct champion promotion  PENDING
+C69 direct champion promotion  PASS / EVIDENCE_READY
 Full-H3 fine-tuning            STOP AS MAINLINE
 FACT consequence increment     NOT DETECTED
 Context track champion         NONE

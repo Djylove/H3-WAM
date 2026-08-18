@@ -1,0 +1,59 @@
+{
+  "format": "h3wam-c69-c58b-direct-paired680-authorization-v1",
+  "status": "AUTHORIZED_DIRECT_PAIRED_RECHECK",
+  "permission": "GO_1360_FRESH_PROCESSES_NO_INTERMEDIATE_PROMOTION",
+  "hypothesis": "C69-s20000 directly outperforms C58b-s10000 under an identical 680-episode LIBERO paired grid.",
+  "classification": "evaluation_only_controlled_promotion_confirmation",
+  "optimizer_steps": 0,
+  "source_snapshot": "/mnt/h3-wam/code-snapshots/h3-wam-8518821-rollout-v1",
+  "source_freeze_sha256": "5f580d76066f0a53963a16d8c6e3f02fb1073a80a6eaba0c0f7704a52480fcba",
+  "manifest_sha256": "9de464a6eea4d17cfd66c159137f1fa36a6afc33fbd73d1737f1201f40f2d1f7",
+  "jobs": 1360,
+  "pairs": 680,
+  "trials": [
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49
+  ],
+  "suites": [
+    "libero_spatial",
+    "libero_object",
+    "libero_goal",
+    "libero_10"
+  ],
+  "inner_gates": {
+    "c69": {
+      "path": "/mnt/h3-wam/eval/c67-vs-c69-fixed-s20-paired680-trials33-49-8518821-v1/AUTHORIZATION.json",
+      "sha256": "9241a9d394857f39dc3f024b594010aa3c567b578db660e2635fbb21013ae9cb"
+    },
+    "c58b": {
+      "path": "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-final-eval-v1/balanced80/BALANCED80_READY.14fa645.json",
+      "sha256": "844bf3f49ac011b9d36e5054ccf60b50732828553385d615d42a941de3e9e848"
+    }
+  },
+  "endpoints": {
+    "c69_action_only": {
+      "checkpoint": "/mnt/h3-wam/outputs/c69-matched-action-only-v1/online-long20000-v1/checkpoints/c69_action_only_s20000.pt",
+      "checkpoint_sha256": "20914729d340b05768ec99e152cc026313d5a0dab064c963df90ac8184d8a12a"
+    },
+    "c58b_fastwam": {
+      "checkpoint": "/mnt/h3-wam/outputs/c58b-fastwam-layerwise-v1/online-long10000/checkpoints/c58b_online_s10000.pt",
+      "checkpoint_sha256": "2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541"
+    }
+  },
+  "claim_boundary": "Confirmation rerun on previously used LIBERO trial indices 33..49; direct paired evidence, not unseen-state generalization."
+}

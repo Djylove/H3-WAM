@@ -1433,3 +1433,23 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   C69独胜37；PAIR_EVIDENCE中的1360个result SHA逐个匹配本地文件，状态
   `PASS_LOCAL_1360_RESULT_AND_680_PAIR_SHA_RECOMPUTE`。trajectory尚未全部回传，因此该备份证明结果身份与
   统计可重算，不冒充完整仿真轨迹bundle。
+
+### 2026-08-18 — C69/C58b 680 对直接晋级复核完成
+
+- 可证伪问题固定为：C69-s20000 是否在完全相同的 680 个 LIBERO suite/task/trial 状态和执行协议下，
+  直接超过当前 C58b-s10000 擂主，并同时满足 `>=3pp`、净胜 `>=20`、单侧 exact McNemar `p<=0.05`
+  和所有 suite `>=-3pp` 四门。该实验为 `evaluation_only`：40×A800、1360 个独立 episode 进程，
+  `optimizer_steps/training_samples/effective_epochs=0`，不改权重。
+- 五个 shard 完成 `1360/1360` 结果和轨迹并各自写入完成标记；watcher 随后核验 checkpoint、授权、
+  结果合同、680 对首状态摘要和对象关节一致性，发布 `PASS_DIRECT_PAIRED_680_EVIDENCE / PROMOTE_C69`。
+- C69 为 `338/680=49.706%`，C58b 为 `295/680=43.382%`，绝对提升 `6.3235pp`，95% 配对差区间
+  `[3.2671pp, 9.3799pp]`；discordant 为 C69 胜79、C58b胜36，单侧 exact McNemar
+  `p=3.758229e-5`。suite 差分别为 Spatial `+12.941pp`、Object `+10.588pp`、Goal `-2.353pp`、
+  LIBERO-10 `+4.118pp`，四门全部通过。
+- C69 正式替代 C58b 成为当前项目闭环 action/carrier endpoint 擂主；C58b 保留为父模型和固定对照。
+  该结论不把 C69 称为 consequence/context 赛道冠军，也不宣称 trials33..49 之外的未见状态泛化。
+- 云端 `RESULTS_DIRECT.json` SHA256 为
+  `ab78350825ff9de66e46154b6a6853695dd15bf0c4ebe5353041ef6ed79bf0f8`，680 行
+  `PAIR_EVIDENCE_DIRECT.jsonl` SHA256 为
+  `2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2`；本地冻结副本位于
+  `experiments/evidence/c69_vs_c58b_direct_paired680_20260818/`。

@@ -1,0 +1,137 @@
+{
+  "experiment_id": "h3_c69_vs_c58b_direct_paired680_v1",
+  "classification": "novel_composition",
+  "hypothesis": "C69 action-only s20000 exceeds C58b FastWAM s10000 by at least 3 percentage points on the identical 680-state paired LIBERO grid, with at least 20 net wins, one-sided exact McNemar p at most 0.05, and no suite below -3 percentage points.",
+  "single_variable": "The paired evaluator changes only the restored endpoint arm between C58b and C69 for each fixed suite/task/trial state. The endpoints bundle different training histories, so this ranks complete endpoints and does not identify a causal training mechanism.",
+  "parent_baseline": "C58b FastWAM s10000 checkpoint SHA256 2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541 was the formal closed-loop champion and is the fixed direct control.",
+  "references": [
+    {
+      "kind": "paper",
+      "title": "FastWAM",
+      "locator": "https://arxiv.org/abs/2603.16666",
+      "revision": "arXiv:2603.16666",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "upstream_code",
+      "title": "YuanTianYuan01/FastWAM official repository",
+      "locator": "https://github.com/YuanTianYuan01/FastWAM",
+      "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+      "official": true,
+      "clean": true
+    },
+    {
+      "kind": "local_implementation",
+      "title": "H3-WAM direct paired promotion evaluator",
+      "locator": "/mnt/h3-wam/code-snapshots/h3-wam-8518821-rollout-v1",
+      "revision": "851882139cc676776a7b21d1ed6d354b0995150d with SOURCE_FREEZE SHA256 5f580d76066f0a53963a16d8c6e3f02fb1073a80a6eaba0c0f7704a52480fcba",
+      "official": false,
+      "clean": true
+    }
+  ],
+  "alignment": {
+    "architecture": [
+      {
+        "field": "frozen endpoint restoration",
+        "paper": "Evaluate a fixed world-action policy checkpoint in closed loop.",
+        "upstream_code": "FastWAM restores a policy checkpoint without evaluator-time training.",
+        "local": "C58b SHA256 2e629471 and C69 SHA256 20914729 are restored in fresh isolated policy processes for every episode.",
+        "status": "EXACT",
+        "evidence": ["/mnt/h3-wam/eval/c69-vs-c58b-direct-paired680-trials33-49-d8e1bdb-v1/AUTHORIZATION.json"],
+        "rationale": "No model parameter is mutated by this evaluation."
+      }
+    ],
+    "data": [
+      {
+        "field": "paired LIBERO initial-state grid",
+        "paper": "Closed-loop benchmark success is evaluated over official task initial states.",
+        "upstream_code": "LIBERO selects task init states by trial index.",
+        "local": "Four suites, ten tasks and trials 33 through 49 form 680 state pairs and 1360 immutable manifest jobs.",
+        "status": "EXACT",
+        "evidence": ["jobs.jsonl SHA256 9de464a6eea4d17cfd66c159137f1fa36a6afc33fbd73d1737f1201f40f2d1f7"],
+        "rationale": "The final aggregator rejects missing pairs and initial-state mismatches."
+      }
+    ],
+    "action": [
+      {
+        "field": "execution contract",
+        "paper": "Use receding-horizon 7D actions in closed loop.",
+        "upstream_code": "FastWAM executes action chunks under a fixed normalization and replanning policy.",
+        "local": "Both arms use max400, wait30, replan8, horizon32, normalized pre-clamp, binarized gripper and no temporal ensemble.",
+        "status": "EXACT",
+        "evidence": ["scripts/h3wam/launch_c69_c58b_direct_paired680_shard.sh SHA256 a960f30b09c575186926aa68628ec011a6d55dd845ac1675fc919a7448dd1aac"],
+        "rationale": "Only the endpoint arm differs within a pair."
+      }
+    ],
+    "objective": [
+      {
+        "field": "evaluation-only objective",
+        "paper": "Rank policies by environment task success.",
+        "upstream_code": "LIBERO env.check_success supplies the closed-loop outcome.",
+        "local": "Optimizer steps, training samples and effective epochs are all zero; the endpoint is paired task success.",
+        "status": "EXACT",
+        "evidence": ["AUTHORIZATION.json permission GO_1360_FRESH_PROCESSES_NO_INTERMEDIATE_PROMOTION"],
+        "rationale": "No offline loss can promote either arm."
+      }
+    ],
+    "optimization": [
+      {
+        "field": "bounded scoring budget",
+        "paper": "Not applicable to read-only checkpoint evaluation.",
+        "upstream_code": "Not applicable to read-only checkpoint evaluation.",
+        "local": "Forty A800 GPUs score 1360 isolated episodes; the preregistered maximum is 680000 policy model evaluations and zero optimizer work.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["five shards times eight GPUs; model_evaluations=10; at most 50 replans per episode"],
+        "rationale": "Evaluation resource accounting replaces a training optimization schedule."
+      }
+    ],
+    "evaluation": [
+      {
+        "field": "paired promotion rule",
+        "paper": "Closed-loop success is the primary policy metric.",
+        "upstream_code": "Each LIBERO episode yields a binary success outcome.",
+        "local": "Promotion requires delta >=3pp, net wins >=20, one-sided exact McNemar p <=0.05 and every suite delta >=-3pp.",
+        "status": "INTENTIONAL_DEVIATION",
+        "evidence": ["scripts/h3wam/aggregate_c69_c58b_direct_paired680.py SHA256 74c6907005d9abeb02a12aff25f29c0f8363bab6e7c10f2230b909c0c9b5326b"],
+        "rationale": "The paired directional gates are stricter than reporting an unpaired mean success rate."
+      }
+    ]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Immutable rollout snapshot and SOURCE_FREEZE hash verified by every launcher."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Both endpoint checkpoint hashes are verified before launch."]},
+    "data_contract": {"status": "PASS", "evidence": ["Immutable 1360-job manifest hash verified before launch."]},
+    "action_contract": {"status": "PASS", "evidence": ["One shared launcher constructs both arms from the same common action arguments."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Evaluation-only: no optimizer or training sample is consumed."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Five fixed shards, eight GPUs per shard, one isolated job process at a time per worker."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Aggregator requires all five completion markers and all 680 exact pairs."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Not applicable by contract: frozen inference endpoints and optimizer_steps=0."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["Trial33 reproduced 40/40 historical binary outcomes for both endpoints."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Trial33 first actions and outcomes reproduced from both frozen checkpoints."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C58b historical 295/680 carrier-track champion is fixed as control."]},
+    "mechanism_signal": {"status": "PASS", "evidence": ["The fixed endpoint comparison produced a paired +6.3235pp effect; this gate supports endpoint ranking only and does not attribute a causal training mechanism."]},
+    "closed_loop_canary": {"status": "PASS", "evidence": ["All 680 exact pairs completed: C69 338, C58b 295, 79:36 discordant wins, one-sided p=3.758229483222293e-05, and all four directional gates passed."]}
+  },
+  "budget": {
+    "mode": "evaluation_only",
+    "global_batch": 40,
+    "optimizer_steps": 0,
+    "training_samples": 0,
+    "unique_windows": 680,
+    "effective_epochs": 0,
+    "gpu_count": 40,
+    "estimated_hours": 1.75,
+    "model_forwards": 680000
+  },
+  "decision": {
+    "status": "EVIDENCE_READY",
+    "rationale": "The complete fresh-process direct rerun reproduced the historical 338/680 versus 295/680 endpoint result and passed the preregistered overall delta, net wins, one-sided McNemar and suite-floor gates. C69 is promoted as the project closed-loop action/carrier endpoint under this benchmark contract; unseen-state generalization and causal mechanism attribution remain outside the claim.",
+    "launch_command": "PROJECT_ROOT=/mnt/h3-wam/code-snapshots/h3-wam-8518821-rollout-v1 C69_C58B_ROLLOUT_ROOT=/mnt/h3-wam/eval/c69-vs-c58b-direct-paired680-trials33-49-d8e1bdb-v1 ROLLOUT_SHARD_INDEX=<0..4> ROLLOUT_NUM_SHARDS=5 bash scripts/h3wam/launch_c69_c58b_direct_paired680_shard.sh",
+    "effect_status": "EVIDENCE_READY_DIRECT_PAIRED_680",
+    "result": "experiments/evidence/c69_vs_c58b_direct_paired680_20260818/RESULTS_DIRECT.json",
+    "result_sha256": "ab78350825ff9de66e46154b6a6853695dd15bf0c4ebe5353041ef6ed79bf0f8",
+    "pair_evidence": "experiments/evidence/c69_vs_c58b_direct_paired680_20260818/PAIR_EVIDENCE_DIRECT.jsonl",
+    "pair_evidence_sha256": "2eb062c781341d99e62f0c36b6aee11043cfe15758253092a93a27e1ed3fbba2"
+  }
+}

@@ -25,6 +25,10 @@ def positive_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)) and float(value) > 0
 
 
+def zero_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)) and float(value) == 0
+
+
 def validate_lock(bundle: dict[str, Any]) -> tuple[list[str], set[str]]:
     require(bundle.get("format") == "wam-evolution-epoch-v1", "format mismatch")
     require(isinstance(bundle.get("epoch_id"), str) and bundle["epoch_id"].strip(), "epoch_id is required")
@@ -65,9 +69,19 @@ def validate_lock(bundle: dict[str, Any]) -> tuple[list[str], set[str]]:
         require(isinstance(candidate.get("dossier"), str) and candidate["dossier"].strip(), f"{candidate_id} dossier is required")
         budget = candidate.get("budget")
         require(isinstance(budget, dict), f"{candidate_id} budget is required")
-        for field in ("global_batch", "optimizer_steps", "training_samples", "unique_windows", "effective_epochs", "estimated_hours"):
+        mode = budget.get("mode", "training")
+        require(mode in {"training", "evaluation_only"}, f"{candidate_id} budget.mode mismatch")
+        for field in ("global_batch", "unique_windows", "estimated_hours"):
             require(positive_number(budget.get(field)), f"{candidate_id} budget.{field} must be positive")
-        require(int(budget["training_samples"]) == int(budget["global_batch"]) * int(budget["optimizer_steps"]), f"{candidate_id} training_samples arithmetic mismatch")
+        if mode == "evaluation_only":
+            for field in ("optimizer_steps", "training_samples", "effective_epochs"):
+                require(zero_number(budget.get(field)), f"{candidate_id} evaluation budget.{field} must be zero")
+            for field in ("gpu_count", "model_forwards"):
+                require(positive_number(budget.get(field)), f"{candidate_id} evaluation budget.{field} must be positive")
+        else:
+            for field in ("optimizer_steps", "training_samples", "effective_epochs"):
+                require(positive_number(budget.get(field)), f"{candidate_id} budget.{field} must be positive")
+            require(int(budget["training_samples"]) == int(budget["global_batch"]) * int(budget["optimizer_steps"]), f"{candidate_id} training_samples arithmetic mismatch")
     require(len(ids) == len(set(ids)), "candidate ids must be unique")
     require(len(signatures) == len(set(signatures)), "duplicate genome signatures are forbidden")
     id_set = set(ids)

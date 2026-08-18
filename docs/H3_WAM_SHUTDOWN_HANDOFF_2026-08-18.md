@@ -2,6 +2,13 @@
 
 日期：2026-08-18（Asia/Shanghai）
 
+> **18:50 CST 后续晋级更新：** C69 action-only s20000 已完成与 C58b s10000 的同授权 680 对
+> fresh-process 直接复跑。C69 `338/680`，C58b `295/680`，差 `+6.3235pp`，discordant `79:36`，
+> 单侧 exact McNemar `p=3.758e-5`；Spatial `+12.94pp`、Object `+10.59pp`、Goal `-2.35pp`、
+> LIBERO-10 `+4.12pp`，四项预注册晋级门全部通过。本文后续将 C58b 写作“唯一冠军”的段落是关机前
+> 历史快照，现由本更新覆盖：**当前闭环 action/carrier endpoint 擂主为 C69，C58b 保留为父基线。**
+> 冻结证据见 `experiments/evidence/c69_vs_c58b_direct_paired680_20260818/`。
+
 ## 一句话结论
 
 当前已经证明的不是“全量微调 H3 有效”，而是：**冻结 MiniMax-H3 INT8，把多层世界特征交给足够强的动作专家，可以在完整 LIBERO 四套件、680 对相同初态闭环中稳定超过历史 D0。** 当前唯一正式晋级模型是 C58b；其余线路保留为对照、失败知识或下一轮架构种子，不得混称冠军。
