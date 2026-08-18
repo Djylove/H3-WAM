@@ -595,3 +595,13 @@ hash manifest SHA256 为 `892367c7d1b5bca07987c91fcf94c7f8ee385c75c5e0ad5840442c
   `dce218d67876bfa758979829f06fe46c07990cf84d40becba5dbfc17168d27d7`。
 - 探针仍严格为`0 optimizer steps / 0 training samples / 0 checkpoint / PROBE_ONLY`；因此只放行trainer、
   strict checkpoint和fixed balanced80 evaluator的实现审计，不放行长训，不改变`NOT_EVIDENCE_READY`。
+- **s1000机械与诊断证据（2026-08-18）**：8卡累计1000步/8000个不重复采样已完成，严格恢复
+  `max_abs=0`；checkpoint SHA256为`aabfc654...4c2aca`。固定、episode-disjoint balanced80报告
+  SHA256为`ad1edb16...16f2`：normalized/physical MSE为`0.134962/0.071118`，gripper macro-F1
+  `0.856520`，visual-shuffle delta MSE `+0.052161`，language replacement relative-L2 `0.104817`。
+  这说明三层H3视觉路径没有塌缩，但语言响应偏弱。该点只有`0.039845` effective epoch，而C58比较点为
+  s10000，因此只标记`EARLY_DIAGNOSTIC_NOT_COMPARABLE`，不得用来晋级或淘汰。
+- **已放行的公平预算**：保持同一旧不可变trainer/source-freeze合同续训到累计10000步、80000样本、
+  `0.398448` effective epoch；每1000步保存，在s5000/s10000执行独立strict restore与相同balanced80。
+  新快照只负责编排和里程碑评测，实际trainer仍从产生s1000的`ccf1e43`不可变快照执行，避免把源码
+  freeze SHA变化伪装成合法续训。闭环前状态保持`NOT_EVIDENCE_READY`。

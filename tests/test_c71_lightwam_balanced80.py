@@ -56,3 +56,12 @@ def test_predict_direct_uses_zero_action_placeholders() -> None:
     prediction = module.predict_direct(Policy(), batch, {})
     assert prediction.shape == (1, 4, 7)
     assert torch.all(prediction == 0.25)
+
+
+def test_milestone_config_rejects_unregistered_step() -> None:
+    module = _module()
+    config = module.EvalConfig(
+        *(Path("x") for _ in range(8)), expected_steps=2000
+    )
+    with pytest.raises(ValueError, match="protocol is fixed"):
+        module.run_evaluation(config)

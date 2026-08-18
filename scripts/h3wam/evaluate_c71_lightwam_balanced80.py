@@ -53,7 +53,7 @@ FORMAT = "h3wam-c71-lightwam-online-balanced80-v1"
 EXPECTED_SELECTED_IDS_SHA256 = BASE.EXPECTED_SELECTED_IDS_SHA256
 EXPECTED_H3_SHA256 = TRAINER.EXPECTED_H3_SHA256
 EXPECTED_ITEMS = 80
-EXPECTED_STEPS = 1000
+EVALUATION_MILESTONES = frozenset({1000, 5000, 10000})
 LAYERS = tuple(LIGHTWAM_H3_CARRIER_LAYERS)
 
 
@@ -72,6 +72,7 @@ class EvalConfig:
     seed: int = 42
     batch_size: int = 1
     samples_per_task: int = 2
+    expected_steps: int = 1000
 
 
 class C71ValidationDataset(BASE.OnlineC58bValidationDataset):
@@ -166,7 +167,7 @@ def _load_checkpoint_and_restore_gate(
     restore = json.loads(config.restore_report.read_text(encoding="utf-8"))
     if (
         restore.get("status") != "PASS_C71_STRICT_RESTORE"
-        or restore.get("completed_steps") != EXPECTED_STEPS
+        or restore.get("completed_steps") != config.expected_steps
         or restore.get("restore_probe_max_abs") != 0.0
         or restore.get("steps_this_invocation") != 0
         or restore.get("training_samples") != 0
@@ -179,8 +180,8 @@ def _load_checkpoint_and_restore_gate(
         raise ValueError("C71 checkpoint top-level schema mismatch")
     if payload.get("schema_version") != TRAINER.CHECKPOINT_SCHEMA:
         raise ValueError("C71 checkpoint schema mismatch")
-    if payload.get("completed_steps") != EXPECTED_STEPS:
-        raise ValueError("C71 balanced80 requires exact step 1000")
+    if payload.get("completed_steps") != config.expected_steps:
+        raise ValueError("C71 balanced80 checkpoint milestone mismatch")
     contract = payload.get("contract")
     required = {
         "classification": "backbone_port",
@@ -222,6 +223,7 @@ def run_evaluation(config: EvalConfig) -> dict[str, Any]:
         or config.samples_per_task != 2
         or config.seed != 42
         or config.num_workers != 0
+        or config.expected_steps not in EVALUATION_MILESTONES
     ):
         raise ValueError("C71 balanced80 protocol is fixed")
     source_rows = PROTOCOL.read_jsonl(config.source_manifest)
@@ -458,6 +460,7 @@ def parse_args() -> EvalConfig:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--expected-steps", type=int, default=1000)
     values = parser.parse_args()
     return EvalConfig(**vars(values))
 
