@@ -1539,3 +1539,16 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
 - 该单个早期负点不能提前停止预注册长线，也不能把s30195晋级为新champion。C73继续`GO_LONG`，效果仍为
   `NOT_EVIDENCE_READY`；后续只在预先固定、strict-restored的更远里程碑复测趋势。原始报告及哈希冻结在
   `experiments/evidence/c73_s30195_s34000_balanced80_preview_20260819/`。
+
+### 2026-08-19 — C73 s38000/s42000 预注册跟进评测启动
+
+- 在读取s38000或s42000指标前，跟进问题固定为：s34000的早期退化是局部波动，还是在更长动作专用预算上
+  重复出现。只比较同一C73轨迹的固定s38000和s42000，不据此选择checkpoint、提前停止训练或启动rollout。
+- 跟进代码commit为`c84fb41359f2fd424f4674863447679376fa00c6`、tree
+  `c3311fa9404511f4807d78bae9d3a1480286d683`，完整只读SOURCE_FREEZE SHA256为
+  `dab45a74ca17b77985e8b9d0cfc52cc3b1a24a28f8a61fb0c8400c617830804c`；6412个跟踪文件校验通过。
+- 节点30907根PID `45946`使用两张A800异步运行：GPU0在s38000 checkpoint、train report和strict restore
+  三件套齐全后立即评测，GPU1只等待相同合同下的s42000。输出固定为
+  `/mnt/h3-wam/eval/c73-action-only-s38000-s42000-balanced80-followup-v1`；节点32409的C73训练继续运行。
+- 当前许可仍为`DIAGNOSTIC_ONLY_CONTINUE_FIXED_TRAJECTORY / NOT_EVIDENCE_READY`。s38000单点即使改善也不能
+  晋级；必须至少读取预注册双点趋势，最终动作有效性仍需训练完成重绑定和固定paired LIBERO闭环。
