@@ -1,0 +1,36 @@
+{
+  "format": "h3wam-c73-milestone-preview-audit-v1",
+  "status": "PASS_C73_MILESTONE_PREVIEW_AUDIT",
+  "permission": "PREVIEW_EVALUATION_ONLY",
+  "effect_status": "NOT_EVIDENCE_READY",
+  "milestone": 34000,
+  "checkpoint": "/mnt/h3-wam/outputs/c73-action-only-three-expert-epoch-v1/online-long130585-v1/checkpoints/c73_action_only_s34000.pt",
+  "checkpoint_sha256": "bba8de3c77eec403f27853e83b74a647b55ef8231178c0dc9b1d0d420d973a2e",
+  "training_contract_sha256": "817a9dc7779b0be03b321405afd76d97212a03b209aef613e094ee5e934881e5",
+  "milestone_audit": {
+    "milestone": 34000,
+    "status": "PASS_C73_MILESTONE_STRICT_RESTORE",
+    "checkpoint": "/mnt/h3-wam/outputs/c73-action-only-three-expert-epoch-v1/online-long130585-v1/checkpoints/c73_action_only_s34000.pt",
+    "checkpoint_sha256": "bba8de3c77eec403f27853e83b74a647b55ef8231178c0dc9b1d0d420d973a2e",
+    "mean_action_loss": 0.060296517208218575,
+    "minimum_global_block_gradient": 0.15259771049022675,
+    "gate": {
+      "status": true,
+      "step": true,
+      "checkpoint": true,
+      "history": true,
+      "finite": true,
+      "gradients": true,
+      "no_leak": true,
+      "lineage": true,
+      "lr": true,
+      "restore": true,
+      "checkpoint_schema": true,
+      "checkpoint_step": true,
+      "checkpoint_contract": true,
+      "checkpoint_scheduler": true,
+      "checkpoint_probes": true
+    }
+  },
+  "claim_boundary": "Preview-only evaluation of one completed C73 milestone. It cannot select a checkpoint, alter training, authorize rollout, or establish that the longer scheduler or additional action-only budget is beneficial."
+}

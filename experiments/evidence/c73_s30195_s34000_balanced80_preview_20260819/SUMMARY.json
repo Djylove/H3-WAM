@@ -1,0 +1,60 @@
+{
+  "format": "h3wam-c73-s30195-s34000-balanced80-preview-summary-v1",
+  "status": "PASS_REPORTS_FROZEN_NEGATIVE_EARLY_BUDGET_SIGNAL",
+  "permission": "CONTINUE_FIXED_C73_TRAJECTORY_AND_PREREGISTER_FOLLOWUP_ONLY",
+  "effect_status": "NOT_EVIDENCE_READY",
+  "hypothesis": "Within the fixed C73 130585-step trajectory, s34000 improves at least one balanced80 action metric over s30195 without regressing physical error, gripper, visual sensitivity, or language sensitivity.",
+  "source": {
+    "git_commit": "ed7df4a2c002c4b1f481565e60765c7c3cbd0196",
+    "git_tree": "0733ebeba2d6d426be354f5e57acfc6a13ecd174",
+    "source_freeze_sha256": "df0dc0ada01667233813151468cbfb0a8d290a6e3a1ef0c7ab214613b286edbe",
+    "snapshot": "/mnt/h3-wam/code-snapshots-transfer-c73-eval-v1/h3-wam-ed7df4a-c73-eval-v1"
+  },
+  "artifacts": {
+    "preview_complete_sha256": "ba224cd552587ec96a8c68431f11bdb047b578e0031d810414226500543b1615",
+    "s30195_report_sha256": "143c0c1376ac21fa97ba8ff00fb0e523bd3033ed14e3ca7eba880ba1481ace08",
+    "s34000_report_sha256": "407009c634a1138a1589165e755ca6e65bcea2cfd7c28834a8581d6d8a599ab6",
+    "s30195_checkpoint_sha256": "82569f46c3a396203551ac0a1a81936c226acb80d9860592b19bf28d1ae53413",
+    "s34000_checkpoint_sha256": "bba8de3c77eec403f27853e83b74a647b55ef8231178c0dc9b1d0d420d973a2e"
+  },
+  "metrics": {
+    "s30195": {
+      "normalized_mse": 0.055051887654307005,
+      "physical_mse": 0.023260658727195148,
+      "gripper_macro_f1": 0.9409809594586043,
+      "language_mean_abs_delta": 0.22524342834949493,
+      "language_relative_l2_delta": 0.869362083121039,
+      "visual_shuffle_mse": 0.048470809661518746
+    },
+    "s34000": {
+      "normalized_mse": 0.06183956907480024,
+      "physical_mse": 0.025963062587777586,
+      "gripper_macro_f1": 0.9319084441088812,
+      "language_mean_abs_delta": 0.22678870814187185,
+      "language_relative_l2_delta": 0.8720123921882518,
+      "visual_shuffle_mse": 0.037120835430898426
+    },
+    "s34000_minus_s30195": {
+      "normalized_mse": 0.006787681420493234,
+      "physical_mse": 0.0027024038605824377,
+      "gripper_macro_f1": -0.009072515349723087,
+      "language_mean_abs_delta": 0.0015452797923769246,
+      "language_relative_l2_delta": 0.0026503090672127527,
+      "visual_shuffle_mse": -0.01134997423062032
+    }
+  },
+  "paired_samples": {
+    "normalized_mse": {"s34000_wins": 35, "s30195_wins": 45, "ties": 0},
+    "physical_mse": {"s34000_wins": 37, "s30195_wins": 43, "ties": 0}
+  },
+  "conditioning_gates": {
+    "s30195": "PASS_ALL",
+    "s34000": "PASS_ALL"
+  },
+  "decision": {
+    "hypothesis_result": "FAIL_EARLY_BUDGET_IMPROVEMENT",
+    "interpretation": "The first 3805 post-control steps regress both action errors, gripper macro-F1 and visual counterfactual response while preserving non-collapsed visual and language conditioning. One early negative point cannot stop the preregistered long trajectory.",
+    "next_gate": "Keep C73 training unchanged and evaluate further fixed, strictly restored milestones before declaring saturation or selecting an endpoint.",
+    "claim_boundary": "Preview-only offline evidence. It cannot promote s30195, authorize rollout, establish final budget harm, or replace the preregistered s130585 comparison."
+  }
+}

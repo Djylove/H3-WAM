@@ -93,3 +93,23 @@ def test_c73_deadline_preview_is_read_only_and_contract_bound():
     assert dossier["budget"]["optimizer_steps"] == 0
     assert dossier["budget"]["training_samples"] == 0
     assert dossier["decision"]["status"] == "GO_CANARY"
+
+
+def test_c73_followup_predeclares_two_later_curve_points():
+    queue = (
+        ROOT / "scripts/h3wam/launch_c73_action_only_followup_preview_2gpu.sh"
+    ).read_text()
+    freezer = (ROOT / "scripts/h3wam/freeze_c67_rollout_source.py").read_text()
+    dossier = json.loads((
+        ROOT / "experiments/dossiers/h3_c73_s38000_s42000_balanced80_followup_v1.json"
+    ).read_text())
+    assert "milestones=(38000 42000)" in queue
+    assert "run_one 0 38000" in queue and "run_one 1 42000" in queue
+    assert "while [[ ! -s" in queue
+    assert "--variant c73" in queue
+    assert "torch.distributed.run" not in queue
+    assert "train_c56b_fact_online.py" not in queue
+    assert "rollout_libero" not in queue
+    assert '"scripts/h3wam/launch_c73_action_only_followup_preview_2gpu.sh"' in freezer
+    assert dossier["budget"]["mode"] == "evaluation_only"
+    assert dossier["decision"]["status"] == "GO_CANARY"

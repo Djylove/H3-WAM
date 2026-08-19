@@ -1,0 +1,1086 @@
+{
+  "format": "h3wam-c73-action-only-milestone-balanced80-v1",
+  "status": "PASS_FIXED_BALANCED80",
+  "permission": "PREVIEW_ONLY_PENDING_TRAINING_COMPLETE_REBIND",
+  "effect_status": "PREVIEW_NOT_EVIDENCE_NOT_FOR_EARLY_STOPPING",
+  "milestone": 30195,
+  "variant": "c73",
+  "checkpoint": "/mnt/h3-wam/outputs/c73-action-only-three-expert-epoch-v1/online-long130585-v1/checkpoints/c73_action_only_s30195.pt",
+  "checkpoint_sha256": "82569f46c3a396203551ac0a1a81936c226acb80d9860592b19bf28d1ae53413",
+  "restore_audit": "/mnt/h3-wam/eval/c73-action-only-long-s30195-s34000-balanced80-preview-v1/preview-audit/s30195.json",
+  "restore_audit_sha256": "843ddc172ee2315871666d22684de3ff1c999ddaffa60bbbd4f3da508fadcbcb",
+  "training_complete": null,
+  "training_complete_sha256": null,
+  "training_contract_sha256": "817a9dc7779b0be03b321405afd76d97212a03b209aef613e094ee5e934881e5",
+  "data": {
+    "source_manifest_sha256": "cab8876f067114dce41d16ca52cb0bafddf17da33c92d0adde5f11d7ac9555b9",
+    "demo_manifest_sha256": "b0d611c21059fa7da6fb08162b03efadd59aff68354bb101be41d3ae20d98eb1",
+    "demo_stats_sha256": "6f7e9f4a2232a798e4e30ad26f5748e71aeeda7fa54cb6ea2d0a3ec7d290e814",
+    "validation_manifest_sha256": "4dde839b4c82f2439a82c4c8bd48f5d5c94c1fe3a71a7e8d23068386c3a2d31d",
+    "selection": {
+      "mode": "deterministic_balanced_per_task",
+      "salt": "h3-int8-starwam-balanced-val-v1",
+      "samples_per_task": 2,
+      "required_task_count": 40,
+      "selected_items": 80,
+      "selected_task_count": 40,
+      "task_counts": {
+        "open the middle drawer of the cabinet": 2,
+        "open the top drawer and put the bowl inside": 2,
+        "pick up the alphabet soup and place it in the basket": 2,
+        "pick up the bbq sauce and place it in the basket": 2,
+        "pick up the black bowl between the plate and the ramekin and place it on the plate": 2,
+        "pick up the black bowl from table center and place it on the plate": 2,
+        "pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate": 2,
+        "pick up the black bowl next to the cookie box and place it on the plate": 2,
+        "pick up the black bowl next to the plate and place it on the plate": 2,
+        "pick up the black bowl next to the ramekin and place it on the plate": 2,
+        "pick up the black bowl on the cookie box and place it on the plate": 2,
+        "pick up the black bowl on the ramekin and place it on the plate": 2,
+        "pick up the black bowl on the stove and place it on the plate": 2,
+        "pick up the black bowl on the wooden cabinet and place it on the plate": 2,
+        "pick up the book and place it in the back compartment of the caddy": 2,
+        "pick up the butter and place it in the basket": 2,
+        "pick up the chocolate pudding and place it in the basket": 2,
+        "pick up the cream cheese and place it in the basket": 2,
+        "pick up the ketchup and place it in the basket": 2,
+        "pick up the milk and place it in the basket": 2,
+        "pick up the orange juice and place it in the basket": 2,
+        "pick up the salad dressing and place it in the basket": 2,
+        "pick up the tomato sauce and place it in the basket": 2,
+        "push the plate to the front of the stove": 2,
+        "put both moka pots on the stove": 2,
+        "put both the alphabet soup and the cream cheese box in the basket": 2,
+        "put both the alphabet soup and the tomato sauce in the basket": 2,
+        "put both the cream cheese box and the butter in the basket": 2,
+        "put the black bowl in the bottom drawer of the cabinet and close it": 2,
+        "put the bowl on the plate": 2,
+        "put the bowl on the stove": 2,
+        "put the bowl on top of the cabinet": 2,
+        "put the cream cheese in the bowl": 2,
+        "put the white mug on the left plate and put the yellow and white mug on the right plate": 2,
+        "put the white mug on the plate and put the chocolate pudding to the right of the plate": 2,
+        "put the wine bottle on the rack": 2,
+        "put the wine bottle on top of the cabinet": 2,
+        "put the yellow and white mug in the microwave and close it": 2,
+        "turn on the stove": 2,
+        "turn on the stove and put the moka pot on it": 2
+      },
+      "selected_ids_sha256": "26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42"
+    },
+    "split_audit": {
+      "episode_key": [
+        "dataset_root",
+        "suite",
+        "episode"
+      ],
+      "source_windows": 222929,
+      "train_windows": 200779,
+      "validation_windows": 22150,
+      "train_episodes": 1542,
+      "validation_episodes": 170,
+      "window_overlap": 0,
+      "episode_overlap": 0,
+      "validation_tasks": 40,
+      "validation_suites": {
+        "libero_10": 9104,
+        "libero_goal": 3856,
+        "libero_object": 5156,
+        "libero_spatial": 4034
+      }
+    },
+    "visual_shuffle": {
+      "enabled": true,
+      "salt": "h3-r1-visual-shuffle-v1",
+      "algorithm": "sha256_rank_then_circular_right_shift_1",
+      "selected_items": 80,
+      "self_map_count": 0,
+      "selected_ids_sha256": "26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42",
+      "mapping_sha256": "d2d954116496a5e9ec83080218b0fdcd9c493a6c34429998f6e53c49d8fae489",
+      "ordered_mapping_sha256": "51888b024a91658fa82658349cf5619ea4df18429aa0e877cb7aff85bc93730c",
+      "mapping": [
+        {
+          "target_sample_id": "libero_goal_ep000039_s000105",
+          "feature_source_sample_id": "libero_object_ep000293_s000021"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000027_s000067",
+          "feature_source_sample_id": "libero_10_ep000067_s000205"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000074_s000016",
+          "feature_source_sample_id": "libero_goal_ep000410_s000034"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000067_s000025",
+          "feature_source_sample_id": "libero_object_ep000444_s000082"
+        },
+        {
+          "target_sample_id": "libero_object_ep000004_s000010",
+          "feature_source_sample_id": "libero_goal_ep000216_s000004"
+        },
+        {
+          "target_sample_id": "libero_object_ep000004_s000081",
+          "feature_source_sample_id": "libero_goal_ep000219_s000021"
+        },
+        {
+          "target_sample_id": "libero_object_ep000083_s000032",
+          "feature_source_sample_id": "libero_object_ep000093_s000021"
+        },
+        {
+          "target_sample_id": "libero_object_ep000088_s000096",
+          "feature_source_sample_id": "libero_spatial_ep000334_s000023"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000015_s000014",
+          "feature_source_sample_id": "libero_object_ep000156_s000028"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000042_s000015",
+          "feature_source_sample_id": "libero_10_ep000326_s000066"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000076_s000060",
+          "feature_source_sample_id": "libero_10_ep000013_s000039"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000090_s000020",
+          "feature_source_sample_id": "libero_object_ep000394_s000044"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000097_s000088",
+          "feature_source_sample_id": "libero_spatial_ep000042_s000015"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000111_s000068",
+          "feature_source_sample_id": "libero_goal_ep000067_s000025"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000178_s000073",
+          "feature_source_sample_id": "libero_10_ep000098_s000128"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000155_s000059",
+          "feature_source_sample_id": "libero_object_ep000004_s000081"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000213_s000071",
+          "feature_source_sample_id": "libero_object_ep000206_s000005"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000202_s000122",
+          "feature_source_sample_id": "libero_spatial_ep000097_s000088"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000229_s000079",
+          "feature_source_sample_id": "libero_10_ep000360_s000099"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000267_s000027",
+          "feature_source_sample_id": "libero_10_ep000121_s000331"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000284_s000057",
+          "feature_source_sample_id": "libero_goal_ep000346_s000020"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000294_s000009",
+          "feature_source_sample_id": "libero_spatial_ep000076_s000060"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000334_s000032",
+          "feature_source_sample_id": "libero_spatial_ep000267_s000027"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000334_s000023",
+          "feature_source_sample_id": "libero_object_ep000439_s000100"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000379_s000075",
+          "feature_source_sample_id": "libero_goal_ep000184_s000055"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000387_s000076",
+          "feature_source_sample_id": "libero_object_ep000118_s000123"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000426_s000035",
+          "feature_source_sample_id": "libero_object_ep000083_s000032"
+        },
+        {
+          "target_sample_id": "libero_spatial_ep000391_s000071",
+          "feature_source_sample_id": "libero_spatial_ep000111_s000068"
+        },
+        {
+          "target_sample_id": "libero_10_ep000360_s000099",
+          "feature_source_sample_id": "libero_10_ep000067_s000028"
+        },
+        {
+          "target_sample_id": "libero_10_ep000383_s000005",
+          "feature_source_sample_id": "libero_goal_ep000311_s000035"
+        },
+        {
+          "target_sample_id": "libero_object_ep000118_s000123",
+          "feature_source_sample_id": "libero_object_ep000203_s000047"
+        },
+        {
+          "target_sample_id": "libero_object_ep000093_s000021",
+          "feature_source_sample_id": "libero_object_ep000177_s000126"
+        },
+        {
+          "target_sample_id": "libero_object_ep000177_s000126",
+          "feature_source_sample_id": "libero_10_ep000335_s000080"
+        },
+        {
+          "target_sample_id": "libero_object_ep000156_s000028",
+          "feature_source_sample_id": "libero_10_ep000189_s000206"
+        },
+        {
+          "target_sample_id": "libero_object_ep000206_s000005",
+          "feature_source_sample_id": "libero_goal_ep000027_s000067"
+        },
+        {
+          "target_sample_id": "libero_object_ep000203_s000047",
+          "feature_source_sample_id": "libero_spatial_ep000213_s000071"
+        },
+        {
+          "target_sample_id": "libero_object_ep000268_s000092",
+          "feature_source_sample_id": "libero_spatial_ep000379_s000075"
+        },
+        {
+          "target_sample_id": "libero_object_ep000262_s000059",
+          "feature_source_sample_id": "libero_10_ep000383_s000005"
+        },
+        {
+          "target_sample_id": "libero_object_ep000293_s000021",
+          "feature_source_sample_id": "libero_spatial_ep000426_s000035"
+        },
+        {
+          "target_sample_id": "libero_object_ep000299_s000093",
+          "feature_source_sample_id": "libero_10_ep000161_s000023"
+        },
+        {
+          "target_sample_id": "libero_object_ep000318_s000085",
+          "feature_source_sample_id": "libero_10_ep000267_s000164"
+        },
+        {
+          "target_sample_id": "libero_object_ep000356_s000079",
+          "feature_source_sample_id": "libero_goal_ep000286_s000060"
+        },
+        {
+          "target_sample_id": "libero_object_ep000394_s000044",
+          "feature_source_sample_id": "libero_goal_ep000085_s000080"
+        },
+        {
+          "target_sample_id": "libero_object_ep000404_s000032",
+          "feature_source_sample_id": "libero_spatial_ep000178_s000073"
+        },
+        {
+          "target_sample_id": "libero_object_ep000439_s000100",
+          "feature_source_sample_id": "libero_goal_ep000312_s000079"
+        },
+        {
+          "target_sample_id": "libero_object_ep000444_s000082",
+          "feature_source_sample_id": "libero_spatial_ep000229_s000079"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000085_s000080",
+          "feature_source_sample_id": "libero_10_ep000013_s000142"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000085_s000027",
+          "feature_source_sample_id": "libero_spatial_ep000294_s000009"
+        },
+        {
+          "target_sample_id": "libero_10_ep000112_s000051",
+          "feature_source_sample_id": "libero_goal_ep000085_s000027"
+        },
+        {
+          "target_sample_id": "libero_10_ep000121_s000331",
+          "feature_source_sample_id": "libero_10_ep000301_s000134"
+        },
+        {
+          "target_sample_id": "libero_10_ep000161_s000023",
+          "feature_source_sample_id": "libero_10_ep000284_s000173"
+        },
+        {
+          "target_sample_id": "libero_10_ep000186_s000065",
+          "feature_source_sample_id": "libero_10_ep000248_s000048"
+        },
+        {
+          "target_sample_id": "libero_10_ep000198_s000190",
+          "feature_source_sample_id": "libero_goal_ep000039_s000105"
+        },
+        {
+          "target_sample_id": "libero_10_ep000189_s000206",
+          "feature_source_sample_id": "libero_goal_ep000199_s000058"
+        },
+        {
+          "target_sample_id": "libero_10_ep000248_s000048",
+          "feature_source_sample_id": "libero_object_ep000268_s000092"
+        },
+        {
+          "target_sample_id": "libero_10_ep000267_s000164",
+          "feature_source_sample_id": "libero_spatial_ep000202_s000122"
+        },
+        {
+          "target_sample_id": "libero_10_ep000067_s000205",
+          "feature_source_sample_id": "libero_goal_ep000126_s000017"
+        },
+        {
+          "target_sample_id": "libero_10_ep000067_s000028",
+          "feature_source_sample_id": "libero_spatial_ep000155_s000059"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000126_s000017",
+          "feature_source_sample_id": "libero_spatial_ep000391_s000071"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000117_s000020",
+          "feature_source_sample_id": "libero_object_ep000088_s000096"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000184_s000055",
+          "feature_source_sample_id": "libero_goal_ep000373_s000039"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000199_s000058",
+          "feature_source_sample_id": "libero_goal_ep000287_s000009"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000216_s000004",
+          "feature_source_sample_id": "libero_spatial_ep000334_s000032"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000219_s000021",
+          "feature_source_sample_id": "libero_spatial_ep000284_s000057"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000287_s000009",
+          "feature_source_sample_id": "libero_10_ep000186_s000065"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000286_s000060",
+          "feature_source_sample_id": "libero_object_ep000404_s000032"
+        },
+        {
+          "target_sample_id": "libero_10_ep000301_s000134",
+          "feature_source_sample_id": "libero_goal_ep000074_s000016"
+        },
+        {
+          "target_sample_id": "libero_10_ep000284_s000173",
+          "feature_source_sample_id": "libero_object_ep000004_s000010"
+        },
+        {
+          "target_sample_id": "libero_10_ep000326_s000066",
+          "feature_source_sample_id": "libero_10_ep000101_s000311"
+        },
+        {
+          "target_sample_id": "libero_10_ep000335_s000080",
+          "feature_source_sample_id": "libero_spatial_ep000090_s000020"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000311_s000035",
+          "feature_source_sample_id": "libero_10_ep000198_s000190"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000312_s000079",
+          "feature_source_sample_id": "libero_object_ep000356_s000079"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000346_s000020",
+          "feature_source_sample_id": "libero_object_ep000262_s000059"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000373_s000039",
+          "feature_source_sample_id": "libero_goal_ep000410_s000035"
+        },
+        {
+          "target_sample_id": "libero_10_ep000098_s000128",
+          "feature_source_sample_id": "libero_object_ep000299_s000093"
+        },
+        {
+          "target_sample_id": "libero_10_ep000101_s000311",
+          "feature_source_sample_id": "libero_spatial_ep000387_s000076"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000410_s000034",
+          "feature_source_sample_id": "libero_object_ep000318_s000085"
+        },
+        {
+          "target_sample_id": "libero_goal_ep000410_s000035",
+          "feature_source_sample_id": "libero_goal_ep000117_s000020"
+        },
+        {
+          "target_sample_id": "libero_10_ep000013_s000039",
+          "feature_source_sample_id": "libero_spatial_ep000015_s000014"
+        },
+        {
+          "target_sample_id": "libero_10_ep000013_s000142",
+          "feature_source_sample_id": "libero_10_ep000112_s000051"
+        }
+      ],
+      "fixed_conditioning": {
+        "text": "unchanged",
+        "proprio": "unchanged",
+        "action_target": "unchanged",
+        "initial_action_noise": "same_tensor_as_baseline"
+      }
+    }
+  },
+  "execution": {
+    "h3": "online_frozen_int8",
+    "h3_checkpoint_sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+    "disk_kv_read": false,
+    "disk_kv_write": false,
+    "disk_feature_read": false,
+    "carrier_layers": [
+      0,
+      2,
+      3,
+      5,
+      7,
+      8,
+      10,
+      12,
+      14,
+      15,
+      17,
+      19,
+      20,
+      22,
+      24,
+      25,
+      27,
+      29,
+      30,
+      32,
+      34,
+      35,
+      37,
+      39,
+      41,
+      42,
+      44,
+      46,
+      47,
+      49
+    ],
+    "same_selected_samples_noise_solver_normalization": true,
+    "seed": 42,
+    "inference_steps": 10,
+    "shift": 5.0
+  },
+  "arm": {
+    "checkpoint_completed_steps": 30195,
+    "strict_fresh_restore": {
+      "independent_instances": 2,
+      "same_noise": true,
+      "max_abs": 0.0
+    },
+    "evaluated_ids_sha256": "26b0326d9694825dac3d6e1cccd0b55db03c7d0b78e56a441927e31d1eb99c42",
+    "task_counts": {
+      "open the middle drawer of the cabinet": 2,
+      "open the top drawer and put the bowl inside": 2,
+      "pick up the alphabet soup and place it in the basket": 2,
+      "pick up the bbq sauce and place it in the basket": 2,
+      "pick up the black bowl between the plate and the ramekin and place it on the plate": 2,
+      "pick up the black bowl from table center and place it on the plate": 2,
+      "pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate": 2,
+      "pick up the black bowl next to the cookie box and place it on the plate": 2,
+      "pick up the black bowl next to the plate and place it on the plate": 2,
+      "pick up the black bowl next to the ramekin and place it on the plate": 2,
+      "pick up the black bowl on the cookie box and place it on the plate": 2,
+      "pick up the black bowl on the ramekin and place it on the plate": 2,
+      "pick up the black bowl on the stove and place it on the plate": 2,
+      "pick up the black bowl on the wooden cabinet and place it on the plate": 2,
+      "pick up the book and place it in the back compartment of the caddy": 2,
+      "pick up the butter and place it in the basket": 2,
+      "pick up the chocolate pudding and place it in the basket": 2,
+      "pick up the cream cheese and place it in the basket": 2,
+      "pick up the ketchup and place it in the basket": 2,
+      "pick up the milk and place it in the basket": 2,
+      "pick up the orange juice and place it in the basket": 2,
+      "pick up the salad dressing and place it in the basket": 2,
+      "pick up the tomato sauce and place it in the basket": 2,
+      "push the plate to the front of the stove": 2,
+      "put both moka pots on the stove": 2,
+      "put both the alphabet soup and the cream cheese box in the basket": 2,
+      "put both the alphabet soup and the tomato sauce in the basket": 2,
+      "put both the cream cheese box and the butter in the basket": 2,
+      "put the black bowl in the bottom drawer of the cabinet and close it": 2,
+      "put the bowl on the plate": 2,
+      "put the bowl on the stove": 2,
+      "put the bowl on top of the cabinet": 2,
+      "put the cream cheese in the bowl": 2,
+      "put the white mug on the left plate and put the yellow and white mug on the right plate": 2,
+      "put the white mug on the plate and put the chocolate pudding to the right of the plate": 2,
+      "put the wine bottle on the rack": 2,
+      "put the wine bottle on top of the cabinet": 2,
+      "put the yellow and white mug in the microwave and close it": 2,
+      "turn on the stove": 2,
+      "turn on the stove and put the moka pot on it": 2
+    },
+    "metrics": {
+      "normalized_clip5_model_domain": {
+        "valid_steps": 2560,
+        "valid_elements": 17920,
+        "action_mse": 0.055051887654307005,
+        "action_mae": 0.11671659180096218,
+        "action_mse_per_dim": [
+          0.03984059959184379,
+          0.02346741788687723,
+          0.05260144854028113,
+          0.009890630384416,
+          0.02042569601399009,
+          0.017741410700546113,
+          0.22139601046219468
+        ],
+        "action_mae_per_dim": [
+          0.14536358118057252,
+          0.10933060050010682,
+          0.1640549123287201,
+          0.0702044665813446,
+          0.10710022449493409,
+          0.08931047916412353,
+          0.1316518783569336
+        ],
+        "chunk_ade_l2": 0.44187952341028625,
+        "chunk_endpoint_l2": 0.5453540690928373,
+        "prediction_mean_per_dim": [
+          -0.0007183074951171875,
+          0.20474457740783691,
+          -0.1837769031524658,
+          -0.18003277778625487,
+          -0.005761235952377319,
+          -0.0182955265045166,
+          -0.13698558807373046
+        ],
+        "prediction_std_per_dim": [
+          0.3206588481876163,
+          0.38334912606999655,
+          0.5034531772600993,
+          0.07216306347262164,
+          0.11453324888336464,
+          0.1653171705974392,
+          0.9833059945769281
+        ],
+        "prediction_std": 0.4823047319679828,
+        "prediction_outside_unit_count": 1069,
+        "prediction_outside_unit_fraction": 0.05965401785714286,
+        "prediction_max_abs": 1.078125,
+        "target_mean_per_dim": [
+          0.0051666259765625,
+          0.20611987709999086,
+          -0.1818910777568817,
+          -0.1831866204738617,
+          -0.002600449323654175,
+          -0.02393364906311035,
+          -0.1046875
+        ],
+        "target_std_per_dim": [
+          0.3382734768920259,
+          0.39641958919332226,
+          0.5178728058277291,
+          0.12036419842601986,
+          0.14836471624699676,
+          0.21834703781239048,
+          0.9945051670774516
+        ]
+      },
+      "denormalized_official_minmax_clamp": {
+        "valid_steps": 2560,
+        "valid_elements": 17920,
+        "action_mse": 0.023260658727195148,
+        "action_mae": 0.07834104682718004,
+        "action_mse_per_dim": [
+          0.03503344502241816,
+          0.020648237146087923,
+          0.046192971801792736,
+          0.000883340491219542,
+          0.0028718511606030004,
+          0.002427788634901162,
+          0.05476697683334351
+        ],
+        "action_mae_per_dim": [
+          0.13628015518188477,
+          0.1025568962097168,
+          0.15324900150299073,
+          0.02098303884267807,
+          0.04017137587070465,
+          0.03304358869791031,
+          0.062103271484375
+        ],
+        "chunk_ade_l2": 0.31430743878782086,
+        "chunk_endpoint_l2": 0.37586684853326346,
+        "prediction_mean_per_dim": [
+          -0.0007171630859375,
+          0.19194717407226564,
+          -0.17190475463867189,
+          0.002788543701171875,
+          -0.0022068023681640625,
+          -0.000963592529296875,
+          0.43352508544921875
+        ],
+        "prediction_std_per_dim": [
+          0.30066388018484735,
+          0.3594623306980872,
+          0.47095248064658435,
+          0.021502197185907602,
+          0.04296825692960028,
+          0.06130902165459991,
+          0.48810325862919096
+        ],
+        "prediction_std": 0.3607188476583479,
+        "prediction_outside_unit_count": 0,
+        "prediction_outside_unit_fraction": 0.0,
+        "prediction_max_abs": 1.0,
+        "target_mean_per_dim": [
+          0.004854917526245117,
+          0.193247652053833,
+          -0.17052371501922609,
+          0.002082641422748566,
+          -0.0009738832712173461,
+          -0.0034919843077659608,
+          0.44765625
+        ],
+        "target_std_per_dim": [
+          0.3171490727362359,
+          0.37167935195127133,
+          0.48548191762439247,
+          0.035976161638653914,
+          0.055631020338411157,
+          0.08071404638882121,
+          0.4972525835387258
+        ]
+      },
+      "gripper_sign": {
+        "positive_semantics": "normalized gripper >= 0",
+        "accuracy": 0.941796875,
+        "precision": 0.9478885893980233,
+        "recall": 0.9205933682373473,
+        "f1": 0.934041611332448,
+        "macro_f1": 0.9409809594586043,
+        "tp": 1055,
+        "tn": 1356,
+        "fp": 58,
+        "fn": 91
+      },
+      "language_replacement_action_cross_attention_only": {
+        "same_noise": true,
+        "mean_abs_prediction_delta": 0.22239008460726056,
+        "rms_prediction_delta": 0.41692399927542917,
+        "mean_step_l2_prediction_delta": 0.8758900751093762,
+        "relative_l2_prediction_delta": 0.8605642113594268
+      },
+      "language_replacement_end_to_end_h3_and_action": {
+        "same_noise": true,
+        "mean_abs_prediction_delta": 0.22524342834949493,
+        "rms_prediction_delta": 0.421186370207831,
+        "mean_step_l2_prediction_delta": 0.8871330119400411,
+        "relative_l2_prediction_delta": 0.869362083121039
+      },
+      "visual_feature_shuffle_baseline_delta": {
+        "valid_steps": 2560,
+        "valid_elements": 17920,
+        "action_mse": 0.048470809661518746,
+        "action_mae": 0.06748458743095398,
+        "action_mse_per_dim": [
+          0.012076391927257646,
+          0.01314718368166723,
+          0.06978063467540778,
+          0.001849376631435007,
+          0.002051928999389929,
+          0.0019497665340168168,
+          0.2384403851814568
+        ],
+        "action_mae_per_dim": [
+          0.060901856422424315,
+          0.05912927985191345,
+          0.13460211753845214,
+          0.021323966979980468,
+          0.028967404365539552,
+          0.02637995481491089,
+          0.14108753204345703
+        ],
+        "chunk_ade_l2": 0.28548501679203653,
+        "chunk_endpoint_l2": 0.19879685811341588,
+        "prediction_mean_per_dim": [
+          0.004270243644714356,
+          0.2020346701145172,
+          -0.16882143020629883,
+          -0.18413863182067872,
+          -0.008090466260910034,
+          -0.025367105007171632,
+          -0.13593101501464844
+        ],
+        "prediction_std_per_dim": [
+          0.31828636796026105,
+          0.3641158848026167,
+          0.5091886996850373,
+          0.06301683199408632,
+          0.11139886988192048,
+          0.14996201900495487,
+          0.9800473761585283
+        ],
+        "prediction_std": 0.4781934853726028,
+        "prediction_outside_unit_count": 908,
+        "prediction_outside_unit_fraction": 0.05066964285714286,
+        "prediction_max_abs": 1.125,
+        "target_mean_per_dim": [
+          -0.0007183074951171875,
+          0.20474457740783691,
+          -0.1837769031524658,
+          -0.18003277778625487,
+          -0.005761235952377319,
+          -0.0182955265045166,
+          -0.13698558807373046
+        ],
+        "target_std_per_dim": [
+          0.3206588481876163,
+          0.38334912606999655,
+          0.5034531772600993,
+          0.07216306347262164,
+          0.11453324888336464,
+          0.1653171705974392,
+          0.9833059945769281
+        ]
+      }
+    },
+    "per_sample": {
+      "libero_goal_ep000039_s000105": {
+        "normalized_action_mse": 0.019062750041484833,
+        "physical_action_mse": 0.012222860008478165
+      },
+      "libero_goal_ep000027_s000067": {
+        "normalized_action_mse": 0.05068212375044823,
+        "physical_action_mse": 0.02252488024532795
+      },
+      "libero_goal_ep000074_s000016": {
+        "normalized_action_mse": 0.018101314082741737,
+        "physical_action_mse": 0.012008548714220524
+      },
+      "libero_goal_ep000067_s000025": {
+        "normalized_action_mse": 0.01659356988966465,
+        "physical_action_mse": 0.012089801020920277
+      },
+      "libero_object_ep000004_s000010": {
+        "normalized_action_mse": 0.03012542799115181,
+        "physical_action_mse": 0.023097896948456764
+      },
+      "libero_object_ep000004_s000081": {
+        "normalized_action_mse": 0.023857541382312775,
+        "physical_action_mse": 0.016628962010145187
+      },
+      "libero_object_ep000083_s000032": {
+        "normalized_action_mse": 0.03371119126677513,
+        "physical_action_mse": 0.01399204507470131
+      },
+      "libero_object_ep000088_s000096": {
+        "normalized_action_mse": 0.016378704458475113,
+        "physical_action_mse": 0.013047820888459682
+      },
+      "libero_spatial_ep000015_s000014": {
+        "normalized_action_mse": 0.07405100017786026,
+        "physical_action_mse": 0.031588729470968246
+      },
+      "libero_spatial_ep000042_s000015": {
+        "normalized_action_mse": 0.04666485637426376,
+        "physical_action_mse": 0.025126926600933075
+      },
+      "libero_spatial_ep000076_s000060": {
+        "normalized_action_mse": 0.03755350783467293,
+        "physical_action_mse": 0.029428619891405106
+      },
+      "libero_spatial_ep000090_s000020": {
+        "normalized_action_mse": 0.06473049521446228,
+        "physical_action_mse": 0.02073218673467636
+      },
+      "libero_spatial_ep000097_s000088": {
+        "normalized_action_mse": 0.02592124417424202,
+        "physical_action_mse": 0.014625893905758858
+      },
+      "libero_spatial_ep000111_s000068": {
+        "normalized_action_mse": 0.021862652152776718,
+        "physical_action_mse": 0.01590314321219921
+      },
+      "libero_spatial_ep000178_s000073": {
+        "normalized_action_mse": 0.026566963642835617,
+        "physical_action_mse": 0.008573966100811958
+      },
+      "libero_spatial_ep000155_s000059": {
+        "normalized_action_mse": 0.033113524317741394,
+        "physical_action_mse": 0.02069231867790222
+      },
+      "libero_spatial_ep000213_s000071": {
+        "normalized_action_mse": 0.027628740295767784,
+        "physical_action_mse": 0.021304961293935776
+      },
+      "libero_spatial_ep000202_s000122": {
+        "normalized_action_mse": 0.10840199887752533,
+        "physical_action_mse": 0.03476814553141594
+      },
+      "libero_spatial_ep000229_s000079": {
+        "normalized_action_mse": 0.028716817498207092,
+        "physical_action_mse": 0.019656425341963768
+      },
+      "libero_spatial_ep000267_s000027": {
+        "normalized_action_mse": 0.04960358515381813,
+        "physical_action_mse": 0.016462335363030434
+      },
+      "libero_spatial_ep000284_s000057": {
+        "normalized_action_mse": 0.10070081055164337,
+        "physical_action_mse": 0.03248007223010063
+      },
+      "libero_spatial_ep000294_s000009": {
+        "normalized_action_mse": 0.027247538790106773,
+        "physical_action_mse": 0.009886297397315502
+      },
+      "libero_spatial_ep000334_s000032": {
+        "normalized_action_mse": 0.10753265768289566,
+        "physical_action_mse": 0.04576655477285385
+      },
+      "libero_spatial_ep000334_s000023": {
+        "normalized_action_mse": 0.036760441958904266,
+        "physical_action_mse": 0.018741726875305176
+      },
+      "libero_spatial_ep000379_s000075": {
+        "normalized_action_mse": 0.026525083929300308,
+        "physical_action_mse": 0.015500163659453392
+      },
+      "libero_spatial_ep000387_s000076": {
+        "normalized_action_mse": 0.017407424747943878,
+        "physical_action_mse": 0.009168713353574276
+      },
+      "libero_spatial_ep000426_s000035": {
+        "normalized_action_mse": 0.07723452895879745,
+        "physical_action_mse": 0.04130429029464722
+      },
+      "libero_spatial_ep000391_s000071": {
+        "normalized_action_mse": 0.00637251790612936,
+        "physical_action_mse": 0.004499443806707859
+      },
+      "libero_10_ep000360_s000099": {
+        "normalized_action_mse": 0.011037142015993595,
+        "physical_action_mse": 0.00789717584848404
+      },
+      "libero_10_ep000383_s000005": {
+        "normalized_action_mse": 0.009816547855734825,
+        "physical_action_mse": 0.005782298278063536
+      },
+      "libero_object_ep000118_s000123": {
+        "normalized_action_mse": 0.15940338373184204,
+        "physical_action_mse": 0.054592061787843704
+      },
+      "libero_object_ep000093_s000021": {
+        "normalized_action_mse": 0.07910831272602081,
+        "physical_action_mse": 0.03967257961630821
+      },
+      "libero_object_ep000177_s000126": {
+        "normalized_action_mse": 0.11680901795625687,
+        "physical_action_mse": 0.031812701374292374
+      },
+      "libero_object_ep000156_s000028": {
+        "normalized_action_mse": 0.0632556825876236,
+        "physical_action_mse": 0.028816845268011093
+      },
+      "libero_object_ep000206_s000005": {
+        "normalized_action_mse": 0.008120609447360039,
+        "physical_action_mse": 0.006332369055598974
+      },
+      "libero_object_ep000203_s000047": {
+        "normalized_action_mse": 0.06387725472450256,
+        "physical_action_mse": 0.027412012219429016
+      },
+      "libero_object_ep000268_s000092": {
+        "normalized_action_mse": 0.01264126505702734,
+        "physical_action_mse": 0.00566830625757575
+      },
+      "libero_object_ep000262_s000059": {
+        "normalized_action_mse": 0.011508260853588581,
+        "physical_action_mse": 0.008045132271945477
+      },
+      "libero_object_ep000293_s000021": {
+        "normalized_action_mse": 0.08024001121520996,
+        "physical_action_mse": 0.02520366944372654
+      },
+      "libero_object_ep000299_s000093": {
+        "normalized_action_mse": 0.01020065601915121,
+        "physical_action_mse": 0.006914669182151556
+      },
+      "libero_object_ep000318_s000085": {
+        "normalized_action_mse": 0.00863112322986126,
+        "physical_action_mse": 0.005699953064322472
+      },
+      "libero_object_ep000356_s000079": {
+        "normalized_action_mse": 0.02133728377521038,
+        "physical_action_mse": 0.01702488772571087
+      },
+      "libero_object_ep000394_s000044": {
+        "normalized_action_mse": 0.02939608134329319,
+        "physical_action_mse": 0.010921379551291466
+      },
+      "libero_object_ep000404_s000032": {
+        "normalized_action_mse": 0.007208772469311953,
+        "physical_action_mse": 0.0030375972855836153
+      },
+      "libero_object_ep000439_s000100": {
+        "normalized_action_mse": 0.008960898965597153,
+        "physical_action_mse": 0.006441414821892977
+      },
+      "libero_object_ep000444_s000082": {
+        "normalized_action_mse": 0.01587861403822899,
+        "physical_action_mse": 0.011519933119416237
+      },
+      "libero_goal_ep000085_s000080": {
+        "normalized_action_mse": 0.08278286457061768,
+        "physical_action_mse": 0.06372367590665817
+      },
+      "libero_goal_ep000085_s000027": {
+        "normalized_action_mse": 0.021777890622615814,
+        "physical_action_mse": 0.016346201300621033
+      },
+      "libero_10_ep000112_s000051": {
+        "normalized_action_mse": 0.005056811962276697,
+        "physical_action_mse": 0.0026095653884112835
+      },
+      "libero_10_ep000121_s000331": {
+        "normalized_action_mse": 0.09168901294469833,
+        "physical_action_mse": 0.024948013946413994
+      },
+      "libero_10_ep000161_s000023": {
+        "normalized_action_mse": 0.054548196494579315,
+        "physical_action_mse": 0.020683541893959045
+      },
+      "libero_10_ep000186_s000065": {
+        "normalized_action_mse": 0.012975286692380905,
+        "physical_action_mse": 0.007550596259534359
+      },
+      "libero_10_ep000198_s000190": {
+        "normalized_action_mse": 0.3570798337459564,
+        "physical_action_mse": 0.1469058096408844
+      },
+      "libero_10_ep000189_s000206": {
+        "normalized_action_mse": 0.12063068896532059,
+        "physical_action_mse": 0.042822107672691345
+      },
+      "libero_10_ep000248_s000048": {
+        "normalized_action_mse": 0.08288582414388657,
+        "physical_action_mse": 0.038663145154714584
+      },
+      "libero_10_ep000267_s000164": {
+        "normalized_action_mse": 0.2787576913833618,
+        "physical_action_mse": 0.08603893965482712
+      },
+      "libero_10_ep000067_s000205": {
+        "normalized_action_mse": 0.011113501153886318,
+        "physical_action_mse": 0.00589923607185483
+      },
+      "libero_10_ep000067_s000028": {
+        "normalized_action_mse": 0.005371560342609882,
+        "physical_action_mse": 0.002840653294697404
+      },
+      "libero_goal_ep000126_s000017": {
+        "normalized_action_mse": 0.043890755623579025,
+        "physical_action_mse": 0.015069377608597279
+      },
+      "libero_goal_ep000117_s000020": {
+        "normalized_action_mse": 0.01601950079202652,
+        "physical_action_mse": 0.01135462336242199
+      },
+      "libero_goal_ep000184_s000055": {
+        "normalized_action_mse": 0.01067874114960432,
+        "physical_action_mse": 0.006247410085052252
+      },
+      "libero_goal_ep000199_s000058": {
+        "normalized_action_mse": 0.02301647514104843,
+        "physical_action_mse": 0.017022937536239624
+      },
+      "libero_goal_ep000216_s000004": {
+        "normalized_action_mse": 0.02714965119957924,
+        "physical_action_mse": 0.013034169562160969
+      },
+      "libero_goal_ep000219_s000021": {
+        "normalized_action_mse": 0.023726148530840874,
+        "physical_action_mse": 0.009770440869033337
+      },
+      "libero_goal_ep000287_s000009": {
+        "normalized_action_mse": 0.019785983487963676,
+        "physical_action_mse": 0.013540135696530342
+      },
+      "libero_goal_ep000286_s000060": {
+        "normalized_action_mse": 0.5015090107917786,
+        "physical_action_mse": 0.17455007135868073
+      },
+      "libero_10_ep000301_s000134": {
+        "normalized_action_mse": 0.09849138557910919,
+        "physical_action_mse": 0.028977127745747566
+      },
+      "libero_10_ep000284_s000173": {
+        "normalized_action_mse": 0.05915924906730652,
+        "physical_action_mse": 0.01818994991481304
+      },
+      "libero_10_ep000326_s000066": {
+        "normalized_action_mse": 0.023852618411183357,
+        "physical_action_mse": 0.013654986396431923
+      },
+      "libero_10_ep000335_s000080": {
+        "normalized_action_mse": 0.007820485159754753,
+        "physical_action_mse": 0.004715218208730221
+      },
+      "libero_goal_ep000311_s000035": {
+        "normalized_action_mse": 0.045621562749147415,
+        "physical_action_mse": 0.01717577688395977
+      },
+      "libero_goal_ep000312_s000079": {
+        "normalized_action_mse": 0.02693665586411953,
+        "physical_action_mse": 0.018788674846291542
+      },
+      "libero_goal_ep000346_s000020": {
+        "normalized_action_mse": 0.04781799390912056,
+        "physical_action_mse": 0.015309667214751244
+      },
+      "libero_goal_ep000373_s000039": {
+        "normalized_action_mse": 0.017968863248825073,
+        "physical_action_mse": 0.008788000792264938
+      },
+      "libero_10_ep000098_s000128": {
+        "normalized_action_mse": 0.11244026571512222,
+        "physical_action_mse": 0.044568244367837906
+      },
+      "libero_10_ep000101_s000311": {
+        "normalized_action_mse": 0.05292448028922081,
+        "physical_action_mse": 0.022697262465953827
+      },
+      "libero_goal_ep000410_s000034": {
+        "normalized_action_mse": 0.09733105450868607,
+        "physical_action_mse": 0.03154458850622177
+      },
+      "libero_goal_ep000410_s000035": {
+        "normalized_action_mse": 0.008538434281945229,
+        "physical_action_mse": 0.004447537008672953
+      },
+      "libero_10_ep000013_s000039": {
+        "normalized_action_mse": 0.12421724200248718,
+        "physical_action_mse": 0.03699338436126709
+      },
+      "libero_10_ep000013_s000142": {
+        "normalized_action_mse": 0.018554359674453735,
+        "physical_action_mse": 0.010777554474771023
+      }
+    },
+    "timing": {
+      "mean_seconds_per_sample": 2.600566112372326
+    }
+  },
+  "conditioning_gates": {
+    "prediction_not_constant": true,
+    "gripper_metric_finite": true,
+    "language_sensitive": true,
+    "visual_sensitive": true
+  },
+  "timing": {
+    "elapsed_seconds": 248.81796618318185
+  },
+  "claim_boundary": "One fixed offline C73 milestone only. This report cannot select a checkpoint, alter the fixed trajectory, or authorize LIBERO without training-complete rebinding and the preregistered aggregate."
+}

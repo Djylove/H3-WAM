@@ -1518,3 +1518,24 @@ gradient norm 已为 `2.5846/604`，第二步爆到 `382.7455/9920`；同一数�
   `e7a5ac0193148d1a514c5dd3eb5a968d56c36d0adfd9055368ee7cd034be2459`，节点32409根PID `70710`，
   输出为`/mnt/h3-wam/outputs/c73-action-only-three-expert-epoch-v1/online-long130585-v1`。服务器截止时只保留
   已完成strict restore的最高每千步里程碑；未到s130585不得声称完成三个epoch或据此判定预算效果。
+
+### 2026-08-19 — C73 s30195/s34000 固定离线学习曲线首轮
+
+- 可证伪问题为：在同一C73 `scheduler_horizon=130585`轨迹内，s34000是否相对累计一个expert epoch的
+  固定control s30195改善至少一个balanced80动作指标，同时守住physical、gripper、visual shuffle和
+  wrong-language安全项。该实验为两张A800、160个固定sample-checkpoint对、6400次action denoiser forward、
+  0 optimizer step的`evaluation_only`；训练节点32409不受影响。
+- 评测代码commit为`ed7df4a2c002c4b1f481565e60765c7c3cbd0196`、tree
+  `0733ebeba2d6d426be354f5e57acfc6a13ecd174`，完整只读SOURCE_FREEZE SHA256为
+  `df0dc0ada01667233813151468cbfb0a8d290a6e3a1ef0c7ab214613b286edbe`。两份checkpoint先经C73 finalizer
+  逐字段审计、独立strict restore和SHA绑定，再使用相同80个episode-disjoint样本、noise、10-step solver、
+  normalization、语言替换和无self-map视觉shuffle评测。
+- s30195的normalized/physical MSE、gripper macro-F1、visual shuffle MSE分别为
+  `0.05505189/0.02326066/0.94098096/0.04847081`；s34000分别为
+  `0.06183957/0.02596306/0.93190844/0.03712084`。s34000相对control的两项误差分别增加
+  `0.00678768/0.00270240`，gripper下降`0.00907252`，visual response下降`0.01134997`；normalized逐样本
+  为s34000胜35、s30195胜45，physical为37:43。两端语言和视觉最低conditioning gate仍全部通过，因此
+  这是`FAIL_EARLY_BUDGET_IMPROVEMENT`，不是conditioning collapse。
+- 该单个早期负点不能提前停止预注册长线，也不能把s30195晋级为新champion。C73继续`GO_LONG`，效果仍为
+  `NOT_EVIDENCE_READY`；后续只在预先固定、strict-restored的更远里程碑复测趋势。原始报告及哈希冻结在
+  `experiments/evidence/c73_s30195_s34000_balanced80_preview_20260819/`。

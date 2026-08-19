@@ -1,0 +1,11 @@
+{
+  "format": "h3wam-c73-action-only-deadline-preview-complete-v1",
+  "status": "PASS_C73_S30195_S34000_PREVIEWS_COMPLETE",
+  "permission": "DIAGNOSTIC_ONLY_CONTINUE_FIXED_TRAJECTORY",
+  "effect_status": "NOT_EVIDENCE_READY",
+  "reports_sha256": {
+    "30195": "143c0c1376ac21fa97ba8ff00fb0e523bd3033ed14e3ca7eba880ba1481ace08",
+    "34000": "407009c634a1138a1589165e755ca6e65bcea2cfd7c28834a8581d6d8a599ab6"
+  },
+  "claim_boundary": "No checkpoint selection, rollout, early stop, or budget-effect claim."
+}

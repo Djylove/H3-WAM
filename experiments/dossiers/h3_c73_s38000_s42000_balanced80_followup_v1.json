@@ -1,0 +1,38 @@
+{
+  "experiment_id": "h3_c73_s38000_s42000_balanced80_followup_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "After the negative C73 s30195-to-s34000 preview, fixed later milestones s38000 and s42000 will reveal whether normalized/physical action error, gripper macro-F1 and visual conditioning recover toward the s30195 control; if neither recovers, the early long-schedule curve is consistently non-improving over three post-control points.",
+  "single_variable": "Only completed checkpoint step changes within the immutable C73 trajectory. s38000 and s42000 are fixed before either report is read; data, selected samples, noise, solver, model, normalization and evaluator remain unchanged.",
+  "parent_baseline": "C73-s30195 is the internal control; the frozen s34000 negative preview motivates but does not score this followup. C69 remains the closed-loop champion.",
+  "references": [
+    {"kind": "paper", "title": "FACT: Failure-Aware Causal Training for World-Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "arXiv:2608.10232", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "FastWAM official repository", "locator": "https://github.com/YuanTianYuan01/FastWAM", "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "FACT official repository", "locator": "https://github.com/Bariona/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "C73 fixed long trajectory and balanced80 evaluator", "locator": "/home/ubuntu/fastwam_deploy", "revision": "resolved by the followup SOURCE_FREEZE", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "frozen INT8 H3 and 30-layer action tower", "paper": "Unchanged budget curve.", "upstream_code": "FastWAM/FACT action path.", "local": "Identical C73 graph at both milestones.", "status": "EXACT", "evidence": ["scripts/h3wam/evaluate_c67_fact_milestone_balanced80.py"], "rationale": "Only step changes."}],
+    "data": [{"field": "fixed balanced80 split", "paper": "Held-out diagnostics.", "upstream_code": "No direct equivalent.", "local": "Same 80 episode-disjoint samples and counterfactual mappings.", "status": "EXACT", "evidence": ["scripts/h3wam/evaluate_c67_fact_milestone_balanced80.py"], "rationale": "Hashes are enforced."}],
+    "action": [{"field": "absolute7D horizon32 shift5", "paper": "Contract matching.", "upstream_code": "FastWAM shifted flow.", "local": "Unchanged.", "status": "EXACT", "evidence": ["scripts/h3wam/evaluate_c56b_fact_online_paired.py"], "rationale": "No deployment change."}],
+    "objective": [{"field": "read-only error and conditioning diagnostics", "paper": "Rollout remains final evidence.", "upstream_code": "Not applicable.", "local": "No optimizer.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c73_action_only_followup_preview_2gpu.sh"], "rationale": "Diagnostic only."}],
+    "optimization": [{"field": "zero-step two-checkpoint evaluation", "paper": "Not applicable.", "upstream_code": "Not applicable.", "local": "Two A800 workers, one checkpoint each.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c73_action_only_followup_preview_2gpu.sh"], "rationale": "Training is independent."}],
+    "evaluation": [{"field": "two fixed followup points", "paper": "Closed loop required for policy claim.", "upstream_code": "WAMs report rollout.", "local": "Cannot select or promote endpoints.", "status": "INTENTIONAL_DEVIATION", "evidence": ["experiments/evidence/c73_s30195_s34000_balanced80_preview_20260819/SUMMARY.json"], "rationale": "Tests curve consistency before expiry."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Immutable snapshot required."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["C73 evaluator contract exists and passed the first preview."]},
+    "data_contract": {"status": "PASS", "evidence": ["Fixed hashes and split."]},
+    "action_contract": {"status": "PASS", "evidence": ["Unchanged absolute7D evaluator."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Evaluation only."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Zero optimizer work."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["s38000/s42000 fixed before reports."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Frozen evaluation; training gradients remain separate."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["C73 s30195/s34000 completed identical evaluator."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Each point must pass strict restore before evaluation."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C73-s30195 fixed control."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["Followup reports do not exist yet."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Not authorized by previews."]}
+  },
+  "budget": {"mode": "evaluation_only", "global_batch": 2, "optimizer_steps": 0, "training_samples": 0, "unique_windows": 160, "effective_epochs": 0.0, "gpu_count": 2, "estimated_hours": 1.5, "model_forwards": 6400},
+  "decision": {"status": "GO_CANARY", "effect_status": "NOT_EVIDENCE_READY", "rationale": "Two later, predeclared curve points distinguish a transient s34000 fluctuation from a repeated early regression without changing training.", "launch_command": "C73_FOLLOWUP_SOURCE_SNAPSHOT=<immutable_snapshot> C73_FOLLOWUP_SOURCE_FREEZE_SHA256=<sha256> C73_FOLLOWUP_ROOT=/mnt/h3-wam/eval/c73-action-only-s38000-s42000-balanced80-followup-v1 bash scripts/h3wam/launch_c73_action_only_followup_preview_2gpu.sh"}
+}
