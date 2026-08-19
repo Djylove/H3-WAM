@@ -1,0 +1,54 @@
+{
+  "experiment_id": "h3_c73_s30195_s34000_balanced80_preview_v1",
+  "classification": "controlled_ablation",
+  "hypothesis": "Within the fixed C73 130585-step trajectory, continuing from cumulative-one-expert-epoch s30195 to s34000 improves at least one fixed balanced80 action metric without regressing physical error, gripper macro-F1, visual shuffle sensitivity, or wrong-language sensitivity; otherwise the first 3805 additional steps do not yet support a positive budget effect.",
+  "single_variable": "The frozen checkpoint step changes from C73-s30195 to C73-s34000. Data split, selected samples, noise, solver, normalization, INT8 H3 carrier, action architecture and evaluator are identical. This deadline preview does not substitute s34000 for the preregistered final s130585 endpoint.",
+  "parent_baseline": "C73-s30195 is the preregistered within-trajectory control. C72 and promoted C69 remain external scheduler/champion anchors only.",
+  "references": [
+    {"kind": "paper", "title": "FACT: Failure-Aware Causal Training for World-Action Models", "locator": "https://arxiv.org/abs/2608.10232", "revision": "arXiv:2608.10232", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "FastWAM official repository", "locator": "https://github.com/YuanTianYuan01/FastWAM", "revision": "45d8e1458921d83f8ad6cf9ce993d371208dabd0", "official": true, "clean": true},
+    {"kind": "upstream_code", "title": "FACT official repository", "locator": "https://github.com/Bariona/FACT", "revision": "618a6c16868699b6d4138941de6a863589ac00dd", "official": true, "clean": true},
+    {"kind": "local_implementation", "title": "C73 immutable action-only long trajectory", "locator": "/mnt/h3-wam/code-snapshots-transfer-c73-long-v1/h3-wam-7ddb793-c73-long-v1", "revision": "7ddb793ad1eeb3a447dece9e8ad9628e1065a58a", "official": false, "clean": true}
+  ],
+  "alignment": {
+    "architecture": [{"field": "frozen INT8 H3 plus full 30-layer action tower", "paper": "Unchanged within a budget curve.", "upstream_code": "FastWAM full ActionDiT; FACT action/consequence topology.", "local": "Both endpoints restore the identical C73 graph.", "status": "EXACT", "evidence": ["scripts/h3wam/evaluate_c67_fact_milestone_balanced80.py"], "rationale": "Only completed step changes."}],
+    "data": [{"field": "episode-disjoint balanced80", "paper": "Held-out paired diagnostics.", "upstream_code": "No direct upstream equivalent.", "local": "Same fixed 80 samples across 40 tasks, same visual shuffle map.", "status": "EXACT", "evidence": ["scripts/h3wam/evaluate_c67_fact_milestone_balanced80.py"], "rationale": "Selection hash is fail-closed."}],
+    "action": [{"field": "absolute7D horizon32 shift5", "paper": "Training/evaluation action contracts match.", "upstream_code": "FastWAM shifted-flow chunks.", "local": "Identical normalization, solver and gripper metric.", "status": "EXACT", "evidence": ["scripts/h3wam/evaluate_c56b_fact_online_paired.py"], "rationale": "No deployment change."}],
+    "objective": [{"field": "read-only conditioning diagnostics", "paper": "Offline metrics cannot replace rollout.", "upstream_code": "Not applicable.", "local": "Physical/normalized error, gripper, language replacement and visual shuffle only.", "status": "EXACT", "evidence": ["scripts/h3wam/evaluate_c56b_fact_online_paired.py"], "rationale": "No optimizer exists."}],
+    "optimization": [{"field": "zero-step two-checkpoint evaluation", "paper": "Not applicable.", "upstream_code": "Not applicable.", "local": "Two GPUs evaluate one frozen checkpoint each.", "status": "EXACT", "evidence": ["scripts/h3wam/launch_c73_action_only_deadline_preview_2gpu.sh"], "rationale": "Training continues independently."}],
+    "evaluation": [{"field": "diagnostic preview boundary", "paper": "Closed-loop success is required for policy claims.", "upstream_code": "Official WAM evaluation uses rollouts.", "local": "Results cannot select, stop, or promote a checkpoint.", "status": "INTENTIONAL_DEVIATION", "evidence": ["scripts/h3wam/launch_c73_action_only_deadline_preview_2gpu.sh"], "rationale": "This quickly measures the learning curve before server expiry."}]
+  },
+  "gates": {
+    "source_identity": {"status": "PASS", "evidence": ["Launcher requires verified immutable SOURCE_FREEZE."]},
+    "architecture_contract": {"status": "PASS", "evidence": ["Evaluator validates C73 scheduler horizon and frozen action-only contract."]},
+    "data_contract": {"status": "PASS", "evidence": ["Fixed manifest/stats and selected IDs hashes are checked."]},
+    "action_contract": {"status": "PASS", "evidence": ["Fixed absolute7D horizon32 shift5 evaluator."]},
+    "objective_contract": {"status": "PASS", "evidence": ["Evaluation only; no optimizer."]},
+    "optimization_contract": {"status": "PASS", "evidence": ["Two fixed checkpoints, two GPUs, zero training samples."]},
+    "evaluation_contract": {"status": "PASS", "evidence": ["Preview-only permissions and claim boundary are enforced."]},
+    "gradient_path": {"status": "PASS", "evidence": ["Not applicable to frozen inference; C73 training gradient evidence remains separate."]},
+    "smoke_finite": {"status": "PASS", "evidence": ["The identical C72 evaluator completed 31 balanced80 reports; C73 adds contract identity only."]},
+    "checkpoint_restore": {"status": "PASS", "evidence": ["Both inputs require C73 strict restore audit before evaluation."]},
+    "parent_baseline": {"status": "PASS", "evidence": ["C73-s30195 fixed internal control."]},
+    "mechanism_signal": {"status": "FAIL", "evidence": ["C73 reports do not exist yet."]},
+    "closed_loop_canary": {"status": "FAIL", "evidence": ["Preview cannot authorize rollout."]}
+  },
+  "budget": {
+    "mode": "evaluation_only",
+    "global_batch": 2,
+    "optimizer_steps": 0,
+    "training_samples": 0,
+    "unique_windows": 160,
+    "effective_epochs": 0.0,
+    "gpu_count": 2,
+    "estimated_hours": 0.25,
+    "model_forwards": 6400,
+    "model_forwards_note": "Two checkpoints x 80 samples x four action conditions x ten flow steps; H3 carrier forwards are additional."
+  },
+  "decision": {
+    "status": "GO_CANARY",
+    "rationale": "Both checkpoints are strictly restored and the evaluation is frozen, read-only and paired. Results are diagnostic only and training remains unchanged.",
+    "launch_command": "C73_PREVIEW_SOURCE_SNAPSHOT=<immutable_snapshot> C73_PREVIEW_SOURCE_FREEZE_SHA256=<sha256> C73_PREVIEW_ROOT=/mnt/h3-wam/eval/c73-action-only-long-s30195-s34000-balanced80-preview-v1 bash scripts/h3wam/launch_c73_action_only_deadline_preview_2gpu.sh",
+    "effect_status": "NOT_EVIDENCE_READY"
+  }
+}

@@ -45,6 +45,10 @@ RESTORE_FORMAT = "h3wam-c67-budget-milestone-restore-audit-v1"
 SELECTED_IDS_SHA256 = PAIRED.SELECTED_IDS_SHA256
 MILESTONES = tuple(range(1_000, 20_001, 1_000))
 C72_MILESTONES = tuple(range(1_000, 30_001, 1_000)) + (30_195,)
+C73_MILESTONES = (
+    tuple(range(1_000, 30_001, 1_000)) + (30_195,)
+    + tuple(range(31_000, 130_001, 1_000)) + (130_585,)
+)
 
 C58_SHA256 = "2e6294712f7944037c3982ae7e6b8b87adbdaab190e1972ff4a3d592cc99e541"
 C60_DATASET_SHA256 = "1abeee1ef4e5e71f66b656c9920124086046c3e7d3b3a22b769449b72b1fc1d4"
@@ -101,7 +105,7 @@ def contract_sha256(contract: dict[str, Any]) -> str:
 
 
 def require_c67_contract(contract: dict[str, Any], *, variant: str = "c67") -> None:
-    if variant not in {"c67", "c69", "c70", "c72"}:
+    if variant not in {"c67", "c69", "c70", "c72", "c73"}:
         raise ValueError(f"unsupported milestone variant: {variant}")
     rank_categories = (
         list(TRAIN.rank_schedule_contract(TRAIN.C70_RANK_SCHEDULE)["rank_categories"])
@@ -125,7 +129,9 @@ def require_c67_contract(contract: dict[str, Any], *, variant: str = "c67") -> N
         "base_lr": 2e-5,
         "action_lr": 2e-4,
         "warmup_steps": 500,
-        "scheduler_horizon": 30_195 if variant == "c72" else 20_000,
+        "scheduler_horizon": 130_585 if variant == "c73" else (
+            30_195 if variant == "c72" else 20_000
+        ),
         "weight_decay": 1e-4,
         "max_grad_norm": 1.0,
         "seed": 20260816,
@@ -161,7 +167,7 @@ def require_c67_contract(contract: dict[str, Any], *, variant: str = "c67") -> N
     frozen = contract.get("frozen_auxiliary_parameters")
     if variant in {"c67", "c70"} and frozen not in (None, []):
         raise ValueError(f"{variant.upper()} unexpectedly froze auxiliary parameters")
-    if variant in {"c69", "c72"}:
+    if variant in {"c69", "c72", "c73"}:
         prefixes = (
             "future_state_encoder.", "value_encoder.",
             "future_representation_encoder.", "future_state_decoder.",
@@ -176,7 +182,11 @@ def require_c67_contract(contract: dict[str, Any], *, variant: str = "c67") -> N
 
 
 def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]]:
-    allowed_milestones = C72_MILESTONES if config.variant == "c72" else MILESTONES
+    allowed_milestones = (
+        C73_MILESTONES if config.variant == "c73"
+        else C72_MILESTONES if config.variant == "c72"
+        else MILESTONES
+    )
     if config.milestone not in allowed_milestones:
         raise ValueError("milestone is outside the fixed variant trajectory")
     checkpoint = config.checkpoint.resolve()
@@ -191,6 +201,8 @@ def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]
         raise ValueError("C70 final rebinding requires the fixed sampler aggregator")
     if config.variant == "c72" and final_mode:
         raise ValueError("C72 final rebinding requires its fixed budget aggregator")
+    if config.variant == "c73" and final_mode:
+        raise ValueError("C73 final rebinding requires its fixed budget aggregator")
     if final_mode:
         if config.restore_audit is None:
             raise ValueError("final C67 evaluation requires --restore-audit")
@@ -247,6 +259,10 @@ def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]
                 "h3wam-c72-milestone-preview-audit-v1",
                 "PASS_C72_MILESTONE_PREVIEW_AUDIT",
             ),
+            "c73": (
+                "h3wam-c73-milestone-preview-audit-v1",
+                "PASS_C73_MILESTONE_PREVIEW_AUDIT",
+            ),
         }[config.variant]
         if (
             preview.get("format") != expected_preview[0]
@@ -275,12 +291,12 @@ def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]
         )
         if config.variant == "c67"
         else (
-            restore.get("status") == (
-                "PASS_C69_MILESTONE_STRICT_RESTORE"
-                if config.variant == "c69"
-                else "PASS_C72_MILESTONE_STRICT_RESTORE"
-            )
-            if config.variant in {"c69", "c72"}
+            restore.get("status") == {
+                "c69": "PASS_C69_MILESTONE_STRICT_RESTORE",
+                "c72": "PASS_C72_MILESTONE_STRICT_RESTORE",
+                "c73": "PASS_C73_MILESTONE_STRICT_RESTORE",
+            }[config.variant]
+            if config.variant in {"c69", "c72", "c73"}
             else (
                 restore.get("format") == "h3wam-c70-sampler-milestone-restore-audit-v1"
                 and restore.get("status") == "PASS_C70_SAMPLER_MILESTONE_STRICT_RESTORE"
@@ -342,8 +358,8 @@ def load_checkpoint(config: Config) -> tuple[dict[str, Any], str, dict[str, Any]
 
 
 def run(config: Config) -> dict[str, Any]:
-    if config.variant not in {"c67", "c69", "c70", "c72"}:
-        raise ValueError("milestone variant must be c67, c69, c70 or c72")
+    if config.variant not in {"c67", "c69", "c70", "c72", "c73"}:
+        raise ValueError("milestone variant must be c67, c69, c70, c72 or c73")
     if config.seed != 42 or config.inference_steps != 10:
         raise ValueError("C67 balanced80 seed/solver is fixed")
     payload, checkpoint_sha, binding = load_checkpoint(config)
@@ -400,6 +416,7 @@ def run(config: Config) -> dict[str, Any]:
             "c69": "h3wam-c69-action-only-milestone-balanced80-v1",
             "c70": "h3wam-c70-sampler-coverage-milestone-balanced80-v1",
             "c72": "h3wam-c72-action-only-milestone-balanced80-v1",
+            "c73": "h3wam-c73-action-only-milestone-balanced80-v1",
         }[config.variant],
         "status": "PASS_FIXED_BALANCED80" if all(gates.values()) else "FAIL_CONDITIONING_COLLAPSE",
         "permission": (
@@ -474,7 +491,7 @@ def parse_args() -> Config:
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
-        "--variant", choices=("c67", "c69", "c70", "c72"), default="c67"
+        "--variant", choices=("c67", "c69", "c70", "c72", "c73"), default="c67"
     )
     parser.add_argument("--device", default="cuda:0")
     values = parser.parse_args()

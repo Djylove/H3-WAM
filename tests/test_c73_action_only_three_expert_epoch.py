@@ -62,3 +62,34 @@ def test_c73_dossier_budget_arithmetic_and_control_are_explicit():
     )
     assert "C73-s130585 minus C73-s30195" in dossier["effect_preregistration"]["primary_comparison"]
     assert dossier["decision"]["status"] == "GO_LONG"
+
+
+def test_c73_deadline_preview_is_read_only_and_contract_bound():
+    queue = (
+        ROOT / "scripts/h3wam/launch_c73_action_only_deadline_preview_2gpu.sh"
+    ).read_text()
+    auditor = (
+        ROOT / "scripts/h3wam/prepare_c73_milestone_preview_audit.py"
+    ).read_text()
+    evaluator = (
+        ROOT / "scripts/h3wam/evaluate_c67_fact_milestone_balanced80.py"
+    ).read_text()
+    freezer = (ROOT / "scripts/h3wam/freeze_c67_rollout_source.py").read_text()
+    dossier = json.loads((
+        ROOT / "experiments/dossiers/h3_c73_s30195_s34000_balanced80_preview_v1.json"
+    ).read_text())
+    assert "milestones=(30195 34000)" in queue
+    assert "--variant c73" in queue
+    assert "torch.distributed.run" not in queue
+    assert "train_c56b_fact_online.py" not in queue
+    assert "rollout_libero" not in queue
+    assert "FINAL.validate_milestone" in auditor
+    assert "PREVIEW_EVALUATION_ONLY" in auditor
+    assert "C73_MILESTONES" in evaluator
+    assert '"c73": "h3wam-c73-action-only-milestone-balanced80-v1"' in evaluator
+    assert '"scripts/h3wam/prepare_c73_milestone_preview_audit.py"' in freezer
+    assert '"scripts/h3wam/launch_c73_action_only_deadline_preview_2gpu.sh"' in freezer
+    assert dossier["budget"]["mode"] == "evaluation_only"
+    assert dossier["budget"]["optimizer_steps"] == 0
+    assert dossier["budget"]["training_samples"] == 0
+    assert dossier["decision"]["status"] == "GO_CANARY"
